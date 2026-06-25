@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Grupo-E | Sistema de Gestão</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+
+  <!-- AUTH -->
+  <div id="auth-screen" class="auth-backdrop">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <div class="logo-mark"><span>e</span></div>
+        <div>
+          <div class="logo-name">GRUPO-E</div>
+          <div class="logo-sub">Soluções Empresariais</div>
+        </div>
+      </div>
+      <div id="auth-alert" class="auth-alert" hidden></div>
+
+      <section id="form-login">
+        <h1 class="auth-heading">Bem-vindo de volta</h1>
+        <p class="auth-sub">Entre com suas credenciais para continuar</p>
+        <div class="field"><label for="login-email">E-mail</label><input id="login-email" type="email" placeholder="seu@email.com" autocomplete="username" /></div>
+        <div class="field"><label for="login-pass">Senha</label><input id="login-pass" type="password" placeholder="••••••••" autocomplete="current-password" /></div>
+        <button class="btn btn-primary btn-full" id="btn-login">Entrar</button>
+        <div class="auth-divider"><span>ou</span></div>
+        <button class="btn btn-google btn-full" id="btn-google">
+          <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          Entrar com Google
+        </button>
+        <p class="auth-link">Não tem conta? <button class="link-btn" id="btn-show-register">Criar conta</button></p>
+      </section>
+
+      <section id="form-register" hidden>
+        <h1 class="auth-heading">Criar conta</h1>
+        <p class="auth-sub">Preencha os dados para se registrar</p>
+        <div class="field"><label>Nome completo</label><input id="reg-name" type="text" placeholder="Seu nome" /></div>
+        <div class="field"><label>E-mail</label><input id="reg-email" type="email" placeholder="seu@email.com" /></div>
+        <div class="field"><label>Senha</label><input id="reg-pass" type="password" placeholder="Mín. 6 caracteres" /></div>
+        <div class="field"><label>Perfil</label>
+          <select id="reg-role"><option value="usuario">Usuário</option><option value="administrador">Administrador</option></select>
+        </div>
+        <button class="btn btn-primary btn-full" id="btn-register">Criar conta</button>
+        <p class="auth-link">Já tem conta? <button class="link-btn" id="btn-show-login">Entrar</button></p>
+      </section>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="app" hidden>
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-logo-mark"><span>e</span></div>
+        <div><div class="sidebar-name">GRUPO-E</div><div class="sidebar-sub">Soluções Empresariais</div></div>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item" data-page="dashboard" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Dashboard
+        </a>
+        <a class="nav-item" data-page="atendimento" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>Atendimento
+        </a>
+        <a class="nav-item" data-page="gestao" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Gestão de Clientes
+        </a>
+        <a class="nav-item" data-page="insatisfacao" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Insatisfação
+        </a>
+        <a class="nav-item" data-page="sensiveis" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>Clientes Sensíveis
+        </a>
+        <a class="nav-item" data-page="pesquisas" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Pesquisas
+        </a>
+        <a class="nav-item" data-page="recuperacao" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>Recuperação
+        </a>
+        <div class="nav-sep"></div>
+        <a class="nav-item admin-only" data-page="admin" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M20 12h2M2 12h2M12 20v2M12 2v2"/></svg>Administração
+        </a>
+        <a class="nav-item nav-logout" id="btn-logout" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Sair
+        </a>
+      </nav>
+    </aside>
+
+    <div class="main-wrap">
+      <header class="topbar">
+        <h2 class="topbar-title" id="page-title">Dashboard</h2>
+        <div class="topbar-user">
+          <span class="user-name" id="topbar-name"></span>
+          <span class="role-pill" id="topbar-role"></span>
+          <button class="btn-logout-top" id="btn-logout-top">Sair</button>
+        </div>
+      </header>
+
+      <main class="content">
+
+        <!-- DASHBOARD -->
+        <section id="page-dashboard" class="page">
+          <div class="filter-row">
+            <label for="dash-period">Período</label>
+            <select id="dash-period"><option value="todos">Todos</option><option value="hoje">Hoje</option><option value="semana">Esta semana</option><option value="mes">Este mês</option></select>
+            <button class="btn btn-danger btn-sm admin-only" id="btn-clear-dash">Limpar dados</button>
+          </div>
+          <div class="stats-grid" id="stats-grid"></div>
+          <div class="charts-grid">
+            <div class="chart-card"><p class="chart-title">Atendimentos por departamento</p><div class="chart-wrap"><canvas id="c-depto"></canvas></div></div>
+            <div class="chart-card"><p class="chart-title">Gestão por tipo de solicitação</p><div class="chart-wrap"><canvas id="c-gestao"></canvas></div></div>
+            <div class="chart-card"><p class="chart-title">Insatisfações por gravidade</p><div class="chart-wrap"><canvas id="c-grav"></canvas></div></div>
+            <div class="chart-card"><p class="chart-title">Canal de solicitação</p><div class="chart-wrap"><canvas id="c-canal"></canvas></div></div>
+          </div>
+          <div class="nps-row" id="nps-row"></div>
+        </section>
+
+        <!-- ATENDIMENTO -->
+        <section id="page-atendimento" class="page" hidden>
+          <div class="form-card">
+            <h2 class="form-title">Atendimento</h2><div class="form-accent"></div>
+            <div class="form-grid">
+              <div class="field"><label>Analista Responsável <span class="req">*</span></label><input id="at-analista" type="text" placeholder="Digite o nome" /></div>
+              <div class="field"><label>Nome do Cliente <span class="req">*</span></label><input id="at-cliente" type="text" placeholder="Digite o nome" /></div>
+              <div class="field"><label>CNPJ <span class="req">*</span></label><input id="at-cnpj" type="text" placeholder="00.000.000/0000-00" maxlength="18" /></div>
+              <div class="field"><label>Empresa <span class="req">*</span></label><input id="at-empresa" type="text" placeholder="Digite a empresa" /></div>
+              <div class="field"><label>Departamento Solicitado <span class="req">*</span></label>
+                <select id="at-depto"><option value="">Selecione</option><option>Comercial</option><option>Contábil</option><option>Financeiro</option><option>Fiscal</option><option>Legalização</option><option>Pessoal</option><option>Sucesso</option></select>
+              </div>
+              <div class="field"><label>Analista Procurado <span class="req">*</span></label><input id="at-procurado" type="text" placeholder="Nome do analista" /></div>
+              <div class="field span2"><label>Demanda do Cliente <span class="req">*</span></label>
+                <select id="at-demanda"><option value="">Selecione a demanda</option><option>13º Salário (Folha de pagamento)</option><option>Admissões (Folha de pagamento)</option><option>Agendamento de reunião (Todos)</option><option>Alíquota Simples Nacional (Fiscal)</option><option>Alteração Contratual (Legalização)</option><option>Alteração do analista responsável (Todos)</option><option>Alvará de funcionamento (Legalização)</option><option>Alvará Sanitário (Legalização)</option><option>Análises de pendências (Todos)</option><option>Abertura de empresas (Legalização)</option><option>Assinar documento digitalmente (Todos)</option><option>Atendimentos de casos potencialmente relevantes (Todos)</option><option>Atualização cadastral (Sucesso do Cliente)</option><option>Auxílio ao GOV (Todos)</option><option>Cargos e Salários (Folha de pagamento)</option><option>Certidões (Legalização)</option><option>Certificado Digital (Legalização)</option><option>Contratos e períodos de experiência (Folha de pagamento)</option><option>Convenção coletiva (Folha de pagamento)</option><option>Demandas não contábeis (Todos)</option><option>Distribuição de lucros (Todos)</option><option>Documentos societários e cadastrais (Legalização)</option><option>Empresas medicina do trabalho (Folha de pagamento)</option><option>Empréstimo consignado (Folha de pagamento)</option><option>Enviar via e-mail (Todos)</option><option>Envio de Obrigações Acessórias (Todos)</option><option>Erro App Escritorial ou Questor Zen (Sucesso do Cliente)</option><option>Faturamento (Fiscal)</option><option>Fechamento contábil (Contábil)</option><option>Férias (Folha de pagamento)</option><option>FGTS (Folha de pagamento)</option><option>Honorários (Financeiro)</option><option>Holerites / Contracheques (Folha de pagamento)</option><option>Imposto de renda (Fiscal)</option><option>Informe de Rendimento (Folha de pagamento)</option><option>INSS (Folha de pagamento)</option><option>Jornada de trabalho / Carga horária / Feriados (Folha de pagamento)</option><option>Lucro acumulado (Contábil)</option><option>Notas Fiscais (Fiscal)</option><option>Notificação extrajudicial (Todos)</option><option>Orientações (Todos)</option><option>Parcelamentos (Todos)</option><option>Procurações (Todos)</option><option>Pró-labore (Folha de pagamento)</option><option>Possíveis churns decorrentes de insatisfação (Todos)</option><option>Recálculos (Todos)</option><option>Recebimento de arquivos / Documentos (Todos)</option><option>Regime tributário (Fiscal)</option><option>Reforma tributária (Fiscal)</option><option>Rescisões / Demissões (Folha de pagamento)</option><option>Sindicatos (Folha de pagamento)</option><option>Atestados (Folha de pagamento)</option><option>Outro</option></select>
+              </div>
+              <div class="field span2" id="at-outro-wrap" hidden><label>Especifique a demanda <span class="req">*</span></label><input id="at-outro" type="text" placeholder="Descreva a demanda" /></div>
+              <div class="field span2"><label>Resumo da Demanda <small class="opt">(opcional)</small></label><textarea id="at-resumo" placeholder="Digite um resumo"></textarea></div>
+            </div>
+            <button class="btn btn-primary btn-save" id="btn-at-save">Salvar Atendimento</button>
+          </div>
+        </section>
+
+        <!-- GESTÃO -->
+        <section id="page-gestao" class="page" hidden>
+          <div class="form-card">
+            <h2 class="form-title">Gestão de Clientes e Indicadores de Retenção</h2><div class="form-accent"></div>
+            <div class="form-grid">
+              <div class="field"><label>Analista Responsável <span class="req">*</span></label><input id="gc-analista" type="text" placeholder="Digite o nome" /></div>
+              <div class="field"><label>Solicitação <span class="req">*</span></label>
+                <select id="gc-solicitacao"><option value="">Selecione</option><option>Baixa de empresa</option><option>Cliente vindo de outro contador</option><option>Constituição de empresa</option><option>Saída de empresa</option></select>
+              </div>
+              <div class="field"><label>CNPJ <span class="req">*</span></label><input id="gc-cnpj" type="text" placeholder="00.000.000/0000-00" maxlength="18" /></div>
+              <div class="field"><label>Empresa <span class="req">*</span></label><input id="gc-empresa" type="text" placeholder="Digite a empresa" /></div>
+              <div class="field"><label>Data da Solicitação <span class="req">*</span></label><input id="gc-data" type="date" /></div>
+              <div class="field"><label>Fim da Competência <span class="req">*</span></label><input id="gc-competencia" type="month" /></div>
+              <div class="field"><label>Canal da Solicitação <span class="req">*</span></label>
+                <select id="gc-canal"><option value="">Selecione</option><option>E-mail</option><option>Telefone</option><option>Presencial</option><option>WhatsApp</option></select>
+              </div>
+              <div class="field"><label>Motivo Apontado <small class="opt">(opcional)</small></label><input id="gc-motivo" type="text" placeholder="Digite o motivo" /></div>
+            </div>
+            <button class="btn btn-primary btn-save" id="btn-gc-save">Salvar Gestão</button>
+          </div>
+        </section>
+
+        <!-- INSATISFAÇÃO -->
+        <section id="page-insatisfacao" class="page" hidden>
+          <div class="form-card">
+            <h2 class="form-title">Insatisfação</h2><div class="form-accent"></div>
+            <div class="form-grid">
+              <div class="field"><label>Analista Responsável <span class="req">*</span></label><input id="in-analista" type="text" placeholder="Digite o nome" /></div>
+              <div class="field"><label>Nome do Cliente <span class="req">*</span></label><input id="in-cliente" type="text" placeholder="Digite o nome" /></div>
+              <div class="field"><label>CNPJ <span class="req">*</span></label><input id="in-cnpj" type="text" placeholder="00.000.000/0000-00" maxlength="18" /></div>
+              <div class="field"><label>Empresa <span class="req">*</span></label><input id="in-empresa" type="text" placeholder="Digite a empresa" /></div>
+              <div class="field"><label>Analista Reclamado</label><input id="in-reclamado" type="text" placeholder="Nome do analista" /></div>
+              <div class="field"><label>Gravidade <span class="req">*</span></label>
+                <select id="in-gravidade"><option value="">Selecione</option><option>Muito Alta</option><option>Alta</option><option>Média</option><option>Baixa</option><option>Muito Baixa</option></select>
+              </div>
+              <div class="field span2"><label>Reclamação <span class="req">*</span></label><textarea id="in-reclamacao" placeholder="Descreva a reclamação"></textarea></div>
+            </div>
+            <button class="btn btn-primary btn-save" id="btn-in-save">Salvar Insatisfação</button>
+          </div>
+        </section>
+
+        <!-- CLIENTES SENSÍVEIS -->
+        <section id="page-sensiveis" class="page" hidden>
+          <div class="form-card">
+            <h2 class="form-title">Clientes Sensíveis</h2><div class="form-accent"></div>
+            <div class="form-grid">
+              <div class="field"><label>Analista Responsável <span class="req">*</span></label><input id="cs-analista" type="text" placeholder="Digite o nome" /></div>
+              <div class="field"><label>Nome do Cliente <span class="req">*</span></label><input id="cs-cliente" type="text" placeholder="Digite o nome" /></div>
+              <div class="field"><label>CNPJ <span class="req">*</span></label><input id="cs-cnpj" type="text" placeholder="00.000.000/0000-00" maxlength="18" /></div>
+              <div class="field"><label>Empresa <span class="req">*</span></label><input id="cs-empresa" type="text" placeholder="Digite a empresa" /></div>
+              <div class="field"><label>O que o cliente demonstrou? <span class="req">*</span></label>
+                <select id="cs-demonstrou"><option value="">Selecione</option><option>Irritabilidade</option><option>Cobranças Recorrentes</option><option>Problemas Financeiros</option><option>Reclamações Repetidas</option><option>Outros</option></select>
+              </div>
+              <div class="field"><label>Gravidade <span class="req">*</span></label>
+                <select id="cs-gravidade"><option value="">Selecione</option><option>Muito Alta</option><option>Alta</option><option>Média</option><option>Baixa</option><option>Muito Baixa</option></select>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-save" id="btn-cs-save">Salvar Cliente Sensível</button>
+          </div>
+        </section>
+
+        <!-- PESQUISAS -->
+        <section id="page-pesquisas" class="page" hidden>
+          <div class="form-card">
+            <h2 class="form-title">Gestão de Pesquisas de Satisfação</h2><div class="form-accent"></div>
+            <div class="form-grid">
+              <div class="field"><label>Analista Responsável <span class="req">*</span></label><input id="ps-analista" type="text" placeholder="Digite o nome" /></div>
+              <div class="field"><label>Nome do Cliente <span class="req">*</span></label><input id="ps-cliente" type="text" placeholder="Digite o nome" /></div>
+              <div class="field"><label>CNPJ <span class="req">*</span></label><input id="ps-cnpj" type="text" placeholder="00.000.000/0000-00" maxlength="18" /></div>
+              <div class="field"><label>Empresa <span class="req">*</span></label><input id="ps-empresa" type="text" placeholder="Digite a empresa" /></div>
+              <div class="field"><label>Nota NPS (0–10) <span class="req">*</span></label>
+                <div class="range-row"><input id="ps-nps" type="range" min="0" max="10" value="5" step="1" /><span class="range-val" id="ps-nps-v">5</span></div>
+              </div>
+              <div class="field"><label>Nota CSAT (0–5) <span class="req">*</span></label>
+                <div class="range-row"><input id="ps-csat" type="range" min="0" max="5" value="3" step="1" /><span class="range-val" id="ps-csat-v">3</span></div>
+              </div>
+              <div class="field"><label>Nota CES (0–5) <span class="req">*</span></label>
+                <div class="range-row"><input id="ps-ces" type="range" min="0" max="5" value="3" step="1" /><span class="range-val" id="ps-ces-v">3</span></div>
+              </div>
+              <div class="field"><label>Pontos a Destacar <small class="opt">(opcional)</small></label><input id="ps-pontos" type="text" placeholder="Digite os pontos" /></div>
+            </div>
+            <button class="btn btn-primary btn-save" id="btn-ps-save">Salvar Pesquisa</button>
+          </div>
+        </section>
+
+        <!-- RECUPERAÇÃO -->
+        <section id="page-recuperacao" class="page" hidden>
+          <div class="form-card">
+            <h2 class="form-title">Recuperação de Experiência</h2><div class="form-accent"></div>
+            <div class="form-grid">
+              <div class="field"><label>Analista Responsável <span class="req">*</span></label><input id="rc-analista" type="text" placeholder="Digite o nome" /></div>
+              <div class="field"><label>Nome do Cliente <span class="req">*</span></label><input id="rc-cliente" type="text" placeholder="Digite o nome" /></div>
+              <div class="field"><label>CNPJ <span class="req">*</span></label><input id="rc-cnpj" type="text" placeholder="00.000.000/0000-00" maxlength="18" /></div>
+              <div class="field"><label>Empresa <span class="req">*</span></label><input id="rc-empresa" type="text" placeholder="Digite a empresa" /></div>
+              <div class="field"><label>Gravidade <span class="req">*</span></label>
+                <select id="rc-gravidade"><option value="">Selecione</option><option>Muito Alta</option><option>Alta</option><option>Média</option><option>Baixa</option><option>Muito Baixa</option></select>
+              </div>
+              <div class="field span2"><label>O que o cliente demonstrou após a solução? <span class="req">*</span></label><textarea id="rc-demonstrou" placeholder="Descreva a reação do cliente"></textarea></div>
+            </div>
+            <button class="btn btn-primary btn-save" id="btn-rc-save">Salvar Recuperação</button>
+          </div>
+        </section>
+
+        <!-- ADMINISTRAÇÃO -->
+        <section id="page-admin" class="page" hidden>
+          <div class="form-card">
+            <h2 class="form-title">Administração de Usuários</h2><div class="form-accent"></div>
+            <button class="btn btn-success btn-sm" id="btn-add-user" style="margin-bottom:16px">+ Adicionar usuário</button>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>E-mail</th><th>Nome</th><th>Perfil</th><th>Ações</th></tr></thead>
+                <tbody id="users-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- MODAL -->
+  <div id="modal-backdrop" class="modal-backdrop" hidden>
+    <div class="modal-box">
+      <h3 class="modal-title" id="modal-title"></h3>
+      <div id="modal-body"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="modal-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="modal-confirm">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

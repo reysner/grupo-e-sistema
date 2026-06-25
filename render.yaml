@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: grupo-e-sistema
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    startCommand: node server/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: APP_URL
+        value: https://grupo-e-sistema.onrender.com   # ← ajuste para sua URL
+      - key: ALLOWED_ORIGINS
+        value: https://grupo-e-sistema.onrender.com   # ← ajuste para sua URL
