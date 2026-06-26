@@ -421,8 +421,9 @@ const App = (() => {
           <td style="color:var(--info)">${u.email}</td>
           <td>${u.name}</td>
           <td><span class="tag ${u.role==='administrador'?'tag-admin':'tag-user'}">${u.role==='administrador'?'Administrador':'Usuário'}</span></td>
-          <td style="display:flex;gap:8px">
-            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditPass('${u.id}')">Editar senha</button>
+          <td style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditProfile('${u.id}','${u.name}','${u.email}')">Editar</button>
+            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditPass('${u.id}')">Senha</button>
             <button class="btn btn-danger btn-sm" onclick="App.Admin.deleteUser('${u.id}','${u.name}')">Excluir</button>
           </td>
         </tr>`).join('');
@@ -562,3 +563,267 @@ document.addEventListener('DOMContentLoaded', () => {
   // Auto login
   App.Auth.tryAutoLogin();
 });
+
+// ── Exportação de Relatórios ──────────────────────────────────────────────────
+App.Reports = (() => {
+  const _cols = {
+    atendimentos: ['created_at','analista','cliente','cnpj','empresa','departamento','procurado','demanda','resumo'],
+    gestao:       ['created_at','analista','solicitacao','cnpj','empresa','data_sol','competencia','canal','motivo'],
+    insatisfacoes:['created_at','analista','cliente','cnpj','empresa','reclamado','reclamacao','gravidade'],
+    sensiveis:    ['created_at','analista','cliente','cnpj','empresa','demonstrou','gravidade'],
+    pesquisas:    ['created_at','analista','cliente','cnpj','empresa','nps','csat','ces','pontos'],
+    recuperacoes: ['created_at','analista','cliente','cnpj','empresa','demonstrou','gravidade'],
+  };
+  const _labels = {
+    created_at:'Data', analista:'Analista Responsável', cliente:'Cliente', cnpj:'CNPJ',
+    empresa:'Empresa', departamento:'Departamento', procurado:'Analista Procurado',
+    demanda:'Demanda', resumo:'Resumo', solicitacao:'Solicitação', data_sol:'Data Solicitação',
+    competencia:'Fim Competência', canal:'Canal', motivo:'Motivo', reclamado:'Analista Reclamado',
+    reclamacao:'Reclamação', gravidade:'Gravidade', demonstrou:'Demonstração',
+    nps:'NPS (0-10)', csat:'CSAT (0-5)', ces:'CES (0-5)', pontos:'Pontos Destacados',
+  };
+
+  async function fetchData(endpoint) {
+    const period = document.getElementById('dash-period')?.value || 'todos';
+    const headers = {};
+    const token = localStorage.getItem('ge_token');
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`/api/data/${endpoint}?period=${period}`, { headers });
+    if (!res.ok) return null;
+    const { data } = await res.json();
+    return data;
+  }
+
+  async function exportCSV(endpoint) {
+    const data = await fetchData(endpoint);
+    if (!data) { App.Toast.err('Erro ao buscar dados.'); return; }
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar no período selecionado.'); return; }
+
+    const cols   = _cols[endpoint] || Object.keys(data[0]);
+    const labels = cols.map(c => _labels[c] || c);
+    const rows   = data.map(r => cols.map(c => {
+      let v = r[c] ?? '';
+      if (c === 'created_at') v = new Date(v).toLocaleString('pt-BR');
+      return `"${String(v).replace(/"/g, '""')}"`;
+    }));
+
+    const csv  = [labels.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `${endpoint}_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    App.Toast.ok('CSV exportado com sucesso!');
+  }
+
+  async function exportPDF(endpoint, title) {
+    const data = await fetchData(endpoint);
+    if (!data) { App.Toast.err('Erro ao buscar dados.'); return; }
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar no período selecionado.'); return; }
+
+    const cols   = _cols[endpoint] || Object.keys(data[0]);
+    const labels = cols.map(c => _labels[c] || c);
+    const rows   = data.map(r =>
+      `<tr>${cols.map(c => {
+        let v = r[c] ?? '';
+        if (c === 'created_at') v = new Date(v).toLocaleString('pt-BR');
+        return `<td>${String(v).replace(/</g,'&lt;').replace(/>/g,'&gt;')}</td>`;
+      }).join('')}</tr>`
+    ).join('');
+
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+<title>Grupo-E — ${title}</title>
+<style>
+  body{font-family:Arial,sans-serif;font-size:10px;margin:20px;color:#222}
+  h1{font-size:15px;color:#1a4233;margin-bottom:2px}
+  .sub{color:#666;font-size:10px;margin-bottom:14px}
+  table{width:100%;border-collapse:collapse}
+  th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left;font-size:9px;white-space:nowrap}
+  td{padding:5px 8px;border-bottom:1px solid #e8e8e8;vertical-align:top;word-break:break-word}
+  tr:nth-child(even) td{background:#f7f7f7}
+  @page{margin:15mm}
+  @media print{body{margin:0}}
+</style></head><body>
+<h1>Grupo-E Soluções Empresariais — ${title}</h1>
+<div class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} &nbsp;|&nbsp; Total de registros: ${data.length}</div>
+<table>
+  <thead><tr>${labels.map(l => `<th>${l}</th>`).join('')}</tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<script>window.onload = () => { window.print(); }<\/script>
+</body></html>`;
+
+    const win = window.open('', '_blank');
+    if (!win) { App.Toast.err('Permita popups para exportar PDF.'); return; }
+    win.document.write(html);
+    win.document.close();
+    App.Toast.ok('PDF aberto — use Ctrl+P para salvar como PDF!');
+  }
+
+  return { exportCSV, exportPDF };
+})();
+
+
+// ── Wire all events after DOM ready (no inline onclick) ───────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  // Auth
+  document.getElementById('btn-login').addEventListener('click', () => App.Auth.login());
+  document.getElementById('btn-register').addEventListener('click', () => App.Auth.register());
+  document.getElementById('btn-google').addEventListener('click', () => App.Auth.loginGoogle());
+  document.getElementById('btn-show-register').addEventListener('click', () => App.Auth.showRegister());
+  document.getElementById('btn-show-login').addEventListener('click', () => App.Auth.showLogin());
+  document.getElementById('btn-logout').addEventListener('click', (e) => { e.preventDefault(); App.Auth.logout(); });
+  document.getElementById('btn-logout-top').addEventListener('click', () => App.Auth.logout());
+
+  // Nav items
+  document.querySelectorAll('.nav-item[data-page]').forEach(el => {
+    el.addEventListener('click', (e) => { e.preventDefault(); App.Nav.go(el.dataset.page); });
+  });
+
+  // Dashboard
+  document.getElementById('dash-period').addEventListener('change', () => App.Dashboard.load());
+  document.getElementById('btn-clear-dash').addEventListener('click', () => App.Dashboard.clear());
+
+  // Forms
+  document.getElementById('btn-at-save').addEventListener('click', () => App.Forms.atendimento());
+  document.getElementById('btn-gc-save').addEventListener('click', () => App.Forms.gestao());
+  document.getElementById('btn-in-save').addEventListener('click', () => App.Forms.insatisfacao());
+  document.getElementById('btn-cs-save').addEventListener('click', () => App.Forms.sensiveis());
+  document.getElementById('btn-ps-save').addEventListener('click', () => App.Forms.pesquisas());
+  document.getElementById('btn-rc-save').addEventListener('click', () => App.Forms.recuperacao());
+
+  // CNPJ masks
+  ['at-cnpj','gc-cnpj','in-cnpj','cs-cnpj','ps-cnpj','rc-cnpj'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', (e) => App.Util.maskCNPJ(e.target));
+  });
+
+  // Range sliders
+  [['ps-nps','ps-nps-v'],['ps-csat','ps-csat-v'],['ps-ces','ps-ces-v']].forEach(([rId,vId]) => {
+    document.getElementById(rId)?.addEventListener('input', () => App.Util.syncRange(rId, vId));
+  });
+
+  // Outro demanda
+  document.getElementById('at-demanda')?.addEventListener('change', () => {
+    App.Util.toggleOutro('at-demanda', 'at-outro-wrap');
+  });
+
+  // Clientes Sensíveis - Outro
+  document.getElementById('cs-demonstrou')?.addEventListener('change', () => {
+    App.Util.toggleOutro('cs-demonstrou', 'cs-outro-wrap');
+  });
+
+  // Admin
+  document.getElementById('btn-add-user')?.addEventListener('click', () => App.Admin.openAdd());
+
+  // Modal
+  document.getElementById('modal-cancel').addEventListener('click', () => App.Modal.close());
+  document.getElementById('modal-backdrop').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('modal-backdrop')) App.Modal.close();
+  });
+
+  // Keyboard
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !document.getElementById('form-login').hidden) App.Auth.login();
+    if (e.key === 'Escape') App.Modal.close();
+  });
+
+  // Auto login
+  App.Auth.tryAutoLogin();
+});
+
+// ── Exportação de Relatórios ───────────────────────────────────────────────────
+const Reports = {
+  // Mapeamento de colunas por módulo
+  _cols: {
+    atendimentos: ['created_at','analista','cliente','cnpj','empresa','departamento','procurado','demanda','resumo'],
+    gestao:       ['created_at','analista','solicitacao','cnpj','empresa','data_sol','competencia','canal','motivo'],
+    insatisfacoes:['created_at','analista','cliente','cnpj','empresa','reclamado','reclamacao','gravidade'],
+    sensiveis:    ['created_at','analista','cliente','cnpj','empresa','demonstrou','gravidade'],
+    pesquisas:    ['created_at','analista','cliente','cnpj','empresa','nps','csat','ces','pontos'],
+    recuperacoes: ['created_at','analista','cliente','cnpj','empresa','demonstrou','gravidade'],
+  },
+  _labels: {
+    created_at:'Data', analista:'Analista', cliente:'Cliente', cnpj:'CNPJ',
+    empresa:'Empresa', departamento:'Departamento', procurado:'Analista Procurado',
+    demanda:'Demanda', resumo:'Resumo', solicitacao:'Solicitação', data_sol:'Data Solicitação',
+    competencia:'Competência', canal:'Canal', motivo:'Motivo', reclamado:'Analista Reclamado',
+    reclamacao:'Reclamação', gravidade:'Gravidade', demonstrou:'Demonstração',
+    nps:'NPS', csat:'CSAT', ces:'CES', pontos:'Pontos Destacados',
+  },
+
+  async exportCSV(endpoint) {
+    const period = document.getElementById('dash-period')?.value || 'todos';
+    const res = await API.get(`/api/data/${endpoint}?period=${period}`);
+    if (!res || !res.ok) { Toast.err('Erro ao buscar dados.'); return; }
+    const { data } = await res.json();
+    if (!data.length) { Toast.err('Nenhum dado para exportar.'); return; }
+
+    const cols = Reports._cols[endpoint] || Object.keys(data[0]);
+    const labels = cols.map(c => Reports._labels[c] || c);
+    const rows = data.map(r => cols.map(c => {
+      let v = r[c] ?? '';
+      if (c === 'created_at') v = new Date(v).toLocaleString('pt-BR');
+      return `"${String(v).replace(/"/g,'""')}"`;
+    }));
+
+    const csv = [labels.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `${endpoint}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    Toast.ok('CSV exportado!');
+  },
+
+  async exportPDF(endpoint, title) {
+    const period = document.getElementById('dash-period')?.value || 'todos';
+    const res = await API.get(`/api/data/${endpoint}?period=${period}`);
+    if (!res || !res.ok) { Toast.err('Erro ao buscar dados.'); return; }
+    const { data } = await res.json();
+    if (!data.length) { Toast.err('Nenhum dado para exportar.'); return; }
+
+    const cols   = Reports._cols[endpoint] || Object.keys(data[0]);
+    const labels = cols.map(c => Reports._labels[c] || c);
+
+    // Build HTML for print
+    const rows = data.map(r =>
+      `<tr>${cols.map(c => {
+        let v = r[c] ?? '';
+        if (c === 'created_at') v = new Date(v).toLocaleString('pt-BR');
+        return `<td>${v}</td>`;
+      }).join('')}</tr>`
+    ).join('');
+
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+    <title>${title}</title>
+    <style>
+      body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
+      h1{font-size:16px;color:#1a4233;margin-bottom:4px}
+      p.sub{color:#666;font-size:11px;margin-bottom:12px}
+      table{width:100%;border-collapse:collapse;font-size:10px}
+      th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left;font-size:10px}
+      td{padding:5px 8px;border-bottom:1px solid #eee}
+      tr:nth-child(even) td{background:#f8f8f8}
+      @media print{body{margin:10px}}
+    </style></head><body>
+    <h1>Grupo-E — ${title}</h1>
+    <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${data.length} registros</p>
+    <table><thead><tr>${labels.map(l=>`<th>${l}</th>`).join('')}</tr></thead>
+    <tbody>${rows}</tbody></table>
+    <script>window.onload=()=>{window.print();}<\/script>
+    </body></html>`;
+
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+    Toast.ok('PDF gerado — use Ctrl+P para salvar!');
+  },
+};
+
+// Expor Reports globalmente
+window.App = window.App || {};
+Object.assign(window.App, { Reports });
