@@ -378,7 +378,7 @@ const App = (() => {
       await Forms._submit('sensiveis', {
         analista: Util.val('cs-analista'), cliente: Util.val('cs-cliente'),
         cnpj: Util.val('cs-cnpj'), empresa: Util.val('cs-empresa'),
-        demonstrou: Util.val('cs-demonstrou'), gravidade: Util.val('cs-gravidade'),
+        demonstrou: Util.val('cs-demonstrou')==='Outro' ? Util.val('cs-outro') : Util.val('cs-demonstrou'), gravidade: Util.val('cs-gravidade'),
       }, ['cs-analista','cs-cliente','cs-cnpj','cs-empresa'], 'Cliente sensível registrado!');
       document.getElementById('cs-demonstrou').value=''; document.getElementById('cs-gravidade').value='';
     },
@@ -533,6 +533,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Outro demanda
   document.getElementById('at-demanda')?.addEventListener('change', () => {
     App.Util.toggleOutro('at-demanda', 'at-outro-wrap');
+  });
+
+  // Clientes Sensíveis - Outro
+  document.getElementById('cs-demonstrou')?.addEventListener('change', () => {
+    App.Util.toggleOutro('cs-demonstrou', 'cs-outro-wrap');
   });
 
   // Admin
