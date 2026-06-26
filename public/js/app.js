@@ -203,7 +203,11 @@ const App = (() => {
       pill.textContent = user.role === 'administrador' ? 'Administrador' : 'Usuário';
       pill.className   = 'role-pill ' + (user.role === 'administrador' ? 'admin' : 'user');
       document.querySelectorAll('.admin-only').forEach(el => {
-        el.style.display = user.role === 'administrador' ? '' : 'none';
+        if (user.role === 'administrador') {
+          el.style.setProperty('display', 'flex', 'important');
+        } else {
+          el.style.setProperty('display', 'none', 'important');
+        }
       });
       document.getElementById('auth-screen').hidden = true;
       document.getElementById('app').hidden          = false;
