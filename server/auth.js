@@ -2,7 +2,7 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
-const { db } = require('./db');
+const { pool } = require('./db');
 
 const ACCESS_SECRET  = process.env.JWT_SECRET        || 'ge_access_secret_change_me';
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'ge_refresh_secret_change_me';
@@ -17,31 +17,34 @@ function signAccess(user) {
   );
 }
 
-function issueRefreshToken(userId) {
+async function issueRefreshToken(userId) {
   const token     = uuidv4();
   const expiresAt = new Date(Date.now() + REFRESH_TTL_MS).toISOString();
-  db.prepare(`INSERT INTO refresh_tokens (token, user_id, expires_at) VALUES (?, ?, ?)`)
-    .run(token, userId, expiresAt);
+  await pool.query(
+    `INSERT INTO refresh_tokens (token, user_id, expires_at) VALUES ($1, $2, $3)`,
+    [token, userId, expiresAt]
+  );
   return { token, expiresAt };
 }
 
-function revokeRefreshToken(token) {
-  db.prepare(`DELETE FROM refresh_tokens WHERE token = ?`).run(token);
+async function revokeRefreshToken(token) {
+  await pool.query(`DELETE FROM refresh_tokens WHERE token = $1`, [token]);
 }
 
-function revokeAllUserTokens(userId) {
-  db.prepare(`DELETE FROM refresh_tokens WHERE user_id = ?`).run(userId);
+async function revokeAllUserTokens(userId) {
+  await pool.query(`DELETE FROM refresh_tokens WHERE user_id = $1`, [userId]);
 }
 
-function pruneExpiredTokens() {
-  db.prepare(`DELETE FROM refresh_tokens WHERE expires_at < datetime('now')`).run();
+async function pruneExpiredTokens() {
+  await pool.query(`DELETE FROM refresh_tokens WHERE expires_at < NOW()`);
 }
 
 const SALT_ROUNDS = 12;
 async function hashPassword(plain) { return bcrypt.hash(plain, SALT_ROUNDS); }
 async function checkPassword(plain, hash) { return bcrypt.compare(plain, hash); }
 
-// Sem cookies — token vai no corpo da resposta, frontend guarda no localStorage
+const IS_PROD = process.env.NODE_ENV === 'production';
+
 function requireAuth(req, res, next) {
   const auth = req.headers.authorization;
   const token = auth && auth.startsWith('Bearer ') ? auth.slice(7) : null;
