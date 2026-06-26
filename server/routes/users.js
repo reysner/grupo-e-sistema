@@ -68,3 +68,26 @@ router.delete('/:id', async (req, res) => {
 });
 
 module.exports = router;
+
+// PATCH /api/users/:id/profile (name + email)
+router.patch('/:id/profile', async (req, res) => {
+  try {
+    const { name, email } = req.body;
+    if (!name || !email) return res.status(400).json({ error: 'Nome e e-mail são obrigatórios.' });
+
+    // Check email not taken by another user
+    const existing = await pool.query(
+      `SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2`, [email, req.params.id]
+    );
+    if (existing.rows.length > 0) return res.status(409).json({ error: 'E-mail já usado por outro usuário.' });
+
+    await pool.query(
+      `UPDATE users SET name = $1, email = $2, updated_at = NOW() WHERE id = $3`,
+      [name.trim(), email.toLowerCase().trim(), req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('PATCH profile error:', err);
+    res.status(500).json({ error: 'Erro ao atualizar perfil.' });
+  }
+});
