@@ -140,7 +140,7 @@
               <div class="field span2"><label>Demanda do Cliente <span class="req">*</span></label>
                 <select id="at-demanda"><option value="">Selecione a demanda</option><option>13º Salário (Folha de pagamento)</option><option>Admissões (Folha de pagamento)</option><option>Agendamento de reunião (Todos)</option><option>Alíquota Simples Nacional (Fiscal)</option><option>Alteração Contratual (Legalização)</option><option>Alteração do analista responsável (Todos)</option><option>Alvará de funcionamento (Legalização)</option><option>Alvará Sanitário (Legalização)</option><option>Análises de pendências (Todos)</option><option>Abertura de empresas (Legalização)</option><option>Assinar documento digitalmente (Todos)</option><option>Atendimentos de casos potencialmente relevantes (Todos)</option><option>Atualização cadastral (Sucesso do Cliente)</option><option>Auxílio ao GOV (Todos)</option><option>Cargos e Salários (Folha de pagamento)</option><option>Certidões (Legalização)</option><option>Certificado Digital (Legalização)</option><option>Contratos e períodos de experiência (Folha de pagamento)</option><option>Convenção coletiva (Folha de pagamento)</option><option>Demandas não contábeis (Todos)</option><option>Distribuição de lucros (Todos)</option><option>Documentos societários e cadastrais (Legalização)</option><option>Empresas medicina do trabalho (Folha de pagamento)</option><option>Empréstimo consignado (Folha de pagamento)</option><option>Enviar via e-mail (Todos)</option><option>Envio de Obrigações Acessórias (Todos)</option><option>Erro App Escritorial ou Questor Zen (Sucesso do Cliente)</option><option>Faturamento (Fiscal)</option><option>Fechamento contábil (Contábil)</option><option>Férias (Folha de pagamento)</option><option>FGTS (Folha de pagamento)</option><option>Honorários (Financeiro)</option><option>Holerites / Contracheques (Folha de pagamento)</option><option>Imposto de renda (Fiscal)</option><option>Informe de Rendimento (Folha de pagamento)</option><option>INSS (Folha de pagamento)</option><option>Jornada de trabalho / Carga horária / Feriados (Folha de pagamento)</option><option>Lucro acumulado (Contábil)</option><option>Notas Fiscais (Fiscal)</option><option>Notificação extrajudicial (Todos)</option><option>Orientações (Todos)</option><option>Parcelamentos (Todos)</option><option>Procurações (Todos)</option><option>Pró-labore (Folha de pagamento)</option><option>Possíveis churns decorrentes de insatisfação (Todos)</option><option>Recálculos (Todos)</option><option>Recebimento de arquivos / Documentos (Todos)</option><option>Regime tributário (Fiscal)</option><option>Reforma tributária (Fiscal)</option><option>Rescisões / Demissões (Folha de pagamento)</option><option>Sindicatos (Folha de pagamento)</option><option>Atestados (Folha de pagamento)</option><option>Outro</option></select>
               </div>
-              <div class="field span2" id="at-outro-wrap" hidden><label>Especifique a demanda <span class="req">*</span></label><input id="at-outro" type="text" placeholder="Descreva a demanda" /></div>
+              <div class="field span2" id="at-outro-wrap" hidden><label>Qual foi a demanda do cliente? <span class="req">*</span></label><input id="at-outro" type="text" placeholder="Descreva a demanda do cliente" /></div>
               <div class="field span2"><label>Resumo da Demanda <small class="opt">(opcional)</small></label><textarea id="at-resumo" placeholder="Digite um resumo"></textarea></div>
             </div>
             <button class="btn btn-primary btn-save" id="btn-at-save">Salvar Atendimento</button>
@@ -198,9 +198,16 @@
 
         <!-- CLIENTES SENSÍVEIS -->
         <section id="page-sensiveis" class="page" hidden>
-          <div style="display:flex;gap:10px;margin-bottom:16px;justify-content:flex-end">
-            <button class="btn btn-ghost btn-sm" onclick="App.Reports.exportCSV('sensiveis')">⬇ Exportar CSV</button>
-            <button class="btn btn-ghost btn-sm" onclick="App.Reports.exportPDF('sensiveis','Clientes Sensíveis')">🖨 Exportar PDF</button>
+          <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar por ano:</label>
+            <select id="cs-ano-filter" onchange="Sensiveis.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os anos</option>
+            </select>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm" onclick="Sensiveis.exportCSV()">⬇ Exportar CSV</button>
+              <button class="btn btn-ghost btn-sm" onclick="Sensiveis.exportPDF()">🖨 Exportar PDF</button>
+              <button class="btn btn-sm admin-only" onclick="Sensiveis.limpar()" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7">🗑 Limpar Registros</button>
+            </div>
           </div>
           <div class="form-card">
             <h2 class="form-title">Clientes Sensíveis</h2><div class="form-accent"></div>
@@ -215,7 +222,10 @@
               <div class="field"><label>Gravidade <span class="req">*</span></label>
                 <select id="cs-gravidade"><option value="">Selecione</option><option>Muito Alta</option><option>Alta</option><option>Média</option><option>Baixa</option><option>Muito Baixa</option></select>
               </div>
-              <div class="field span2" id="cs-outro-wrap" hidden><label>Especifique a Demonstração <span class="req">*</span></label><input id="cs-outro" type="text" placeholder="Descreva o que o cliente demonstrou" /></div>
+              <div class="field span2" id="cs-outro-wrap" hidden>
+                <label>Digite o que demonstrou <span class="req">*</span></label>
+                <input id="cs-outro" type="text" placeholder="Descreva o que o cliente demonstrou" />
+              </div>
               <div class="field span2"><label>Detalhe melhor o motivo do registro <small class="opt">(opcional)</small></label><textarea id="cs-detalhe" rows="3" placeholder="Descreva com mais detalhes o contexto ou histórico deste cliente..." style="resize:vertical"></textarea></div>
             </div>
             <button class="btn btn-primary btn-save" id="btn-cs-save">Salvar Cliente Sensível</button>
