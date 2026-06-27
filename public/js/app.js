@@ -262,7 +262,7 @@ const App = (() => {
       document.querySelectorAll(`.nav-item[data-page="${page}"]`).forEach(el => el.classList.add('active'));
       document.getElementById('page-title').textContent = PAGE_TITLES[page] || page;
       if (page === 'dashboard') Dashboard.load();
-      if (page === 'pesquisas')  PesquisasGrid.load();
+      if (page === 'pesquisas')  Pesquisas.loadGrid();
       if (page === 'admin')     Admin.load();
       return false;
     },
@@ -682,6 +682,10 @@ window.PesquisasGrid = PesquisasGrid;
 
 // ── Módulo Pesquisas — grade de registros ─────────────────────────────────────
 const Pesquisas = (() => {
+  let _allData = [];  // cache de todas as respostas
+
+  function _token() { return localStorage.getItem('ge_token') || ''; }
+
   function npsClass(nps) {
     if (nps <= 6) return 'background:#fff5f5';
     if (nps <= 8) return 'background:#fffff0';
@@ -694,14 +698,26 @@ const Pesquisas = (() => {
   }
   function starStr(n) { return '★'.repeat(n) + '☆'.repeat(5-n); }
 
-  async function loadGrid() {
-    const res = await API.get('/api/data/pesquisas?period=todos');
-    if (!res || !res.ok) return;
-    const { data } = await res.json();
+  function _populateYearFilter(data) {
+    const sel = document.getElementById('ps-ano-filter');
+    if (!sel) return;
+    const anos = [...new Set(data.map(r => new Date(r.created_at).getFullYear()))].sort((a,b) => b-a);
+    const current = sel.value;
+    sel.innerHTML = '<option value="todos">Todos os anos</option>' +
+      anos.map(a => `<option value="${a}" ${String(a) === current ? 'selected' : ''}>${a}</option>`).join('');
+  }
+
+  function _filterData(data) {
+    const ano = document.getElementById('ps-ano-filter')?.value || 'todos';
+    if (ano === 'todos') return data;
+    return data.filter(r => new Date(r.created_at).getFullYear() === Number(ano));
+  }
+
+  function _renderGrid(data) {
     const tbody = document.getElementById('ps-tbody');
     if (!tbody) return;
 
-    const baixos = data.filter(r => r.nps <= 6);
+    const baixos = data.filter(r => r.nps <= 6 && !r.tratado);
     const alertEl = document.getElementById('ps-alerta-baixo');
     const alertCount = document.getElementById('ps-alerta-count');
     if (alertEl) {
@@ -716,9 +732,15 @@ const Pesquisas = (() => {
 
     tbody.innerHTML = data.map(r => {
       const d = new Date(r.created_at).toLocaleString('pt-BR');
-      const origem = r.analista === 'Pesquisa Pública' 
+      const origem = r.analista === 'Pesquisa Pública'
         ? '<span style="background:var(--g100);color:var(--g700);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">🔗 Link público</span>'
         : '<span style="background:var(--gray-100);color:var(--gray-500);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">✏️ Manual</span>';
+      const statusBadge = r.tratado
+        ? '<span style="background:#f0fff4;color:#38a169;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">✔ Tratado</span>'
+        : '<span style="background:#fff5f5;color:#e53e3e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Pendente</span>';
+      const tratarBtn = App.Auth.isAdmin() && !r.tratado
+        ? ` <button class="btn btn-success btn-sm" onclick="PesquisasGrid.marcarTratado(\'${r.id}\')">Tratar</button>`
+        : '';
       return `<tr style="${npsClass(r.nps)}">
         <td style="font-size:12px;color:var(--gray-500)">${d}</td>
         <td style="font-weight:600">${r.cliente}</td>
@@ -727,10 +749,131 @@ const Pesquisas = (() => {
         <td style="text-align:center;font-size:16px;color:#f5c518">${starStr(r.csat)}</td>
         <td style="text-align:center;font-size:16px;color:#f5c518">${starStr(r.ces)}</td>
         <td>${origem}</td>
-        <td style="font-size:12px;color:var(--gray-500);max-width:200px;word-break:break-word">${r.pontos || '—'}</td>
-        <td><button class="btn btn-ghost btn-sm" onclick="Pesquisas.detail(${JSON.stringify(r).replace(/"/g,'&quot;')})">Ver</button></td>
+        <td>${statusBadge}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="Pesquisas.detail(${JSON.stringify(r).replace(/"/g,'&quot;')})">Ver</button>${tratarBtn}</td>
       </tr>`;
     }).join('');
+  }
+
+  async function loadGrid() {
+    const tbody = document.getElementById('ps-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+
+    const res = await fetch('/api/data/pesquisas?period=todos', {
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (!res || !res.ok) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar respostas.</td></tr>';
+      return;
+    }
+    const { data } = await res.json();
+    _allData = data || [];
+    _populateYearFilter(_allData);
+    _renderGrid(_filterData(_allData));
+  }
+
+  async function exportCSV() {
+    const data = _filterData(_allData);
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar no período selecionado.'); return; }
+    const cols = ['created_at','analista','cliente','cnpj','empresa','nps','csat','ces','pontos'];
+    const labels = { created_at:'Data', analista:'Analista', cliente:'Cliente', cnpj:'CNPJ',
+      empresa:'Empresa', nps:'NPS', csat:'CSAT', ces:'CES', pontos:'Pontos Destacados' };
+    const header = cols.map(c => labels[c]).join(';');
+    const rows = data.map(r => cols.map(c => {
+      let v = r[c] ?? '';
+      if (c === 'created_at') v = new Date(v).toLocaleString('pt-BR');
+      return `"${String(v).replace(/"/g,'""')}"`;
+    }).join(';'));
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ano = document.getElementById('ps-ano-filter')?.value || 'todos';
+    a.href = url; a.download = `pesquisas_${ano}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    App.Toast.ok('CSV exportado!');
+  }
+
+  async function exportPDF() {
+    const data = _filterData(_allData);
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar no período selecionado.'); return; }
+    const cols = ['created_at','cliente','empresa','nps','csat','ces','pontos'];
+    const labels = { created_at:'Data', cliente:'Cliente', empresa:'Empresa',
+      nps:'NPS', csat:'CSAT', ces:'CES', pontos:'Pontos Destacados' };
+    const ano = document.getElementById('ps-ano-filter')?.value || 'todos';
+    const titulo = ano === 'todos' ? 'Pesquisas de Satisfação — Todos os anos' : `Pesquisas de Satisfação — ${ano}`;
+    const rows = data.map(r =>
+      `<tr>${cols.map(c => {
+        let v = r[c] ?? '—';
+        if (c === 'created_at') v = new Date(v).toLocaleString('pt-BR');
+        return `<td>${v}</td>`;
+      }).join('')}</tr>`
+    ).join('');
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+    <title>${titulo}</title>
+    <style>
+      body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
+      h1{font-size:15px;color:#1a4233;margin-bottom:4px}
+      p.sub{color:#666;font-size:11px;margin-bottom:12px}
+      table{width:100%;border-collapse:collapse;font-size:10px}
+      th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
+      td{padding:5px 8px;border-bottom:1px solid #eee}
+      tr:nth-child(even) td{background:#f8f8f8}
+      @media print{body{margin:10px}}
+    </style></head><body>
+    <h1>Grupo-E — ${titulo}</h1>
+    <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${data.length} registros</p>
+    <table><thead><tr>${cols.map(c=>`<th>${labels[c]}</th>`).join('')}</tr></thead>
+    <tbody>${rows}</tbody></table>
+    <script>window.onload=()=>{window.print();}<\/script>
+    </body></html>`;
+    const win = window.open('', '_blank');
+    if (!win) { App.Toast.err('Permita popups para exportar PDF.'); return; }
+    win.document.write(html);
+    win.document.close();
+    App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
+  }
+
+  async function limpar() {
+    if (!App.Auth.isAdmin()) { App.Toast.err('Acesso restrito a administradores.'); return; }
+    const total = _allData.length;
+    if (!total) { App.Toast.err('Não há respostas para limpar.'); return; }
+
+    const confirmado = await new Promise(resolve => {
+      App.Modal.open(
+        '⚠️ Confirmar limpeza',
+        `<div style="text-align:center;padding:10px 0">
+          <p style="font-size:15px;margin-bottom:8px">Você está prestes a <strong>excluir permanentemente</strong></p>
+          <p style="font-size:28px;font-weight:800;color:#e53e3e;margin:12px 0">${total} resposta${total !== 1 ? 's' : ''}</p>
+          <p style="color:var(--gray-500);font-size:13px">Esta ação não pode ser desfeita.</p>
+          <div style="display:flex;gap:10px;justify-content:center;margin-top:20px">
+            <button class="btn btn-ghost" onclick="App.Modal.close()">Cancelar</button>
+            <button class="btn" style="background:#e53e3e;color:#fff;border:none"
+              onclick="document.dispatchEvent(new CustomEvent('ps-confirm-limpar'))">
+              Sim, limpar tudo
+            </button>
+          </div>
+        </div>`,
+        () => resolve(false)
+      );
+      document.addEventListener('ps-confirm-limpar', () => { App.Modal.close(); resolve(true); }, { once: true });
+    });
+
+    if (!confirmado) return;
+
+    const res = await fetch('/api/data/pesquisas/clear', {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (res && res.ok) {
+      _allData = [];
+      _renderGrid([]);
+      _populateYearFilter([]);
+      App.Toast.ok('Todas as respostas foram removidas.');
+    } else {
+      App.Toast.err('Erro ao limpar respostas. Tente novamente.');
+    }
   }
 
   function detail(r) {
@@ -751,7 +894,7 @@ const Pesquisas = (() => {
     `, () => App.Modal.close());
   }
 
-  return { loadGrid, detail };
+  return { loadGrid, exportCSV, exportPDF, limpar, detail };
 })();
 
 // Expor globalmente
