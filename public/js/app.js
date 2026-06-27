@@ -214,12 +214,34 @@ const App = (() => {
       Nav.go('dashboard');
     },
 
-    tryAutoLogin() {
+    async tryAutoLogin() {
       Store.load();
-      if (_accessToken && currentUser) {
+      if (!_accessToken || !currentUser) return false;
+
+      // Validate token silently against server
+      try {
+        const res = await fetch('/api/auth/me', {
+          headers: { 'Authorization': `Bearer ${_accessToken}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          Auth.onLoggedIn(data.user || currentUser);
+          return true;
+        }
+        // Token expired — try refresh before giving up
+        if (res.status === 401 && _refreshToken) {
+          const refreshed = await Auth.refresh();
+          if (refreshed) {
+            Auth.onLoggedIn(currentUser);
+            return true;
+          }
+        }
+      } catch {
+        // Offline/server sleeping — restore session optimistically
         Auth.onLoggedIn(currentUser);
         return true;
       }
+      Store.clear();
       return false;
     },
 
@@ -263,6 +285,7 @@ const App = (() => {
       document.getElementById('page-title').textContent = PAGE_TITLES[page] || page;
       if (page === 'dashboard') Dashboard.load();
       if (page === 'pesquisas')  Pesquisas.loadGrid();
+      if (page === 'sensiveis')   Sensiveis.loadGrid();
       if (page === 'admin')     Admin.load();
       return false;
     },
@@ -389,7 +412,10 @@ const App = (() => {
         cnpj: Util.val('cs-cnpj'), empresa: Util.val('cs-empresa'),
         demonstrou: Util.val('cs-demonstrou')==='Outro' ? Util.val('cs-outro') : Util.val('cs-demonstrou'), gravidade: Util.val('cs-gravidade'),
       }, ['cs-analista','cs-cliente','cs-cnpj','cs-empresa'], 'Cliente sensível registrado!');
-      document.getElementById('cs-demonstrou').value=''; document.getElementById('cs-gravidade').value='';
+      document.getElementById('cs-demonstrou').value='';
+      document.getElementById('cs-gravidade').value='';
+      document.getElementById('cs-outro-wrap').hidden = true;
+      Sensiveis.loadGrid();
     },
 
     async pesquisas() {
@@ -899,6 +925,57 @@ const Pesquisas = (() => {
 
 // Expor globalmente
 window.Pesquisas = Pesquisas;
+
+// ── Módulo Clientes Sensíveis — grade de registros ────────────────────────────
+const Sensiveis = (() => {
+  function _token() { return localStorage.getItem('ge_token') || ''; }
+
+  function _gravBadge(g) {
+    const map = {
+      'Muito Alta': '#e53e3e', 'Alta': '#dd6b20',
+      'Média': '#d69e2e', 'Baixa': '#38a169', 'Muito Baixa': '#2b6cb0'
+    };
+    const color = map[g] || '#718096';
+    return `<span style="background:${color}20;color:${color};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${g}</span>`;
+  }
+
+  async function loadGrid() {
+    const tbody = document.getElementById('cs-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+
+    const res = await fetch('/api/data/sensiveis?period=todos', {
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (!res || !res.ok) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar registros.</td></tr>';
+      return;
+    }
+    const { data } = await res.json();
+
+    if (!data || !data.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum cliente sensível registrado ainda.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = data.map(r => {
+      const d = new Date(r.created_at).toLocaleString('pt-BR');
+      return `<tr>
+        <td style="font-size:12px;color:var(--gray-500)">${d}</td>
+        <td>${r.analista}</td>
+        <td style="font-weight:600">${r.cliente}</td>
+        <td style="font-size:12px">${r.cnpj || '—'}</td>
+        <td>${r.empresa}</td>
+        <td>${r.demonstrou}</td>
+        <td>${_gravBadge(r.gravidade)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  return { loadGrid };
+})();
+
+window.Sensiveis = Sensiveis;
 
 
 
