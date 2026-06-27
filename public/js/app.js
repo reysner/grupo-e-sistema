@@ -408,9 +408,9 @@ const App = (() => {
       const gcCanal = Util.val('gc-canal') === 'Outro' ? Util.val('gc-canal-outro') : Util.val('gc-canal');
       const isEntrada = gcSol==='Constituição de empresa' || gcSol==='Cliente vindo de outro contador';
       const isSaida = gcSol==='Saída de empresa' || gcSol==='Baixa de empresa';
+      const token = localStorage.getItem('ge_token');
       // Se é entrada, registra automaticamente na carteira
       if (isEntrada && Util.val('gc-honorario')) {
-        const token = localStorage.getItem('ge_token');
         await fetch('/api/data/clientes', {
           method: 'POST',
           headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${token}` },
@@ -424,6 +424,27 @@ const App = (() => {
             cac: parseFloat(Util.val('gc-cac')) || 0,
           })
         });
+      }
+      // Se é saída/baixa, encerra o cliente na carteira pelo CNPJ
+      if (isSaida) {
+        const cnpj = Util.val('gc-cnpj');
+        const dataSaida = Util.val('gc-data-saida') || Util.val('gc-data');
+        const motivoSaida = Util.val('gc-motivo-saida') || gcSol;
+        // Buscar cliente pelo CNPJ para obter o ID
+        const resClientes = await fetch(`/api/data/clientes?status=ativo`, {
+          headers: { 'Authorization':`Bearer ${token}` }
+        });
+        if (resClientes && resClientes.ok) {
+          const { data } = await resClientes.json();
+          const cliente = data.find(c => c.cnpj === cnpj);
+          if (cliente) {
+            await fetch(`/api/data/clientes/${cliente.id}/encerrar`, {
+              method: 'PATCH',
+              headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${token}` },
+              body: JSON.stringify({ data_saida: dataSaida, motivo_saida: motivoSaida })
+            });
+          }
+        }
       }
       await Forms._submit('gestao', {
         analista: Util.val('gc-analista'), solicitacao: gcSol,
