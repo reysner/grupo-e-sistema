@@ -410,8 +410,10 @@ const App = (() => {
       await Forms._submit('sensiveis', {
         analista: Util.val('cs-analista'), cliente: Util.val('cs-cliente'),
         cnpj: Util.val('cs-cnpj'), empresa: Util.val('cs-empresa'),
-        demonstrou: Util.val('cs-demonstrou')==='Outro' ? Util.val('cs-outro') : Util.val('cs-demonstrou'), gravidade: Util.val('cs-gravidade'),
-      }, ['cs-analista','cs-cliente','cs-cnpj','cs-empresa'], 'Cliente sensível registrado!');
+        demonstrou: Util.val('cs-demonstrou')==='Outro' ? Util.val('cs-outro') : Util.val('cs-demonstrou'),
+        gravidade: Util.val('cs-gravidade'),
+        detalhe: Util.val('cs-detalhe') || null,
+      }, ['cs-analista','cs-cliente','cs-cnpj','cs-empresa','cs-detalhe'], 'Cliente sensível registrado!');
       document.getElementById('cs-demonstrou').value='';
       document.getElementById('cs-gravidade').value='';
       document.getElementById('cs-outro-wrap').hidden = true;
@@ -968,6 +970,7 @@ const Sensiveis = (() => {
         <td>${r.empresa}</td>
         <td>${r.demonstrou}</td>
         <td>${_gravBadge(r.gravidade)}</td>
+        <td style="font-size:12px;color:var(--gray-500);max-width:200px;word-break:break-word">${r.detalhe || '—'}</td>
       </tr>`;
     }).join('');
   }
