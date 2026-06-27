@@ -175,9 +175,16 @@
 
         <!-- INSATISFAÇÃO -->
         <section id="page-insatisfacao" class="page" hidden>
-          <div style="display:flex;gap:10px;margin-bottom:16px;justify-content:flex-end">
-            <button class="btn btn-ghost btn-sm" onclick="App.Reports.exportCSV('insatisfacoes')">⬇ Exportar CSV</button>
-            <button class="btn btn-ghost btn-sm" onclick="App.Reports.exportPDF('insatisfacoes','Insatisfação')">🖨 Exportar PDF</button>
+          <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar por ano:</label>
+            <select id="in-ano-filter" onchange="Insatisfacao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os anos</option>
+            </select>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm" onclick="Insatisfacao.exportCSV()">⬇ Exportar CSV</button>
+              <button class="btn btn-ghost btn-sm" onclick="Insatisfacao.exportPDF()">🖨 Exportar PDF</button>
+              <button class="btn btn-sm admin-only" onclick="Insatisfacao.limpar()" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7">🗑 Limpar Registros</button>
+            </div>
           </div>
           <div class="form-card">
             <h2 class="form-title">Insatisfação</h2><div class="form-accent"></div>
@@ -194,9 +201,24 @@
             </div>
             <button class="btn btn-primary btn-save" id="btn-in-save">Salvar Insatisfação</button>
           </div>
+
+          <!-- GRADE DE REGISTROS -->
+          <div class="form-card" style="margin-top:20px">
+            <h2 class="form-title">Registros de Insatisfação</h2><div class="form-accent"></div>
+            <div class="table-wrap">
+              <table class="data-table" id="in-grid">
+                <thead><tr>
+                  <th>Data</th><th>Analista</th><th>Cliente</th><th>CNPJ</th>
+                  <th>Empresa</th><th>Reclamado</th><th>Gravidade</th><th>Reclamação</th>
+                </tr></thead>
+                <tbody id="in-tbody"><tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
         </section>
 
         <!-- CLIENTES SENSÍVEIS -->
+
         <section id="page-sensiveis" class="page" hidden>
           <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
             <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar por ano:</label>
