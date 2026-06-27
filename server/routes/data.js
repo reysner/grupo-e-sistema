@@ -221,6 +221,7 @@ router.delete('/clear', requireAdmin, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.dataRouter = router;
 
 // ── ROTA PÚBLICA — pesquisa sem login ─────────────────────────────────────────
 const publicRouter = require('express').Router();
@@ -254,4 +255,4 @@ publicRouter.post('/pesquisa', async (req, res) => {
   }
 });
 
-module.exports.publicRouter = publicRouter;
+router.publicRouter = publicRouter;
