@@ -218,29 +218,43 @@ const App = (() => {
       Store.load();
       if (!_accessToken || !currentUser) return false;
 
-      // Validate token silently against server
+      // Show loading state immediately — hide auth screen while validating
+      document.getElementById('auth-screen').hidden = true;
+      document.getElementById('app').hidden = false;
+      document.getElementById('topbar-name').textContent = currentUser.name || '...';
+
+      // Validate token with a 5s timeout so slow Render wakeup doesn't block
       try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
         const res = await fetch('/api/auth/me', {
-          headers: { 'Authorization': `Bearer ${_accessToken}` }
+          headers: { 'Authorization': `Bearer ${_accessToken}` },
+          signal: controller.signal,
         });
+        clearTimeout(timeout);
+
         if (res.ok) {
           const data = await res.json();
           Auth.onLoggedIn(data.user || currentUser);
           return true;
         }
-        // Token expired — try refresh before giving up
+        // Token expired — try silent refresh
         if (res.status === 401 && _refreshToken) {
           const refreshed = await Auth.refresh();
-          if (refreshed) {
-            Auth.onLoggedIn(currentUser);
-            return true;
-          }
+          if (refreshed) { Auth.onLoggedIn(currentUser); return true; }
         }
-      } catch {
-        // Offline/server sleeping — restore session optimistically
-        Auth.onLoggedIn(currentUser);
-        return true;
+      } catch (e) {
+        // AbortError (timeout) or network error — server waking up
+        // Restore session optimistically; next API call will trigger refresh if needed
+        if (e.name === 'AbortError' || e instanceof TypeError) {
+          Auth.onLoggedIn(currentUser);
+          return true;
+        }
       }
+
+      // Token invalid and refresh failed — force logout
+      document.getElementById('auth-screen').hidden = false;
+      document.getElementById('app').hidden = true;
       Store.clear();
       return false;
     },
@@ -594,7 +608,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Auto login
-  App.Auth.tryAutoLogin();
+  (async () => { await App.Auth.tryAutoLogin(); })();
 });
 
 // ── Grade de Pesquisas ────────────────────────────────────────────────────────
