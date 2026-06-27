@@ -948,10 +948,30 @@ const Pesquisas = (() => {
 // Expor globalmente
 window.Pesquisas = Pesquisas;
 
-// ── Módulo Atendimento — grade ─────────────────────────────────────────────────────
+// ── Módulo Atendimento ─────────────────────────────────────────────────────────────
 const Atendimento = (() => {
   let _allData = [];
   function _token() { return localStorage.getItem('ge_token') || ''; }
+
+  function _populateYearFilter(data) {
+    const sel = document.getElementById('at-ano-filter');
+    if (!sel) return;
+    const anos = [...new Set(data.map(r => new Date(r.created_at).getFullYear()))].sort((a,b)=>b-a);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="todos">Todos os anos</option>' +
+      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>{a}</option>`).join('');
+  }
+
+  function _filterData(data) {
+    const ano = document.getElementById('at-ano-filter')?.value || 'todos';
+    const mes = document.getElementById('at-mes-filter')?.value || 'todos';
+    return data.filter(r => {
+      const d = new Date(r.created_at);
+      if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
+      if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
+      return true;
+    });
+  }
 
   function _renderGrid(data) {
     const tbody = document.getElementById('at-tbody');
@@ -962,17 +982,15 @@ const Atendimento = (() => {
     }
     tbody.innerHTML = data.map(r => {
       const d = new Date(r.created_at).toLocaleString('pt-BR');
+      const lixeira = App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Atendimento.excluir('${r.id}')" title="Excluir">🗑</button>` : '';
       return `<tr>
         <td style="font-size:12px;color:var(--gray-500)">${d}</td>
-        <td>${r.analista}</td>
-        <td style="font-weight:600">${r.cliente}</td>
-        <td style="font-size:12px">${r.cnpj || '—'}</td>
-        <td>${r.empresa}</td>
-        <td>${r.departamento || '—'}</td>
-        <td style="font-size:12px;max-width:180px;word-break:break-word">${r.demanda}</td>
-        <td style="font-size:12px;color:var(--gray-500);max-width:150px;word-break:break-word">${r.resumo || '—'}</td>
-        <td>${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Atendimento.excluir('${r.id}')" title="Excluir">🗑</button>` : ''}</td>
-      </tr>`;
+        <td>${r.analista}</td><td style="font-weight:600">${r.cliente}</td>
+        <td style="font-size:12px">${r.cnpj||'—'}</td><td>${r.empresa}</td>
+        <td>${r.departamento||'—'}</td>
+        <td style="font-size:12px;max-width:150px;word-break:break-word">${r.demanda}</td>
+        <td style="font-size:12px;color:var(--gray-500);max-width:150px;word-break:break-word">${r.resumo||'—'}</td>
+        <td>${lixeira}</td></tr>`;
     }).join('');
   }
 
@@ -989,31 +1007,128 @@ const Atendimento = (() => {
     }
     const { data } = await res.json();
     _allData = data || [];
-    _renderGrid(_allData);
+    _populateYearFilter(_allData);
+    _renderGrid(_filterData(_allData));
+  }
+
+  function exportCSV() {
+    const data = _filterData(_allData);
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
+    const cols = ['created_at', 'analista', 'cliente', 'cnpj', 'empresa', 'departamento', 'demanda', 'resumo'];
+    const labels = {'created_at':'Data','analista':'Analista','cliente':'Cliente','cnpj':'CNPJ','empresa':'Empresa','departamento':'Departamento','demanda':'Demanda','resumo':'Resumo'};
+    const header = cols.map(c=>labels[c]||c).join(';');
+    const rows = data.map(r => cols.map(c => {
+      let v = r[c] ?? '';
+      if (c==='created_at') v = new Date(v).toLocaleString('pt-BR');
+      return `"${String(v).replace(/"/g,'""')}"`;
+    }).join(';'));
+    const csv = [header,...rows].join('\n');
+    const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ano = document.getElementById('at-ano-filter')?.value||'todos';
+    const mes = document.getElementById('at-mes-filter')?.value||'todos';
+    a.href=url; a.download=`atendimentos_${ano}_${mes}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    App.Toast.ok('CSV exportado!');
+  }
+
+  function exportPDF() {
+    const data = _filterData(_allData);
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
+    const cols = ['created_at', 'analista', 'cliente', 'cnpj', 'empresa', 'departamento', 'demanda', 'resumo'];
+    const labels = {'created_at':'Data','analista':'Analista','cliente':'Cliente','cnpj':'CNPJ','empresa':'Empresa','departamento':'Departamento','demanda':'Demanda','resumo':'Resumo'};
+    const ano = document.getElementById('at-ano-filter')?.value||'todos';
+    const mes = document.getElementById('at-mes-filter')?.value||'todos';
+    const titulo = `Atendimento — ${ano==='todos'?'Todos os anos':ano} / ${mes==='todos'?'Todos os meses':mes}`;
+    const rows = data.map(r=>`<tr>${cols.map(c=>{let v=r[c]??'—';if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');return`<td>${v}</td>`;})}</tr>`).join('');
+    const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
+    <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
+    h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
+    table{width:100%;border-collapse:collapse;font-size:10px}
+    th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
+    td{padding:5px 8px;border-bottom:1px solid #eee}tr:nth-child(even) td{background:#f8f8f8}
+    @media print{body{margin:10px}}</style></head><body>
+    <h1>Grupo-E — ${titulo}</h1>
+    <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${data.length} registros</p>
+    <table><thead><tr>${cols.map(c=>`<th>${labels[c]||c}</th>`).join('')}</tr></thead>
+    <tbody>${rows}</tbody></table>
+    <script>window.onload=()=>{window.print();}<\/script></body></html>`;
+    const win=window.open('','_blank');
+    if(!win){App.Toast.err('Permita popups para exportar PDF.');return;}
+    win.document.write(html);win.document.close();
+    App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
+  }
+
+  async function limpar() {
+    if (!App.Auth.isAdmin()) { App.Toast.err('Acesso restrito a administradores.'); return; }
+    const total = _allData.length;
+    if (!total) { App.Toast.err('Não há registros para limpar.'); return; }
+    const confirmado = await new Promise(resolve => {
+      App.Modal.open('⚠️ Confirmar limpeza',
+        `<div style="text-align:center;padding:10px 0">
+          <p style="font-size:15px;margin-bottom:8px">Você está prestes a <strong>excluir permanentemente</strong></p>
+          <p style="font-size:28px;font-weight:800;color:#e53e3e;margin:12px 0">${total} registro${total!==1?'s':''}</p>
+          <p style="color:var(--gray-500);font-size:13px">Esta ação não pode ser desfeita.</p>
+          <div style="display:flex;gap:10px;justify-content:center;margin-top:20px">
+            <button class="btn btn-ghost" onclick="App.Modal.close()">Cancelar</button>
+            <button class="btn" style="background:#e53e3e;color:#fff;border:none"
+              onclick="document.dispatchEvent(new CustomEvent('at-confirm-limpar'))">Sim, limpar tudo</button>
+          </div>
+        </div>`, () => resolve(false));
+      document.addEventListener('at-confirm-limpar', () => { App.Modal.close(); resolve(true); }, {once:true});
+    });
+    if (!confirmado) return;
+    const res = await fetch('/api/data/atendimentos/clear', {
+      method:'DELETE', headers:{'Authorization':`Bearer ${_token()}`}
+    });
+    if (res && res.ok) {
+      _allData=[]; _renderGrid([]); _populateYearFilter([]);
+      App.Toast.ok('Todos os registros foram removidos.');
+    } else { App.Toast.err('Erro ao limpar registros.'); }
   }
 
   async function excluir(id) {
     if (!App.Auth.isAdmin()) return;
     const res = await fetch(`/api/data/atendimentos/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${_token()}` }
+      method:'DELETE', headers:{'Authorization':`Bearer ${_token()}`}
     });
     if (res && res.ok) {
-      _allData = _allData.filter(r => r.id !== id);
-      _renderGrid(_allData);
+      _allData = _allData.filter(r=>r.id!==id);
+      _renderGrid(_filterData(_allData));
       App.Toast.ok('Registro excluído.');
     } else { App.Toast.err('Erro ao excluir.'); }
   }
 
-  return { loadGrid, excluir };
+  return { loadGrid, exportCSV, exportPDF, limpar, excluir };
 })();
 
 window.Atendimento = Atendimento;
 
-// ── Módulo Gestão — grade ─────────────────────────────────────────────────────
+// ── Módulo Gestão de Clientes ─────────────────────────────────────────────────────────────
 const Gestao = (() => {
   let _allData = [];
   function _token() { return localStorage.getItem('ge_token') || ''; }
+
+  function _populateYearFilter(data) {
+    const sel = document.getElementById('gc-ano-filter');
+    if (!sel) return;
+    const anos = [...new Set(data.map(r => new Date(r.created_at).getFullYear()))].sort((a,b)=>b-a);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="todos">Todos os anos</option>' +
+      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>{a}</option>`).join('');
+  }
+
+  function _filterData(data) {
+    const ano = document.getElementById('gc-ano-filter')?.value || 'todos';
+    const mes = document.getElementById('gc-mes-filter')?.value || 'todos';
+    return data.filter(r => {
+      const d = new Date(r.created_at);
+      if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
+      if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
+      return true;
+    });
+  }
 
   function _renderGrid(data) {
     const tbody = document.getElementById('gc-tbody');
@@ -1024,16 +1139,14 @@ const Gestao = (() => {
     }
     tbody.innerHTML = data.map(r => {
       const d = new Date(r.created_at).toLocaleString('pt-BR');
+      const lixeira = App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Gestao.excluir('${r.id}')" title="Excluir">🗑</button>` : '';
       return `<tr>
         <td style="font-size:12px;color:var(--gray-500)">${d}</td>
-        <td>${r.analista}</td>
-        <td style="font-size:12px">${r.cnpj || '—'}</td>
-        <td style="font-weight:600">${r.empresa}</td>
-        <td>${r.solicitacao}</td>
-        <td>${r.canal || '—'}</td>
-        <td style="font-size:12px;color:var(--gray-500);max-width:180px;word-break:break-word">${r.motivo || '—'}</td>
-        <td>${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Gestao.excluir('${r.id}')" title="Excluir">🗑</button>` : ''}</td>
-      </tr>`;
+        <td>${r.analista}</td><td style="font-size:12px">${r.cnpj||'—'}</td>
+        <td style="font-weight:600">${r.empresa}</td><td>${r.solicitacao}</td>
+        <td>${r.canal||'—'}</td>
+        <td style="font-size:12px;color:var(--gray-500);max-width:150px;word-break:break-word">${r.motivo||'—'}</td>
+        <td>${lixeira}</td></tr>`;
     }).join('');
   }
 
@@ -1050,31 +1163,128 @@ const Gestao = (() => {
     }
     const { data } = await res.json();
     _allData = data || [];
-    _renderGrid(_allData);
+    _populateYearFilter(_allData);
+    _renderGrid(_filterData(_allData));
+  }
+
+  function exportCSV() {
+    const data = _filterData(_allData);
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
+    const cols = ['created_at', 'analista', 'cnpj', 'empresa', 'solicitacao', 'canal', 'motivo'];
+    const labels = {'created_at':'Data','analista':'Analista','cnpj':'CNPJ','empresa':'Empresa','solicitacao':'Solicitação','canal':'Canal','motivo':'Motivo'};
+    const header = cols.map(c=>labels[c]||c).join(';');
+    const rows = data.map(r => cols.map(c => {
+      let v = r[c] ?? '';
+      if (c==='created_at') v = new Date(v).toLocaleString('pt-BR');
+      return `"${String(v).replace(/"/g,'""')}"`;
+    }).join(';'));
+    const csv = [header,...rows].join('\n');
+    const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ano = document.getElementById('gc-ano-filter')?.value||'todos';
+    const mes = document.getElementById('gc-mes-filter')?.value||'todos';
+    a.href=url; a.download=`gestao_${ano}_${mes}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    App.Toast.ok('CSV exportado!');
+  }
+
+  function exportPDF() {
+    const data = _filterData(_allData);
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
+    const cols = ['created_at', 'analista', 'cnpj', 'empresa', 'solicitacao', 'canal', 'motivo'];
+    const labels = {'created_at':'Data','analista':'Analista','cnpj':'CNPJ','empresa':'Empresa','solicitacao':'Solicitação','canal':'Canal','motivo':'Motivo'};
+    const ano = document.getElementById('gc-ano-filter')?.value||'todos';
+    const mes = document.getElementById('gc-mes-filter')?.value||'todos';
+    const titulo = `Gestão de Clientes — ${ano==='todos'?'Todos os anos':ano} / ${mes==='todos'?'Todos os meses':mes}`;
+    const rows = data.map(r=>`<tr>${cols.map(c=>{let v=r[c]??'—';if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');return`<td>${v}</td>`;})}</tr>`).join('');
+    const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
+    <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
+    h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
+    table{width:100%;border-collapse:collapse;font-size:10px}
+    th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
+    td{padding:5px 8px;border-bottom:1px solid #eee}tr:nth-child(even) td{background:#f8f8f8}
+    @media print{body{margin:10px}}</style></head><body>
+    <h1>Grupo-E — ${titulo}</h1>
+    <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${data.length} registros</p>
+    <table><thead><tr>${cols.map(c=>`<th>${labels[c]||c}</th>`).join('')}</tr></thead>
+    <tbody>${rows}</tbody></table>
+    <script>window.onload=()=>{window.print();}<\/script></body></html>`;
+    const win=window.open('','_blank');
+    if(!win){App.Toast.err('Permita popups para exportar PDF.');return;}
+    win.document.write(html);win.document.close();
+    App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
+  }
+
+  async function limpar() {
+    if (!App.Auth.isAdmin()) { App.Toast.err('Acesso restrito a administradores.'); return; }
+    const total = _allData.length;
+    if (!total) { App.Toast.err('Não há registros para limpar.'); return; }
+    const confirmado = await new Promise(resolve => {
+      App.Modal.open('⚠️ Confirmar limpeza',
+        `<div style="text-align:center;padding:10px 0">
+          <p style="font-size:15px;margin-bottom:8px">Você está prestes a <strong>excluir permanentemente</strong></p>
+          <p style="font-size:28px;font-weight:800;color:#e53e3e;margin:12px 0">${total} registro${total!==1?'s':''}</p>
+          <p style="color:var(--gray-500);font-size:13px">Esta ação não pode ser desfeita.</p>
+          <div style="display:flex;gap:10px;justify-content:center;margin-top:20px">
+            <button class="btn btn-ghost" onclick="App.Modal.close()">Cancelar</button>
+            <button class="btn" style="background:#e53e3e;color:#fff;border:none"
+              onclick="document.dispatchEvent(new CustomEvent('gc-confirm-limpar'))">Sim, limpar tudo</button>
+          </div>
+        </div>`, () => resolve(false));
+      document.addEventListener('gc-confirm-limpar', () => { App.Modal.close(); resolve(true); }, {once:true});
+    });
+    if (!confirmado) return;
+    const res = await fetch('/api/data/gestao/clear', {
+      method:'DELETE', headers:{'Authorization':`Bearer ${_token()}`}
+    });
+    if (res && res.ok) {
+      _allData=[]; _renderGrid([]); _populateYearFilter([]);
+      App.Toast.ok('Todos os registros foram removidos.');
+    } else { App.Toast.err('Erro ao limpar registros.'); }
   }
 
   async function excluir(id) {
     if (!App.Auth.isAdmin()) return;
     const res = await fetch(`/api/data/gestao/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${_token()}` }
+      method:'DELETE', headers:{'Authorization':`Bearer ${_token()}`}
     });
     if (res && res.ok) {
-      _allData = _allData.filter(r => r.id !== id);
-      _renderGrid(_allData);
+      _allData = _allData.filter(r=>r.id!==id);
+      _renderGrid(_filterData(_allData));
       App.Toast.ok('Registro excluído.');
     } else { App.Toast.err('Erro ao excluir.'); }
   }
 
-  return { loadGrid, excluir };
+  return { loadGrid, exportCSV, exportPDF, limpar, excluir };
 })();
 
 window.Gestao = Gestao;
 
-// ── Módulo Recuperação — grade ─────────────────────────────────────────────────────
+// ── Módulo Recuperação de Experiência ─────────────────────────────────────────────────────────────
 const Recuperacao = (() => {
   let _allData = [];
   function _token() { return localStorage.getItem('ge_token') || ''; }
+
+  function _populateYearFilter(data) {
+    const sel = document.getElementById('rc-ano-filter');
+    if (!sel) return;
+    const anos = [...new Set(data.map(r => new Date(r.created_at).getFullYear()))].sort((a,b)=>b-a);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="todos">Todos os anos</option>' +
+      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>{a}</option>`).join('');
+  }
+
+  function _filterData(data) {
+    const ano = document.getElementById('rc-ano-filter')?.value || 'todos';
+    const mes = document.getElementById('rc-mes-filter')?.value || 'todos';
+    return data.filter(r => {
+      const d = new Date(r.created_at);
+      if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
+      if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
+      return true;
+    });
+  }
 
   function _renderGrid(data) {
     const tbody = document.getElementById('rc-tbody');
@@ -1085,17 +1295,15 @@ const Recuperacao = (() => {
     }
     tbody.innerHTML = data.map(r => {
       const d = new Date(r.created_at).toLocaleString('pt-BR');
-      const gravColor = {'Muito Alta':'#e53e3e','Alta':'#dd6b20','Média':'#d69e2e','Baixa':'#38a169','Muito Baixa':'#2b6cb0'}[r.gravidade]||'#718096';
+      const lixeira = App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Recuperacao.excluir('${r.id}')" title="Excluir">🗑</button>` : '';
+      const gc={'Muito Alta':'#e53e3e','Alta':'#dd6b20','Média':'#d69e2e','Baixa':'#38a169','Muito Baixa':'#2b6cb0'}[r.gravidade]||'#718096';
       return `<tr>
         <td style="font-size:12px;color:var(--gray-500)">${d}</td>
-        <td>${r.analista}</td>
-        <td style="font-weight:600">${r.cliente}</td>
-        <td style="font-size:12px">${r.cnpj || '—'}</td>
-        <td>${r.empresa}</td>
-        <td><span style="background:${gravColor}20;color:${gravColor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${r.gravidade}</span></td>
-        <td style="font-size:12px;color:var(--gray-500);max-width:200px;word-break:break-word">${r.demonstrou}</td>
-        <td>${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Recuperacao.excluir('${r.id}')" title="Excluir">🗑</button>` : ''}</td>
-      </tr>`;
+        <td>${r.analista}</td><td style="font-weight:600">${r.cliente}</td>
+        <td style="font-size:12px">${r.cnpj||'—'}</td><td>${r.empresa}</td>
+        <td><span style="background:${gc}20;color:${gc};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${r.gravidade}</span></td>
+        <td style="font-size:12px;color:var(--gray-500);max-width:150px;word-break:break-word">${r.demonstrou}</td>
+        <td>${lixeira}</td></tr>`;
     }).join('');
   }
 
@@ -1112,54 +1320,127 @@ const Recuperacao = (() => {
     }
     const { data } = await res.json();
     _allData = data || [];
-    _renderGrid(_allData);
+    _populateYearFilter(_allData);
+    _renderGrid(_filterData(_allData));
+  }
+
+  function exportCSV() {
+    const data = _filterData(_allData);
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
+    const cols = ['created_at', 'analista', 'cliente', 'cnpj', 'empresa', 'gravidade', 'demonstrou'];
+    const labels = {'created_at':'Data','analista':'Analista','cliente':'Cliente','cnpj':'CNPJ','empresa':'Empresa','gravidade':'Gravidade','demonstrou':'Demonstrou'};
+    const header = cols.map(c=>labels[c]||c).join(';');
+    const rows = data.map(r => cols.map(c => {
+      let v = r[c] ?? '';
+      if (c==='created_at') v = new Date(v).toLocaleString('pt-BR');
+      return `"${String(v).replace(/"/g,'""')}"`;
+    }).join(';'));
+    const csv = [header,...rows].join('\n');
+    const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ano = document.getElementById('rc-ano-filter')?.value||'todos';
+    const mes = document.getElementById('rc-mes-filter')?.value||'todos';
+    a.href=url; a.download=`recuperacoes_${ano}_${mes}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    App.Toast.ok('CSV exportado!');
+  }
+
+  function exportPDF() {
+    const data = _filterData(_allData);
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
+    const cols = ['created_at', 'analista', 'cliente', 'cnpj', 'empresa', 'gravidade', 'demonstrou'];
+    const labels = {'created_at':'Data','analista':'Analista','cliente':'Cliente','cnpj':'CNPJ','empresa':'Empresa','gravidade':'Gravidade','demonstrou':'Demonstrou'};
+    const ano = document.getElementById('rc-ano-filter')?.value||'todos';
+    const mes = document.getElementById('rc-mes-filter')?.value||'todos';
+    const titulo = `Recuperação de Experiência — ${ano==='todos'?'Todos os anos':ano} / ${mes==='todos'?'Todos os meses':mes}`;
+    const rows = data.map(r=>`<tr>${cols.map(c=>{let v=r[c]??'—';if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');return`<td>${v}</td>`;})}</tr>`).join('');
+    const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
+    <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
+    h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
+    table{width:100%;border-collapse:collapse;font-size:10px}
+    th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
+    td{padding:5px 8px;border-bottom:1px solid #eee}tr:nth-child(even) td{background:#f8f8f8}
+    @media print{body{margin:10px}}</style></head><body>
+    <h1>Grupo-E — ${titulo}</h1>
+    <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${data.length} registros</p>
+    <table><thead><tr>${cols.map(c=>`<th>${labels[c]||c}</th>`).join('')}</tr></thead>
+    <tbody>${rows}</tbody></table>
+    <script>window.onload=()=>{window.print();}<\/script></body></html>`;
+    const win=window.open('','_blank');
+    if(!win){App.Toast.err('Permita popups para exportar PDF.');return;}
+    win.document.write(html);win.document.close();
+    App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
+  }
+
+  async function limpar() {
+    if (!App.Auth.isAdmin()) { App.Toast.err('Acesso restrito a administradores.'); return; }
+    const total = _allData.length;
+    if (!total) { App.Toast.err('Não há registros para limpar.'); return; }
+    const confirmado = await new Promise(resolve => {
+      App.Modal.open('⚠️ Confirmar limpeza',
+        `<div style="text-align:center;padding:10px 0">
+          <p style="font-size:15px;margin-bottom:8px">Você está prestes a <strong>excluir permanentemente</strong></p>
+          <p style="font-size:28px;font-weight:800;color:#e53e3e;margin:12px 0">${total} registro${total!==1?'s':''}</p>
+          <p style="color:var(--gray-500);font-size:13px">Esta ação não pode ser desfeita.</p>
+          <div style="display:flex;gap:10px;justify-content:center;margin-top:20px">
+            <button class="btn btn-ghost" onclick="App.Modal.close()">Cancelar</button>
+            <button class="btn" style="background:#e53e3e;color:#fff;border:none"
+              onclick="document.dispatchEvent(new CustomEvent('rc-confirm-limpar'))">Sim, limpar tudo</button>
+          </div>
+        </div>`, () => resolve(false));
+      document.addEventListener('rc-confirm-limpar', () => { App.Modal.close(); resolve(true); }, {once:true});
+    });
+    if (!confirmado) return;
+    const res = await fetch('/api/data/recuperacoes/clear', {
+      method:'DELETE', headers:{'Authorization':`Bearer ${_token()}`}
+    });
+    if (res && res.ok) {
+      _allData=[]; _renderGrid([]); _populateYearFilter([]);
+      App.Toast.ok('Todos os registros foram removidos.');
+    } else { App.Toast.err('Erro ao limpar registros.'); }
   }
 
   async function excluir(id) {
     if (!App.Auth.isAdmin()) return;
     const res = await fetch(`/api/data/recuperacoes/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${_token()}` }
+      method:'DELETE', headers:{'Authorization':`Bearer ${_token()}`}
     });
     if (res && res.ok) {
-      _allData = _allData.filter(r => r.id !== id);
-      _renderGrid(_allData);
+      _allData = _allData.filter(r=>r.id!==id);
+      _renderGrid(_filterData(_allData));
       App.Toast.ok('Registro excluído.');
     } else { App.Toast.err('Erro ao excluir.'); }
   }
 
-  return { loadGrid, excluir };
+  return { loadGrid, exportCSV, exportPDF, limpar, excluir };
 })();
 
 window.Recuperacao = Recuperacao;
 
-// ── Módulo Insatisfação — grade de registros ─────────────────────────────────
+// ── Módulo Insatisfação ─────────────────────────────────────────────────────────────
 const Insatisfacao = (() => {
   let _allData = [];
   function _token() { return localStorage.getItem('ge_token') || ''; }
 
-  function _gravBadge(g) {
-    const map = {
-      'Muito Alta': '#e53e3e', 'Alta': '#dd6b20',
-      'Média': '#d69e2e', 'Baixa': '#38a169', 'Muito Baixa': '#2b6cb0'
-    };
-    const color = map[g] || '#718096';
-    return `<span style="background:${color}20;color:${color};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${g}</span>`;
-  }
-
   function _populateYearFilter(data) {
     const sel = document.getElementById('in-ano-filter');
     if (!sel) return;
-    const anos = [...new Set(data.map(r => new Date(r.created_at).getFullYear()))].sort((a,b) => b-a);
-    const current = sel.value;
+    const anos = [...new Set(data.map(r => new Date(r.created_at).getFullYear()))].sort((a,b)=>b-a);
+    const cur = sel.value;
     sel.innerHTML = '<option value="todos">Todos os anos</option>' +
-      anos.map(a => `<option value="${a}" ${String(a) === current ? 'selected' : ''}>${a}</option>`).join('');
+      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>{a}</option>`).join('');
   }
 
   function _filterData(data) {
     const ano = document.getElementById('in-ano-filter')?.value || 'todos';
-    if (ano === 'todos') return data;
-    return data.filter(r => new Date(r.created_at).getFullYear() === Number(ano));
+    const mes = document.getElementById('in-mes-filter')?.value || 'todos';
+    return data.filter(r => {
+      const d = new Date(r.created_at);
+      if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
+      if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
+      return true;
+    });
   }
 
   function _renderGrid(data) {
@@ -1171,17 +1452,16 @@ const Insatisfacao = (() => {
     }
     tbody.innerHTML = data.map(r => {
       const d = new Date(r.created_at).toLocaleString('pt-BR');
+      const lixeira = App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Insatisfacao.excluir('${r.id}')" title="Excluir">🗑</button>` : '';
+      const gc={'Muito Alta':'#e53e3e','Alta':'#dd6b20','Média':'#d69e2e','Baixa':'#38a169','Muito Baixa':'#2b6cb0'}[r.gravidade]||'#718096';
       return `<tr>
         <td style="font-size:12px;color:var(--gray-500)">${d}</td>
-        <td>${r.analista}</td>
-        <td style="font-weight:600">${r.cliente}</td>
-        <td style="font-size:12px">${r.cnpj || '—'}</td>
-        <td>${r.empresa}</td>
-        <td>${r.reclamado || '—'}</td>
-        <td>${_gravBadge(r.gravidade)}</td>
-        <td style="font-size:12px;color:var(--gray-500);max-width:200px;word-break:break-word">${r.reclamacao}</td>
-        <td>${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Insatisfacao.excluir('${r.id}')" title="Excluir">🗑</button>` : ''}</td>
-      </tr>`;
+        <td>${r.analista}</td><td style="font-weight:600">${r.cliente}</td>
+        <td style="font-size:12px">${r.cnpj||'—'}</td><td>${r.empresa}</td>
+        <td>${r.reclamado||'—'}</td>
+        <td><span style="background:${gc}20;color:${gc};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${r.gravidade}</span></td>
+        <td style="font-size:12px;color:var(--gray-500);max-width:150px;word-break:break-word">${r.reclamacao}</td>
+        <td>${lixeira}</td></tr>`;
     }).join('');
   }
 
@@ -1193,7 +1473,7 @@ const Insatisfacao = (() => {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar registros.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data } = await res.json();
@@ -1205,21 +1485,21 @@ const Insatisfacao = (() => {
   function exportCSV() {
     const data = _filterData(_allData);
     if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const cols = ['created_at','analista','cliente','cnpj','empresa','reclamado','gravidade','reclamacao'];
-    const labels = { created_at:'Data', analista:'Analista', cliente:'Cliente', cnpj:'CNPJ',
-      empresa:'Empresa', reclamado:'Reclamado', gravidade:'Gravidade', reclamacao:'Reclamação' };
-    const header = cols.map(c => labels[c]).join(';');
+    const cols = ['created_at', 'analista', 'cliente', 'cnpj', 'empresa', 'reclamado', 'gravidade', 'reclamacao'];
+    const labels = {'created_at':'Data','analista':'Analista','cliente':'Cliente','cnpj':'CNPJ','empresa':'Empresa','reclamado':'Reclamado','gravidade':'Gravidade','reclamacao':'Reclamação'};
+    const header = cols.map(c=>labels[c]||c).join(';');
     const rows = data.map(r => cols.map(c => {
       let v = r[c] ?? '';
-      if (c === 'created_at') v = new Date(v).toLocaleString('pt-BR');
+      if (c==='created_at') v = new Date(v).toLocaleString('pt-BR');
       return `"${String(v).replace(/"/g,'""')}"`;
     }).join(';'));
-    const csv = [header, ...rows].join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const csv = [header,...rows].join('\n');
+    const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const ano = document.getElementById('in-ano-filter')?.value || 'todos';
-    a.href = url; a.download = `insatisfacoes_${ano}_${new Date().toISOString().slice(0,10)}.csv`;
+    const ano = document.getElementById('in-ano-filter')?.value||'todos';
+    const mes = document.getElementById('in-mes-filter')?.value||'todos';
+    a.href=url; a.download=`insatisfacoes_${ano}_${mes}_${new Date().toISOString().slice(0,10)}.csv`;
     a.click(); URL.revokeObjectURL(url);
     App.Toast.ok('CSV exportado!');
   }
@@ -1227,39 +1507,27 @@ const Insatisfacao = (() => {
   function exportPDF() {
     const data = _filterData(_allData);
     if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const cols = ['created_at','analista','cliente','empresa','reclamado','gravidade','reclamacao'];
-    const labels = { created_at:'Data', analista:'Analista', cliente:'Cliente',
-      empresa:'Empresa', reclamado:'Reclamado', gravidade:'Gravidade', reclamacao:'Reclamação' };
-    const ano = document.getElementById('in-ano-filter')?.value || 'todos';
-    const titulo = ano === 'todos' ? 'Insatisfação — Todos os anos' : `Insatisfação — ${ano}`;
-    const rows = data.map(r =>
-      `<tr>${cols.map(c => {
-        let v = r[c] ?? '—';
-        if (c === 'created_at') v = new Date(v).toLocaleString('pt-BR');
-        return `<td>${v}</td>`;
-      }).join('')}</tr>`
-    ).join('');
-    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-    <title>${titulo}</title>
-    <style>
-      body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
-      h1{font-size:15px;color:#1a4233;margin-bottom:4px}
-      p.sub{color:#666;font-size:11px;margin-bottom:12px}
-      table{width:100%;border-collapse:collapse;font-size:10px}
-      th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
-      td{padding:5px 8px;border-bottom:1px solid #eee}
-      tr:nth-child(even) td{background:#f8f8f8}
-      @media print{body{margin:10px}}
-    </style></head><body>
+    const cols = ['created_at', 'analista', 'cliente', 'cnpj', 'empresa', 'reclamado', 'gravidade', 'reclamacao'];
+    const labels = {'created_at':'Data','analista':'Analista','cliente':'Cliente','cnpj':'CNPJ','empresa':'Empresa','reclamado':'Reclamado','gravidade':'Gravidade','reclamacao':'Reclamação'};
+    const ano = document.getElementById('in-ano-filter')?.value||'todos';
+    const mes = document.getElementById('in-mes-filter')?.value||'todos';
+    const titulo = `Insatisfação — ${ano==='todos'?'Todos os anos':ano} / ${mes==='todos'?'Todos os meses':mes}`;
+    const rows = data.map(r=>`<tr>${cols.map(c=>{let v=r[c]??'—';if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');return`<td>${v}</td>`;})}</tr>`).join('');
+    const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
+    <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
+    h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
+    table{width:100%;border-collapse:collapse;font-size:10px}
+    th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
+    td{padding:5px 8px;border-bottom:1px solid #eee}tr:nth-child(even) td{background:#f8f8f8}
+    @media print{body{margin:10px}}</style></head><body>
     <h1>Grupo-E — ${titulo}</h1>
     <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${data.length} registros</p>
-    <table><thead><tr>${cols.map(c=>`<th>${labels[c]}</th>`).join('')}</tr></thead>
+    <table><thead><tr>${cols.map(c=>`<th>${labels[c]||c}</th>`).join('')}</tr></thead>
     <tbody>${rows}</tbody></table>
-    <script>window.onload=()=>{window.print();}<\/script>
-    </body></html>`;
-    const win = window.open('', '_blank');
-    if (!win) { App.Toast.err('Permita popups para exportar PDF.'); return; }
-    win.document.write(html); win.document.close();
+    <script>window.onload=()=>{window.print();}<\/script></body></html>`;
+    const win=window.open('','_blank');
+    if(!win){App.Toast.err('Permita popups para exportar PDF.');return;}
+    win.document.write(html);win.document.close();
     App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
   }
 
@@ -1271,7 +1539,7 @@ const Insatisfacao = (() => {
       App.Modal.open('⚠️ Confirmar limpeza',
         `<div style="text-align:center;padding:10px 0">
           <p style="font-size:15px;margin-bottom:8px">Você está prestes a <strong>excluir permanentemente</strong></p>
-          <p style="font-size:28px;font-weight:800;color:#e53e3e;margin:12px 0">${total} registro${total !== 1 ? 's' : ''}</p>
+          <p style="font-size:28px;font-weight:800;color:#e53e3e;margin:12px 0">${total} registro${total!==1?'s':''}</p>
           <p style="color:var(--gray-500);font-size:13px">Esta ação não pode ser desfeita.</p>
           <div style="display:flex;gap:10px;justify-content:center;margin-top:20px">
             <button class="btn btn-ghost" onclick="App.Modal.close()">Cancelar</button>
@@ -1279,29 +1547,25 @@ const Insatisfacao = (() => {
               onclick="document.dispatchEvent(new CustomEvent('in-confirm-limpar'))">Sim, limpar tudo</button>
           </div>
         </div>`, () => resolve(false));
-      document.addEventListener('in-confirm-limpar', () => { App.Modal.close(); resolve(true); }, { once: true });
+      document.addEventListener('in-confirm-limpar', () => { App.Modal.close(); resolve(true); }, {once:true});
     });
     if (!confirmado) return;
     const res = await fetch('/api/data/insatisfacoes/clear', {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${_token()}` }
+      method:'DELETE', headers:{'Authorization':`Bearer ${_token()}`}
     });
     if (res && res.ok) {
-      _allData = []; _renderGrid([]); _populateYearFilter([]);
+      _allData=[]; _renderGrid([]); _populateYearFilter([]);
       App.Toast.ok('Todos os registros foram removidos.');
-    } else {
-      App.Toast.err('Erro ao limpar registros.');
-    }
+    } else { App.Toast.err('Erro ao limpar registros.'); }
   }
 
   async function excluir(id) {
     if (!App.Auth.isAdmin()) return;
     const res = await fetch(`/api/data/insatisfacoes/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${_token()}` }
+      method:'DELETE', headers:{'Authorization':`Bearer ${_token()}`}
     });
     if (res && res.ok) {
-      _allData = _allData.filter(r => r.id !== id);
+      _allData = _allData.filter(r=>r.id!==id);
       _renderGrid(_filterData(_allData));
       App.Toast.ok('Registro excluído.');
     } else { App.Toast.err('Erro ao excluir.'); }
@@ -1312,33 +1576,29 @@ const Insatisfacao = (() => {
 
 window.Insatisfacao = Insatisfacao;
 
-// ── Módulo Clientes Sensíveis — grade de registros ────────────────────────────
+// ── Módulo Clientes Sensíveis ─────────────────────────────────────────────────────────────
 const Sensiveis = (() => {
   let _allData = [];
   function _token() { return localStorage.getItem('ge_token') || ''; }
 
-  function _gravBadge(g) {
-    const map = {
-      'Muito Alta': '#e53e3e', 'Alta': '#dd6b20',
-      'Média': '#d69e2e', 'Baixa': '#38a169', 'Muito Baixa': '#2b6cb0'
-    };
-    const color = map[g] || '#718096';
-    return `<span style="background:${color}20;color:${color};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${g}</span>`;
-  }
-
   function _populateYearFilter(data) {
     const sel = document.getElementById('cs-ano-filter');
     if (!sel) return;
-    const anos = [...new Set(data.map(r => new Date(r.created_at).getFullYear()))].sort((a,b) => b-a);
-    const current = sel.value;
+    const anos = [...new Set(data.map(r => new Date(r.created_at).getFullYear()))].sort((a,b)=>b-a);
+    const cur = sel.value;
     sel.innerHTML = '<option value="todos">Todos os anos</option>' +
-      anos.map(a => `<option value="${a}" ${String(a) === current ? 'selected' : ''}>${a}</option>`).join('');
+      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>{a}</option>`).join('');
   }
 
   function _filterData(data) {
     const ano = document.getElementById('cs-ano-filter')?.value || 'todos';
-    if (ano === 'todos') return data;
-    return data.filter(r => new Date(r.created_at).getFullYear() === Number(ano));
+    const mes = document.getElementById('cs-mes-filter')?.value || 'todos';
+    return data.filter(r => {
+      const d = new Date(r.created_at);
+      if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
+      if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
+      return true;
+    });
   }
 
   function _renderGrid(data) {
@@ -1350,17 +1610,16 @@ const Sensiveis = (() => {
     }
     tbody.innerHTML = data.map(r => {
       const d = new Date(r.created_at).toLocaleString('pt-BR');
+      const lixeira = App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Sensiveis.excluir('${r.id}')" title="Excluir">🗑</button>` : '';
+      const gc={'Muito Alta':'#e53e3e','Alta':'#dd6b20','Média':'#d69e2e','Baixa':'#38a169','Muito Baixa':'#2b6cb0'}[r.gravidade]||'#718096';
       return `<tr>
         <td style="font-size:12px;color:var(--gray-500)">${d}</td>
-        <td>${r.analista}</td>
-        <td style="font-weight:600">${r.cliente}</td>
-        <td style="font-size:12px">${r.cnpj || '—'}</td>
-        <td>${r.empresa}</td>
+        <td>${r.analista}</td><td style="font-weight:600">${r.cliente}</td>
+        <td style="font-size:12px">${r.cnpj||'—'}</td><td>${r.empresa}</td>
         <td>${r.demonstrou}</td>
-        <td>${_gravBadge(r.gravidade)}</td>
-        <td style="font-size:12px;color:var(--gray-500);max-width:200px;word-break:break-word">${r.detalhe || '—'}</td>
-        <td>${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Sensiveis.excluir('${r.id}')" title="Excluir">🗑</button>` : ''}</td>
-      </tr>`;
+        <td><span style="background:${gc}20;color:${gc};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${r.gravidade}</span></td>
+        <td style="font-size:12px;color:var(--gray-500);max-width:150px;word-break:break-word">${r.detalhe||'—'}</td>
+        <td>${lixeira}</td></tr>`;
     }).join('');
   }
 
@@ -1372,7 +1631,7 @@ const Sensiveis = (() => {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar registros.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data } = await res.json();
@@ -1384,21 +1643,21 @@ const Sensiveis = (() => {
   function exportCSV() {
     const data = _filterData(_allData);
     if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const cols = ['created_at','analista','cliente','cnpj','empresa','demonstrou','gravidade','detalhe'];
-    const labels = { created_at:'Data', analista:'Analista', cliente:'Cliente', cnpj:'CNPJ',
-      empresa:'Empresa', demonstrou:'Demonstrou', gravidade:'Gravidade', detalhe:'Detalhe' };
-    const header = cols.map(c => labels[c]).join(';');
+    const cols = ['created_at', 'analista', 'cliente', 'cnpj', 'empresa', 'demonstrou', 'gravidade', 'detalhe'];
+    const labels = {'created_at':'Data','analista':'Analista','cliente':'Cliente','cnpj':'CNPJ','empresa':'Empresa','demonstrou':'Demonstrou','gravidade':'Gravidade','detalhe':'Detalhe'};
+    const header = cols.map(c=>labels[c]||c).join(';');
     const rows = data.map(r => cols.map(c => {
       let v = r[c] ?? '';
-      if (c === 'created_at') v = new Date(v).toLocaleString('pt-BR');
+      if (c==='created_at') v = new Date(v).toLocaleString('pt-BR');
       return `"${String(v).replace(/"/g,'""')}"`;
     }).join(';'));
-    const csv = [header, ...rows].join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const csv = [header,...rows].join('\n');
+    const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const ano = document.getElementById('cs-ano-filter')?.value || 'todos';
-    a.href = url; a.download = `clientes_sensiveis_${ano}_${new Date().toISOString().slice(0,10)}.csv`;
+    const ano = document.getElementById('cs-ano-filter')?.value||'todos';
+    const mes = document.getElementById('cs-mes-filter')?.value||'todos';
+    a.href=url; a.download=`sensiveis_${ano}_${mes}_${new Date().toISOString().slice(0,10)}.csv`;
     a.click(); URL.revokeObjectURL(url);
     App.Toast.ok('CSV exportado!');
   }
@@ -1406,39 +1665,27 @@ const Sensiveis = (() => {
   function exportPDF() {
     const data = _filterData(_allData);
     if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const cols = ['created_at','analista','cliente','empresa','demonstrou','gravidade','detalhe'];
-    const labels = { created_at:'Data', analista:'Analista', cliente:'Cliente',
-      empresa:'Empresa', demonstrou:'Demonstrou', gravidade:'Gravidade', detalhe:'Detalhe' };
-    const ano = document.getElementById('cs-ano-filter')?.value || 'todos';
-    const titulo = ano === 'todos' ? 'Clientes Sensíveis — Todos os anos' : `Clientes Sensíveis — ${ano}`;
-    const rows = data.map(r =>
-      `<tr>${cols.map(c => {
-        let v = r[c] ?? '—';
-        if (c === 'created_at') v = new Date(v).toLocaleString('pt-BR');
-        return `<td>${v}</td>`;
-      }).join('')}</tr>`
-    ).join('');
-    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-    <title>${titulo}</title>
-    <style>
-      body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
-      h1{font-size:15px;color:#1a4233;margin-bottom:4px}
-      p.sub{color:#666;font-size:11px;margin-bottom:12px}
-      table{width:100%;border-collapse:collapse;font-size:10px}
-      th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
-      td{padding:5px 8px;border-bottom:1px solid #eee}
-      tr:nth-child(even) td{background:#f8f8f8}
-      @media print{body{margin:10px}}
-    </style></head><body>
+    const cols = ['created_at', 'analista', 'cliente', 'cnpj', 'empresa', 'demonstrou', 'gravidade', 'detalhe'];
+    const labels = {'created_at':'Data','analista':'Analista','cliente':'Cliente','cnpj':'CNPJ','empresa':'Empresa','demonstrou':'Demonstrou','gravidade':'Gravidade','detalhe':'Detalhe'};
+    const ano = document.getElementById('cs-ano-filter')?.value||'todos';
+    const mes = document.getElementById('cs-mes-filter')?.value||'todos';
+    const titulo = `Clientes Sensíveis — ${ano==='todos'?'Todos os anos':ano} / ${mes==='todos'?'Todos os meses':mes}`;
+    const rows = data.map(r=>`<tr>${cols.map(c=>{let v=r[c]??'—';if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');return`<td>${v}</td>`;})}</tr>`).join('');
+    const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
+    <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
+    h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
+    table{width:100%;border-collapse:collapse;font-size:10px}
+    th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
+    td{padding:5px 8px;border-bottom:1px solid #eee}tr:nth-child(even) td{background:#f8f8f8}
+    @media print{body{margin:10px}}</style></head><body>
     <h1>Grupo-E — ${titulo}</h1>
     <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${data.length} registros</p>
-    <table><thead><tr>${cols.map(c=>`<th>${labels[c]}</th>`).join('')}</tr></thead>
+    <table><thead><tr>${cols.map(c=>`<th>${labels[c]||c}</th>`).join('')}</tr></thead>
     <tbody>${rows}</tbody></table>
-    <script>window.onload=()=>{window.print();}<\/script>
-    </body></html>`;
-    const win = window.open('', '_blank');
-    if (!win) { App.Toast.err('Permita popups para exportar PDF.'); return; }
-    win.document.write(html); win.document.close();
+    <script>window.onload=()=>{window.print();}<\/script></body></html>`;
+    const win=window.open('','_blank');
+    if(!win){App.Toast.err('Permita popups para exportar PDF.');return;}
+    win.document.write(html);win.document.close();
     App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
   }
 
@@ -1450,7 +1697,7 @@ const Sensiveis = (() => {
       App.Modal.open('⚠️ Confirmar limpeza',
         `<div style="text-align:center;padding:10px 0">
           <p style="font-size:15px;margin-bottom:8px">Você está prestes a <strong>excluir permanentemente</strong></p>
-          <p style="font-size:28px;font-weight:800;color:#e53e3e;margin:12px 0">${total} registro${total !== 1 ? 's' : ''}</p>
+          <p style="font-size:28px;font-weight:800;color:#e53e3e;margin:12px 0">${total} registro${total!==1?'s':''}</p>
           <p style="color:var(--gray-500);font-size:13px">Esta ação não pode ser desfeita.</p>
           <div style="display:flex;gap:10px;justify-content:center;margin-top:20px">
             <button class="btn btn-ghost" onclick="App.Modal.close()">Cancelar</button>
@@ -1458,29 +1705,25 @@ const Sensiveis = (() => {
               onclick="document.dispatchEvent(new CustomEvent('cs-confirm-limpar'))">Sim, limpar tudo</button>
           </div>
         </div>`, () => resolve(false));
-      document.addEventListener('cs-confirm-limpar', () => { App.Modal.close(); resolve(true); }, { once: true });
+      document.addEventListener('cs-confirm-limpar', () => { App.Modal.close(); resolve(true); }, {once:true});
     });
     if (!confirmado) return;
     const res = await fetch('/api/data/sensiveis/clear', {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${_token()}` }
+      method:'DELETE', headers:{'Authorization':`Bearer ${_token()}`}
     });
     if (res && res.ok) {
-      _allData = []; _renderGrid([]); _populateYearFilter([]);
+      _allData=[]; _renderGrid([]); _populateYearFilter([]);
       App.Toast.ok('Todos os registros foram removidos.');
-    } else {
-      App.Toast.err('Erro ao limpar registros.');
-    }
+    } else { App.Toast.err('Erro ao limpar registros.'); }
   }
 
   async function excluir(id) {
     if (!App.Auth.isAdmin()) return;
     const res = await fetch(`/api/data/sensiveis/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${_token()}` }
+      method:'DELETE', headers:{'Authorization':`Bearer ${_token()}`}
     });
     if (res && res.ok) {
-      _allData = _allData.filter(r => r.id !== id);
+      _allData = _allData.filter(r=>r.id!==id);
       _renderGrid(_filterData(_allData));
       App.Toast.ok('Registro excluído.');
     } else { App.Toast.err('Erro ao excluir.'); }
