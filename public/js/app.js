@@ -401,13 +401,20 @@ const App = (() => {
 
     async gestao() {
       if (!Util.requireFields([['gc-analista','Analista'],['gc-solicitacao','Solicitação'],['gc-cnpj','CNPJ'],['gc-empresa','Empresa'],['gc-data','Data'],['gc-competencia','Competência'],['gc-canal','Canal']])) return;
+      const gcSol = Util.val('gc-solicitacao') === 'Outro' ? Util.val('gc-sol-outro') : Util.val('gc-solicitacao');
+      const gcCanal = Util.val('gc-canal') === 'Outro' ? Util.val('gc-canal-outro') : Util.val('gc-canal');
       await Forms._submit('gestao', {
-        analista: Util.val('gc-analista'), solicitacao: Util.val('gc-solicitacao'),
+        analista: Util.val('gc-analista'), solicitacao: gcSol,
         cnpj: Util.val('gc-cnpj'), empresa: Util.val('gc-empresa'),
         data_sol: Util.val('gc-data'), competencia: Util.val('gc-competencia'),
-        canal: Util.val('gc-canal'), motivo: Util.val('gc-motivo'),
+        canal: gcCanal, motivo: Util.val('gc-motivo'),
       }, ['gc-analista','gc-cnpj','gc-empresa','gc-data','gc-competencia','gc-motivo'], 'Gestão salva!');
-      document.getElementById('gc-solicitacao').value=''; document.getElementById('gc-canal').value='';
+      document.getElementById('gc-solicitacao').value='';
+      document.getElementById('gc-canal').value='';
+      document.getElementById('gc-sol-outro').value='';
+      document.getElementById('gc-canal-outro').value='';
+      gcToggleOutros();
+      Gestao.loadGrid();
     },
 
     async insatisfacao() {
@@ -549,6 +556,24 @@ const App = (() => {
 })();
 
 // ── Wire all events after DOM ready (no inline onclick) ───────────────────────
+// ── Gestão de Clientes — toggles de "Outro" ──────────────────────────────────
+function gcToggleOutros() {
+  const sol = document.getElementById('gc-solicitacao')?.value;
+  const canal = document.getElementById('gc-canal')?.value;
+  const solWrap = document.getElementById('gc-sol-outro-wrap');
+  const canalWrap = document.getElementById('gc-canal-outro-wrap');
+  if (solWrap) {
+    const show = sol === 'Outro';
+    solWrap.style.display = show ? 'flex' : 'none';
+    solWrap.hidden = !show;
+  }
+  if (canalWrap) {
+    const show = canal === 'Outro';
+    canalWrap.style.display = show ? 'flex' : 'none';
+    canalWrap.hidden = !show;
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // Auth
   document.getElementById('btn-login').addEventListener('click', () => App.Auth.login());
