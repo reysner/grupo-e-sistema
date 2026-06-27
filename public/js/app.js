@@ -208,16 +208,19 @@ const App = (() => {
       pill.className   = 'role-pill ' + (user.role === 'administrador' ? 'admin' : 'user');
       document.querySelectorAll('.admin-only').forEach(el => {
         if (user.role === 'administrador') {
-          // Pages are controlled by Nav.go — just ensure they start hidden
           if (el.classList.contains('page')) {
+            // Pages: keep hidden, Nav.go will show the right one
             el.hidden = true;
-            el.style.removeProperty('display');
           } else {
-            // Nav items and buttons: restore normal display
-            el.style.removeProperty('display');
+            // Nav items and buttons: remove any hiding and show
+            el.removeAttribute('style');
+            el.hidden = false;
           }
         } else {
-          el.style.setProperty('display', 'none', 'important');
+          // Non-admin: hide all admin-only elements that are not pages
+          if (!el.classList.contains('page')) {
+            el.hidden = true;
+          }
         }
       });
       document.getElementById('auth-screen').hidden = true;
