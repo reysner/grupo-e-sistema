@@ -208,7 +208,11 @@ const App = (() => {
       pill.className   = 'role-pill ' + (user.role === 'administrador' ? 'admin' : 'user');
       document.querySelectorAll('.admin-only').forEach(el => {
         if (user.role === 'administrador') {
-          el.style.setProperty('display', 'flex', 'important');
+          el.classList.remove('hidden-admin');
+          // Only show nav items, not pages (pages are controlled by Nav.go)
+          if (!el.classList.contains('page')) {
+            el.style.removeProperty('display');
+          }
         } else {
           el.style.setProperty('display', 'none', 'important');
         }
@@ -288,7 +292,10 @@ const App = (() => {
   const Nav = {
     go(page) {
       if (page === 'admin' && currentUser?.role !== 'administrador') return false;
-      document.querySelectorAll('.page').forEach(el => el.hidden = true);
+      document.querySelectorAll('.page').forEach(el => {
+        el.hidden = true;
+        el.style.removeProperty('display');
+      });
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       const pg = document.getElementById(`page-${page}`);
       if (pg) pg.hidden = false;
