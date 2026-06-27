@@ -236,10 +236,16 @@ publicRouter.post('/pesquisa', async (req, res) => {
     const { v4: uuidv4 } = require('uuid');
     const { pool } = require('../db');
     const id = uuidv4();
+
+    // Busca o primeiro admin para usar como user_id (campo obrigatório)
+    const adminRow = await pool.query(`SELECT id FROM users WHERE role = 'administrador' LIMIT 1`);
+    const userId = adminRow.rows[0]?.id || null;
+    if (!userId) return res.status(500).json({ error: 'Nenhum administrador configurado.' });
+
     await pool.query(
       `INSERT INTO pesquisas (id, user_id, analista, cliente, cnpj, empresa, nps, csat, ces, pontos)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [id, '00000000-0000-0000-0000-000000000000', 'Pesquisa Pública', cliente, '', empresa, Number(nps), Number(csat), Number(ces), pontos || null]
+      [id, userId, 'Pesquisa Pública', cliente, '', empresa, Number(nps), Number(csat), Number(ces), pontos || null]
     );
     res.status(201).json({ ok: true });
   } catch (err) {
