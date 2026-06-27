@@ -213,6 +213,7 @@
               </div>
               <div class="field"><label>CNPJ <span class="req">*</span></label><input id="gc-cnpj" type="text" placeholder="00.000.000/0000-00" maxlength="18" /></div>
               <div class="field"><label>Empresa <span class="req">*</span></label><input id="gc-empresa" type="text" placeholder="Digite a empresa" /></div>
+              <div class="field"><label>Código do cliente <small class="opt">(opcional)</small></label><input id="gc-codigo" type="text" placeholder="Ex: CLI-001" style="text-transform:uppercase" /></div>
               <div class="field"><label>Data da Solicitação <span class="req">*</span></label><input id="gc-data" type="date" /></div>
               <div class="field"><label>Fim da Competência <span class="req">*</span></label><input id="gc-competencia" type="month" /></div>
               <div class="field"><label>Canal da Solicitação <span class="req">*</span></label>
@@ -459,7 +460,8 @@
 
           <!-- TOOLBAR -->
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;gap:12px;flex-wrap:wrap">
-            <select id="cart-status-filter" onchange="Carteira.loadGrid()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;color:var(--gray-700);cursor:pointer">
+            <input id="cart-busca" type="text" placeholder="🔍 Buscar por empresa ou código..." oninput="Carteira.filtrar()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;color:var(--gray-700);min-width:260px;flex:1;max-width:340px" />
+            <select id="cart-status-filter" onchange="Carteira.filtrar()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;color:var(--gray-700);cursor:pointer">
               <option value="todos">Todos os clientes</option>
               <option value="ativo">Somente ativos</option>
               <option value="encerrado">Somente encerrados</option>
@@ -526,10 +528,10 @@
             <div class="table-wrap" style="margin-top:14px">
               <table class="data-table" id="cart-grid">
                 <thead><tr>
-                  <th>Empresa</th><th>CNPJ</th><th>Honorário</th>
+                  <th>Cód.</th><th>Empresa</th><th>CNPJ</th><th>Honorário</th>
                   <th>Rec. acumulada</th><th>Tempo</th><th>Origem</th><th>Status</th><th></th>
                 </tr></thead>
-                <tbody id="cart-tbody"><tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
+                <tbody id="cart-tbody"><tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
               </table>
             </div>
           </div>
