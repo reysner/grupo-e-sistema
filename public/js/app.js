@@ -558,16 +558,16 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Dashboard
-  document.getElementById('dash-period').addEventListener('change', () => App.Dashboard.load());
-  document.getElementById('btn-clear-dash').addEventListener('click', () => App.Dashboard.clear());
+  document.getElementById('dash-period')?.addEventListener('change', () => App.Dashboard.load());
+  document.getElementById('btn-clear-dash')?.addEventListener('click', () => App.Dashboard.clear());
 
   // Forms
-  document.getElementById('btn-at-save').addEventListener('click', () => App.Forms.atendimento());
-  document.getElementById('btn-gc-save').addEventListener('click', () => App.Forms.gestao());
-  document.getElementById('btn-in-save').addEventListener('click', () => App.Forms.insatisfacao());
-  document.getElementById('btn-cs-save').addEventListener('click', () => App.Forms.sensiveis());
-  document.getElementById('btn-ps-save').addEventListener('click', () => App.Forms.pesquisas());
-  document.getElementById('btn-rc-save').addEventListener('click', () => App.Forms.recuperacao());
+  document.getElementById('btn-at-save')?.addEventListener('click', () => App.Forms.atendimento());
+  document.getElementById('btn-gc-save')?.addEventListener('click', () => App.Forms.gestao());
+  document.getElementById('btn-in-save')?.addEventListener('click', () => App.Forms.insatisfacao());
+  document.getElementById('btn-cs-save')?.addEventListener('click', () => App.Forms.sensiveis());
+  document.getElementById('btn-ps-save')?.addEventListener('click', () => App.Forms.pesquisas());
+  document.getElementById('btn-rc-save')?.addEventListener('click', () => App.Forms.recuperacao());
 
   // CNPJ masks
   ['at-cnpj','gc-cnpj','in-cnpj','cs-cnpj','rc-cnpj'].forEach(id => {
@@ -593,8 +593,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-add-user')?.addEventListener('click', () => App.Admin.openAdd());
 
   // Modal
-  document.getElementById('modal-cancel').addEventListener('click', () => App.Modal.close());
-  document.getElementById('modal-backdrop').addEventListener('click', (e) => {
+  document.getElementById('modal-cancel')?.addEventListener('click', () => App.Modal.close());
+  document.getElementById('modal-backdrop')?.addEventListener('click', (e) => {
     if (e.target === document.getElementById('modal-backdrop')) App.Modal.close();
   });
 
