@@ -60,6 +60,9 @@ body { font-family: var(--font); background: var(--gray-50); color: var(--gray-7
   max-width: 420px;
   box-shadow: var(--shadow-lg);
 }
+/* Garante que [hidden] sempre oculta, mesmo com display definido por classe */
+[hidden] { display: none !important; }
+
 .auth-logo { display: flex; align-items: center; gap: 14px; margin-bottom: 32px; }
 .logo-mark {
   width: 52px; height: 52px;
