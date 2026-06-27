@@ -227,27 +227,6 @@
             <button class="btn btn-ghost btn-sm" onclick="App.Reports.exportCSV('pesquisas')">⬇ Exportar CSV</button>
             <button class="btn btn-ghost btn-sm" onclick="App.Reports.exportPDF('pesquisas','Pesquisas de Satisfação')">🖨 Exportar PDF</button>
           </div>
-          <div class="form-card">
-            <h2 class="form-title">Gestão de Pesquisas de Satisfação</h2><div class="form-accent"></div>
-            <div class="form-grid">
-              <div class="field"><label>Analista Responsável <span class="req">*</span></label><input id="ps-analista" type="text" placeholder="Digite o nome" /></div>
-              <div class="field"><label>Nome do Cliente <span class="req">*</span></label><input id="ps-cliente" type="text" placeholder="Digite o nome" /></div>
-              <div class="field"><label>CNPJ <span class="req">*</span></label><input id="ps-cnpj" type="text" placeholder="00.000.000/0000-00" maxlength="18" /></div>
-              <div class="field"><label>Empresa <span class="req">*</span></label><input id="ps-empresa" type="text" placeholder="Digite a empresa" /></div>
-              <div class="field"><label>Nota NPS (0–10) <span class="req">*</span></label>
-                <div class="range-row"><input id="ps-nps" type="range" min="0" max="10" value="5" step="1" /><span class="range-val" id="ps-nps-v">5</span></div>
-              </div>
-              <div class="field"><label>Nota CSAT (0–5) <span class="req">*</span></label>
-                <div class="range-row"><input id="ps-csat" type="range" min="0" max="5" value="3" step="1" /><span class="range-val" id="ps-csat-v">3</span></div>
-              </div>
-              <div class="field"><label>Nota CES (0–5) <span class="req">*</span></label>
-                <div class="range-row"><input id="ps-ces" type="range" min="0" max="5" value="3" step="1" /><span class="range-val" id="ps-ces-v">3</span></div>
-              </div>
-              <div class="field"><label>Pontos a Destacar <small class="opt">(opcional)</small></label><input id="ps-pontos" type="text" placeholder="Digite os pontos" /></div>
-            </div>
-            <button class="btn btn-primary btn-save" id="btn-ps-save">Salvar Pesquisa</button>
-          </div>
-
           <!-- GRADE DE RESPOSTAS -->
           <div class="form-card" style="margin-top:20px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
