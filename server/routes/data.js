@@ -221,6 +221,49 @@ router.delete('/pesquisas/clear', requireAdmin, async (req, res) => {
 
 // ── CLEAR PESQUISAS ──────────────────────────────────────────────────────────────
 
+// ── DELETE INDIVIDUAL ────────────────────────────────────────────────────────────
+router.delete('/atendimentos/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM atendimentos WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+router.delete('/gestao/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM gestao_clientes WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+router.delete('/insatisfacoes/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM insatisfacoes WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+router.delete('/sensiveis/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM clientes_sensiveis WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+router.delete('/pesquisas/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM pesquisas WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+router.delete('/recuperacoes/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM recuperacoes WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
 // ── CLEAR INSATISFACOES ──────────────────────────────────────────────────────────
 router.delete('/insatisfacoes/clear', requireAdmin, async (req, res) => {
   try {
