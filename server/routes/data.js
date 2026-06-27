@@ -220,11 +220,13 @@ router.delete('/pesquisas/clear', requireAdmin, async (req, res) => {
 });
 
 // ── CLEAR PESQUISAS ──────────────────────────────────────────────────────────────
-router.delete('/pesquisas/clear', requireAdmin, async (req, res) => {
+
+// ── CLEAR INSATISFACOES ──────────────────────────────────────────────────────────
+router.delete('/insatisfacoes/clear', requireAdmin, async (req, res) => {
   try {
-    await pool.query(`DELETE FROM pesquisas`);
-    res.json({ ok: true, message: 'Todas as respostas foram removidas.' });
-  } catch (err) { res.status(500).json({ error: 'Erro ao limpar respostas.' }); }
+    await pool.query(`DELETE FROM insatisfacoes`);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao limpar registros.' }); }
 });
 
 // ── CLEAR SENSIVEIS ──────────────────────────────────────────────────────────────
