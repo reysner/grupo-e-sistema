@@ -11,7 +11,7 @@ const { init: initDB, pruneExpiredTokens } = require('./db');
 const authRoutes  = require('./routes/auth');
 const dataRoutes  = require('./routes/data');
 const usersRoutes = require('./routes/users');
-const { publicRouter } = require('./routes/data');
+
 
 const app    = express();
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -53,7 +53,7 @@ if (APP_URL) {
 }
 
 // ── API Routes ────────────────────────────────────────────────────────────────
-app.use('/api/public', publicRouter);   // sem autenticação
+app.use('/api/public', dataRoutes.publicRouter);   // sem autenticação
 app.use('/api/auth',   authRoutes);
 app.use('/api/data',   dataRoutes);
 app.use('/api/users',  usersRoutes);
