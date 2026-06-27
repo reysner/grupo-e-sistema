@@ -216,6 +216,7 @@
                 <select id="cs-gravidade"><option value="">Selecione</option><option>Muito Alta</option><option>Alta</option><option>Média</option><option>Baixa</option><option>Muito Baixa</option></select>
               </div>
               <div class="field span2" id="cs-outro-wrap" hidden><label>Especifique a Demonstração <span class="req">*</span></label><input id="cs-outro" type="text" placeholder="Descreva o que o cliente demonstrou" /></div>
+              <div class="field span2"><label>Detalhe melhor o motivo do registro <small class="opt">(opcional)</small></label><textarea id="cs-detalhe" rows="3" placeholder="Descreva com mais detalhes o contexto ou histórico deste cliente..." style="resize:vertical"></textarea></div>
             </div>
             <button class="btn btn-primary btn-save" id="btn-cs-save">Salvar Cliente Sensível</button>
           </div>
@@ -227,9 +228,9 @@
               <table class="data-table" id="cs-grid">
                 <thead><tr>
                   <th>Data</th><th>Analista</th><th>Cliente</th><th>CNPJ</th>
-                  <th>Empresa</th><th>Demonstrou</th><th>Gravidade</th>
+                  <th>Empresa</th><th>Demonstrou</th><th>Gravidade</th><th>Detalhe</th>
                 </tr></thead>
-                <tbody id="cs-tbody"><tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
+                <tbody id="cs-tbody"><tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
             </div>
           </div>
