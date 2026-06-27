@@ -1099,6 +1099,7 @@ const Carteira = (() => {
         <td style="white-space:nowrap">
           <button class="btn btn-ghost btn-sm" onclick="Carteira.verFicha('${c.id}')">Ver ficha</button>
           ${c.status==='ativo' && App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#1D9E75;font-size:14px;padding:2px 6px" onclick="Carteira.atualizarHonorario('${c.id}')" title="Atualizar honorário">$ +</button>` : ''}
+          ${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Carteira.excluir('${c.id}')" title="Excluir">🗑</button>` : ''}
         </td>
       </tr>`;
     }).join('');
@@ -1230,12 +1231,27 @@ const Carteira = (() => {
     `);
   }
 
+  function _dadosFiltrados() {
+    const busca = (document.getElementById('cart-busca')?.value || '').toLowerCase().trim();
+    const status = document.getElementById('cart-status-filter')?.value || 'todos';
+    return _clientes.filter(c => {
+      const matchStatus = status === 'todos' || c.status === status;
+      const matchBusca = !busca ||
+        (c.nome_empresa||'').toLowerCase().includes(busca) ||
+        (c.codigo||'').toLowerCase().includes(busca) ||
+        (c.cnpj||'').includes(busca);
+      return matchStatus && matchBusca;
+    });
+  }
+
   function exportCSV() {
-    if (!_clientes.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const cols = ['nome_empresa','cnpj','honorario_atual','receita_acumulada','data_entrada','status','origem'];
-    const labels = {nome_empresa:'Empresa',cnpj:'CNPJ',honorario_atual:'Honorário Atual',receita_acumulada:'Receita Acumulada',data_entrada:'Data Entrada',status:'Status',origem:'Origem'};
+    const data = _dadosFiltrados();
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
+    const cols = ['codigo','nome_empresa','cnpj','honorario_atual','receita_acumulada','data_entrada','status','origem','cac'];
+    const labels = {codigo:'Código',nome_empresa:'Empresa',cnpj:'CNPJ',honorario_atual:'Honorário Atual',
+      receita_acumulada:'Receita Acumulada',data_entrada:'Data Entrada',status:'Status',origem:'Origem',cac:'CAC'};
     const header = cols.map(c=>labels[c]).join(';');
-    const rows = _clientes.map(r=>cols.map(c=>`"${(r[c]??'').toString().replace(/"/g,'""')}"`).join(';'));
+    const rows = data.map(r=>cols.map(c=>`"${(r[c]??'').toString().replace(/"/g,'""')}"`).join(';'));
     const csv = [header,...rows].join('\n');
     const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
@@ -1246,17 +1262,7 @@ const Carteira = (() => {
   }
 
   function filtrar() {
-    const busca = (document.getElementById('cart-busca')?.value || '').toLowerCase().trim();
-    const status = document.getElementById('cart-status-filter')?.value || 'todos';
-    const filtrado = _clientes.filter(c => {
-      const matchStatus = status === 'todos' || c.status === status;
-      const matchBusca = !busca ||
-        (c.nome_empresa||'').toLowerCase().includes(busca) ||
-        (c.codigo||'').toLowerCase().includes(busca) ||
-        (c.cnpj||'').includes(busca);
-      return matchStatus && matchBusca;
-    });
-    _renderGrid(filtrado);
+    _renderGrid(_dadosFiltrados());
   }
 
   function _renderGrid(data) {
@@ -1284,12 +1290,93 @@ const Carteira = (() => {
         <td style="white-space:nowrap">
           <button class="btn btn-ghost btn-sm" onclick="Carteira.verFicha('${c.id}')">Ver ficha</button>
           ${c.status==='ativo' && App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#1D9E75;font-size:14px;padding:2px 6px" onclick="Carteira.atualizarHonorario('${c.id}')" title="Atualizar honorário">$ +</button>` : ''}
+          ${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Carteira.excluir('${c.id}')" title="Excluir">🗑</button>` : ''}
         </td>
       </tr>`;
     }).join('');
   }
 
-  return { load, loadDashboard, loadGrid, filtrar, abrirCadastro, salvarCliente, atualizarHonorario, salvarHonorario, verFicha, exportCSV };
+  function exportPDF() {
+    const data = _dadosFiltrados();
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
+    const busca = document.getElementById('cart-busca')?.value || '';
+    const status = document.getElementById('cart-status-filter')?.value || 'todos';
+    const titulo = `Carteira de Clientes — ${status === 'todos' ? 'Todos' : status === 'ativo' ? 'Ativos' : 'Encerrados'}${busca ? ' / Busca: '+busca : ''}`;
+    const cols = ['codigo','nome_empresa','cnpj','honorario_atual','receita_acumulada','data_entrada','status','origem'];
+    const labels = {codigo:'Código',nome_empresa:'Empresa',cnpj:'CNPJ',honorario_atual:'Honorário',
+      receita_acumulada:'Receita Acumulada',data_entrada:'Entrada',status:'Status',origem:'Origem'};
+    const rows = data.map(r=>`<tr>${cols.map(c=>{
+      let v = r[c]??'—';
+      if(c==='honorario_atual'||c==='receita_acumulada') v = _fmt(parseFloat(v)||0);
+      if(c==='data_entrada'&&v!=='—') v = new Date(v).toLocaleDateString('pt-BR');
+      return `<td>${v}</td>`;
+    }).join('')}</tr>`).join('');
+    const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
+    <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
+    h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
+    table{width:100%;border-collapse:collapse;font-size:10px}
+    th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
+    td{padding:5px 8px;border-bottom:1px solid #eee}tr:nth-child(even) td{background:#f8f8f8}
+    @media print{body{margin:10px}}</style></head><body>
+    <h1>Grupo-E — ${titulo}</h1>
+    <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${data.length} cliente${data.length!==1?'s':''}</p>
+    <table><thead><tr>${cols.map(c=>`<th>${labels[c]}</th>`).join('')}</tr></thead>
+    <tbody>${rows}</tbody></table>
+    <script>window.onload=()=>{window.print();}<\/script></body></html>`;
+    const win=window.open('','_blank');
+    if(!win){App.Toast.err('Permita popups para exportar PDF.');return;}
+    win.document.write(html);win.document.close();
+    App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
+  }
+
+  async function limpar() {
+    if (!App.Auth.isAdmin()) { App.Toast.err('Acesso restrito a administradores.'); return; }
+    const total = _clientes.length;
+    if (!total) { App.Toast.err('Não há clientes para remover.'); return; }
+    const confirmado = await new Promise(resolve => {
+      App.Modal.open('⚠️ Confirmar limpeza',
+        `<div style="text-align:center;padding:10px 0">
+          <p style="font-size:15px;margin-bottom:8px">Você está prestes a <strong>excluir permanentemente</strong></p>
+          <p style="font-size:28px;font-weight:800;color:#e53e3e;margin:12px 0">${total} cliente${total!==1?'s':''}</p>
+          <p style="color:var(--gray-500);font-size:13px">Todo o histórico de honorários e eventos será perdido.</p>
+          <div style="display:flex;gap:10px;justify-content:center;margin-top:20px">
+            <button class="btn btn-ghost" onclick="App.Modal.close()">Cancelar</button>
+            <button class="btn" style="background:#e53e3e;color:#fff;border:none"
+              onclick="document.dispatchEvent(new CustomEvent('cart-confirm-limpar'))">Sim, limpar tudo</button>
+          </div>
+        </div>`, () => resolve(false));
+      document.addEventListener('cart-confirm-limpar', () => { App.Modal.close(); resolve(true); }, {once:true});
+    });
+    if (!confirmado) return;
+    const token = localStorage.getItem('ge_token');
+    const res = await fetch('/api/data/clientes/clear', {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res && res.ok) {
+      _clientes = [];
+      _renderGrid([]);
+      await loadDashboard();
+      App.Toast.ok('Todos os clientes foram removidos.');
+    } else { App.Toast.err('Erro ao limpar.'); }
+  }
+
+  async function excluir(id) {
+    if (!App.Auth.isAdmin()) return;
+    const token = localStorage.getItem('ge_token');
+    const res = await fetch(`/api/data/clientes/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res && res.ok) {
+      _clientes = _clientes.filter(c => c.id !== id);
+      filtrar();
+      await loadDashboard();
+      App.Toast.ok('Cliente excluído.');
+    } else { App.Toast.err('Erro ao excluir.'); }
+  }
+
+  return { load, loadDashboard, loadGrid, filtrar, abrirCadastro, salvarCliente, atualizarHonorario, salvarHonorario, verFicha, exportCSV, exportPDF, limpar, excluir };
 })();
 
 window.Carteira = Carteira;
