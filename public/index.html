@@ -77,6 +77,11 @@
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>Recuperação
         </a>
         <div class="nav-sep"></div>
+        <a class="nav-item" href="/pesquisa" target="_blank" style="font-size:12px;color:rgba(255,255,255,.5)">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+          Link da Pesquisa
+        </a>
+        <div class="nav-sep"></div>
         <a class="nav-item admin-only" data-page="admin" href="#">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M20 12h2M2 12h2M12 20v2M12 2v2"/></svg>Administração
         </a>
@@ -241,6 +246,32 @@
               <div class="field"><label>Pontos a Destacar <small class="opt">(opcional)</small></label><input id="ps-pontos" type="text" placeholder="Digite os pontos" /></div>
             </div>
             <button class="btn btn-primary btn-save" id="btn-ps-save">Salvar Pesquisa</button>
+          </div>
+
+          <!-- GRADE DE RESPOSTAS -->
+          <div class="form-card" style="margin-top:20px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <h2 class="form-title">Respostas Recebidas</h2>
+              <div style="display:flex;gap:8px">
+                <span class="nps-legend" style="background:#fff5f5;color:#e53e3e;padding:4px 10px;border-radius:12px;font-size:11px;font-weight:700">● Detrator (0–6)</span>
+                <span class="nps-legend" style="background:#fffff0;color:#d69e2e;padding:4px 10px;border-radius:12px;font-size:11px;font-weight:700">● Neutro (7–8)</span>
+                <span class="nps-legend" style="background:#f0fff4;color:#38a169;padding:4px 10px;border-radius:12px;font-size:11px;font-weight:700">● Promotor (9–10)</span>
+              </div>
+            </div>
+            <div class="form-accent"></div>
+            <div id="ps-alerta-baixo" style="display:none;background:#fff5f5;border:1.5px solid #fed7d7;border-radius:8px;padding:12px 16px;margin-bottom:16px;color:#e53e3e;font-size:13px;font-weight:600">
+              ⚠️ <span id="ps-alerta-count">0</span> resposta(s) com NPS baixo aguardando tratamento!
+            </div>
+            <div class="table-wrap">
+              <table class="data-table" id="ps-grid">
+                <thead><tr>
+                  <th>Data</th><th>Cliente</th><th>Empresa</th>
+                  <th>NPS</th><th>CSAT</th><th>CES</th>
+                  <th>Origem</th><th>Status</th><th>Ações</th>
+                </tr></thead>
+                <tbody id="ps-tbody"><tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
