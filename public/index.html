@@ -145,6 +145,20 @@
             </div>
             <button class="btn btn-primary btn-save" id="btn-at-save">Salvar Atendimento</button>
           </div>
+
+          <!-- GRADE -->
+          <div class="form-card" style="margin-top:20px">
+            <h2 class="form-title">Registros de Atendimento</h2><div class="form-accent"></div>
+            <div class="table-wrap">
+              <table class="data-table" id="at-grid">
+                <thead><tr>
+                  <th>Data</th><th>Analista</th><th>Cliente</th><th>CNPJ</th>
+                  <th>Empresa</th><th>Departamento</th><th>Demanda</th><th>Resumo</th><th></th>
+                </tr></thead>
+                <tbody id="at-tbody"><tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
         </section>
 
         <!-- GESTÃO -->
@@ -170,6 +184,20 @@
               <div class="field"><label>Motivo Apontado <small class="opt">(opcional)</small></label><input id="gc-motivo" type="text" placeholder="Digite o motivo" /></div>
             </div>
             <button class="btn btn-primary btn-save" id="btn-gc-save">Salvar Gestão</button>
+          </div>
+
+          <!-- GRADE -->
+          <div class="form-card" style="margin-top:20px">
+            <h2 class="form-title">Registros de Gestão</h2><div class="form-accent"></div>
+            <div class="table-wrap">
+              <table class="data-table" id="gc-grid">
+                <thead><tr>
+                  <th>Data</th><th>Analista</th><th>CNPJ</th><th>Empresa</th>
+                  <th>Solicitação</th><th>Canal</th><th>Motivo</th><th></th>
+                </tr></thead>
+                <tbody id="gc-tbody"><tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
@@ -209,7 +237,7 @@
               <table class="data-table" id="in-grid">
                 <thead><tr>
                   <th>Data</th><th>Analista</th><th>Cliente</th><th>CNPJ</th>
-                  <th>Empresa</th><th>Reclamado</th><th>Gravidade</th><th>Reclamação</th>
+                  <th>Empresa</th><th>Reclamado</th><th>Gravidade</th><th>Reclamação</th><th></th>
                 </tr></thead>
                 <tbody id="in-tbody"><tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
@@ -260,7 +288,7 @@
               <table class="data-table" id="cs-grid">
                 <thead><tr>
                   <th>Data</th><th>Analista</th><th>Cliente</th><th>CNPJ</th>
-                  <th>Empresa</th><th>Demonstrou</th><th>Gravidade</th><th>Detalhe</th>
+                  <th>Empresa</th><th>Demonstrou</th><th>Gravidade</th><th>Detalhe</th><th></th>
                 </tr></thead>
                 <tbody id="cs-tbody"><tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
@@ -327,6 +355,20 @@
               <div class="field span2"><label>O que o cliente demonstrou após a solução? <span class="req">*</span></label><textarea id="rc-demonstrou" placeholder="Descreva a reação do cliente"></textarea></div>
             </div>
             <button class="btn btn-primary btn-save" id="btn-rc-save">Salvar Recuperação</button>
+          </div>
+
+          <!-- GRADE -->
+          <div class="form-card" style="margin-top:20px">
+            <h2 class="form-title">Registros de Recuperação</h2><div class="form-accent"></div>
+            <div class="table-wrap">
+              <table class="data-table" id="rc-grid">
+                <thead><tr>
+                  <th>Data</th><th>Analista</th><th>Cliente</th><th>CNPJ</th>
+                  <th>Empresa</th><th>Gravidade</th><th>Demonstrou</th><th></th>
+                </tr></thead>
+                <tbody id="rc-tbody"><tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
