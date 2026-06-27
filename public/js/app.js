@@ -859,20 +859,6 @@ App.Reports = (() => {
 
 
 // ── Wire all events after DOM ready (no inline onclick) ───────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  // Auth
-  document.getElementById('btn-login').addEventListener('click', () => App.Auth.login());
-  document.getElementById('btn-register').addEventListener('click', () => App.Auth.register());
-  document.getElementById('btn-google').addEventListener('click', () => App.Auth.loginGoogle());
-  document.getElementById('btn-show-register').addEventListener('click', () => App.Auth.showRegister());
-  document.getElementById('btn-show-login').addEventListener('click', () => App.Auth.showLogin());
-  document.getElementById('btn-logout').addEventListener('click', (e) => { e.preventDefault(); App.Auth.logout(); });
-  document.getElementById('btn-logout-top').addEventListener('click', () => App.Auth.logout());
-
-  // Nav items
-  document.querySelectorAll('.nav-item[data-page]').forEach(el => {
-    el.addEventListener('click', (e) => { e.preventDefault(); App.Nav.go(el.dataset.page); });
-  });
 
   // Dashboard
   document.getElementById('dash-period').addEventListener('change', () => App.Dashboard.load());
