@@ -559,7 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-rc-save').addEventListener('click', () => App.Forms.recuperacao());
 
   // CNPJ masks
-  ['at-cnpj','gc-cnpj','in-cnpj','cs-cnpj','ps-cnpj','rc-cnpj'].forEach(id => {
+  ['at-cnpj','gc-cnpj','in-cnpj','cs-cnpj','rc-cnpj'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', (e) => App.Util.maskCNPJ(e.target));
   });
 
@@ -930,6 +930,7 @@ window.Pesquisas = Pesquisas;
 
 // ── Módulo Clientes Sensíveis — grade de registros ────────────────────────────
 const Sensiveis = (() => {
+  let _allData = [];
   function _token() { return localStorage.getItem('ge_token') || ''; }
 
   function _gravBadge(g) {
@@ -941,25 +942,28 @@ const Sensiveis = (() => {
     return `<span style="background:${color}20;color:${color};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${g}</span>`;
   }
 
-  async function loadGrid() {
+  function _populateYearFilter(data) {
+    const sel = document.getElementById('cs-ano-filter');
+    if (!sel) return;
+    const anos = [...new Set(data.map(r => new Date(r.created_at).getFullYear()))].sort((a,b) => b-a);
+    const current = sel.value;
+    sel.innerHTML = '<option value="todos">Todos os anos</option>' +
+      anos.map(a => `<option value="${a}" ${String(a) === current ? 'selected' : ''}>${a}</option>`).join('');
+  }
+
+  function _filterData(data) {
+    const ano = document.getElementById('cs-ano-filter')?.value || 'todos';
+    if (ano === 'todos') return data;
+    return data.filter(r => new Date(r.created_at).getFullYear() === Number(ano));
+  }
+
+  function _renderGrid(data) {
     const tbody = document.getElementById('cs-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
-
-    const res = await fetch('/api/data/sensiveis?period=todos', {
-      headers: { 'Authorization': `Bearer ${_token()}` }
-    });
-    if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar registros.</td></tr>';
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
       return;
     }
-    const { data } = await res.json();
-
-    if (!data || !data.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum cliente sensível registrado ainda.</td></tr>';
-      return;
-    }
-
     tbody.innerHTML = data.map(r => {
       const d = new Date(r.created_at).toLocaleString('pt-BR');
       return `<tr>
@@ -975,7 +979,116 @@ const Sensiveis = (() => {
     }).join('');
   }
 
-  return { loadGrid };
+  async function loadGrid() {
+    const tbody = document.getElementById('cs-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    const res = await fetch('/api/data/sensiveis?period=todos', {
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (!res || !res.ok) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar registros.</td></tr>';
+      return;
+    }
+    const { data } = await res.json();
+    _allData = data || [];
+    _populateYearFilter(_allData);
+    _renderGrid(_filterData(_allData));
+  }
+
+  function exportCSV() {
+    const data = _filterData(_allData);
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
+    const cols = ['created_at','analista','cliente','cnpj','empresa','demonstrou','gravidade','detalhe'];
+    const labels = { created_at:'Data', analista:'Analista', cliente:'Cliente', cnpj:'CNPJ',
+      empresa:'Empresa', demonstrou:'Demonstrou', gravidade:'Gravidade', detalhe:'Detalhe' };
+    const header = cols.map(c => labels[c]).join(';');
+    const rows = data.map(r => cols.map(c => {
+      let v = r[c] ?? '';
+      if (c === 'created_at') v = new Date(v).toLocaleString('pt-BR');
+      return `"${String(v).replace(/"/g,'""')}"`;
+    }).join(';'));
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ano = document.getElementById('cs-ano-filter')?.value || 'todos';
+    a.href = url; a.download = `clientes_sensiveis_${ano}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    App.Toast.ok('CSV exportado!');
+  }
+
+  function exportPDF() {
+    const data = _filterData(_allData);
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
+    const cols = ['created_at','analista','cliente','empresa','demonstrou','gravidade','detalhe'];
+    const labels = { created_at:'Data', analista:'Analista', cliente:'Cliente',
+      empresa:'Empresa', demonstrou:'Demonstrou', gravidade:'Gravidade', detalhe:'Detalhe' };
+    const ano = document.getElementById('cs-ano-filter')?.value || 'todos';
+    const titulo = ano === 'todos' ? 'Clientes Sensíveis — Todos os anos' : `Clientes Sensíveis — ${ano}`;
+    const rows = data.map(r =>
+      `<tr>${cols.map(c => {
+        let v = r[c] ?? '—';
+        if (c === 'created_at') v = new Date(v).toLocaleString('pt-BR');
+        return `<td>${v}</td>`;
+      }).join('')}</tr>`
+    ).join('');
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+    <title>${titulo}</title>
+    <style>
+      body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
+      h1{font-size:15px;color:#1a4233;margin-bottom:4px}
+      p.sub{color:#666;font-size:11px;margin-bottom:12px}
+      table{width:100%;border-collapse:collapse;font-size:10px}
+      th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
+      td{padding:5px 8px;border-bottom:1px solid #eee}
+      tr:nth-child(even) td{background:#f8f8f8}
+      @media print{body{margin:10px}}
+    </style></head><body>
+    <h1>Grupo-E — ${titulo}</h1>
+    <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${data.length} registros</p>
+    <table><thead><tr>${cols.map(c=>`<th>${labels[c]}</th>`).join('')}</tr></thead>
+    <tbody>${rows}</tbody></table>
+    <script>window.onload=()=>{window.print();}<\/script>
+    </body></html>`;
+    const win = window.open('', '_blank');
+    if (!win) { App.Toast.err('Permita popups para exportar PDF.'); return; }
+    win.document.write(html); win.document.close();
+    App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
+  }
+
+  async function limpar() {
+    if (!App.Auth.isAdmin()) { App.Toast.err('Acesso restrito a administradores.'); return; }
+    const total = _allData.length;
+    if (!total) { App.Toast.err('Não há registros para limpar.'); return; }
+    const confirmado = await new Promise(resolve => {
+      App.Modal.open('⚠️ Confirmar limpeza',
+        `<div style="text-align:center;padding:10px 0">
+          <p style="font-size:15px;margin-bottom:8px">Você está prestes a <strong>excluir permanentemente</strong></p>
+          <p style="font-size:28px;font-weight:800;color:#e53e3e;margin:12px 0">${total} registro${total !== 1 ? 's' : ''}</p>
+          <p style="color:var(--gray-500);font-size:13px">Esta ação não pode ser desfeita.</p>
+          <div style="display:flex;gap:10px;justify-content:center;margin-top:20px">
+            <button class="btn btn-ghost" onclick="App.Modal.close()">Cancelar</button>
+            <button class="btn" style="background:#e53e3e;color:#fff;border:none"
+              onclick="document.dispatchEvent(new CustomEvent('cs-confirm-limpar'))">Sim, limpar tudo</button>
+          </div>
+        </div>`, () => resolve(false));
+      document.addEventListener('cs-confirm-limpar', () => { App.Modal.close(); resolve(true); }, { once: true });
+    });
+    if (!confirmado) return;
+    const res = await fetch('/api/data/sensiveis/clear', {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (res && res.ok) {
+      _allData = []; _renderGrid([]); _populateYearFilter([]);
+      App.Toast.ok('Todos os registros foram removidos.');
+    } else {
+      App.Toast.err('Erro ao limpar registros.');
+    }
+  }
+
+  return { loadGrid, exportCSV, exportPDF, limpar };
 })();
 
 window.Sensiveis = Sensiveis;
@@ -990,7 +1103,7 @@ const Reports = {
     atendimentos: ['created_at','analista','cliente','cnpj','empresa','departamento','procurado','demanda','resumo'],
     gestao:       ['created_at','analista','solicitacao','cnpj','empresa','data_sol','competencia','canal','motivo'],
     insatisfacoes:['created_at','analista','cliente','cnpj','empresa','reclamado','reclamacao','gravidade'],
-    sensiveis:    ['created_at','analista','cliente','cnpj','empresa','demonstrou','gravidade'],
+    sensiveis:    ['created_at','analista','cliente','cnpj','empresa','demonstrou','gravidade','detalhe'],
     pesquisas:    ['created_at','analista','cliente','cnpj','empresa','nps','csat','ces','pontos'],
     recuperacoes: ['created_at','analista','cliente','cnpj','empresa','demonstrou','gravidade'],
   },
@@ -1000,7 +1113,7 @@ const Reports = {
     demanda:'Demanda', resumo:'Resumo', solicitacao:'Solicitação', data_sol:'Data Solicitação',
     competencia:'Competência', canal:'Canal', motivo:'Motivo', reclamado:'Analista Reclamado',
     reclamacao:'Reclamação', gravidade:'Gravidade', demonstrou:'Demonstração',
-    nps:'NPS', csat:'CSAT', ces:'CES', pontos:'Pontos Destacados',
+    nps:'NPS', csat:'CSAT', ces:'CES', pontos:'Pontos Destacados', detalhe:'Detalhe',
   },
 
   async exportCSV(endpoint) {
