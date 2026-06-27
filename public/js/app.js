@@ -206,23 +206,15 @@ const App = (() => {
       const pill = document.getElementById('topbar-role');
       pill.textContent = user.role === 'administrador' ? 'Administrador' : 'Usuário';
       pill.className   = 'role-pill ' + (user.role === 'administrador' ? 'admin' : 'user');
-      document.querySelectorAll('.admin-only').forEach(el => {
-        if (user.role === 'administrador') {
-          if (el.classList.contains('page')) {
-            // Pages: keep hidden, Nav.go will show the right one
-            el.hidden = true;
-          } else {
-            // Nav items and buttons: remove any hiding and show
-            el.removeAttribute('style');
-            el.hidden = false;
-          }
-        } else {
-          // Non-admin: hide all admin-only elements that are not pages
-          if (!el.classList.contains('page')) {
-            el.hidden = true;
-          }
-        }
-      });
+      if (user.role === 'administrador') {
+        document.body.classList.add('is-admin');
+        // Pages always start hidden — Nav.go controls them
+        document.querySelectorAll('.page.admin-only').forEach(el => {
+          el.hidden = true;
+        });
+      } else {
+        document.body.classList.remove('is-admin');
+      }
       document.getElementById('auth-screen').hidden = true;
       document.getElementById('app').hidden          = false;
       Nav.go('dashboard');
@@ -298,10 +290,7 @@ const App = (() => {
   const Nav = {
     go(page) {
       if (page === 'admin' && currentUser?.role !== 'administrador') return false;
-      document.querySelectorAll('.page').forEach(el => {
-        el.hidden = true;
-        el.style.removeProperty('display');
-      });
+      document.querySelectorAll('.page').forEach(el => { el.hidden = true; });
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       const pg = document.getElementById(`page-${page}`);
       if (pg) pg.hidden = false;
