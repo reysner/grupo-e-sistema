@@ -285,6 +285,164 @@ router.delete('/recuperacoes/clear', requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro ao limpar.' }); }
 });
 
+// ── CARTEIRA — CLIENTES ──────────────────────────────────────────────────────
+
+router.get('/clientes', requireAuth, async (req, res) => {
+  try {
+    const { status } = req.query;
+    let q = `SELECT c.*,
+      (SELECT valor FROM honorarios h WHERE h.cliente_id = c.id ORDER BY data_vigencia DESC LIMIT 1) AS honorario_atual,
+      (SELECT COALESCE(SUM(
+        CASE
+          WHEN h2.data_vigencia <= CURRENT_DATE THEN
+            (EXTRACT(YEAR FROM AGE(
+              COALESCE((SELECT MIN(h3.data_vigencia) FROM honorarios h3
+                WHERE h3.cliente_id = h2.cliente_id AND h3.data_vigencia > h2.data_vigencia),
+                COALESCE(c.data_saida, CURRENT_DATE)
+              ), h2.data_vigencia
+            )) * 12 +
+            EXTRACT(MONTH FROM AGE(
+              COALESCE((SELECT MIN(h3.data_vigencia) FROM honorarios h3
+                WHERE h3.cliente_id = h2.cliente_id AND h3.data_vigencia > h2.data_vigencia),
+                COALESCE(c.data_saida, CURRENT_DATE)
+              ), h2.data_vigencia
+            ))) * h2.valor
+          ELSE 0
+        END
+      ), 0) FROM honorarios h2 WHERE h2.cliente_id = c.id) AS receita_acumulada
+      FROM clientes c`;
+    const params = [];
+    if (status && status !== 'todos') { q += ` WHERE c.status = $1`; params.push(status); }
+    q += ` ORDER BY c.created_at DESC`;
+    const result = await pool.query(q, params);
+    res.json({ data: result.rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao buscar clientes.' }); }
+});
+
+router.post('/clientes', requireAuth, async (req, res) => {
+  try {
+    const { cnpj, nome_empresa, regime_tributario, data_entrada, honorario_inicial,
+            origem, cac, obs } = req.body;
+    if (!cnpj || !nome_empresa || !data_entrada || !honorario_inicial)
+      return res.status(400).json({ error: 'Campos obrigatórios faltando.' });
+    const { v4: uuidv4 } = require('uuid');
+    const clienteId = uuidv4();
+    await pool.query(
+      `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada,
+        honorario_inicial, origem, cac, obs)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [clienteId, req.user.id, cnpj, nome_empresa, regime_tributario || null,
+       data_entrada, honorario_inicial, origem || null, cac || 0, obs || null]
+    );
+    // Registrar honorário inicial no histórico
+    await pool.query(
+      `INSERT INTO honorarios (cliente_id, valor, data_vigencia, obs)
+       VALUES ($1,$2,$3,'Honorário inicial')`,
+      [clienteId, honorario_inicial, data_entrada]
+    );
+    // Registrar evento de entrada
+    await pool.query(
+      `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, valor_novo, data_evento)
+       VALUES ($1,'entrada',$2,$3,$4)`,
+      [clienteId, `Entrada — ${nome_empresa}`, honorario_inicial, data_entrada]
+    );
+    res.json({ ok: true, id: clienteId });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao cadastrar cliente.' }); }
+});
+
+router.get('/clientes/:id', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT * FROM clientes WHERE id = $1`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    const honorarios = await pool.query(
+      `SELECT * FROM honorarios WHERE cliente_id = $1 ORDER BY data_vigencia DESC`, [req.params.id]);
+    const eventos = await pool.query(
+      `SELECT * FROM eventos_clientes WHERE cliente_id = $1 ORDER BY data_evento DESC`, [req.params.id]);
+    res.json({ cliente: rows[0], honorarios: honorarios.rows, eventos: eventos.rows });
+  } catch (err) { res.status(500).json({ error: 'Erro ao buscar cliente.' }); }
+});
+
+router.patch('/clientes/:id/encerrar', requireAdmin, async (req, res) => {
+  try {
+    const { data_saida, motivo_saida } = req.body;
+    await pool.query(
+      `UPDATE clientes SET status='encerrado', data_saida=$1, motivo_saida=$2 WHERE id=$3`,
+      [data_saida, motivo_saida, req.params.id]
+    );
+    await pool.query(
+      `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, data_evento)
+       VALUES ($1,'saida',$2,$3)`,
+      [req.params.id, motivo_saida || 'Encerramento', data_saida]
+    );
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao encerrar cliente.' }); }
+});
+
+router.post('/clientes/:id/honorario', requireAdmin, async (req, res) => {
+  try {
+    const { valor, data_vigencia, obs } = req.body;
+    if (!valor || !data_vigencia) return res.status(400).json({ error: 'Valor e data obrigatórios.' });
+    // Buscar honorário anterior
+    const ant = await pool.query(
+      `SELECT valor FROM honorarios WHERE cliente_id=$1 ORDER BY data_vigencia DESC LIMIT 1`, [req.params.id]);
+    const valorAnterior = ant.rows[0]?.valor || 0;
+    await pool.query(
+      `INSERT INTO honorarios (cliente_id, valor, data_vigencia, obs) VALUES ($1,$2,$3,$4)`,
+      [req.params.id, valor, data_vigencia, obs || null]
+    );
+    await pool.query(
+      `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, valor_anterior, valor_novo, data_evento)
+       VALUES ($1,'reajuste','Atualização de honorário',$2,$3,$4)`,
+      [req.params.id, valorAnterior, valor, data_vigencia]
+    );
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao atualizar honorário.' }); }
+});
+
+router.get('/carteira/dashboard', requireAuth, async (req, res) => {
+  try {
+    // MRR = soma dos honorários vigentes de clientes ativos
+    const mrr = await pool.query(`
+      SELECT COALESCE(SUM(h.valor), 0) AS mrr
+      FROM clientes c
+      JOIN LATERAL (
+        SELECT valor FROM honorarios h2
+        WHERE h2.cliente_id = c.id ORDER BY data_vigencia DESC LIMIT 1
+      ) h ON true
+      WHERE c.status = 'ativo'`);
+    const ativos = await pool.query(`SELECT COUNT(*) FROM clientes WHERE status='ativo'`);
+    const encerrados = await pool.query(`SELECT COUNT(*) FROM clientes WHERE status='encerrado'`);
+    // Ticket médio
+    const ticket = await pool.query(`
+      SELECT COALESCE(AVG(h.valor), 0) AS ticket
+      FROM clientes c
+      JOIN LATERAL (
+        SELECT valor FROM honorarios h2
+        WHERE h2.cliente_id = c.id ORDER BY data_vigencia DESC LIMIT 1
+      ) h ON true
+      WHERE c.status = 'ativo'`);
+    // Tempo médio retenção (meses) de clientes encerrados
+    const retencao = await pool.query(`
+      SELECT COALESCE(AVG(
+        EXTRACT(YEAR FROM AGE(data_saida, data_entrada))*12 +
+        EXTRACT(MONTH FROM AGE(data_saida, data_entrada))
+      ), 0) AS meses
+      FROM clientes WHERE status='encerrado' AND data_saida IS NOT NULL`);
+    const mesesMedio = parseFloat(retencao.rows[0].meses) || 48;
+    const ticketMedio = parseFloat(ticket.rows[0].ticket) || 0;
+    const mrrVal = parseFloat(mrr.rows[0].mrr) || 0;
+    res.json({
+      mrr: mrrVal,
+      arr: mrrVal * 12,
+      ativos: parseInt(ativos.rows[0].count),
+      encerrados: parseInt(encerrados.rows[0].count),
+      ticket_medio: ticketMedio,
+      ltv_medio_projetado: ticketMedio * mesesMedio,
+      retencao_media_meses: mesesMedio,
+    });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro no dashboard.' }); }
+});
+
 // ── CLEAR INSATISFACOES ──────────────────────────────────────────────────────────
 router.delete('/insatisfacoes/clear', requireAdmin, async (req, res) => {
   try {
