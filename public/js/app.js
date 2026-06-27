@@ -94,7 +94,11 @@ const App = (() => {
       document.getElementById(valId).textContent = document.getElementById(rangeId).value;
     },
     toggleOutro(selId, wrapId) {
-      document.getElementById(wrapId).hidden = document.getElementById(selId).value !== 'Outro';
+      const wrap = document.getElementById(wrapId);
+      if (!wrap) return;
+      const isOutro = document.getElementById(selId)?.value === 'Outro';
+      wrap.style.display = isOutro ? 'flex' : 'none';
+      wrap.hidden = !isOutro;
     },
     val(id)    { return document.getElementById(id)?.value?.trim() ?? ''; },
     intVal(id) { return parseInt(document.getElementById(id)?.value ?? '0', 10); },
@@ -218,15 +222,13 @@ const App = (() => {
       Store.load();
       if (!_accessToken || !currentUser) return false;
 
-      // Show loading state immediately — hide auth screen while validating
-      document.getElementById('auth-screen').hidden = true;
-      document.getElementById('app').hidden = false;
-      document.getElementById('topbar-name').textContent = currentUser.name || '...';
+      // Restore session from localStorage immediately — don't show login screen
+      Auth.onLoggedIn(currentUser);
 
-      // Validate token with a 5s timeout so slow Render wakeup doesn't block
+      // Then silently validate in the background (doesn't block UI)
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
+        const timeout = setTimeout(() => controller.abort(), 8000);
         const res = await fetch('/api/auth/me', {
           headers: { 'Authorization': `Bearer ${_accessToken}` },
           signal: controller.signal,
@@ -235,28 +237,23 @@ const App = (() => {
 
         if (res.ok) {
           const data = await res.json();
-          Auth.onLoggedIn(data.user || currentUser);
+          // Update user data silently (e.g. role change)
+          if (data.user) Auth.onLoggedIn(data.user);
           return true;
         }
-        // Token expired — try silent refresh
+        // 401 — try refresh token
         if (res.status === 401 && _refreshToken) {
           const refreshed = await Auth.refresh();
-          if (refreshed) { Auth.onLoggedIn(currentUser); return true; }
+          if (refreshed) return true;
+          // Refresh also failed — session truly expired
+          Auth.forceLogout();
+          return false;
         }
       } catch (e) {
-        // AbortError (timeout) or network error — server waking up
-        // Restore session optimistically; next API call will trigger refresh if needed
-        if (e.name === 'AbortError' || e instanceof TypeError) {
-          Auth.onLoggedIn(currentUser);
-          return true;
-        }
+        // Network error or timeout (Render waking up) — keep session, will retry on next call
+        return true;
       }
-
-      // Token invalid and refresh failed — force logout
-      document.getElementById('auth-screen').hidden = false;
-      document.getElementById('app').hidden = true;
-      Store.clear();
-      return false;
+      return true;
     },
 
     isAdmin() {
