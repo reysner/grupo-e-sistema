@@ -197,6 +197,18 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
+// ── MARCAR PESQUISA COMO TRATADA ─────────────────────────────────────────────
+router.patch('/pesquisas/:id/tratado', async (req, res) => {
+  try {
+    // Add column if not exists
+    await pool.query(`ALTER TABLE pesquisas ADD COLUMN IF NOT EXISTS tratado BOOLEAN DEFAULT FALSE`).catch(() => {});
+    await pool.query(`UPDATE pesquisas SET tratado = TRUE WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao atualizar.' });
+  }
+});
+
 // ── CLEAR ─────────────────────────────────────────────────────────────────────
 router.delete('/clear', requireAdmin, async (req, res) => {
   try {
@@ -209,3 +221,31 @@ router.delete('/clear', requireAdmin, async (req, res) => {
 });
 
 module.exports = router;
+
+// ── ROTA PÚBLICA — pesquisa sem login ─────────────────────────────────────────
+const publicRouter = require('express').Router();
+
+publicRouter.post('/pesquisa', async (req, res) => {
+  try {
+    const { cliente, empresa, nps, csat, ces, pontos } = req.body;
+    if (!cliente || !empresa || nps == null || csat == null || ces == null)
+      return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
+    if (nps < 0 || nps > 10 || csat < 1 || csat > 5 || ces < 1 || ces > 5)
+      return res.status(400).json({ error: 'Valores fora do intervalo permitido.' });
+
+    const { v4: uuidv4 } = require('uuid');
+    const { pool } = require('../db');
+    const id = uuidv4();
+    await pool.query(
+      `INSERT INTO pesquisas (id, user_id, analista, cliente, cnpj, empresa, nps, csat, ces, pontos)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [id, '00000000-0000-0000-0000-000000000000', 'Pesquisa Pública', cliente, '', empresa, Number(nps), Number(csat), Number(ces), pontos || null]
+    );
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error('Public survey error:', err);
+    res.status(500).json({ error: 'Erro ao registrar pesquisa.' });
+  }
+});
+
+module.exports.publicRouter = publicRouter;
