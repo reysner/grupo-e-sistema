@@ -417,6 +417,7 @@ const App = (() => {
           body: JSON.stringify({
             cnpj: Util.val('gc-cnpj'),
             nome_empresa: Util.val('gc-empresa'),
+            codigo: Util.val('gc-codigo') || null,
             regime_tributario: Util.val('gc-regime') || null,
             data_entrada: Util.val('gc-data-entrada') || Util.val('gc-data'),
             honorario_inicial: parseFloat(Util.val('gc-honorario')) || 0,
@@ -456,6 +457,7 @@ const App = (() => {
       document.getElementById('gc-canal').value='';
       document.getElementById('gc-sol-outro').value='';
       document.getElementById('gc-canal-outro').value='';
+      document.getElementById('gc-codigo').value='';
       gcToggleOutros();
       Gestao.loadGrid();
     },
@@ -1072,7 +1074,7 @@ const Carteira = (() => {
     const { data } = await res.json();
     _clientes = data || [];
     if (!_clientes.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum cliente cadastrado ainda.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum cliente cadastrado ainda.</td></tr>';
       return;
     }
     // Atualiza receita total no card
@@ -1105,7 +1107,10 @@ const Carteira = (() => {
   function abrirCadastro() {
     App.Modal.open('Cadastrar cliente', `
       <div style="display:grid;gap:12px">
-        <div class="field"><label>Nome da empresa <span class="req">*</span></label><input id="m-nome" type="text" placeholder="Razão social" /></div>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end">
+          <div class="field"><label>Nome da empresa <span class="req">*</span></label><input id="m-nome" type="text" placeholder="Razão social" /></div>
+          <div class="field"><label>Código</label><input id="m-codigo" type="text" placeholder="CLI-001" style="text-transform:uppercase;width:100px" /></div>
+        </div>
         <div class="field"><label>CNPJ <span class="req">*</span></label><input id="m-cnpj" type="text" placeholder="00.000.000/0000-00" maxlength="18" onInput="App.Util.maskCNPJ(this)" /></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div class="field"><label>Data de entrada <span class="req">*</span></label><input id="m-data" type="date" /></div>
@@ -1136,6 +1141,7 @@ const Carteira = (() => {
       headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${_token()}` },
       body: JSON.stringify({
         cnpj, nome_empresa: nome,
+        codigo: document.getElementById('m-codigo')?.value?.trim() || null,
         regime_tributario: document.getElementById('m-regime')?.value || null,
         data_entrada: data,
         honorario_inicial: parseFloat(hon),
@@ -1239,7 +1245,51 @@ const Carteira = (() => {
     App.Toast.ok('CSV exportado!');
   }
 
-  return { load, loadDashboard, loadGrid, abrirCadastro, salvarCliente, atualizarHonorario, salvarHonorario, verFicha, exportCSV };
+  function filtrar() {
+    const busca = (document.getElementById('cart-busca')?.value || '').toLowerCase().trim();
+    const status = document.getElementById('cart-status-filter')?.value || 'todos';
+    const filtrado = _clientes.filter(c => {
+      const matchStatus = status === 'todos' || c.status === status;
+      const matchBusca = !busca ||
+        (c.nome_empresa||'').toLowerCase().includes(busca) ||
+        (c.codigo||'').toLowerCase().includes(busca) ||
+        (c.cnpj||'').includes(busca);
+      return matchStatus && matchBusca;
+    });
+    _renderGrid(filtrado);
+  }
+
+  function _renderGrid(data) {
+    const tbody = document.getElementById('cart-tbody');
+    if (!tbody) return;
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum cliente encontrado.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(c => {
+      const hon = parseFloat(c.honorario_atual||c.honorario_inicial||0);
+      const rec = parseFloat(c.receita_acumulada||0);
+      const statusBadge = c.status==='ativo'
+        ? '<span style="background:#f0fff4;color:#38a169;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Ativo</span>'
+        : '<span style="background:#fff5f5;color:#e53e3e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Encerrado</span>';
+      return `<tr>
+        <td style="font-size:11px;color:var(--gray-400);font-weight:600">${c.codigo||'—'}</td>
+        <td style="font-weight:600">${c.nome_empresa}</td>
+        <td style="font-size:12px;color:var(--gray-500)">${c.cnpj}</td>
+        <td style="font-weight:600;color:var(--g700)">${_fmt(hon)}</td>
+        <td>${_fmt(rec)}</td>
+        <td style="font-size:12px;color:var(--gray-500)">${_tempo(c.data_entrada, c.data_saida)}</td>
+        <td style="font-size:12px;color:var(--gray-500)">${c.origem||'—'}</td>
+        <td>${statusBadge}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-ghost btn-sm" onclick="Carteira.verFicha('${c.id}')">Ver ficha</button>
+          ${c.status==='ativo' && App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#1D9E75;font-size:14px;padding:2px 6px" onclick="Carteira.atualizarHonorario('${c.id}')" title="Atualizar honorário">$ +</button>` : ''}
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  return { load, loadDashboard, loadGrid, filtrar, abrirCadastro, salvarCliente, atualizarHonorario, salvarHonorario, verFicha, exportCSV };
 })();
 
 window.Carteira = Carteira;
