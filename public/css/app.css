@@ -326,4 +326,16 @@ body { font-family: var(--font); background: var(--gray-50); color: var(--gray-7
 
 /* ── Util ────────────────────────────────────────────────────────────────────── */
 [hidden] { display: none !important; }
-.admin-only { display: none; } /* shown via JS for admins */
+
+/* ── Admin-only visibility ───────────────────────────────────────────────── */
+/* Non-admin: hide all admin-only non-page elements */
+body:not(.is-admin) .admin-only:not(.page) {
+  display: none !important;
+}
+/* Admin: show nav items and buttons normally */
+body.is-admin .nav-item.admin-only {
+  display: flex;
+}
+body.is-admin .btn.admin-only {
+  display: inline-flex;
+}
