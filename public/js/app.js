@@ -1028,7 +1028,10 @@ const Carteira = (() => {
     set('cart-ativos', d.ativos);
     set('cart-ticket', _fmt(d.ticket_medio));
     set('cart-ltv-medio', _fmt(d.ltv_medio_projetado));
-    // Receita total = soma de todos os clientes (calculada no grid)
+    set('cart-encerrados-sub', `${d.encerrados} encerrado${d.encerrados !== 1 ? 's' : ''}`);
+    const meses = Math.round(d.retencao_media_meses || 0);
+    const anos = Math.floor(meses / 12); const m = meses % 12;
+    set('cart-retencao', meses > 0 ? (anos > 0 ? `${anos}a ${m}m` : `${m} meses`) : '—');
   }
 
   async function loadGrid() {
@@ -1040,13 +1043,13 @@ const Carteira = (() => {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#e53e3e;padding:32px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data } = await res.json();
     _clientes = data || [];
     if (!_clientes.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum cliente cadastrado ainda.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum cliente cadastrado ainda.</td></tr>';
       return;
     }
     // Atualiza receita total no card
@@ -1062,14 +1065,15 @@ const Carteira = (() => {
         : '<span style="background:#fff5f5;color:#e53e3e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Encerrado</span>';
       return `<tr>
         <td style="font-weight:600">${c.nome_empresa}</td>
-        <td style="font-size:12px">${c.cnpj}</td>
-        <td>${_fmt(hon)}</td>
+        <td style="font-size:12px;color:var(--gray-500)">${c.cnpj}</td>
+        <td style="font-weight:600;color:var(--g700)">${_fmt(hon)}</td>
         <td>${_fmt(rec)}</td>
         <td style="font-size:12px;color:var(--gray-500)">${_tempo(c.data_entrada, c.data_saida)}</td>
+        <td style="font-size:12px;color:var(--gray-500)">${c.origem||'—'}</td>
         <td>${statusBadge}</td>
-        <td>
+        <td style="white-space:nowrap">
           <button class="btn btn-ghost btn-sm" onclick="Carteira.verFicha('${c.id}')">Ver ficha</button>
-          ${c.status==='ativo' && App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#1D9E75;font-size:13px" onclick="Carteira.atualizarHonorario('${c.id}')" title="Atualizar honorário">$ +</button>` : ''}
+          ${c.status==='ativo' && App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#1D9E75;font-size:14px;padding:2px 6px" onclick="Carteira.atualizarHonorario('${c.id}')" title="Atualizar honorário">$ +</button>` : ''}
         </td>
       </tr>`;
     }).join('');
