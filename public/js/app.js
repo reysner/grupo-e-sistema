@@ -296,7 +296,10 @@ const App = (() => {
       document.getElementById('page-title').textContent = PAGE_TITLES[page] || page;
       if (page === 'dashboard') Dashboard.load();
       if (page === 'pesquisas')  Pesquisas.loadGrid();
+      if (page === 'atendimento')  Atendimento.loadGrid();
+      if (page === 'gestao')       Gestao.loadGrid();
       if (page === 'insatisfacao') Insatisfacao.loadGrid();
+      if (page === 'recuperacao')  Recuperacao.loadGrid();
       if (page === 'sensiveis')   Sensiveis.loadGrid();
       if (page === 'admin')     Admin.load();
       return false;
@@ -393,6 +396,7 @@ const App = (() => {
       }, ['at-analista','at-cliente','at-cnpj','at-empresa','at-procurado','at-outro','at-resumo'], 'Atendimento salvo!');
       document.getElementById('at-depto').value=''; document.getElementById('at-demanda').value='';
       document.getElementById('at-outro-wrap').hidden=true;
+      Atendimento.loadGrid();
     },
 
     async gestao() {
@@ -452,6 +456,7 @@ const App = (() => {
         demonstrou: Util.val('rc-demonstrou'), gravidade: Util.val('rc-gravidade'),
       }, ['rc-analista','rc-cliente','rc-cnpj','rc-empresa','rc-demonstrou'], 'Recuperação registrada!');
       document.getElementById('rc-gravidade').value='';
+      Recuperacao.loadGrid();
     },
   };
 
@@ -791,7 +796,9 @@ const Pesquisas = (() => {
         <td style="text-align:center;font-size:16px;color:#f5c518">${starStr(r.ces)}</td>
         <td>${origem}</td>
         <td>${statusBadge}</td>
-        <td><button class="btn btn-ghost btn-sm" onclick="Pesquisas.detail(${JSON.stringify(r).replace(/"/g,'&quot;')})">Ver</button>${tratarBtn}</td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="Pesquisas.detail(${JSON.stringify(r).replace(/"/g,'&quot;')})">Ver</button>${tratarBtn}${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px;margin-left:2px" onclick="Pesquisas.excluir('${r.id}')" title="Excluir">🗑</button>` : ''}
+        </td>
       </tr>`;
     }).join('');
   }
@@ -941,6 +948,191 @@ const Pesquisas = (() => {
 // Expor globalmente
 window.Pesquisas = Pesquisas;
 
+// ── Módulo Atendimento — grade ─────────────────────────────────────────────────────
+const Atendimento = (() => {
+  let _allData = [];
+  function _token() { return localStorage.getItem('ge_token') || ''; }
+
+  function _renderGrid(data) {
+    const tbody = document.getElementById('at-tbody');
+    if (!tbody) return;
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(r => {
+      const d = new Date(r.created_at).toLocaleString('pt-BR');
+      return `<tr>
+        <td style="font-size:12px;color:var(--gray-500)">${d}</td>
+        <td>${r.analista}</td>
+        <td style="font-weight:600">${r.cliente}</td>
+        <td style="font-size:12px">${r.cnpj || '—'}</td>
+        <td>${r.empresa}</td>
+        <td>${r.departamento || '—'}</td>
+        <td style="font-size:12px;max-width:180px;word-break:break-word">${r.demanda}</td>
+        <td style="font-size:12px;color:var(--gray-500);max-width:150px;word-break:break-word">${r.resumo || '—'}</td>
+        <td>${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Atendimento.excluir('${r.id}')" title="Excluir">🗑</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function loadGrid() {
+    const tbody = document.getElementById('at-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    const res = await fetch('/api/data/atendimentos?period=todos', {
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (!res || !res.ok) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      return;
+    }
+    const { data } = await res.json();
+    _allData = data || [];
+    _renderGrid(_allData);
+  }
+
+  async function excluir(id) {
+    if (!App.Auth.isAdmin()) return;
+    const res = await fetch(`/api/data/atendimentos/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (res && res.ok) {
+      _allData = _allData.filter(r => r.id !== id);
+      _renderGrid(_allData);
+      App.Toast.ok('Registro excluído.');
+    } else { App.Toast.err('Erro ao excluir.'); }
+  }
+
+  return { loadGrid, excluir };
+})();
+
+window.Atendimento = Atendimento;
+
+// ── Módulo Gestão — grade ─────────────────────────────────────────────────────
+const Gestao = (() => {
+  let _allData = [];
+  function _token() { return localStorage.getItem('ge_token') || ''; }
+
+  function _renderGrid(data) {
+    const tbody = document.getElementById('gc-tbody');
+    if (!tbody) return;
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(r => {
+      const d = new Date(r.created_at).toLocaleString('pt-BR');
+      return `<tr>
+        <td style="font-size:12px;color:var(--gray-500)">${d}</td>
+        <td>${r.analista}</td>
+        <td style="font-size:12px">${r.cnpj || '—'}</td>
+        <td style="font-weight:600">${r.empresa}</td>
+        <td>${r.solicitacao}</td>
+        <td>${r.canal || '—'}</td>
+        <td style="font-size:12px;color:var(--gray-500);max-width:180px;word-break:break-word">${r.motivo || '—'}</td>
+        <td>${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Gestao.excluir('${r.id}')" title="Excluir">🗑</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function loadGrid() {
+    const tbody = document.getElementById('gc-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    const res = await fetch('/api/data/gestao?period=todos', {
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (!res || !res.ok) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      return;
+    }
+    const { data } = await res.json();
+    _allData = data || [];
+    _renderGrid(_allData);
+  }
+
+  async function excluir(id) {
+    if (!App.Auth.isAdmin()) return;
+    const res = await fetch(`/api/data/gestao/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (res && res.ok) {
+      _allData = _allData.filter(r => r.id !== id);
+      _renderGrid(_allData);
+      App.Toast.ok('Registro excluído.');
+    } else { App.Toast.err('Erro ao excluir.'); }
+  }
+
+  return { loadGrid, excluir };
+})();
+
+window.Gestao = Gestao;
+
+// ── Módulo Recuperação — grade ─────────────────────────────────────────────────────
+const Recuperacao = (() => {
+  let _allData = [];
+  function _token() { return localStorage.getItem('ge_token') || ''; }
+
+  function _renderGrid(data) {
+    const tbody = document.getElementById('rc-tbody');
+    if (!tbody) return;
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(r => {
+      const d = new Date(r.created_at).toLocaleString('pt-BR');
+      const gravColor = {'Muito Alta':'#e53e3e','Alta':'#dd6b20','Média':'#d69e2e','Baixa':'#38a169','Muito Baixa':'#2b6cb0'}[r.gravidade]||'#718096';
+      return `<tr>
+        <td style="font-size:12px;color:var(--gray-500)">${d}</td>
+        <td>${r.analista}</td>
+        <td style="font-weight:600">${r.cliente}</td>
+        <td style="font-size:12px">${r.cnpj || '—'}</td>
+        <td>${r.empresa}</td>
+        <td><span style="background:${gravColor}20;color:${gravColor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${r.gravidade}</span></td>
+        <td style="font-size:12px;color:var(--gray-500);max-width:200px;word-break:break-word">${r.demonstrou}</td>
+        <td>${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Recuperacao.excluir('${r.id}')" title="Excluir">🗑</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function loadGrid() {
+    const tbody = document.getElementById('rc-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    const res = await fetch('/api/data/recuperacoes?period=todos', {
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (!res || !res.ok) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      return;
+    }
+    const { data } = await res.json();
+    _allData = data || [];
+    _renderGrid(_allData);
+  }
+
+  async function excluir(id) {
+    if (!App.Auth.isAdmin()) return;
+    const res = await fetch(`/api/data/recuperacoes/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (res && res.ok) {
+      _allData = _allData.filter(r => r.id !== id);
+      _renderGrid(_allData);
+      App.Toast.ok('Registro excluído.');
+    } else { App.Toast.err('Erro ao excluir.'); }
+  }
+
+  return { loadGrid, excluir };
+})();
+
+window.Recuperacao = Recuperacao;
+
 // ── Módulo Insatisfação — grade de registros ─────────────────────────────────
 const Insatisfacao = (() => {
   let _allData = [];
@@ -974,7 +1166,7 @@ const Insatisfacao = (() => {
     const tbody = document.getElementById('in-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(r => {
@@ -988,6 +1180,7 @@ const Insatisfacao = (() => {
         <td>${r.reclamado || '—'}</td>
         <td>${_gravBadge(r.gravidade)}</td>
         <td style="font-size:12px;color:var(--gray-500);max-width:200px;word-break:break-word">${r.reclamacao}</td>
+        <td>${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Insatisfacao.excluir('${r.id}')" title="Excluir">🗑</button>` : ''}</td>
       </tr>`;
     }).join('');
   }
@@ -995,12 +1188,12 @@ const Insatisfacao = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('in-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
     const res = await fetch('/api/data/insatisfacoes?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar registros.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar registros.</td></tr>';
       return;
     }
     const { data } = await res.json();
@@ -1101,7 +1294,20 @@ const Insatisfacao = (() => {
     }
   }
 
-  return { loadGrid, exportCSV, exportPDF, limpar };
+  async function excluir(id) {
+    if (!App.Auth.isAdmin()) return;
+    const res = await fetch(`/api/data/insatisfacoes/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (res && res.ok) {
+      _allData = _allData.filter(r => r.id !== id);
+      _renderGrid(_filterData(_allData));
+      App.Toast.ok('Registro excluído.');
+    } else { App.Toast.err('Erro ao excluir.'); }
+  }
+
+  return { loadGrid, exportCSV, exportPDF, limpar, excluir };
 })();
 
 window.Insatisfacao = Insatisfacao;
@@ -1139,7 +1345,7 @@ const Sensiveis = (() => {
     const tbody = document.getElementById('cs-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(r => {
@@ -1153,6 +1359,7 @@ const Sensiveis = (() => {
         <td>${r.demonstrou}</td>
         <td>${_gravBadge(r.gravidade)}</td>
         <td style="font-size:12px;color:var(--gray-500);max-width:200px;word-break:break-word">${r.detalhe || '—'}</td>
+        <td>${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Sensiveis.excluir('${r.id}')" title="Excluir">🗑</button>` : ''}</td>
       </tr>`;
     }).join('');
   }
@@ -1160,12 +1367,12 @@ const Sensiveis = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('cs-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
     const res = await fetch('/api/data/sensiveis?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar registros.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar registros.</td></tr>';
       return;
     }
     const { data } = await res.json();
@@ -1266,7 +1473,20 @@ const Sensiveis = (() => {
     }
   }
 
-  return { loadGrid, exportCSV, exportPDF, limpar };
+  async function excluir(id) {
+    if (!App.Auth.isAdmin()) return;
+    const res = await fetch(`/api/data/sensiveis/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (res && res.ok) {
+      _allData = _allData.filter(r => r.id !== id);
+      _renderGrid(_filterData(_allData));
+      App.Toast.ok('Registro excluído.');
+    } else { App.Toast.err('Erro ao excluir.'); }
+  }
+
+  return { loadGrid, exportCSV, exportPDF, limpar, excluir };
 })();
 
 window.Sensiveis = Sensiveis;
