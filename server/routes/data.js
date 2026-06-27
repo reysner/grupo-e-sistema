@@ -209,6 +209,22 @@ router.patch('/pesquisas/:id/tratado', async (req, res) => {
   }
 });
 
+// ── CLEAR PESQUISAS ──────────────────────────────────────────────────────────────
+router.delete('/pesquisas/clear', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM pesquisas`);
+    res.json({ ok: true, message: 'Todas as respostas foram removidas.' });
+  } catch (err) { res.status(500).json({ error: 'Erro ao limpar respostas.' }); }
+});
+
+// ── CLEAR PESQUISAS ──────────────────────────────────────────────────────────────
+router.delete('/pesquisas/clear', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM pesquisas`);
+    res.json({ ok: true, message: 'Todas as respostas foram removidas.' });
+  } catch (err) { res.status(500).json({ error: 'Erro ao limpar respostas.' }); }
+});
+
 // ── CLEAR ─────────────────────────────────────────────────────────────────────
 router.delete('/clear', requireAdmin, async (req, res) => {
   try {
