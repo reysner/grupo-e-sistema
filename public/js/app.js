@@ -258,6 +258,7 @@ const App = (() => {
       document.querySelectorAll(`.nav-item[data-page="${page}"]`).forEach(el => el.classList.add('active'));
       document.getElementById('page-title').textContent = PAGE_TITLES[page] || page;
       if (page === 'dashboard') Dashboard.load();
+      if (page === 'pesquisas')  PesquisasGrid.load();
       if (page === 'admin')     Admin.load();
       return false;
     },
@@ -564,6 +565,195 @@ document.addEventListener('DOMContentLoaded', () => {
   App.Auth.tryAutoLogin();
 });
 
+// ── Grade de Pesquisas ────────────────────────────────────────────────────────
+const PesquisasGrid = (() => {
+  async function load() {
+    const tbody = document.getElementById('ps-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+
+    const headers = {};
+    const token = localStorage.getItem('ge_token');
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+
+    const res = await fetch('/api/data/pesquisas?period=todos', { headers });
+    if (!res.ok) return;
+    const { data } = await res.json();
+
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Nenhuma resposta ainda.</td></tr>';
+      return;
+    }
+
+    // Conta detratores não tratados
+    const detratores = data.filter(r => r.nps <= 6 && !r.tratado);
+    const alerta = document.getElementById('ps-alerta-baixo');
+    const alertCount = document.getElementById('ps-alerta-count');
+    if (alerta && detratores.length > 0) {
+      alerta.style.display = 'block';
+      alertCount.textContent = detratores.length;
+    } else if (alerta) {
+      alerta.style.display = 'none';
+    }
+
+    tbody.innerHTML = data.map(r => {
+      const nps = r.nps;
+      let rowStyle = '', badge = '', badgeStyle = '';
+      if (nps <= 6) {
+        rowStyle = 'background:#fff5f5';
+        badge = 'Detrator';
+        badgeStyle = 'background:#e53e3e;color:#fff';
+      } else if (nps <= 8) {
+        rowStyle = 'background:#fffff0';
+        badge = 'Neutro';
+        badgeStyle = 'background:#d69e2e;color:#fff';
+      } else {
+        rowStyle = 'background:#f0fff4';
+        badge = 'Promotor';
+        badgeStyle = 'background:#38a169;color:#fff';
+      }
+      const data_fmt = new Date(r.created_at).toLocaleDateString('pt-BR');
+      const origem = r.origem === 'publico' ? '🌐 Link' : '📋 Interno';
+      const status = r.tratado ? '<span style="color:#38a169;font-weight:600">✓ Tratado</span>' : '<span style="color:#e53e3e;font-weight:600">Pendente</span>';
+
+      return '<tr style="' + rowStyle + '">' +
+        '<td>' + data_fmt + '</td>' +
+        '<td>' + (r.cliente || '') + '</td>' +
+        '<td>' + (r.empresa || '') + '</td>' +
+        '<td><strong>' + nps + '</strong> <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;' + badgeStyle + '">' + badge + '</span></td>' +
+        '<td>' + (r.csat || '-') + '/5</td>' +
+        '<td>' + (r.ces || '-') + '/5</td>' +
+        '<td>' + origem + '</td>' +
+        '<td>' + status + '</td>' +
+        '<td><button class="btn btn-ghost btn-sm" onclick="PesquisasGrid.verDetalhes('' + r.id + '')">Ver</button>' +
+        (!r.tratado ? ' <button class="btn btn-success btn-sm" onclick="PesquisasGrid.marcarTratado('' + r.id + '')">Tratar</button>' : '') +
+        '</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  async function verDetalhes(id) {
+    const headers = {};
+    const token = localStorage.getItem('ge_token');
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const res = await fetch('/api/data/pesquisas?period=todos', { headers });
+    if (!res.ok) return;
+    const { data } = await res.json();
+    const r = data.find(x => x.id === id);
+    if (!r) return;
+
+    App.Modal.open('Detalhes da Pesquisa',
+      '<div style="font-size:13px;line-height:1.8">' +
+      '<p><strong>Cliente:</strong> ' + (r.cliente || '-') + '</p>' +
+      '<p><strong>Empresa:</strong> ' + (r.empresa || '-') + '</p>' +
+      '<p><strong>Data:</strong> ' + new Date(r.created_at).toLocaleString('pt-BR') + '</p>' +
+      '<p><strong>NPS:</strong> ' + r.nps + '/10</p>' +
+      (r.motivo_nps ? '<p><strong>Motivo NPS:</strong> ' + r.motivo_nps + '</p>' : '') +
+      '<p><strong>CSAT:</strong> ' + (r.csat || '-') + '/5</p>' +
+      '<p><strong>CES:</strong> ' + (r.ces || '-') + '/5</p>' +
+      (r.pontos ? '<p><strong>Comentário:</strong> ' + r.pontos + '</p>' : '') +
+      '<p><strong>Origem:</strong> ' + (r.origem === 'publico' ? 'Link público' : 'Interno') + '</p>' +
+      '</div>',
+      function() { App.Modal.close(); }
+    );
+    document.getElementById('modal-confirm').textContent = 'Fechar';
+  }
+
+  async function marcarTratado(id) {
+    const headers = { 'Content-Type': 'application/json' };
+    const token = localStorage.getItem('ge_token');
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const res = await fetch('/api/data/pesquisas/' + id + '/tratado', {
+      method: 'PATCH', headers
+    });
+    if (res.ok) { App.Toast.ok('Marcado como tratado!'); load(); }
+    else App.Toast.err('Erro ao atualizar.');
+  }
+
+  return { load, verDetalhes, marcarTratado };
+})();
+
+window.PesquisasGrid = PesquisasGrid;
+
+
+// ── Módulo Pesquisas — grade de registros ─────────────────────────────────────
+const Pesquisas = (() => {
+  function npsClass(nps) {
+    if (nps <= 6) return 'background:#fff5f5';
+    if (nps <= 8) return 'background:#fffff0';
+    return 'background:#f0fff4';
+  }
+  function npsBadge(nps) {
+    if (nps <= 6) return `<span style="background:#e53e3e;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Detrator</span>`;
+    if (nps <= 8) return `<span style="background:#d69e2e;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Neutro</span>`;
+    return `<span style="background:#38a169;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Promotor</span>`;
+  }
+  function starStr(n) { return '★'.repeat(n) + '☆'.repeat(5-n); }
+
+  async function loadGrid() {
+    const res = await API.get('/api/data/pesquisas?period=todos');
+    if (!res || !res.ok) return;
+    const { data } = await res.json();
+    const tbody = document.getElementById('ps-tbody');
+    if (!tbody) return;
+
+    const baixos = data.filter(r => r.nps <= 6);
+    const alertEl = document.getElementById('ps-alerta-baixo');
+    const alertCount = document.getElementById('ps-alerta-count');
+    if (alertEl) {
+      alertEl.style.display = baixos.length > 0 ? 'block' : 'none';
+      if (alertCount) alertCount.textContent = baixos.length;
+    }
+
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Nenhuma resposta registrada ainda</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = data.map(r => {
+      const d = new Date(r.created_at).toLocaleString('pt-BR');
+      const origem = r.analista === 'Pesquisa Pública' 
+        ? '<span style="background:var(--g100);color:var(--g700);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">🔗 Link público</span>'
+        : '<span style="background:var(--gray-100);color:var(--gray-500);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">✏️ Manual</span>';
+      return `<tr style="${npsClass(r.nps)}">
+        <td style="font-size:12px;color:var(--gray-500)">${d}</td>
+        <td style="font-weight:600">${r.cliente}</td>
+        <td>${r.empresa}</td>
+        <td style="text-align:center"><span style="font-size:18px;font-weight:800;color:${r.nps<=6?'#e53e3e':r.nps<=8?'#d69e2e':'#38a169'}">${r.nps}</span><br/>${npsBadge(r.nps)}</td>
+        <td style="text-align:center;font-size:16px;color:#f5c518">${starStr(r.csat)}</td>
+        <td style="text-align:center;font-size:16px;color:#f5c518">${starStr(r.ces)}</td>
+        <td>${origem}</td>
+        <td style="font-size:12px;color:var(--gray-500);max-width:200px;word-break:break-word">${r.pontos || '—'}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="Pesquisas.detail(${JSON.stringify(r).replace(/"/g,'&quot;')})">Ver</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function detail(r) {
+    const d = new Date(r.created_at).toLocaleString('pt-BR');
+    App.Modal.open(`Pesquisa — ${r.cliente}`, `
+      <div style="display:grid;gap:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><strong>Data:</strong><br/><span style="color:var(--gray-500)">${d}</span></div>
+          <div><strong>Empresa:</strong><br/><span style="color:var(--gray-500)">${r.empresa}</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;background:var(--gray-50);padding:14px;border-radius:8px">
+          <div style="text-align:center"><div style="font-size:28px;font-weight:800;color:${r.nps<=6?'#e53e3e':r.nps<=8?'#d69e2e':'#38a169'}">${r.nps}</div><div style="font-size:11px;color:var(--gray-400)">NPS (0-10)</div></div>
+          <div style="text-align:center"><div style="font-size:22px;color:#f5c518">${'★'.repeat(r.csat)}${'☆'.repeat(5-r.csat)}</div><div style="font-size:11px;color:var(--gray-400)">CSAT</div></div>
+          <div style="text-align:center"><div style="font-size:22px;color:#f5c518">${'★'.repeat(r.ces)}${'☆'.repeat(5-r.ces)}</div><div style="font-size:11px;color:var(--gray-400)">CES</div></div>
+        </div>
+        ${r.pontos ? `<div><strong>Comentários:</strong><br/><span style="color:var(--gray-600)">${r.pontos}</span></div>` : ''}
+      </div>
+    `, () => App.Modal.close());
+  }
+
+  return { loadGrid, detail };
+})();
+
+// Expor globalmente
+window.Pesquisas = Pesquisas;
+
+
 // ── Exportação de Relatórios ──────────────────────────────────────────────────
 App.Reports = (() => {
   const _cols = {
@@ -734,6 +924,195 @@ document.addEventListener('DOMContentLoaded', () => {
   // Auto login
   App.Auth.tryAutoLogin();
 });
+
+// ── Grade de Pesquisas ────────────────────────────────────────────────────────
+const PesquisasGrid = (() => {
+  async function load() {
+    const tbody = document.getElementById('ps-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+
+    const headers = {};
+    const token = localStorage.getItem('ge_token');
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+
+    const res = await fetch('/api/data/pesquisas?period=todos', { headers });
+    if (!res.ok) return;
+    const { data } = await res.json();
+
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Nenhuma resposta ainda.</td></tr>';
+      return;
+    }
+
+    // Conta detratores não tratados
+    const detratores = data.filter(r => r.nps <= 6 && !r.tratado);
+    const alerta = document.getElementById('ps-alerta-baixo');
+    const alertCount = document.getElementById('ps-alerta-count');
+    if (alerta && detratores.length > 0) {
+      alerta.style.display = 'block';
+      alertCount.textContent = detratores.length;
+    } else if (alerta) {
+      alerta.style.display = 'none';
+    }
+
+    tbody.innerHTML = data.map(r => {
+      const nps = r.nps;
+      let rowStyle = '', badge = '', badgeStyle = '';
+      if (nps <= 6) {
+        rowStyle = 'background:#fff5f5';
+        badge = 'Detrator';
+        badgeStyle = 'background:#e53e3e;color:#fff';
+      } else if (nps <= 8) {
+        rowStyle = 'background:#fffff0';
+        badge = 'Neutro';
+        badgeStyle = 'background:#d69e2e;color:#fff';
+      } else {
+        rowStyle = 'background:#f0fff4';
+        badge = 'Promotor';
+        badgeStyle = 'background:#38a169;color:#fff';
+      }
+      const data_fmt = new Date(r.created_at).toLocaleDateString('pt-BR');
+      const origem = r.origem === 'publico' ? '🌐 Link' : '📋 Interno';
+      const status = r.tratado ? '<span style="color:#38a169;font-weight:600">✓ Tratado</span>' : '<span style="color:#e53e3e;font-weight:600">Pendente</span>';
+
+      return '<tr style="' + rowStyle + '">' +
+        '<td>' + data_fmt + '</td>' +
+        '<td>' + (r.cliente || '') + '</td>' +
+        '<td>' + (r.empresa || '') + '</td>' +
+        '<td><strong>' + nps + '</strong> <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;' + badgeStyle + '">' + badge + '</span></td>' +
+        '<td>' + (r.csat || '-') + '/5</td>' +
+        '<td>' + (r.ces || '-') + '/5</td>' +
+        '<td>' + origem + '</td>' +
+        '<td>' + status + '</td>' +
+        '<td><button class="btn btn-ghost btn-sm" onclick="PesquisasGrid.verDetalhes('' + r.id + '')">Ver</button>' +
+        (!r.tratado ? ' <button class="btn btn-success btn-sm" onclick="PesquisasGrid.marcarTratado('' + r.id + '')">Tratar</button>' : '') +
+        '</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  async function verDetalhes(id) {
+    const headers = {};
+    const token = localStorage.getItem('ge_token');
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const res = await fetch('/api/data/pesquisas?period=todos', { headers });
+    if (!res.ok) return;
+    const { data } = await res.json();
+    const r = data.find(x => x.id === id);
+    if (!r) return;
+
+    App.Modal.open('Detalhes da Pesquisa',
+      '<div style="font-size:13px;line-height:1.8">' +
+      '<p><strong>Cliente:</strong> ' + (r.cliente || '-') + '</p>' +
+      '<p><strong>Empresa:</strong> ' + (r.empresa || '-') + '</p>' +
+      '<p><strong>Data:</strong> ' + new Date(r.created_at).toLocaleString('pt-BR') + '</p>' +
+      '<p><strong>NPS:</strong> ' + r.nps + '/10</p>' +
+      (r.motivo_nps ? '<p><strong>Motivo NPS:</strong> ' + r.motivo_nps + '</p>' : '') +
+      '<p><strong>CSAT:</strong> ' + (r.csat || '-') + '/5</p>' +
+      '<p><strong>CES:</strong> ' + (r.ces || '-') + '/5</p>' +
+      (r.pontos ? '<p><strong>Comentário:</strong> ' + r.pontos + '</p>' : '') +
+      '<p><strong>Origem:</strong> ' + (r.origem === 'publico' ? 'Link público' : 'Interno') + '</p>' +
+      '</div>',
+      function() { App.Modal.close(); }
+    );
+    document.getElementById('modal-confirm').textContent = 'Fechar';
+  }
+
+  async function marcarTratado(id) {
+    const headers = { 'Content-Type': 'application/json' };
+    const token = localStorage.getItem('ge_token');
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const res = await fetch('/api/data/pesquisas/' + id + '/tratado', {
+      method: 'PATCH', headers
+    });
+    if (res.ok) { App.Toast.ok('Marcado como tratado!'); load(); }
+    else App.Toast.err('Erro ao atualizar.');
+  }
+
+  return { load, verDetalhes, marcarTratado };
+})();
+
+window.PesquisasGrid = PesquisasGrid;
+
+
+// ── Módulo Pesquisas — grade de registros ─────────────────────────────────────
+const Pesquisas = (() => {
+  function npsClass(nps) {
+    if (nps <= 6) return 'background:#fff5f5';
+    if (nps <= 8) return 'background:#fffff0';
+    return 'background:#f0fff4';
+  }
+  function npsBadge(nps) {
+    if (nps <= 6) return `<span style="background:#e53e3e;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Detrator</span>`;
+    if (nps <= 8) return `<span style="background:#d69e2e;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Neutro</span>`;
+    return `<span style="background:#38a169;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Promotor</span>`;
+  }
+  function starStr(n) { return '★'.repeat(n) + '☆'.repeat(5-n); }
+
+  async function loadGrid() {
+    const res = await API.get('/api/data/pesquisas?period=todos');
+    if (!res || !res.ok) return;
+    const { data } = await res.json();
+    const tbody = document.getElementById('ps-tbody');
+    if (!tbody) return;
+
+    const baixos = data.filter(r => r.nps <= 6);
+    const alertEl = document.getElementById('ps-alerta-baixo');
+    const alertCount = document.getElementById('ps-alerta-count');
+    if (alertEl) {
+      alertEl.style.display = baixos.length > 0 ? 'block' : 'none';
+      if (alertCount) alertCount.textContent = baixos.length;
+    }
+
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Nenhuma resposta registrada ainda</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = data.map(r => {
+      const d = new Date(r.created_at).toLocaleString('pt-BR');
+      const origem = r.analista === 'Pesquisa Pública' 
+        ? '<span style="background:var(--g100);color:var(--g700);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">🔗 Link público</span>'
+        : '<span style="background:var(--gray-100);color:var(--gray-500);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">✏️ Manual</span>';
+      return `<tr style="${npsClass(r.nps)}">
+        <td style="font-size:12px;color:var(--gray-500)">${d}</td>
+        <td style="font-weight:600">${r.cliente}</td>
+        <td>${r.empresa}</td>
+        <td style="text-align:center"><span style="font-size:18px;font-weight:800;color:${r.nps<=6?'#e53e3e':r.nps<=8?'#d69e2e':'#38a169'}">${r.nps}</span><br/>${npsBadge(r.nps)}</td>
+        <td style="text-align:center;font-size:16px;color:#f5c518">${starStr(r.csat)}</td>
+        <td style="text-align:center;font-size:16px;color:#f5c518">${starStr(r.ces)}</td>
+        <td>${origem}</td>
+        <td style="font-size:12px;color:var(--gray-500);max-width:200px;word-break:break-word">${r.pontos || '—'}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="Pesquisas.detail(${JSON.stringify(r).replace(/"/g,'&quot;')})">Ver</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function detail(r) {
+    const d = new Date(r.created_at).toLocaleString('pt-BR');
+    App.Modal.open(`Pesquisa — ${r.cliente}`, `
+      <div style="display:grid;gap:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><strong>Data:</strong><br/><span style="color:var(--gray-500)">${d}</span></div>
+          <div><strong>Empresa:</strong><br/><span style="color:var(--gray-500)">${r.empresa}</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;background:var(--gray-50);padding:14px;border-radius:8px">
+          <div style="text-align:center"><div style="font-size:28px;font-weight:800;color:${r.nps<=6?'#e53e3e':r.nps<=8?'#d69e2e':'#38a169'}">${r.nps}</div><div style="font-size:11px;color:var(--gray-400)">NPS (0-10)</div></div>
+          <div style="text-align:center"><div style="font-size:22px;color:#f5c518">${'★'.repeat(r.csat)}${'☆'.repeat(5-r.csat)}</div><div style="font-size:11px;color:var(--gray-400)">CSAT</div></div>
+          <div style="text-align:center"><div style="font-size:22px;color:#f5c518">${'★'.repeat(r.ces)}${'☆'.repeat(5-r.ces)}</div><div style="font-size:11px;color:var(--gray-400)">CES</div></div>
+        </div>
+        ${r.pontos ? `<div><strong>Comentários:</strong><br/><span style="color:var(--gray-600)">${r.pontos}</span></div>` : ''}
+      </div>
+    `, () => App.Modal.close());
+  }
+
+  return { loadGrid, detail };
+})();
+
+// Expor globalmente
+window.Pesquisas = Pesquisas;
+
 
 // ── Exportação de Relatórios ───────────────────────────────────────────────────
 const Reports = {
