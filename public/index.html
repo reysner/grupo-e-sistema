@@ -456,69 +456,87 @@
 
         <!-- CARTEIRA -->
         <section id="page-carteira" class="page admin-only" hidden>
-          <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
-            <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar:</label>
-            <select id="cart-status-filter" onchange="Carteira.loadDashboard()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
-              <option value="todos">Todos</option>
-              <option value="ativo">Ativos</option>
-              <option value="encerrado">Encerrados</option>
+
+          <!-- TOOLBAR -->
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px">
+            <select id="cart-status-filter" onchange="Carteira.loadGrid()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;color:var(--gray-700);cursor:pointer;font-weight:500">
+              <option value="todos">Todos os clientes</option>
+              <option value="ativo">Somente ativos</option>
+              <option value="encerrado">Somente encerrados</option>
             </select>
             <div style="margin-left:auto;display:flex;gap:8px">
               <button class="btn btn-ghost btn-sm" onclick="Carteira.exportCSV()">⬇ Exportar CSV</button>
+              <button class="btn btn-success btn-sm" onclick="Carteira.abrirCadastro()" style="font-weight:600">+ Cadastrar cliente</button>
             </div>
           </div>
 
-          <!-- MÉTRICAS PRINCIPAIS -->
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.5rem" id="cart-metricas">
-            <div class="form-card" style="text-align:center;padding:1rem">
-              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">MRR</div>
-              <div id="cart-mrr" style="font-size:22px;font-weight:600;color:var(--g700)">—</div>
+          <!-- MÉTRICAS ROW 1: principais -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px">
+            <div style="background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:20px 20px 16px;border-top:3px solid var(--g500)">
+              <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">MRR</div>
+              <div id="cart-mrr" style="font-size:26px;font-weight:700;color:var(--g700)">—</div>
+              <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Receita mensal recorrente</div>
             </div>
-            <div class="form-card" style="text-align:center;padding:1rem">
-              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">ARR</div>
-              <div id="cart-arr" style="font-size:22px;font-weight:600;color:var(--g700)">—</div>
+            <div style="background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:20px 20px 16px;border-top:3px solid var(--g500)">
+              <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">ARR</div>
+              <div id="cart-arr" style="font-size:26px;font-weight:700;color:var(--g700)">—</div>
+              <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Receita anual recorrente</div>
             </div>
-            <div class="form-card" style="text-align:center;padding:1rem">
-              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Clientes ativos</div>
-              <div id="cart-ativos" style="font-size:22px;font-weight:600;color:var(--g700)">—</div>
+            <div style="background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:20px 20px 16px;border-top:3px solid var(--g500)">
+              <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Clientes ativos</div>
+              <div id="cart-ativos" style="font-size:26px;font-weight:700;color:var(--g700)">—</div>
+              <div style="font-size:11px;color:var(--gray-400);margin-top:4px" id="cart-encerrados-sub">— encerrados</div>
             </div>
-            <div class="form-card" style="text-align:center;padding:1rem">
-              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Ticket médio</div>
-              <div id="cart-ticket" style="font-size:22px;font-weight:600;color:var(--g700)">—</div>
-            </div>
-          </div>
-
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">
-            <div class="form-card" style="padding:1rem">
-              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Receita Acumulada Total</div>
-              <div id="cart-receita-total" style="font-size:18px;font-weight:600;color:var(--g700)">—</div>
-            </div>
-            <div class="form-card" style="padding:1rem">
-              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">LTV Médio Projetado</div>
-              <div id="cart-ltv-medio" style="font-size:18px;font-weight:600;color:var(--g700)">—</div>
+            <div style="background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:20px 20px 16px;border-top:3px solid var(--g500)">
+              <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Ticket médio</div>
+              <div id="cart-ticket" style="font-size:26px;font-weight:700;color:var(--g700)">—</div>
+              <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Honorário médio ativo</div>
             </div>
           </div>
 
-          <!-- LISTA DE CLIENTES -->
+          <!-- MÉTRICAS ROW 2: secundárias -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">
+            <div style="background:var(--g100);border:1px solid var(--g200);border-radius:12px;padding:16px 20px;display:flex;align-items:center;gap:16px">
+              <div style="width:40px;height:40px;border-radius:10px;background:var(--g200);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">💰</div>
+              <div>
+                <div style="font-size:11px;font-weight:700;color:var(--g600);text-transform:uppercase;letter-spacing:.6px">Receita acumulada total</div>
+                <div id="cart-receita-total" style="font-size:20px;font-weight:700;color:var(--g800)">—</div>
+              </div>
+            </div>
+            <div style="background:var(--g100);border:1px solid var(--g200);border-radius:12px;padding:16px 20px;display:flex;align-items:center;gap:16px">
+              <div style="width:40px;height:40px;border-radius:10px;background:var(--g200);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📈</div>
+              <div>
+                <div style="font-size:11px;font-weight:700;color:var(--g600);text-transform:uppercase;letter-spacing:.6px">LTV médio projetado</div>
+                <div id="cart-ltv-medio" style="font-size:20px;font-weight:700;color:var(--g800)">—</div>
+              </div>
+            </div>
+            <div style="background:var(--g100);border:1px solid var(--g200);border-radius:12px;padding:16px 20px;display:flex;align-items:center;gap:16px">
+              <div style="width:40px;height:40px;border-radius:10px;background:var(--g200);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">⏱</div>
+              <div>
+                <div style="font-size:11px;font-weight:700;color:var(--g600);text-transform:uppercase;letter-spacing:.6px">Retenção média</div>
+                <div id="cart-retencao" style="font-size:20px;font-weight:700;color:var(--g800)">—</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TABELA DE CLIENTES -->
           <div class="form-card">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-              <h2 class="form-title">Clientes da carteira</h2>
-              <button class="btn btn-success btn-sm" onclick="Carteira.abrirCadastro()">+ Cadastrar cliente</button>
-            </div>
+            <h2 class="form-title" style="margin-bottom:4px">Clientes da carteira</h2>
             <div class="form-accent"></div>
-            <div class="table-wrap">
+            <div class="table-wrap" style="margin-top:12px">
               <table class="data-table" id="cart-grid">
                 <thead><tr>
                   <th>Empresa</th><th>CNPJ</th><th>Honorário atual</th>
-                  <th>Receita acumulada</th><th>Tempo</th><th>Status</th><th>Ações</th>
+                  <th>Receita acumulada</th><th>Tempo</th><th>Origem</th><th>Status</th><th>Ações</th>
                 </tr></thead>
-                <tbody id="cart-tbody"><tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
+                <tbody id="cart-tbody"><tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
               </table>
             </div>
           </div>
         </section>
 
         <!-- ADMINISTRAÇÃO -->
+
         <section id="page-admin" class="page" hidden>
           <div class="form-card">
             <h2 class="form-title">Administração de Usuários</h2><div class="form-accent"></div>
