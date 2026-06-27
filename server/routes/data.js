@@ -446,6 +446,20 @@ router.get('/carteira/dashboard', requireAuth, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro no dashboard.' }); }
 });
 
+router.delete('/clientes/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM clientes WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+router.delete('/clientes/clear', requireAdmin, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM clientes');
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao limpar.' }); }
+});
+
 // ── CLEAR INSATISFACOES ──────────────────────────────────────────────────────────
 router.delete('/insatisfacoes/clear', requireAdmin, async (req, res) => {
   try {
