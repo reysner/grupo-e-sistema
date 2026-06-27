@@ -4,7 +4,7 @@ services:
     env: node
     region: oregon
     plan: free
-    buildCommand: npm install
+    buildCommand: npm install && echo "Build $(date)" > public/build.txt
     startCommand: node server/index.js
     healthCheckPath: /health
     envVars:
@@ -17,6 +17,6 @@ services:
       - key: JWT_REFRESH_SECRET
         generateValue: true
       - key: APP_URL
-        value: https://grupo-e-sistema.onrender.com   # ← ajuste para sua URL
+        value: https://grupo-e-sistema.onrender.com
       - key: ALLOWED_ORIGINS
-        value: https://grupo-e-sistema.onrender.com   # ← ajuste para sua URL
+        value: https://grupo-e-sistema.onrender.com
