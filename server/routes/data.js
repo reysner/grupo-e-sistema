@@ -96,13 +96,15 @@ router.get('/sensiveis', async (req, res) => {
 
 router.post('/sensiveis', async (req, res) => {
   try {
-    const { analista, cliente, cnpj, empresa, demonstrou, gravidade } = req.body;
+    const { analista, cliente, cnpj, empresa, demonstrou, gravidade, detalhe } = req.body;
     if (!analista || !cliente || !cnpj || !empresa || !demonstrou || !gravidade)
       return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
+    // Garante que coluna detalhe existe (migração automática)
+    await pool.query(`ALTER TABLE clientes_sensiveis ADD COLUMN IF NOT EXISTS detalhe TEXT`).catch(() => {});
     const id = uuidv4();
     await pool.query(
-      `INSERT INTO clientes_sensiveis (id, user_id, analista, cliente, cnpj, empresa, demonstrou, gravidade) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [id, req.user.id, analista, cliente, cnpj, empresa, demonstrou, gravidade]
+      `INSERT INTO clientes_sensiveis (id, user_id, analista, cliente, cnpj, empresa, demonstrou, gravidade, detalhe) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [id, req.user.id, analista, cliente, cnpj, empresa, demonstrou, gravidade, detalhe || null]
     );
     res.status(201).json({ id });
   } catch (err) { res.status(500).json({ error: 'Erro.' }); }
