@@ -208,9 +208,12 @@ const App = (() => {
       pill.className   = 'role-pill ' + (user.role === 'administrador' ? 'admin' : 'user');
       document.querySelectorAll('.admin-only').forEach(el => {
         if (user.role === 'administrador') {
-          el.classList.remove('hidden-admin');
-          // Only show nav items, not pages (pages are controlled by Nav.go)
-          if (!el.classList.contains('page')) {
+          // Pages are controlled by Nav.go — just ensure they start hidden
+          if (el.classList.contains('page')) {
+            el.hidden = true;
+            el.style.removeProperty('display');
+          } else {
+            // Nav items and buttons: restore normal display
             el.style.removeProperty('display');
           }
         } else {
