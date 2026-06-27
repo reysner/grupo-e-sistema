@@ -327,12 +327,15 @@ router.post('/clientes', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Campos obrigatórios faltando.' });
     const { v4: uuidv4 } = require('uuid');
     const clienteId = uuidv4();
+    // Auto-add codigo column if not exists
+    await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS codigo TEXT`).catch(()=>{});
+    const { codigo } = req.body;
     await pool.query(
       `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada,
-        honorario_inicial, origem, cac, obs)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        honorario_inicial, origem, cac, obs, codigo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [clienteId, req.user.id, cnpj, nome_empresa, regime_tributario || null,
-       data_entrada, honorario_inicial, origem || null, cac || 0, obs || null]
+       data_entrada, honorario_inicial, origem || null, cac || 0, obs || null, codigo || null]
     );
     // Registrar honorário inicial no histórico
     await pool.query(
