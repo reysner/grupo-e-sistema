@@ -227,6 +227,14 @@ router.delete('/pesquisas/clear', requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro ao limpar respostas.' }); }
 });
 
+// ── CLEAR SENSIVEIS ──────────────────────────────────────────────────────────────
+router.delete('/sensiveis/clear', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM clientes_sensiveis`);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao limpar registros.' }); }
+});
+
 // ── CLEAR ─────────────────────────────────────────────────────────────────────
 router.delete('/clear', requireAdmin, async (req, res) => {
   try {
