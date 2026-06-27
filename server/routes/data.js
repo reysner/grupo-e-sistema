@@ -264,6 +264,27 @@ router.delete('/recuperacoes/:id', requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
 });
 
+router.delete('/atendimentos/clear', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM atendimentos`);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao limpar.' }); }
+});
+
+router.delete('/gestao/clear', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM gestao_clientes`);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao limpar.' }); }
+});
+
+router.delete('/recuperacoes/clear', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM recuperacoes`);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao limpar.' }); }
+});
+
 // ── CLEAR INSATISFACOES ──────────────────────────────────────────────────────────
 router.delete('/insatisfacoes/clear', requireAdmin, async (req, res) => {
   try {
