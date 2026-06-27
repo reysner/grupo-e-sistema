@@ -122,9 +122,20 @@
 
         <!-- ATENDIMENTO -->
         <section id="page-atendimento" class="page" hidden>
-          <div style="display:flex;gap:10px;margin-bottom:16px;justify-content:flex-end">
-            <button class="btn btn-ghost btn-sm" onclick="App.Reports.exportCSV('atendimentos')">⬇ Exportar CSV</button>
-            <button class="btn btn-ghost btn-sm" onclick="App.Reports.exportPDF('atendimentos','Atendimento')">🖨 Exportar PDF</button>
+          <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar:</label>
+            <select id="at-ano-filter" onchange="Atendimento.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os anos</option>
+            </select>
+            <select id="at-mes-filter" onchange="Atendimento.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os meses</option>
+              <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option><option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option><option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option><option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+            </select>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm" onclick="Atendimento.exportCSV()">⬇ Exportar CSV</button>
+              <button class="btn btn-ghost btn-sm" onclick="Atendimento.exportPDF()">🖨 Exportar PDF</button>
+              <button class="btn btn-sm admin-only" onclick="Atendimento.limpar()" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7">🗑 Limpar Registros</button>
+            </div>
           </div>
           <div class="form-card">
             <h2 class="form-title">Atendimento</h2><div class="form-accent"></div>
@@ -163,9 +174,20 @@
 
         <!-- GESTÃO -->
         <section id="page-gestao" class="page" hidden>
-          <div style="display:flex;gap:10px;margin-bottom:16px;justify-content:flex-end">
-            <button class="btn btn-ghost btn-sm" onclick="App.Reports.exportCSV('gestao')">⬇ Exportar CSV</button>
-            <button class="btn btn-ghost btn-sm" onclick="App.Reports.exportPDF('gestao','Gestão de Clientes')">🖨 Exportar PDF</button>
+          <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar:</label>
+            <select id="gc-ano-filter" onchange="Gestao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os anos</option>
+            </select>
+            <select id="gc-mes-filter" onchange="Gestao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os meses</option>
+              <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option><option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option><option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option><option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+            </select>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm" onclick="Gestao.exportCSV()">⬇ Exportar CSV</button>
+              <button class="btn btn-ghost btn-sm" onclick="Gestao.exportPDF()">🖨 Exportar PDF</button>
+              <button class="btn btn-sm admin-only" onclick="Gestao.limpar()" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7">🗑 Limpar Registros</button>
+            </div>
           </div>
           <div class="form-card">
             <h2 class="form-title">Gestão de Clientes e Indicadores de Retenção</h2><div class="form-accent"></div>
@@ -203,10 +225,14 @@
 
         <!-- INSATISFAÇÃO -->
         <section id="page-insatisfacao" class="page" hidden>
-          <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
-            <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar por ano:</label>
+                    <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar:</label>
             <select id="in-ano-filter" onchange="Insatisfacao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
               <option value="todos">Todos os anos</option>
+            </select>
+            <select id="in-mes-filter" onchange="Insatisfacao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os meses</option>
+              <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option><option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option><option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option><option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
             </select>
             <div style="margin-left:auto;display:flex;gap:8px">
               <button class="btn btn-ghost btn-sm" onclick="Insatisfacao.exportCSV()">⬇ Exportar CSV</button>
@@ -248,10 +274,14 @@
         <!-- CLIENTES SENSÍVEIS -->
 
         <section id="page-sensiveis" class="page" hidden>
-          <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
-            <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar por ano:</label>
+                    <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar:</label>
             <select id="cs-ano-filter" onchange="Sensiveis.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
               <option value="todos">Todos os anos</option>
+            </select>
+            <select id="cs-mes-filter" onchange="Sensiveis.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os meses</option>
+              <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option><option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option><option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option><option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
             </select>
             <div style="margin-left:auto;display:flex;gap:8px">
               <button class="btn btn-ghost btn-sm" onclick="Sensiveis.exportCSV()">⬇ Exportar CSV</button>
@@ -298,10 +328,14 @@
 
         <!-- PESQUISAS -->
         <section id="page-pesquisas" class="page" hidden>
-          <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
-            <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar por ano:</label>
+                    <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar:</label>
             <select id="ps-ano-filter" onchange="Pesquisas.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
               <option value="todos">Todos os anos</option>
+            </select>
+            <select id="ps-mes-filter" onchange="Pesquisas.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os meses</option>
+              <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option><option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option><option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option><option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
             </select>
             <div style="margin-left:auto;display:flex;gap:8px">
               <button class="btn btn-ghost btn-sm" onclick="Pesquisas.exportCSV()">⬇ Exportar CSV</button>
@@ -338,9 +372,20 @@
 
         <!-- RECUPERAÇÃO -->
         <section id="page-recuperacao" class="page" hidden>
-          <div style="display:flex;gap:10px;margin-bottom:16px;justify-content:flex-end">
-            <button class="btn btn-ghost btn-sm" onclick="App.Reports.exportCSV('recuperacoes')">⬇ Exportar CSV</button>
-            <button class="btn btn-ghost btn-sm" onclick="App.Reports.exportPDF('recuperacoes','Recuperação de Experiência')">🖨 Exportar PDF</button>
+          <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar:</label>
+            <select id="rc-ano-filter" onchange="Recuperacao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os anos</option>
+            </select>
+            <select id="rc-mes-filter" onchange="Recuperacao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os meses</option>
+              <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option><option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option><option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option><option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+            </select>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm" onclick="Recuperacao.exportCSV()">⬇ Exportar CSV</button>
+              <button class="btn btn-ghost btn-sm" onclick="Recuperacao.exportPDF()">🖨 Exportar PDF</button>
+              <button class="btn btn-sm admin-only" onclick="Recuperacao.limpar()" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7">🗑 Limpar Registros</button>
+            </div>
           </div>
           <div class="form-card">
             <h2 class="form-title">Recuperação de Experiência</h2><div class="form-accent"></div>
