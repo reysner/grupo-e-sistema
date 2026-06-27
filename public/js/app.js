@@ -223,6 +223,10 @@ const App = (() => {
       return false;
     },
 
+    isAdmin() {
+      return currentUser?.role === 'administrador';
+    },
+
     showAlert(msg) {
       const el = document.getElementById('auth-alert');
       el.textContent = msg;
@@ -626,7 +630,7 @@ const PesquisasGrid = (() => {
         '<td>' + origem + '</td>' +
         '<td>' + status + '</td>' +
         '<td><button class="btn btn-ghost btn-sm" onclick="PesquisasGrid.verDetalhes(\'' + r.id + '\')">Ver</button>' +
-        (!r.tratado ? ' <button class="btn btn-success btn-sm" onclick="PesquisasGrid.marcarTratado(\'' + r.id + '\')">Tratar</button>' : '') +
+        (App.Auth.isAdmin() && !r.tratado ? ' <button class="btn btn-success btn-sm" onclick="PesquisasGrid.marcarTratado(\'' + r.id + '\')">Tratar</button>' : '') +
         '</td>' +
         '</tr>';
     }).join('');
