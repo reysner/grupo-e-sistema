@@ -81,6 +81,9 @@
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
           Link da Pesquisa
         </a>
+        <a class="nav-item admin-only" data-page="carteira" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>Carteira
+        </a>
         <div class="nav-sep"></div>
         <a class="nav-item admin-only" data-page="admin" href="#">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M20 12h2M2 12h2M12 20v2M12 2v2"/></svg>Administração
@@ -227,6 +230,17 @@
                 <input id="gc-canal-outro" type="text" placeholder="Descreva o canal utilizado" />
               </div>
               <div class="field"><label>Motivo Apontado <small class="opt">(opcional)</small></label><input id="gc-motivo" type="text" placeholder="Digite o motivo" /></div>
+              <div class="field" id="gc-honorario-wrap" hidden><label>Honorário Inicial (R$) <span class="req">*</span></label><input id="gc-honorario" type="number" min="0" step="0.01" placeholder="0,00" /></div>
+              <div class="field" id="gc-origem-wrap" hidden><label>Origem do Cliente</label>
+                <select id="gc-origem"><option value="">Selecione</option><option>Indicação</option><option>Google</option><option>Instagram</option><option>LinkedIn</option><option>WhatsApp</option><option>Parceiro</option><option>Evento</option><option>Site</option><option>Tráfego Pago</option><option>Prospecção Ativa</option><option>Outro</option></select>
+              </div>
+              <div class="field" id="gc-cac-wrap" hidden><label>Custo de Aquisição — CAC (R$) <small class="opt">(opcional)</small></label><input id="gc-cac" type="number" min="0" step="0.01" placeholder="0,00" /></div>
+              <div class="field" id="gc-regime-wrap" hidden><label>Regime Tributário</label>
+                <select id="gc-regime"><option value="">Selecione</option><option>Simples Nacional</option><option>Lucro Presumido</option><option>Lucro Real</option><option>MEI</option><option>Sem fins lucrativos</option></select>
+              </div>
+              <div class="field" id="gc-data-entrada-wrap" hidden><label>Data de Entrada do Cliente <span class="req">*</span></label><input id="gc-data-entrada" type="date" /></div>
+              <div class="field" id="gc-data-saida-wrap" hidden><label>Data de Encerramento</label><input id="gc-data-saida" type="date" /></div>
+              <div class="field" id="gc-motivo-saida-wrap" hidden><label>Motivo da Saída</label><input id="gc-motivo-saida" type="text" placeholder="Descreva o motivo" /></div>
             </div>
             <button class="btn btn-primary btn-save" id="btn-gc-save">Salvar Gestão</button>
           </div>
@@ -435,6 +449,70 @@
                   <th>Empresa</th><th>Gravidade</th><th>Demonstrou</th><th></th>
                 </tr></thead>
                 <tbody id="rc-tbody"><tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- CARTEIRA -->
+        <section id="page-carteira" class="page admin-only" hidden>
+          <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar:</label>
+            <select id="cart-status-filter" onchange="Carteira.loadDashboard()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos</option>
+              <option value="ativo">Ativos</option>
+              <option value="encerrado">Encerrados</option>
+            </select>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm" onclick="Carteira.exportCSV()">⬇ Exportar CSV</button>
+            </div>
+          </div>
+
+          <!-- MÉTRICAS PRINCIPAIS -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.5rem" id="cart-metricas">
+            <div class="form-card" style="text-align:center;padding:1rem">
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">MRR</div>
+              <div id="cart-mrr" style="font-size:22px;font-weight:600;color:var(--g700)">—</div>
+            </div>
+            <div class="form-card" style="text-align:center;padding:1rem">
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">ARR</div>
+              <div id="cart-arr" style="font-size:22px;font-weight:600;color:var(--g700)">—</div>
+            </div>
+            <div class="form-card" style="text-align:center;padding:1rem">
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Clientes ativos</div>
+              <div id="cart-ativos" style="font-size:22px;font-weight:600;color:var(--g700)">—</div>
+            </div>
+            <div class="form-card" style="text-align:center;padding:1rem">
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Ticket médio</div>
+              <div id="cart-ticket" style="font-size:22px;font-weight:600;color:var(--g700)">—</div>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">
+            <div class="form-card" style="padding:1rem">
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Receita Acumulada Total</div>
+              <div id="cart-receita-total" style="font-size:18px;font-weight:600;color:var(--g700)">—</div>
+            </div>
+            <div class="form-card" style="padding:1rem">
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">LTV Médio Projetado</div>
+              <div id="cart-ltv-medio" style="font-size:18px;font-weight:600;color:var(--g700)">—</div>
+            </div>
+          </div>
+
+          <!-- LISTA DE CLIENTES -->
+          <div class="form-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <h2 class="form-title">Clientes da carteira</h2>
+              <button class="btn btn-success btn-sm" onclick="Carteira.abrirCadastro()">+ Cadastrar cliente</button>
+            </div>
+            <div class="form-accent"></div>
+            <div class="table-wrap">
+              <table class="data-table" id="cart-grid">
+                <thead><tr>
+                  <th>Empresa</th><th>CNPJ</th><th>Honorário atual</th>
+                  <th>Receita acumulada</th><th>Tempo</th><th>Status</th><th>Ações</th>
+                </tr></thead>
+                <tbody id="cart-tbody"><tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
             </div>
           </div>
