@@ -51,10 +51,22 @@ if (APP_URL) {
   console.log(`🏓 Keep-alive ativado → ${APP_URL}`);
 }
 
+// Rota pública — pesquisa de satisfação (sem autenticação)
+const { publicRouter } = require('./routes/data');
+app.use('/api/public', publicRouter);
+
 app.use('/api/auth',  authRoutes);
+const pesquisaPublicaRoutes = require('./routes/pesquisa-publica');
+app.use('/api/pesquisa-publica', pesquisaPublicaRoutes);
 app.use('/api/data',  dataRoutes);
 app.use('/api/users', usersRoutes);
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
+app.get('/pesquisa', (req, res) => res.sendFile(path.join(PUBLIC, 'pesquisa.html')));
+
+// Página pública de pesquisa — sem login
+app.get('/pesquisa', (req, res) => {
+  res.sendFile(require('path').join(__dirname, '..', 'public', 'pesquisa.html'));
+});
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 app.get('/js/:file', (req, res) => { res.setHeader('Content-Type', 'application/javascript'); res.sendFile(path.join(PUBLIC, 'js', req.params.file)); });
