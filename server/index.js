@@ -11,10 +11,12 @@ const { init: initDB, pruneExpiredTokens } = require('./db');
 const authRoutes  = require('./routes/auth');
 const dataRoutes  = require('./routes/data');
 const usersRoutes = require('./routes/users');
+const { publicRouter } = require('./routes/data');
 
-const app = express();
+const app    = express();
+const PUBLIC = path.join(__dirname, '..', 'public');
 
-// Headers de segurança básicos (sem Helmet para evitar CSP)
+// Headers de segurança básicos
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -38,7 +40,6 @@ app.use(cookieParser());
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: false }));
 app.set('trust proxy', 1);
-
 app.use(rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false }));
 
 // Keep-alive
@@ -46,32 +47,37 @@ const APP_URL = process.env.APP_URL;
 if (APP_URL) {
   const https = require('https');
   const http  = require('http');
-  const req   = APP_URL.startsWith('https') ? https : http;
-  setInterval(() => { req.get(`${APP_URL}/health`, () => {}).on('error', () => {}); }, 14 * 60 * 1000);
+  const requester = APP_URL.startsWith('https') ? https : http;
+  setInterval(() => { requester.get(`${APP_URL}/health`, () => {}).on('error', () => {}); }, 14 * 60 * 1000);
   console.log(`🏓 Keep-alive ativado → ${APP_URL}`);
 }
 
-// Rota pública — pesquisa de satisfação (sem autenticação)
-const { publicRouter } = require('./routes/data');
-app.use('/api/public', publicRouter);
+// ── API Routes ────────────────────────────────────────────────────────────────
+app.use('/api/public', publicRouter);   // sem autenticação
+app.use('/api/auth',   authRoutes);
+app.use('/api/data',   dataRoutes);
+app.use('/api/users',  usersRoutes);
 
-app.use('/api/auth',  authRoutes);
-const pesquisaPublicaRoutes = require('./routes/pesquisa-publica');
-app.use('/api/pesquisa-publica', pesquisaPublicaRoutes);
-app.use('/api/data',  dataRoutes);
-app.use('/api/users', usersRoutes);
+// ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
-app.get('/pesquisa', (req, res) => res.sendFile(path.join(PUBLIC, 'pesquisa.html')));
 
-// Página pública de pesquisa — sem login
+// ── Página pública da pesquisa (sem login) ────────────────────────────────────
 app.get('/pesquisa', (req, res) => {
-  res.sendFile(require('path').join(__dirname, '..', 'public', 'pesquisa.html'));
+  res.sendFile(path.join(PUBLIC, 'pesquisa.html'));
 });
 
-const PUBLIC = path.join(__dirname, '..', 'public');
-app.get('/js/:file', (req, res) => { res.setHeader('Content-Type', 'application/javascript'); res.sendFile(path.join(PUBLIC, 'js', req.params.file)); });
-app.get('/css/:file', (req, res) => { res.setHeader('Content-Type', 'text/css'); res.sendFile(path.join(PUBLIC, 'css', req.params.file)); });
+// ── Arquivos estáticos com MIME correto ───────────────────────────────────────
+app.get('/js/:file', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.sendFile(path.join(PUBLIC, 'js', req.params.file));
+});
+app.get('/css/:file', (req, res) => {
+  res.setHeader('Content-Type', 'text/css');
+  res.sendFile(path.join(PUBLIC, 'css', req.params.file));
+});
 app.use(express.static(PUBLIC, { maxAge: '0', etag: false }));
+
+// ── SPA fallback (deve ser o ÚLTIMO) ─────────────────────────────────────────
 app.get('*', (req, res) => res.sendFile(path.join(PUBLIC, 'index.html')));
 
 app.use((err, req, res, next) => {
@@ -79,11 +85,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Erro interno do servidor.' });
 });
 
+// ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 
-// Inicia banco e depois o servidor
 initDB().then(async () => {
-  // Seed admin padrão
   const bcrypt = require('bcryptjs');
   const { v4: uuidv4 } = require('uuid');
   const { pool } = require('./db');
@@ -104,9 +109,7 @@ initDB().then(async () => {
     console.log(`✅ Admin verificado: ${ADMIN_EMAIL}`);
   }
 
-  // Prune tokens diariamente
   setInterval(() => pruneExpiredTokens().catch(console.error), 24 * 60 * 60 * 1000);
-
   app.listen(PORT, () => console.log(`🚀 Grupo-E rodando na porta ${PORT}`));
 }).catch(err => {
   console.error('❌ Erro ao conectar ao banco:', err);
