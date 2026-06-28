@@ -112,7 +112,7 @@
         <!-- DASHBOARD -->
         <section id="page-dashboard" class="page">
           <!-- TOOLBAR -->
-          <div class="filter-row">
+          <div class="filter-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <label for="dash-period">Período</label>
             <select id="dash-period">
               <option value="todos">Todos</option>
@@ -120,6 +120,10 @@
               <option value="semana">Esta semana</option>
               <option value="mes">Este mês</option>
             </select>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm" onclick="App.Dashboard.exportCSV()">⬇ Exportar CSV</button>
+              <button class="btn btn-ghost btn-sm" onclick="App.Dashboard.exportPDF()">🖨 Exportar PDF</button>
+            </div>
           </div>
 
           <!-- ATENDIMENTO -->
