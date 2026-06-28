@@ -749,10 +749,23 @@ const App = (() => {
   // ── Admin ─────────────────────────────────────────────────────────────────
   let _editingUserId = null;
   const Admin = {
+    _users: [],
+
     async load() {
       const res = await API.get('/api/users');
       if (!res || !res.ok) return;
       const { users } = await res.json();
+      Admin._users = users;
+      Admin.filtrar();
+    },
+
+    filtrar() {
+      const busca = (document.getElementById('adm-busca')?.value || '').toLowerCase().trim();
+      const users = busca
+        ? Admin._users.filter(u =>
+            (u.name||'').toLowerCase().includes(busca) ||
+            (u.email||'').toLowerCase().includes(busca))
+        : Admin._users;
       document.getElementById('users-tbody').innerHTML = users.map(u => {
         const ativo = u.ativo !== false;
         return `<tr style="${!ativo?'opacity:.55':''}">
@@ -768,6 +781,49 @@ const App = (() => {
           </td>
         </tr>`;
       }).join('');
+    },
+
+    exportCSV() {
+      const users = Admin._users;
+      if (!users.length) { App.Toast.err('Nenhum usuário para exportar.'); return; }
+      const header = 'Nome;E-mail;Perfil;Status';
+      const rows = users.map(u =>
+        `"${u.name}";"${u.email}";"${u.role==='administrador'?'Administrador':'Usuário'}";"${u.ativo!==false?'Ativo':'Inativo'}"`
+      );
+      const csv = [header, ...rows].join('\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `usuarios_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click(); URL.revokeObjectURL(url);
+      App.Toast.ok('CSV exportado!');
+    },
+
+    exportPDF() {
+      const users = Admin._users;
+      if (!users.length) { App.Toast.err('Nenhum usuário para exportar.'); return; }
+      const rows = users.map(u => `<tr>
+        <td>${u.name}</td><td>${u.email}</td>
+        <td>${u.role==='administrador'?'Administrador':'Usuário'}</td>
+        <td style="color:${u.ativo!==false?'#38a169':'#e53e3e'}">${u.ativo!==false?'Ativo':'Inativo'}</td>
+      </tr>`).join('');
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Usuários</title>
+      <style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}
+      h1{font-size:15px;color:#1a4233;margin-bottom:12px}
+      table{width:100%;border-collapse:collapse}
+      th{background:#1a4233;color:#fff;padding:6px 10px;text-align:left}
+      td{padding:5px 10px;border-bottom:1px solid #eee}
+      tr:nth-child(even) td{background:#f8f8f8}
+      @media print{body{margin:10px}}</style></head><body>
+      <h1>Grupo-E — Usuários do Sistema</h1>
+      <p style="font-size:11px;color:#666;margin-bottom:12px">Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${users.length} usuário${users.length!==1?'s':''}</p>
+      <table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+      <script>window.onload=()=>{window.print();}<\/script></body></html>`;
+      const win = window.open('', '_blank');
+      if (!win) { App.Toast.err('Permita popups para exportar PDF.'); return; }
+      win.document.write(html); win.document.close();
+      App.Toast.ok('PDF gerado!');
     },
 
     openAdd() {
