@@ -406,7 +406,7 @@ const App = (() => {
       if (!Util.requireFields([['gc-analista','Analista'],['gc-solicitacao','Solicitação'],['gc-cnpj','CNPJ'],['gc-empresa','Empresa'],['gc-data','Data'],['gc-competencia','Competência'],['gc-canal','Canal']])) return;
       const gcSol = Util.val('gc-solicitacao') === 'Outro' ? Util.val('gc-sol-outro') : Util.val('gc-solicitacao');
       const gcCanal = Util.val('gc-canal') === 'Outro' ? Util.val('gc-canal-outro') : Util.val('gc-canal');
-      const isEntrada = gcSol==='Constituição de empresa' || gcSol==='Cliente vindo de outro contador';
+      const isEntrada = gcSol==='Constituição de empresa' || gcSol==='Cliente vindo de outro contador' || gcSol==='Transformação de empresa';
       const isSaida = gcSol==='Saída de empresa' || gcSol==='Baixa de empresa';
       const token = localStorage.getItem('ge_token');
       // Se é entrada, registra automaticamente na carteira
@@ -451,7 +451,7 @@ const App = (() => {
         analista: Util.val('gc-analista'), solicitacao: gcSol,
         cnpj: Util.val('gc-cnpj'), empresa: Util.val('gc-empresa'),
         data_sol: Util.val('gc-data'), competencia: Util.val('gc-competencia'),
-        canal: gcCanal, motivo: Util.val('gc-motivo'),
+        canal: gcCanal,
       }, ['gc-analista','gc-cnpj','gc-empresa','gc-data','gc-competencia','gc-motivo'], 'Gestão salva!');
       document.getElementById('gc-solicitacao').value='';
       document.getElementById('gc-canal').value='';
@@ -612,7 +612,7 @@ function gcToggleOutros() {
   const canalWrap = document.getElementById('gc-canal-outro-wrap');
   if (canalWrap) { const s = canal==='Outro'; canalWrap.style.display=s?'flex':'none'; canalWrap.hidden=!s; }
   // Campos de ENTRADA (honorário, origem, CAC, regime, data-entrada)
-  const isEntrada = sol==='Constituição de empresa' || sol==='Cliente vindo de outro contador';
+  const isEntrada = sol==='Constituição de empresa' || sol==='Cliente vindo de outro contador' || sol==='Transformação de empresa';
   ['gc-honorario-wrap','gc-origem-wrap','gc-cac-wrap','gc-regime-wrap','gc-data-entrada-wrap'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.style.display = isEntrada ? 'flex' : 'none'; el.hidden = !isEntrada; }
