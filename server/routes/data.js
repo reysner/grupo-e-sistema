@@ -12,7 +12,9 @@ router.get('/', async (req, res) => {
     const result = await pool.query(`SELECT id, name, email, role, active, created_at FROM users ORDER BY created_at ASC`);
     const users = result.rows.map(u => ({ ...u, ativo: u.active !== false }));
     res.json({ users });
-  } catch (err) { res.status(500).json({ error: 'Erro ao listar usuários.' }); }
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao buscar usuários.' });
+  }
 });
 
 router.post('/', async (req, res) => {
@@ -66,19 +68,6 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// Toggle ativo/inativo
-router.patch('/:id/toggle', async (req, res) => {
-  try {
-    const { rows } = await pool.query('SELECT active FROM users WHERE id = $1', [req.params.id]);
-    if (!rows.length) return res.status(404).json({ error: 'Usuário não encontrado.' });
-    const newActive = !rows[0].active;
-    await pool.query('UPDATE users SET active = $1 WHERE id = $2', [newActive, req.params.id]);
-    res.json({ ok: true, active: newActive });
-  } catch (err) { res.status(500).json({ error: 'Erro ao alterar status.' }); }
-});
-
-module.exports = router;
-
 // PATCH /api/users/:id/profile (name + email)
 router.patch('/:id/profile', async (req, res) => {
   try {
@@ -101,3 +90,22 @@ router.patch('/:id/profile', async (req, res) => {
     res.status(500).json({ error: 'Erro ao atualizar perfil.' });
   }
 });
+
+// PATCH /api/users/:id/toggle — ativar/desativar usuário
+router.patch('/:id/toggle', async (req, res) => {
+  try {
+    if (req.params.id === req.user.id)
+      return res.status(400).json({ error: 'Não é possível desativar seu próprio usuário.' });
+    const { rows } = await pool.query('SELECT active FROM users WHERE id = $1', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    const newActive = !rows[0].active;
+    await pool.query('UPDATE users SET active = $1, updated_at = NOW() WHERE id = $2', [newActive, req.params.id]);
+    if (!newActive) await revokeAllUserTokens(req.params.id);
+    res.json({ ok: true, active: newActive });
+  } catch (err) {
+    console.error('Toggle user error:', err);
+    res.status(500).json({ error: 'Erro ao alterar status.' });
+  }
+});
+
+module.exports = router;
