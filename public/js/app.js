@@ -298,7 +298,7 @@ const App = (() => {
 
   // ── Navigation ───────────────────────────────────────────────────────────
   const PAGE_TITLES = {
-    dashboard:'Dashboard', atendimento:'Atendimento', gestao:'Gestão de Clientes', carteira:'Inteligência da Carteira', perfil:'Meu Perfil',
+    dashboard:'Dashboard', atendimento:'Atendimento', gestao:'Gestão de Clientes', carteira:'Inteligência da Carteira', perfil:'Meu Perfil', cac:'CAC / Investimentos em Aquisição',
     insatisfacao:'Insatisfação', sensiveis:'Clientes Sensíveis',
     pesquisas:'Pesquisas de Satisfação', recuperacao:'Recuperação de Clientes',
     admin:'Administração de Usuários',
@@ -318,6 +318,7 @@ const App = (() => {
       if (page === 'pesquisas')  Pesquisas.loadGrid();
       if (page === 'carteira')     Carteira.load();
       if (page === 'perfil')       Perfil.load();
+      if (page === 'cac')          CAC.load();
       if (page === 'atendimento')  Atendimento.loadGrid();
       if (page === 'gestao')       Gestao.loadGrid();
       if (page === 'insatisfacao') Insatisfacao.loadGrid();
@@ -2713,3 +2714,174 @@ const Reports = {
 // Expor Reports globalmente
 window.App = window.App || {};
 Object.assign(window.App, { Reports });
+
+// ── Módulo CAC / Investimentos em Aquisição ───────────────────────────────────
+const CAC = (() => {
+  let _data = [];
+  let _page = 1;
+  function _token() { return localStorage.getItem('ge_token') || ''; }
+  function _fmt(v) { return 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  const _nomes = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const _nomesc = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+  function _mesLabel(mes, curto) {
+    if (!mes) return '—';
+    const [ano, m] = mes.split('-');
+    return (curto ? _nomesc : _nomes)[parseInt(m)] + '/' + ano;
+  }
+
+  function _populateMesFilter(meses) {
+    const sel = document.getElementById('cac-mes-filter');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="todos">Todos os períodos</option>' +
+      meses.map(m => `<option value="${m}" ${m===cur?'selected':''}>${_mesLabel(m)}</option>`).join('');
+  }
+
+  async function load() {
+    await Promise.all([loadDashboard(), loadGrid()]);
+  }
+
+  async function loadDashboard() {
+    const mes = document.getElementById('cac-mes-filter')?.value || 'todos';
+    const res = await fetch('/api/data/cac/dashboard?mes=' + mes, {
+      headers: { 'Authorization': 'Bearer ' + _token() }
+    });
+    if (!res || !res.ok) return;
+    const d = await res.json();
+    const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
+    set('cac-total-inv', _fmt(d.totalInv));
+    set('cac-total-cli', d.totalCli);
+    set('cac-medio', d.cacMedio > 0 ? _fmt(d.cacMedio) : '—');
+    set('cac-ltv-cac', d.ltvCac && d.ltvCac !== '—' ? d.ltvCac + 'x' : '—');
+    set('cac-melhor-canal', d.melhorCanal || '—');
+    set('cac-maior-inv', _fmt(d.maiorInv));
+    set('cac-ltv-medio', _fmt(d.ltvMedio));
+    if (d.meses) _populateMesFilter(d.meses);
+  }
+
+  async function loadGrid() {
+    const tbody = document.getElementById('cac-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr>';
+    const mes = document.getElementById('cac-mes-filter')?.value || 'todos';
+    const res = await fetch('/api/data/investimentos?mes=' + mes, {
+      headers: { 'Authorization': 'Bearer ' + _token() }
+    });
+    if (!res || !res.ok) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#e53e3e;padding:32px">Erro ao carregar.</td></tr>';
+      return;
+    }
+    const { data } = await res.json();
+    _data = data || [];
+    _page = 1;
+    _renderGrid();
+  }
+
+  function _renderGrid() {
+    const tbody = document.getElementById('cac-tbody');
+    if (!tbody) return;
+    if (!_data.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum lançamento. Clique em "+ Lançar investimento" para começar.</td></tr>';
+      return;
+    }
+    const paged = App.Util.paginate(_data, _page);
+    tbody.innerHTML = paged.items.map(r => `<tr>
+      <td style="font-weight:600">${_mesLabel(r.mes, true)}</td>
+      <td><span style="background:var(--g100);color:var(--g700);padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600">${r.canal}</span></td>
+      <td style="font-weight:600;color:var(--g700)">${_fmt(r.valor)}</td>
+      <td style="font-size:12px;color:var(--gray-500)">${r.descricao||'—'}</td>
+      <td style="font-size:12px;color:var(--gray-400)">${r.lancado_por||'—'}</td>
+      <td>${App.Auth.isAdmin() ? '<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="CAC.excluir(\'' + r.id + '\')" title="Excluir">🗑</button>' : ''}</td>
+    </tr>`).join('');
+    App.Util.renderPagination('cac-pagination', paged.page, paged.pages, paged.total, 'CAC.goPage');
+  }
+
+  function goPage(p) { _page = p; _renderGrid(); }
+
+  function abrirLancamento() {
+    App.Modal.open('Lançar investimento', '<div style="display:grid;gap:12px">' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+        '<div class="field"><label>Mês/Ano <span class="req">*</span></label><input id="inv-mes" type="month" /></div>' +
+        '<div class="field"><label>Valor (R$) <span class="req">*</span></label><input id="inv-valor" type="number" min="0" step="0.01" placeholder="0,00" /></div>' +
+      '</div>' +
+      '<div class="field"><label>Canal <span class="req">*</span></label>' +
+        '<select id="inv-canal"><option value="">Selecione</option>' +
+        '<option>Google Ads</option><option>Instagram Ads</option><option>Facebook Ads</option>' +
+        '<option>LinkedIn Ads</option><option>Tráfego Pago</option><option>Evento</option>' +
+        '<option>Parceiro</option><option>Prospecção Ativa</option><option>Indicação</option>' +
+        '<option>Site / SEO</option><option>WhatsApp</option><option>Outro</option>' +
+        '</select></div>' +
+      '<div class="field"><label>Descrição <small style="color:var(--gray-400)">(opcional)</small></label>' +
+        '<input id="inv-descricao" type="text" placeholder="Ex: Campanha abertura de empresas maio/2026" /></div>' +
+      '<button class="btn btn-primary" onclick="CAC.salvar()">Lançar</button>' +
+    '</div>');
+  }
+
+  async function salvar() {
+    const mes   = document.getElementById('inv-mes')?.value;
+    const canal = document.getElementById('inv-canal')?.value;
+    const valor = document.getElementById('inv-valor')?.value;
+    const desc  = document.getElementById('inv-descricao')?.value;
+    if (!mes || !canal || !valor) { App.Toast.err('Preencha mês, canal e valor.'); return; }
+    const res = await fetch('/api/data/investimentos', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + _token() },
+      body: JSON.stringify({ mes, canal, valor: parseFloat(valor), descricao: desc||null })
+    });
+    if (res && res.ok) { App.Modal.close(); App.Toast.ok('Investimento lançado!'); await load(); }
+    else { App.Toast.err('Erro ao lançar investimento.'); }
+  }
+
+  async function excluir(id) {
+    if (!confirm('Excluir este lançamento?')) return;
+    const res = await fetch('/api/data/investimentos/' + id, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + _token() }
+    });
+    if (res && res.ok) { App.Toast.ok('Lançamento excluído.'); await load(); }
+    else { App.Toast.err('Erro ao excluir.'); }
+  }
+
+  function exportCSV() {
+    if (!_data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
+    const total = _data.reduce((s,r) => s + parseFloat(r.valor||0), 0);
+    const header = 'Mês;Canal;Valor;Descrição;Lançado por';
+    const rows = _data.map(r => '"' + _mesLabel(r.mes) + '";"' + r.canal + '";"' + r.valor + '";"' + (r.descricao||'') + '";"' + (r.lancado_por||'') + '"');
+    const csv = [header, ...rows, ';;Total: R$ ' + total.toLocaleString('pt-BR',{minimumFractionDigits:2})].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'cac_investimentos_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click(); URL.revokeObjectURL(url);
+    App.Toast.ok('CSV exportado!');
+  }
+
+  function exportPDF() {
+    if (!_data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
+    const totalInv = _data.reduce((s,r) => s + parseFloat(r.valor||0), 0);
+    const rows = _data.map(r =>
+      '<tr><td>' + _mesLabel(r.mes) + '</td><td>' + r.canal + '</td>' +
+      '<td style="font-weight:600">R$ ' + parseFloat(r.valor).toLocaleString('pt-BR',{minimumFractionDigits:2}) + '</td>' +
+      '<td>' + (r.descricao||'—') + '</td><td>' + (r.lancado_por||'—') + '</td></tr>'
+    ).join('');
+    const html = '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>CAC</title>' +
+      '<style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px}h1{font-size:15px;color:#1a4233;margin-bottom:4px}' +
+      'p.sub{color:#666;font-size:11px;margin-bottom:12px}table{width:100%;border-collapse:collapse}' +
+      'th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}td{padding:5px 8px;border-bottom:1px solid #eee}' +
+      'tr:nth-child(even) td{background:#f8f8f8}@media print{body{margin:10px}}</style></head><body>' +
+      '<h1>Grupo-E — CAC / Investimentos em Aquisição</h1>' +
+      '<p class="sub">Gerado em: ' + new Date().toLocaleString('pt-BR') + ' | Total: <strong>R$ ' + totalInv.toLocaleString('pt-BR',{minimumFractionDigits:2}) + '</strong></p>' +
+      '<table><thead><tr><th>Mês</th><th>Canal</th><th>Valor</th><th>Descrição</th><th>Lançado por</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table>' +
+      '<script>window.onload=function(){window.print();}<\/script></body></html>';
+    const win = window.open('', '_blank');
+    if (!win) { App.Toast.err('Permita popups para exportar PDF.'); return; }
+    win.document.write(html); win.document.close();
+    App.Toast.ok('PDF gerado!');
+  }
+
+  return { load, loadDashboard, loadGrid, goPage, abrirLancamento, salvar, excluir, exportCSV, exportPDF };
+})();
+
+window.CAC = CAC;
