@@ -510,6 +510,25 @@ router.delete('/clear', requireAdmin, async (req, res) => {
 });
 
 module.exports = router;
+// ── PERFIL ───────────────────────────────────────────────────────────────────
+router.patch('/perfil', requireAuth, async (req, res) => {
+  try {
+    const { nome, senhaAtual, senhaNova } = req.body;
+    if (!nome) return res.status(400).json({ error: 'Nome obrigatorio.' });
+    await pool.query('UPDATE users SET name = $1 WHERE id = $2', [nome, req.user.id]);
+    if (senhaNova) {
+      const bcrypt = require('bcryptjs');
+      const u = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
+      if (!u.rows.length) return res.status(404).json({ error: 'Usuario nao encontrado.' });
+      const valid = await bcrypt.compare(senhaAtual, u.rows[0].password_hash);
+      if (!valid) return res.status(400).json({ error: 'Senha atual incorreta.' });
+      const hash = await bcrypt.hash(senhaNova, 10);
+      await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.user.id]);
+    }
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao atualizar perfil.' }); }
+});
+
 module.exports.dataRouter = router;
 
 // ── ROTA PÚBLICA — pesquisa sem login ─────────────────────────────────────────
