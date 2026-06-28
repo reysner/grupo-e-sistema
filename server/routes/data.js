@@ -163,12 +163,13 @@ router.post('/recuperacoes', async (req, res) => {
 router.get('/dashboard', async (req, res) => {
   try {
     const pf = periodFilter(req.query.period);
-    const count = async (table) => {
-      const r = await pool.query(`SELECT COUNT(*) as n FROM ${table} WHERE 1=1 ${pf}`);
-      return parseInt(r.rows[0].n);
-    };
-    const groupBy = async (table, col) => {
-      const r = await pool.query(`SELECT ${col} as label, COUNT(*) as n FROM ${table} WHERE 1=1 ${pf} GROUP BY ${col}`);
+
+    const groupBy = async (table, col, limit=10) => {
+      const r = await pool.query(
+        `SELECT COALESCE(${col},'Não informado') as label, COUNT(*) as n
+         FROM ${table} WHERE 1=1 ${pf}
+         GROUP BY ${col} ORDER BY n DESC LIMIT ${limit}`
+      );
       return r.rows;
     };
     const avgCol = async (table, col) => {
@@ -176,24 +177,41 @@ router.get('/dashboard', async (req, res) => {
       return r.rows[0].v ? parseFloat(r.rows[0].v) : null;
     };
 
-    const [at, gc, ins, cs, ps, rc] = await Promise.all([
-      count('atendimentos'), count('gestao_clientes'), count('insatisfacoes'),
-      count('clientes_sensiveis'), count('pesquisas'), count('recuperacoes')
-    ]);
-    const [atDepto, gcTipo, insGrav, gcCanal, csGrav, nps, csat, ces] = await Promise.all([
-      groupBy('atendimentos', 'departamento'),
-      groupBy('gestao_clientes', 'solicitacao'),
-      groupBy('insatisfacoes', 'gravidade'),
-      groupBy('gestao_clientes', 'canal'),
-      groupBy('clientes_sensiveis', 'gravidade'),
+    const [
+      // Atendimento
+      atEmpresa, atDepto, atAnalista, atDemanda,
+      // Gestão
+      gcTipo, gcCanal,
+      // Insatisfação
+      insGrav, insArea, insTipo, insEmpresa,
+      // Pesquisas
+      nps, csat, ces,
+    ] = await Promise.all([
+      // Atendimento
+      groupBy('atendimentos', 'empresa', 10),
+      groupBy('atendimentos', 'departamento', 8),
+      groupBy('atendimentos', 'analista', 8),
+      groupBy('atendimentos', 'demanda', 8),
+      // Gestão
+      groupBy('gestao_clientes', 'solicitacao', 8),
+      groupBy('gestao_clientes', 'canal', 8),
+      // Insatisfação
+      groupBy('insatisfacoes', 'gravidade', 5),
+      groupBy('insatisfacoes', 'area', 8),
+      groupBy('insatisfacoes', 'tipo', 10),
+      groupBy('insatisfacoes', 'empresa', 8),
+      // Pesquisas
       avgCol('pesquisas', 'nps'),
       avgCol('pesquisas', 'csat'),
       avgCol('pesquisas', 'ces'),
     ]);
 
     res.json({
-      totals: { atendimentos: at, gestoes: gc, insatisfacoes: ins, sensiveis: cs, pesquisas: ps, recuperacoes: rc },
-      charts: { atendPorDepto: atDepto, gestaoPorTipo: gcTipo, insatPorGravidade: insGrav, gestaoPorCanal: gcCanal, sensivelPorGrav: csGrav },
+      charts: {
+        atEmpresa, atDepto, atAnalista, atDemanda,
+        gcTipo, gcCanal,
+        insGrav, insArea, insTipo, insEmpresa,
+      },
       nps, csat, ces,
     });
   } catch (err) {
