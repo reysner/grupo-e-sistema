@@ -716,6 +716,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Dashboard
   document.getElementById('dash-period')?.addEventListener('change', () => App.Dashboard.load());
+  document.getElementById('btn-clear-dash')?.addEventListener('click', () => App.Dashboard.clear());
+
   // Forms
   document.getElementById('btn-at-save')?.addEventListener('click', () => App.Forms.atendimento());
   document.getElementById('btn-gc-save')?.addEventListener('click', () => App.Forms.gestao());
@@ -1415,11 +1417,14 @@ const Atendimento = (() => {
       const lixeira = App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Atendimento.excluir('${r.id}')" title="Excluir">🗑</button>` : '';
       return `<tr>
         <td style="font-size:12px;color:var(--gray-500)">${d}</td>
-        <td>${r.analista}</td><td style="font-weight:600">${r.cliente}</td>
-        <td style="font-size:12px">${r.cnpj||'—'}</td><td>${r.empresa}</td>
+        <td>${r.analista}</td>
+        <td style="font-weight:600">${r.cliente}</td>
+        <td style="font-size:12px">${r.cnpj||'—'}</td>
+        <td>${r.empresa}</td>
         <td>${r.departamento||'—'}</td>
-        <td style="font-size:12px;max-width:150px;word-break:break-word">${r.demanda}</td>
-        <td style="font-size:12px;color:var(--gray-500);max-width:150px;word-break:break-word">${r.resumo||'—'}</td>
+        <td>${r.procurado||'—'}</td>
+        <td style="font-size:12px;max-width:130px;word-break:break-word">${r.demanda}</td>
+        <td style="font-size:12px;color:var(--gray-500);max-width:130px;word-break:break-word">${r.resumo||'—'}</td>
         <td>${lixeira}</td></tr>`;
     }).join('');
   }
@@ -1432,7 +1437,7 @@ const Atendimento = (() => {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data } = await res.json();
@@ -1572,10 +1577,14 @@ const Gestao = (() => {
       const lixeira = App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Gestao.excluir('${r.id}')" title="Excluir">🗑</button>` : '';
       return `<tr>
         <td style="font-size:12px;color:var(--gray-500)">${d}</td>
-        <td>${r.analista}</td><td style="font-size:12px">${r.cnpj||'—'}</td>
-        <td style="font-weight:600">${r.empresa}</td><td>${r.solicitacao}</td>
+        <td>${r.analista}</td>
+        <td style="font-size:11px;color:var(--gray-400);font-weight:600">${r.codigo||'—'}</td>
+        <td style="font-size:12px">${r.cnpj||'—'}</td>
+        <td style="font-weight:600">${r.empresa}</td>
+        <td>${r.solicitacao}</td>
         <td>${r.canal||'—'}</td>
-        <td style="font-size:12px;color:var(--gray-500);max-width:150px;word-break:break-word">${r.motivo||'—'}</td>
+        <td style="font-size:12px;color:var(--gray-500)">${r.data_sol ? new Date(r.data_sol).toLocaleDateString('pt-BR') : '—'}</td>
+        <td style="font-size:12px;color:var(--gray-500)">${r.competencia ? new Date(r.competencia).toLocaleDateString('pt-BR') : '—'}</td>
         <td>${lixeira}</td></tr>`;
     }).join('');
   }
@@ -1905,7 +1914,7 @@ const Insatisfacao = (() => {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data } = await res.json();
@@ -2063,7 +2072,7 @@ const Sensiveis = (() => {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data } = await res.json();
