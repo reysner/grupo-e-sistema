@@ -339,3 +339,78 @@ body.is-admin .nav-item.admin-only {
 body.is-admin .btn.admin-only {
   display: inline-flex;
 }
+
+/* ── RESPONSIVIDADE MOBILE ───────────────────────────────────────────────── */
+@media (max-width: 768px) {
+
+  /* Sidebar vira menu hamburguer */
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+    z-index: 1000;
+    width: 220px;
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  /* Overlay quando sidebar aberta */
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.45);
+    z-index: 999;
+  }
+  .sidebar-overlay.open { display: block; }
+
+  /* Botão hamburguer */
+  .btn-menu {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 36px; height: 36px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--g800);
+  }
+
+  /* Main sem margem da sidebar */
+  .main-wrap { margin-left: 0; }
+
+  /* Topbar com botão menu */
+  .topbar { padding: 10px 14px; }
+  .topbar-left { display: flex; align-items: center; gap: 10px; }
+
+  /* Content com padding menor */
+  .content { padding: 14px; }
+
+  /* Grids em coluna única */
+  .stats-grid { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  .charts-grid { grid-template-columns: 1fr !important; }
+  .nps-row { grid-template-columns: 1fr !important; }
+  .form-grid { grid-template-columns: 1fr !important; }
+  .field.span2 { grid-column: 1 !important; }
+
+  /* Tabelas com scroll horizontal */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Modal full-width */
+  .modal-box { width: 95vw !important; margin: 10px auto; max-height: 90vh; overflow-y: auto; }
+
+  /* Filter row em coluna */
+  .filter-row { flex-wrap: wrap; gap: 8px; }
+
+  /* Botões menores */
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+  /* Carteira metricas 2 colunas */
+  div[style*="repeat(4,minmax"] { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  div[style*="repeat(3,minmax"] { grid-template-columns: 1fr !important; }
+}
+
+@media (max-width: 480px) {
+  .stats-grid { grid-template-columns: 1fr !important; }
+  div[style*="repeat(4,minmax"] { grid-template-columns: 1fr !important; }
+  div[style*="repeat(2,minmax"] { grid-template-columns: 1fr !important; }
+  .topbar-title { font-size: 15px; }
+}
