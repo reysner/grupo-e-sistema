@@ -117,6 +117,7 @@
               <option value="semana">Esta semana</option>
               <option value="mes">Este mês</option>
             </select>
+            <button class="btn btn-danger btn-sm admin-only" id="btn-clear-dash">Limpar dados</button>
           </div>
 
           <!-- ATENDIMENTO -->
@@ -214,9 +215,9 @@
               <table class="data-table" id="at-grid">
                 <thead><tr>
                   <th>Data</th><th>Analista</th><th>Cliente</th><th>CNPJ</th>
-                  <th>Empresa</th><th>Departamento</th><th>Demanda</th><th>Resumo</th><th></th>
+                  <th>Empresa</th><th>Departamento</th><th>Procurado</th><th>Demanda</th><th>Resumo</th><th></th>
                 </tr></thead>
-                <tbody id="at-tbody"><tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
+                <tbody id="at-tbody"><tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -299,10 +300,10 @@
             <div class="table-wrap">
               <table class="data-table" id="gc-grid">
                 <thead><tr>
-                  <th>Data</th><th>Analista</th><th>CNPJ</th><th>Empresa</th>
-                  <th>Solicitação</th><th>Canal</th><th>Motivo</th><th></th>
+                  <th>Data</th><th>Analista</th><th>Cód.</th><th>CNPJ</th><th>Empresa</th>
+                  <th>Solicitação</th><th>Canal</th><th>Data Sol.</th><th>Competência</th><th></th>
                 </tr></thead>
-                <tbody id="gc-tbody"><tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
+                <tbody id="gc-tbody"><tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
             </div>
           </div>
