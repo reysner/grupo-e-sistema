@@ -9,8 +9,10 @@ router.use(requireAuth, requireAdmin);
 
 router.get('/', async (req, res) => {
   try {
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true`).catch(()=>{});
     const result = await pool.query(`SELECT id, name, email, role, active, created_at FROM users ORDER BY created_at ASC`);
-    res.json({ users: result.rows });
+    const users = result.rows.map(u => ({ ...u, ativo: u.active !== false }));
+    res.json({ users });
   } catch (err) {
     res.status(500).json({ error: 'Erro ao buscar usuários.' });
   }
@@ -67,8 +69,6 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-module.exports = router;
-
 // PATCH /api/users/:id/profile (name + email)
 router.patch('/:id/profile', async (req, res) => {
   try {
@@ -91,3 +91,23 @@ router.patch('/:id/profile', async (req, res) => {
     res.status(500).json({ error: 'Erro ao atualizar perfil.' });
   }
 });
+
+// PATCH /api/users/:id/toggle
+router.patch('/:id/toggle', async (req, res) => {
+  try {
+    if (req.params.id === req.user.id)
+      return res.status(400).json({ error: 'Nao e possivel desativar seu proprio usuario.' });
+    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true').catch(()=>{});
+    const { rows } = await pool.query('SELECT active FROM users WHERE id = $1', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Usuario nao encontrado.' });
+    const newActive = rows[0].active === false ? true : false;
+    await pool.query('UPDATE users SET active = $1 WHERE id = $2', [newActive, req.params.id]);
+    if (!newActive) { try { await revokeAllUserTokens(req.params.id); } catch(e) {} }
+    res.json({ ok: true, active: newActive });
+  } catch (err) {
+    console.error('Toggle error:', err);
+    res.status(500).json({ error: 'Erro ao alterar status.' });
+  }
+});
+
+module.exports = router;
