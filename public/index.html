@@ -114,11 +114,14 @@
           <!-- TOOLBAR -->
           <div class="filter-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <label for="dash-period">Período</label>
-            <select id="dash-period">
+            <select id="dash-period" onchange="App.Dashboard.load()">
               <option value="todos">Todos</option>
               <option value="hoje">Hoje</option>
               <option value="semana">Esta semana</option>
               <option value="mes">Este mês</option>
+            </select>
+            <select id="dash-analista" onchange="App.Dashboard.load()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="">Todos os analistas</option>
             </select>
             <div style="margin-left:auto;display:flex;gap:8px">
               <button class="btn btn-ghost btn-sm" onclick="App.Dashboard.exportCSV()">⬇ Exportar CSV</button>
@@ -171,6 +174,12 @@
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
               <div style="width:4px;height:20px;background:var(--g500);border-radius:2px"></div>
               <h3 style="font-size:15px;font-weight:700;color:var(--g800);margin:0">Pesquisas de Satisfação</h3>
+            </div>
+            <div class="charts-grid" style="margin-bottom:14px">
+              <div class="chart-card" style="grid-column:1/-1">
+                <p class="chart-title">Evolução mensal — NPS / CSAT / CES</p>
+                <div class="chart-wrap"><canvas id="c-nps-evolucao"></canvas></div>
+              </div>
             </div>
             <div class="nps-row" id="nps-row"></div>
           </div>
@@ -615,6 +624,9 @@
             </div>
           </div>
 
+          <!-- ALERTA REAJUSTE -->
+          <div id="cart-alert-reajuste" hidden style="background:#fffbeb;border:1px solid #f6e05e;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:#b7791f;font-weight:500"></div>
+
           <!-- TABELA DE ANÁLISE -->
           <div class="form-card">
             <h2 class="form-title">Análise da carteira</h2>
@@ -623,9 +635,9 @@
               <table class="data-table" id="cart-grid">
                 <thead><tr>
                   <th>Cód.</th><th>Empresa</th><th>CNPJ</th><th>Honorário</th>
-                  <th>Rec. acumulada</th><th>Tempo</th><th>Origem</th><th>Status</th><th></th>
+                  <th>Rec. acumulada</th><th>Tempo</th><th>Origem</th><th>Health</th><th>Status</th><th></th>
                 </tr></thead>
-                <tbody id="cart-tbody"><tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
+                <tbody id="cart-tbody"><tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
               </table>
             </div>
           </div>
