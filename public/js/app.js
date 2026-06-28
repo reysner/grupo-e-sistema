@@ -308,6 +308,7 @@ const App = (() => {
     go(page) {
       if (page === 'admin' && currentUser?.role !== 'administrador') return false;
       document.querySelectorAll('.page').forEach(el => { el.hidden = true; });
+      closeSidebarMobile();
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       const pg = document.getElementById(`page-${page}`);
       if (pg) pg.hidden = false;
@@ -752,17 +753,21 @@ const App = (() => {
       const res = await API.get('/api/users');
       if (!res || !res.ok) return;
       const { users } = await res.json();
-      document.getElementById('users-tbody').innerHTML = users.map(u => `
-        <tr>
-          <td style="color:var(--info)">${u.email}</td>
-          <td>${u.name}</td>
-          <td><span class="tag ${u.role==='administrador'?'tag-admin':'tag-user'}">${u.role==='administrador'?'Administrador':'Usuário'}</span></td>
-          <td style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditProfile('${u.id}','${u.name}','${u.email}')">Editar</button>
-            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditPass('${u.id}')">Senha</button>
-            <button class="btn btn-danger btn-sm" onclick="App.Admin.deleteUser('${u.id}','${u.name}')">Excluir</button>
+      document.getElementById('users-tbody').innerHTML = users.map(u => {
+        const ativo = u.ativo !== false;
+        return `<tr style="${!ativo?'opacity:.55':''}">
+          <td style="font-weight:600">${u.name}</td>
+          <td style="font-size:12px;color:var(--gray-500)">${u.email}</td>
+          <td><span class="role-pill ${u.role==='administrador'?'admin':'user'}">${u.role==='administrador'?'Administrador':'Usuário'}</span></td>
+          <td><span style="background:${ativo?'#f0fff4':'#fff5f5'};color:${ativo?'#38a169':'#e53e3e'};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${ativo?'Ativo':'Inativo'}</span></td>
+          <td style="white-space:nowrap;display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditProfile('${u.id}','${u.name}','${u.email}')">✏️ Editar</button>
+            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditPass('${u.id}')">🔑 Senha</button>
+            <button class="btn btn-sm" style="background:${ativo?'#fff5f5':'#f0fff4'};color:${ativo?'#e53e3e':'#38a169'};border:1px solid ${ativo?'#fed7d7':'#c6f6d5'}" onclick="App.Admin.toggleAtivo('${u.id}','${u.name}',${ativo})">${ativo?'⏸ Desativar':'▶ Ativar'}</button>
+            <button class="btn btn-danger btn-sm" onclick="App.Admin.deleteUser('${u.id}','${u.name}')">🗑 Excluir</button>
           </td>
-        </tr>`).join('');
+        </tr>`;
+      }).join('');
     },
 
     openAdd() {
@@ -795,6 +800,16 @@ const App = (() => {
       const res = await API.patch(`/api/users/${_editingUserId}/password`, { password });
       if (res?.ok) { Modal.close(); Toast.ok('Senha atualizada!'); }
       else { const d = await res.json(); Toast.err(d.error); }
+    },
+
+    async toggleAtivo(id, name, ativo) {
+      const acao = ativo ? 'desativar' : 'ativar';
+      if (!confirm(`Confirma ${acao} o usuário "${name}"?`)) return;
+      const res = await API.patch(`/api/users/${id}/toggle`, {});
+      if (res && res.ok) {
+        App.Toast.ok('Usuário ' + (ativo ? 'desativado' : 'ativado') + '!');
+        Admin.load();
+      } else App.Toast.err('Erro ao alterar status.');
     },
 
     deleteUser(userId, name) {
@@ -959,6 +974,34 @@ const Perfil = (() => {
 
 window.Perfil = Perfil;
 
+// ── Responsividade — sidebar mobile ──────────────────────────────────────────
+function toggleSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  if (!sidebar) return;
+  sidebar.classList.toggle('open');
+  if (overlay) overlay.classList.toggle('open');
+}
+
+// Fechar sidebar ao navegar (mobile)
+function closeSidebarMobile() {
+  if (window.innerWidth <= 768) {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.classList.remove('open');
+  }
+}
+
+// Mostrar/esconder botão hamburguer conforme tamanho
+function handleResize() {
+  const btn = document.getElementById('btn-menu');
+  if (!btn) return;
+  btn.style.display = window.innerWidth <= 768 ? 'flex' : 'none';
+}
+
+window.addEventListener('resize', handleResize);
+
 document.addEventListener('DOMContentLoaded', () => {
   // Auth
   document.getElementById('btn-login').addEventListener('click', () => App.Auth.login());
@@ -1022,6 +1065,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Auto login
+  handleResize();
   (async () => { await App.Auth.tryAutoLogin(); })();
 });
 
