@@ -177,33 +177,32 @@ router.get('/dashboard', async (req, res) => {
       return r.rows[0].v ? parseFloat(r.rows[0].v) : null;
     };
 
+    // Auto-migrate insatisfacoes columns
+    await pool.query(`ALTER TABLE insatisfacoes ADD COLUMN IF NOT EXISTS area TEXT`).catch(()=>{});
+    await pool.query(`ALTER TABLE insatisfacoes ADD COLUMN IF NOT EXISTS tipo TEXT`).catch(()=>{});
+
+    const safe = async (fn) => { try { return await fn(); } catch(e) { return []; } };
+    const safeAvg = async (fn) => { try { return await fn(); } catch(e) { return null; } };
+
     const [
-      // Atendimento
       atEmpresa, atDepto, atAnalista, atDemanda,
-      // Gestão
       gcTipo, gcCanal,
-      // Insatisfação
       insGrav, insArea, insTipo, insEmpresa,
-      // Pesquisas
       nps, csat, ces,
     ] = await Promise.all([
-      // Atendimento
-      groupBy('atendimentos', 'empresa', 10),
-      groupBy('atendimentos', 'departamento', 8),
-      groupBy('atendimentos', 'analista', 8),
-      groupBy('atendimentos', 'demanda', 8),
-      // Gestão
-      groupBy('gestao_clientes', 'solicitacao', 8),
-      groupBy('gestao_clientes', 'canal', 8),
-      // Insatisfação
-      groupBy('insatisfacoes', 'gravidade', 5),
-      groupBy('insatisfacoes', 'area', 8),
-      groupBy('insatisfacoes', 'tipo', 10),
-      groupBy('insatisfacoes', 'empresa', 8),
-      // Pesquisas
-      avgCol('pesquisas', 'nps'),
-      avgCol('pesquisas', 'csat'),
-      avgCol('pesquisas', 'ces'),
+      safe(() => groupBy('atendimentos', 'empresa', 10)),
+      safe(() => groupBy('atendimentos', 'departamento', 8)),
+      safe(() => groupBy('atendimentos', 'analista', 8)),
+      safe(() => groupBy('atendimentos', 'demanda', 8)),
+      safe(() => groupBy('gestao_clientes', 'solicitacao', 8)),
+      safe(() => groupBy('gestao_clientes', 'canal', 8)),
+      safe(() => groupBy('insatisfacoes', 'gravidade', 5)),
+      safe(() => groupBy('insatisfacoes', 'area', 8)),
+      safe(() => groupBy('insatisfacoes', 'tipo', 10)),
+      safe(() => groupBy('insatisfacoes', 'empresa', 8)),
+      safeAvg(() => avgCol('pesquisas', 'nps')),
+      safeAvg(() => avgCol('pesquisas', 'csat')),
+      safeAvg(() => avgCol('pesquisas', 'ces')),
     ]);
 
     res.json({
