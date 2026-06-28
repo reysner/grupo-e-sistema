@@ -674,9 +674,17 @@
 
 
         <section id="page-admin" class="page" hidden>
+          <!-- TOOLBAR -->
+          <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <input id="adm-busca" type="text" placeholder="🔍 Buscar nome ou e-mail..." oninput="App.Admin.filtrar()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;min-width:220px;flex:1;max-width:300px" />
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn btn-success btn-sm" id="btn-add-user">+ Adicionar usuário</button>
+              <button class="btn btn-ghost btn-sm" onclick="App.Admin.exportCSV()">⬇ Exportar CSV</button>
+              <button class="btn btn-ghost btn-sm" onclick="App.Admin.exportPDF()">🖨 Exportar PDF</button>
+            </div>
+          </div>
           <div class="form-card">
             <h2 class="form-title">Administração de Usuários</h2><div class="form-accent"></div>
-            <button class="btn btn-success btn-sm" id="btn-add-user" style="margin-bottom:16px">+ Adicionar usuário</button>
             <div class="table-wrap">
               <table class="data-table">
                 <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Ações</th></tr></thead>
