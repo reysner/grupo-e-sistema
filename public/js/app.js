@@ -1472,7 +1472,7 @@ const Atendimento = (() => {
     const anos = [...new Set(data.map(r => new Date(r.created_at).getFullYear()))].sort((a,b)=>b-a);
     const cur = sel.value;
     sel.innerHTML = '<option value="todos">Todos os anos</option>' +
-      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>{a}</option>`).join('');
+      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>${a}</option>`).join('');
   }
 
   function _filterData(data) {
@@ -1642,7 +1642,7 @@ const Gestao = (() => {
     const anos = [...new Set(data.map(r => new Date(r.created_at).getFullYear()))].sort((a,b)=>b-a);
     const cur = sel.value;
     sel.innerHTML = '<option value="todos">Todos os anos</option>' +
-      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>{a}</option>`).join('');
+      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>${a}</option>`).join('');
   }
 
   function _filterData(data) {
@@ -1812,7 +1812,7 @@ const Recuperacao = (() => {
     const anos = [...new Set(data.map(r => new Date(r.created_at).getFullYear()))].sort((a,b)=>b-a);
     const cur = sel.value;
     sel.innerHTML = '<option value="todos">Todos os anos</option>' +
-      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>{a}</option>`).join('');
+      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>${a}</option>`).join('');
   }
 
   function _filterData(data) {
@@ -1979,7 +1979,7 @@ const Insatisfacao = (() => {
     const anos = [...new Set(data.map(r => new Date(r.created_at).getFullYear()))].sort((a,b)=>b-a);
     const cur = sel.value;
     sel.innerHTML = '<option value="todos">Todos os anos</option>' +
-      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>{a}</option>`).join('');
+      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>${a}</option>`).join('');
   }
 
   function _filterData(data) {
@@ -2149,7 +2149,7 @@ const Sensiveis = (() => {
     const anos = [...new Set(data.map(r => new Date(r.created_at).getFullYear()))].sort((a,b)=>b-a);
     const cur = sel.value;
     sel.innerHTML = '<option value="todos">Todos os anos</option>' +
-      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>{a}</option>`).join('');
+      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>${a}</option>`).join('');
   }
 
   function _filterData(data) {
