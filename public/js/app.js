@@ -333,12 +333,21 @@ const App = (() => {
 
   const Dashboard = {
     async load() {
-      const period = document.getElementById('dash-period').value;
-      const res    = await API.get(`/api/data/dashboard?period=${period}`);
+      const period   = document.getElementById('dash-period').value;
+      const analista = document.getElementById('dash-analista')?.value || '';
+      const params   = analista ? `period=${period}&analista=${encodeURIComponent(analista)}` : `period=${period}`;
+      const res      = await API.get(`/api/data/dashboard?${params}`);
       if (!res || !res.ok) return;
       const d = await res.json();
       Dashboard._lastData = d;
       const c = d.charts;
+      // Populate analista dropdown
+      const anaListaSel = document.getElementById('dash-analista');
+      if (anaListaSel && d.analistas) {
+        const cur = anaListaSel.value;
+        anaListaSel.innerHTML = '<option value="">Todos os analistas</option>' +
+          d.analistas.map(a => `<option value="${a}" ${a===cur?'selected':''}>${a}</option>`).join('');
+      }
 
       // ── ATENDIMENTO ──────────────────────────────────────────────────────────
       Dashboard.renderChart('c-at-empresa', 'bar',      c.atEmpresa,  'Empresa',     {indexAxis:'y'});
@@ -540,6 +549,32 @@ const App = (() => {
       win.document.write(html);
       win.document.close();
       App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
+    },
+
+    renderLineChart(id, data) {
+      if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
+      const ctx = document.getElementById(id);
+      if (!ctx || !data.length) return;
+      const labels = data.map(r => r.mes);
+      _charts[id] = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label:'NPS', data: data.map(r=>r.nps), borderColor:'#f5c518', backgroundColor:'#f5c51820', tension:.3, pointRadius:4 },
+            { label:'CSAT', data: data.map(r=>r.csat), borderColor:'#68d391', backgroundColor:'#68d39120', tension:.3, pointRadius:4 },
+            { label:'CES', data: data.map(r=>r.ces), borderColor:'#76e4f7', backgroundColor:'#76e4f720', tension:.3, pointRadius:4 },
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position:'bottom', labels:{ boxWidth:12, font:{size:11}, padding:12 } } },
+          scales: {
+            y: { beginAtZero:true, max:10, ticks:{font:{size:10}}, grid:{color:'rgba(0,0,0,.05)'} },
+            x: { ticks:{font:{size:10}}, grid:{display:false} }
+          }
+        }
+      });
     },
 
     async clear() {
@@ -1377,14 +1412,28 @@ const Carteira = (() => {
       const statusBadge = c.status==='ativo'
         ? '<span style="background:#f0fff4;color:#38a169;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Ativo</span>'
         : '<span style="background:#fff5f5;color:#e53e3e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Encerrado</span>';
+      // Health Score (0-100)
+      const mesesRel = (() => { const s=new Date(c.data_entrada),e=c.data_saida?new Date(c.data_saida):new Date(); return (e.getFullYear()-s.getFullYear())*12+(e.getMonth()-s.getMonth()); })();
+      const scoreRetencao = Math.min(40, Math.round(mesesRel/3));
+      const scoreReceita  = rec > 0 ? Math.min(30, Math.round(rec/1000)) : 0;
+      const scoreSem      = c.status==='ativo' ? 20 : 0;
+      const scoreReajuste = c.meses_sem_reajuste && c.meses_sem_reajuste > 12 ? 0 : 10;
+      const health = Math.min(100, scoreRetencao + scoreReceita + scoreSem + scoreReajuste);
+      const healthColor = health >= 70 ? '#38a169' : health >= 40 ? '#d69e2e' : '#e53e3e';
+      const healthLabel = health >= 70 ? 'Saudável' : health >= 40 ? 'Atenção' : 'Risco';
+      // Reajuste alert
+      const semReajuste = c.meses_sem_reajuste || 0;
+      const reajusteAlert = semReajuste > 12 && c.status==='ativo'
+        ? `<span title="Sem reajuste há ${semReajuste} meses" style="color:#d69e2e;font-size:14px;margin-left:4px">⚠️</span>` : '';
       return `<tr>
         <td style="font-size:11px;color:var(--gray-400);font-weight:600">${c.codigo||'—'}</td>
-        <td style="font-weight:600">${c.nome_empresa}</td>
+        <td style="font-weight:600">${c.nome_empresa}${reajusteAlert}</td>
         <td style="font-size:12px;color:var(--gray-500)">${c.cnpj}</td>
         <td style="font-weight:600;color:var(--g700)">${_fmt(hon)}</td>
         <td>${_fmt(rec)}</td>
         <td style="font-size:12px;color:var(--gray-500)">${_tempo(c.data_entrada, c.data_saida)}</td>
         <td style="font-size:12px;color:var(--gray-500)">${c.origem||'—'}</td>
+        <td><span style="background:${healthColor}20;color:${healthColor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${healthLabel}</span></td>
         <td>${statusBadge}</td>
         <td style="white-space:nowrap">
           <button class="btn btn-ghost btn-sm" onclick="Carteira.verFicha('${c.id}')">Ver ficha</button>
@@ -1434,6 +1483,15 @@ const Carteira = (() => {
     const receitaTotal = _clientes.reduce((s,c) => s + parseFloat(c.receita_acumulada||0), 0);
     const el = document.getElementById('cart-receita-total');
     if (el) el.textContent = _fmt(receitaTotal);
+    // Alerta de reajuste
+    const semReajuste = _clientes.filter(c => c.status==='ativo' && (c.meses_sem_reajuste||0) > 12);
+    const alertEl = document.getElementById('cart-alert-reajuste');
+    if (alertEl) {
+      alertEl.hidden = semReajuste.length === 0;
+      alertEl.textContent = semReajuste.length > 0
+        ? '⚠️ ' + semReajuste.length + ' cliente' + (semReajuste.length!==1?'s':'') + ' sem reajuste há mais de 12 meses'
+        : '';
+    }
     filtrar();
   }
 
