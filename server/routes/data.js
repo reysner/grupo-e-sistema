@@ -50,13 +50,15 @@ router.get('/gestao', async (req, res) => {
 
 router.post('/gestao', async (req, res) => {
   try {
-    const { analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo } = req.body;
+    const { analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo } = req.body;
     if (!analista || !solicitacao || !cnpj || !empresa || !data_sol || !competencia || !canal)
       return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
+    // Auto-add codigo column
+    await pool.query(`ALTER TABLE gestao_clientes ADD COLUMN IF NOT EXISTS codigo TEXT`).catch(()=>{});
     const id = uuidv4();
     await pool.query(
-      `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [id, req.user.id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo || null]
+      `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [id, req.user.id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo || null, codigo || null]
     );
     res.status(201).json({ id });
   } catch (err) { res.status(500).json({ error: 'Erro.' }); }
