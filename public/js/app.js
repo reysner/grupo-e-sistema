@@ -463,14 +463,26 @@ const App = (() => {
     },
 
     async insatisfacao() {
-      if (!Util.requireFields([['in-analista','Analista'],['in-cliente','Cliente'],['in-cnpj','CNPJ'],['in-empresa','Empresa'],['in-reclamacao','Reclamação'],['in-gravidade','Gravidade']])) return;
+      const inTipo = Util.val('in-tipo') === 'Outro' ? Util.val('in-tipo-outro') : Util.val('in-tipo');
+      if (!Util.requireFields([
+        ['in-analista','Analista'],['in-cliente','Cliente'],['in-cnpj','CNPJ'],
+        ['in-empresa','Empresa'],['in-reclamacao','Reclamação'],['in-gravidade','Gravidade'],
+        ['in-area','Área da Insatisfação'],
+      ])) return;
+      if (!inTipo) { App.Toast.err('Selecione o Tipo de Insatisfação.'); return; }
       await Forms._submit('insatisfacoes', {
         analista: Util.val('in-analista'), cliente: Util.val('in-cliente'),
         cnpj: Util.val('in-cnpj'), empresa: Util.val('in-empresa'),
         reclamado: Util.val('in-reclamado'), reclamacao: Util.val('in-reclamacao'),
         gravidade: Util.val('in-gravidade'),
-      }, ['in-analista','in-cliente','in-cnpj','in-empresa','in-reclamado','in-reclamacao'], 'Insatisfação registrada!');
+        area: Util.val('in-area'),
+        tipo: inTipo,
+      }, ['in-analista','in-cliente','in-cnpj','in-empresa','in-reclamado','in-reclamacao','in-tipo-outro'], 'Insatisfação registrada!');
       document.getElementById('in-gravidade').value='';
+      document.getElementById('in-area').value='';
+      document.getElementById('in-tipo').innerHTML='<option value="">Selecione a área primeiro</option>';
+      const ow = document.getElementById('in-tipo-outro-wrap');
+      if(ow){ow.hidden=true;ow.style.display='none';}
       Insatisfacao.loadGrid();
     },
 
@@ -625,6 +637,56 @@ function gcToggleOutros() {
   });
 }
 
+// ── Insatisfação — cascade Area → Tipo ───────────────────────────────────────
+const IN_TIPOS = {
+  'Comunicação': [
+    'Demora no retorno','Falta de clareza nas informações',
+    'Não foi avisado sobre prazo/vencimento','Outro'
+  ],
+  'Qualidade do Serviço': [
+    'Erro em guia/boleto','Erro em declaração','Erro em folha de pagamento',
+    'Erro em nota fiscal','Informação incorreta','Outro'
+  ],
+  'Prazo': [
+    'Entrega fora do prazo','Atraso na abertura de empresa',
+    'Atraso no encerramento','Atraso em certidão/documento','Outro'
+  ],
+  'Atendimento': [
+    'Analista despreparado','Falta de proatividade',
+    'Tratamento inadequado','Analista não conhecia o cliente','Outro'
+  ],
+  'Financeiro': [
+    'Cobrança incorreta','Honorário não acordado',
+    'Falta de transparência nos custos','Outro'
+  ],
+  'Fiscal / Tributário': [
+    'Imposto calculado errado','Enquadramento tributário inadequado',
+    'Multa por erro do escritório','Outro'
+  ],
+  'Tecnologia / Acesso': [
+    'Problema com sistema','Dificuldade de acesso ao portal',
+    'Documento não enviado/recebido','Outro'
+  ],
+  'Outro': ['Outro'],
+};
+
+function inToggleArea() {
+  const area = document.getElementById('in-area')?.value;
+  const tipoSel = document.getElementById('in-tipo');
+  const outroWrap = document.getElementById('in-tipo-outro-wrap');
+  if (!tipoSel) return;
+  const tipos = IN_TIPOS[area] || [];
+  tipoSel.innerHTML = tipos.length
+    ? '<option value="">Selecione o tipo</option>' + tipos.map(t=>`<option>${t}</option>`).join('')
+    : '<option value="">Selecione a área primeiro</option>';
+  // Hide outro initially
+  if (outroWrap) { outroWrap.hidden = true; outroWrap.style.display = 'none'; }
+  tipoSel.onchange = () => {
+    const isOutro = tipoSel.value === 'Outro';
+    if (outroWrap) { outroWrap.hidden = !isOutro; outroWrap.style.display = isOutro ? 'flex' : 'none'; }
+  };
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // Auth
   document.getElementById('btn-login').addEventListener('click', () => App.Auth.login());
@@ -696,7 +758,7 @@ const PesquisasGrid = (() => {
   async function load() {
     const tbody = document.getElementById('ps-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
 
     const headers = {};
     const token = localStorage.getItem('ge_token');
@@ -882,7 +944,7 @@ const Pesquisas = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('ps-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
 
     const res = await fetch('/api/data/pesquisas?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
@@ -1335,7 +1397,7 @@ const Atendimento = (() => {
     const tbody = document.getElementById('at-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(r => {
@@ -1355,7 +1417,7 @@ const Atendimento = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('at-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
     const res = await fetch('/api/data/atendimentos?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
@@ -1805,7 +1867,7 @@ const Insatisfacao = (() => {
     const tbody = document.getElementById('in-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(r => {
@@ -1818,6 +1880,8 @@ const Insatisfacao = (() => {
         <td style="font-size:12px">${r.cnpj||'—'}</td><td>${r.empresa}</td>
         <td>${r.reclamado||'—'}</td>
         <td><span style="background:${gc}20;color:${gc};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${r.gravidade}</span></td>
+        <td style="font-size:12px;color:var(--gray-500)">${r.area||'—'}</td>
+        <td style="font-size:12px;color:var(--gray-500)">${r.tipo||'—'}</td>
         <td style="font-size:12px;color:var(--gray-500);max-width:150px;word-break:break-word">${r.reclamacao}</td>
         <td>${lixeira}</td></tr>`;
     }).join('');
@@ -1826,7 +1890,7 @@ const Insatisfacao = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('in-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
     const res = await fetch('/api/data/insatisfacoes?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
@@ -1963,7 +2027,7 @@ const Sensiveis = (() => {
     const tbody = document.getElementById('cs-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(r => {
@@ -1984,7 +2048,7 @@ const Sensiveis = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('cs-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
     const res = await fetch('/api/data/sensiveis?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
