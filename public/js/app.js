@@ -338,14 +338,15 @@ const App = (() => {
       Dashboard.renderChart('c-ins-empresa','bar',      c.insEmpresa, 'Empresa',     {indexAxis:'y'});
 
       // ── PESQUISAS NPS ────────────────────────────────────────────────────────
-      document.getElementById('nps-row').innerHTML = [
-        { label:'NPS Médio',  value: d.nps,  sub:'Net Promoter Score (0–10)' },
-        { label:'CSAT Médio', value: d.csat, sub:'Satisfação do cliente (0–5)' },
-        { label:'CES Médio',  value: d.ces,  sub:'Esforço do cliente (0–5)' },
+      const npsEl = document.getElementById('nps-row');
+      if (npsEl) npsEl.innerHTML = [
+        { label:'NPS Médio',  value: d.nps,  sub:'Net Promoter Score (0–10)',    color:'#f5c518' },
+        { label:'CSAT Médio', value: d.csat, sub:'Satisfação do cliente (0–5)',  color:'#68d391' },
+        { label:'CES Médio',  value: d.ces,  sub:'Esforço do cliente (0–5)',     color:'#76e4f7' },
       ].map(n => `
         <div class="nps-card">
           <div class="nps-label">${n.label}</div>
-          <div class="nps-value">${n.value != null ? n.value.toFixed(1) : '—'}</div>
+          <div class="nps-value" style="color:${n.color}">${n.value != null ? n.value.toFixed(1) : '—'}</div>
           <div class="nps-sub">${n.sub}</div>
         </div>`).join('');
     },
