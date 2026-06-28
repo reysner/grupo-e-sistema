@@ -73,13 +73,16 @@ router.get('/insatisfacoes', async (req, res) => {
 
 router.post('/insatisfacoes', async (req, res) => {
   try {
-    const { analista, cliente, cnpj, empresa, reclamado, reclamacao, gravidade } = req.body;
+    const { analista, cliente, cnpj, empresa, reclamado, reclamacao, gravidade, area, tipo } = req.body;
     if (!analista || !cliente || !cnpj || !empresa || !reclamacao || !gravidade)
       return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
+    // Auto-migrate columns
+    await pool.query(`ALTER TABLE insatisfacoes ADD COLUMN IF NOT EXISTS area TEXT`).catch(()=>{});
+    await pool.query(`ALTER TABLE insatisfacoes ADD COLUMN IF NOT EXISTS tipo TEXT`).catch(()=>{});
     const id = uuidv4();
     await pool.query(
-      `INSERT INTO insatisfacoes (id, user_id, analista, cliente, cnpj, empresa, reclamado, reclamacao, gravidade) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [id, req.user.id, analista, cliente, cnpj, empresa, reclamado || null, reclamacao, gravidade]
+      `INSERT INTO insatisfacoes (id, user_id, analista, cliente, cnpj, empresa, reclamado, reclamacao, gravidade, area, tipo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [id, req.user.id, analista, cliente, cnpj, empresa, reclamado || null, reclamacao, gravidade, area||null, tipo||null]
     );
     res.status(201).json({ id });
   } catch (err) { res.status(500).json({ error: 'Erro.' }); }
