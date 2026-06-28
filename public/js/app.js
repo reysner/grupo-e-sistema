@@ -1209,8 +1209,18 @@ const Pesquisas = (() => {
 
   function _filterData(data) {
     const ano = document.getElementById('ps-ano-filter')?.value || 'todos';
-    if (ano === 'todos') return data;
-    return data.filter(r => new Date(r.created_at).getFullYear() === Number(ano));
+    const mes = document.getElementById('ps-mes-filter')?.value || 'todos';
+    const busca = (document.getElementById('ps-busca')?.value || '').toLowerCase().trim();
+    return data.filter(r => {
+      const d = new Date(r.created_at);
+      if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
+      if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
+      if (busca) {
+        const s = [r.empresa, r.cliente, r.cnpj, r.analista].filter(Boolean).join(' ').toLowerCase();
+        if (!s.includes(busca)) return false;
+      }
+      return true;
+    });
   }
 
   function _renderGrid(data) {
