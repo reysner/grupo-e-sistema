@@ -319,24 +319,25 @@ const App = (() => {
       const res    = await API.get(`/api/data/dashboard?period=${period}`);
       if (!res || !res.ok) return;
       const d = await res.json();
+      const c = d.charts;
 
-      const stats = [
-        { label:'Total Atendimentos', value: d.totals.atendimentos },
-        { label:'Gestões',            value: d.totals.gestoes },
-        { label:'Insatisfações',      value: d.totals.insatisfacoes },
-        { label:'Clientes Sensíveis', value: d.totals.sensiveis },
-        { label:'Pesquisas',          value: d.totals.pesquisas },
-        { label:'Recuperações',       value: d.totals.recuperacoes },
-      ];
-      document.getElementById('stats-grid').innerHTML = stats.map(s =>
-        `<div class="stat-card"><div class="stat-label">${s.label}</div><div class="stat-value">${s.value}</div></div>`
-      ).join('');
+      // ── ATENDIMENTO ──────────────────────────────────────────────────────────
+      Dashboard.renderChart('c-at-empresa', 'bar',      c.atEmpresa,  'Empresa',     {indexAxis:'y'});
+      Dashboard.renderChart('c-depto',      'bar',      c.atDepto,    'Departamento');
+      Dashboard.renderChart('c-analista',   'bar',      c.atAnalista, 'Analista',    {indexAxis:'y'});
+      Dashboard.renderChart('c-demanda',    'doughnut', c.atDemanda,  'Demanda');
 
-      Dashboard.renderChart('c-depto',  'bar',      d.charts.atendPorDepto,    'Departamento');
-      Dashboard.renderChart('c-gestao', 'doughnut', d.charts.gestaoPorTipo,    'Solicitação');
-      Dashboard.renderChart('c-grav',   'bar',      d.charts.insatPorGravidade,'Gravidade');
-      Dashboard.renderChart('c-canal',  'pie',      d.charts.gestaoPorCanal,   'Canal');
+      // ── GESTÃO ───────────────────────────────────────────────────────────────
+      Dashboard.renderChart('c-gestao', 'doughnut', c.gcTipo,  'Solicitação');
+      Dashboard.renderChart('c-canal',  'pie',      c.gcCanal, 'Canal');
 
+      // ── INSATISFAÇÃO ─────────────────────────────────────────────────────────
+      Dashboard.renderChart('c-ins-area',   'bar',      c.insArea,    'Área');
+      Dashboard.renderChart('c-ins-tipo',   'bar',      c.insTipo,    'Tipo',        {indexAxis:'y'});
+      Dashboard.renderChart('c-grav',       'doughnut', c.insGrav,    'Gravidade');
+      Dashboard.renderChart('c-ins-empresa','bar',      c.insEmpresa, 'Empresa',     {indexAxis:'y'});
+
+      // ── PESQUISAS NPS ────────────────────────────────────────────────────────
       document.getElementById('nps-row').innerHTML = [
         { label:'NPS Médio',  value: d.nps,  sub:'Net Promoter Score (0–10)' },
         { label:'CSAT Médio', value: d.csat, sub:'Satisfação do cliente (0–5)' },
@@ -349,20 +350,30 @@ const App = (() => {
         </div>`).join('');
     },
 
-    renderChart(id, type, rows, labelKey) {
+    renderChart(id, type, rows, labelKey, extra={}) {
       if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
       const ctx = document.getElementById(id);
       if (!ctx) return;
+      if (!rows || !rows.length) {
+        ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados no período</p>';
+        return;
+      }
+      const isHBar = extra.indexAxis === 'y';
       const labels = rows.map(r => r.label || 'Não informado');
-      const data   = rows.map(r => r.n);
-      const bg     = type === 'bar' ? CHART_COLORS[0] : labels.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]);
+      const data   = rows.map(r => Number(r.n));
+      const isBar  = type === 'bar';
+      const bg     = isBar ? labels.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]) : labels.map((_,i) => CHART_COLORS[i % CHART_COLORS.length]);
       _charts[id] = new Chart(ctx, {
         type,
-        data: { labels, datasets: [{ label: labelKey, data, backgroundColor: bg, borderColor:'#fff', borderWidth: type==='bar'?0:2, borderRadius: type==='bar'?4:0 }] },
+        data: { labels, datasets: [{ label: labelKey, data, backgroundColor: bg, borderColor:'#fff', borderWidth: isBar?0:2, borderRadius: isBar?4:0 }] },
         options: {
+          indexAxis: extra.indexAxis || 'x',
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: type!=='bar', position:'bottom', labels:{ boxWidth:12, font:{size:11}, padding:12 } } },
-          scales: type==='bar' ? { y:{ beginAtZero:true, ticks:{stepSize:1,font:{size:11}}, grid:{color:'rgba(0,0,0,.05)'} }, x:{ ticks:{font:{size:11},maxRotation:35}, grid:{display:false} } } : {},
+          plugins: { legend: { display: !isBar, position:'bottom', labels:{ boxWidth:12, font:{size:11}, padding:12 } } },
+          scales: isBar ? {
+            x: isHBar ? { beginAtZero:true, ticks:{stepSize:1,font:{size:10}}, grid:{color:'rgba(0,0,0,.05)'} } : { ticks:{font:{size:10},maxRotation:35}, grid:{display:false} },
+            y: isHBar ? { ticks:{font:{size:10}}, grid:{display:false} } : { beginAtZero:true, ticks:{stepSize:1,font:{size:10}}, grid:{color:'rgba(0,0,0,.05)'} },
+          } : {},
         },
       });
     },
