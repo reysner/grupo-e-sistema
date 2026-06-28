@@ -289,6 +289,28 @@
               <div class="field"><label>Gravidade <span class="req">*</span></label>
                 <select id="in-gravidade"><option value="">Selecione</option><option>Muito Alta</option><option>Alta</option><option>Média</option><option>Baixa</option><option>Muito Baixa</option></select>
               </div>
+              <div class="field"><label>Área da Insatisfação <span class="req">*</span></label>
+                <select id="in-area" onchange="inToggleArea()">
+                  <option value="">Selecione a área</option>
+                  <option>Comunicação</option>
+                  <option>Qualidade do Serviço</option>
+                  <option>Prazo</option>
+                  <option>Atendimento</option>
+                  <option>Financeiro</option>
+                  <option>Fiscal / Tributário</option>
+                  <option>Tecnologia / Acesso</option>
+                  <option>Outro</option>
+                </select>
+              </div>
+              <div class="field"><label>Tipo de Insatisfação <span class="req">*</span></label>
+                <select id="in-tipo">
+                  <option value="">Selecione a área primeiro</option>
+                </select>
+              </div>
+              <div class="field span2" id="in-tipo-outro-wrap" hidden>
+                <label>Descreva o tipo <span class="req">*</span></label>
+                <input id="in-tipo-outro" type="text" placeholder="Descreva o tipo de insatisfação" />
+              </div>
               <div class="field span2"><label>Reclamação <span class="req">*</span></label><textarea id="in-reclamacao" placeholder="Descreva a reclamação"></textarea></div>
             </div>
             <button class="btn btn-primary btn-save" id="btn-in-save">Salvar Insatisfação</button>
@@ -301,7 +323,7 @@
               <table class="data-table" id="in-grid">
                 <thead><tr>
                   <th>Data</th><th>Analista</th><th>Cliente</th><th>CNPJ</th>
-                  <th>Empresa</th><th>Reclamado</th><th>Gravidade</th><th>Reclamação</th><th></th>
+                  <th>Empresa</th><th>Reclamado</th><th>Gravidade</th><th>Área</th><th>Tipo</th><th>Reclamação</th><th></th>
                 </tr></thead>
                 <tbody id="in-tbody"><tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
