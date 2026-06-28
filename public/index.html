@@ -88,6 +88,9 @@
         <a class="nav-item admin-only" data-page="admin" href="#">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M20 12h2M2 12h2M12 20v2M12 2v2"/></svg>Administração
         </a>
+        <a class="nav-item" data-page="perfil" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>Meu Perfil
+        </a>
         <a class="nav-item nav-logout" id="btn-logout" href="#">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Sair
         </a>
@@ -174,6 +177,7 @@
         <!-- ATENDIMENTO -->
         <section id="page-atendimento" class="page" hidden>
           <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <input id="at-busca" type="text" placeholder="🔍 Buscar empresa, cliente ou CNPJ..." oninput="Atendimento.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;min-width:220px;flex:1;max-width:300px" />
             <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar:</label>
             <select id="at-ano-filter" onchange="Atendimento.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
               <option value="todos">Todos os anos</option>
@@ -219,6 +223,7 @@
                 </tr></thead>
                 <tbody id="at-tbody"><tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
+              <div id="at-pagination"></div>
             </div>
           </div>
         </section>
@@ -226,6 +231,7 @@
         <!-- GESTÃO -->
         <section id="page-gestao" class="page" hidden>
           <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <input id="gc-busca" type="text" placeholder="🔍 Buscar empresa, cliente ou CNPJ..." oninput="Gestao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;min-width:220px;flex:1;max-width:300px" />
             <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar:</label>
             <select id="gc-ano-filter" onchange="Gestao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
               <option value="todos">Todos os anos</option>
@@ -305,6 +311,7 @@
                 </tr></thead>
                 <tbody id="gc-tbody"><tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
+              <div id="gc-pagination"></div>
             </div>
           </div>
         </section>
@@ -312,6 +319,7 @@
         <!-- INSATISFAÇÃO -->
         <section id="page-insatisfacao" class="page" hidden>
                     <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <input id="in-busca" type="text" placeholder="🔍 Buscar empresa, cliente ou CNPJ..." oninput="Insatisfacao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;min-width:220px;flex:1;max-width:300px" />
             <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar:</label>
             <select id="in-ano-filter" onchange="Insatisfacao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
               <option value="todos">Todos os anos</option>
@@ -375,6 +383,7 @@
                 </tr></thead>
                 <tbody id="in-tbody"><tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
+              <div id="in-pagination"></div>
             </div>
           </div>
         </section>
@@ -383,6 +392,7 @@
 
         <section id="page-sensiveis" class="page" hidden>
                     <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <input id="cs-busca" type="text" placeholder="🔍 Buscar empresa, cliente ou CNPJ..." oninput="Sensiveis.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;min-width:220px;flex:1;max-width:300px" />
             <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar:</label>
             <select id="cs-ano-filter" onchange="Sensiveis.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
               <option value="todos">Todos os anos</option>
@@ -430,6 +440,7 @@
                 </tr></thead>
                 <tbody id="cs-tbody"><tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
+              <div id="cs-pagination"></div>
             </div>
           </div>
         </section>
@@ -481,6 +492,7 @@
         <!-- RECUPERAÇÃO -->
         <section id="page-recuperacao" class="page" hidden>
           <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+            <input id="rc-busca" type="text" placeholder="🔍 Buscar empresa, cliente ou CNPJ..." oninput="Recuperacao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;min-width:220px;flex:1;max-width:300px" />
             <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Filtrar:</label>
             <select id="rc-ano-filter" onchange="Recuperacao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
               <option value="todos">Todos os anos</option>
@@ -521,6 +533,7 @@
                 </tr></thead>
                 <tbody id="rc-tbody"><tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
+              <div id="rc-pagination"></div>
             </div>
           </div>
         </section>
@@ -614,6 +627,27 @@
             </div>
           </div>
 
+        </section>
+
+        <!-- PERFIL -->
+        <section id="page-perfil" class="page" hidden>
+          <div class="form-card" style="max-width:520px">
+            <h2 class="form-title">Meu Perfil</h2>
+            <div class="form-accent"></div>
+            <div class="form-grid" style="margin-top:16px">
+              <div class="field span2"><label>Nome</label><input id="perfil-nome" type="text" placeholder="Seu nome" /></div>
+              <div class="field span2"><label>E-mail</label><input id="perfil-email" type="email" disabled style="background:var(--gray-50);color:var(--gray-400)" /></div>
+            </div>
+            <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--gray-100)">
+              <h3 style="font-size:14px;font-weight:600;color:var(--g800);margin-bottom:14px">Alterar senha</h3>
+              <div class="form-grid">
+                <div class="field span2"><label>Senha atual</label><input id="perfil-senha-atual" type="password" placeholder="Digite sua senha atual" /></div>
+                <div class="field"><label>Nova senha</label><input id="perfil-senha-nova" type="password" placeholder="Mínimo 6 caracteres" /></div>
+                <div class="field"><label>Confirmar nova senha</label><input id="perfil-senha-conf" type="password" placeholder="Repita a nova senha" /></div>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-save" onclick="Perfil.salvar()" style="margin-top:8px">Salvar alterações</button>
+          </div>
         </section>
 
         <!-- ADMINISTRAÇÃO -->
