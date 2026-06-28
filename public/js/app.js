@@ -337,6 +337,7 @@ const App = (() => {
       const res    = await API.get(`/api/data/dashboard?period=${period}`);
       if (!res || !res.ok) return;
       const d = await res.json();
+      Dashboard._lastData = d;
       const c = d.charts;
 
       // ── ATENDIMENTO ──────────────────────────────────────────────────────────
@@ -395,6 +396,150 @@ const App = (() => {
           } : {},
         },
       });
+    },
+
+    exportCSV() {
+      const d = Dashboard._lastData;
+      if (!d) { App.Toast.err('Carregue o Dashboard primeiro.'); return; }
+      const period = document.getElementById('dash-period')?.value || 'todos';
+      const c = d.charts;
+      const rows = [];
+      const sep = '\n\n';
+
+      const section = (title, data) => {
+        if (!data || !data.length) return '';
+        const header = 'Posição;Descrição;Quantidade';
+        const lines = data.map((r, i) => `${i+1};"${r.label||'Não informado'}";${r.n}`);
+        return `${title}\n${header}\n${lines.join('\n')}`;
+      };
+
+      let csv = `DASHBOARD GRUPO-E — Período: ${period}\nGerado em: ${new Date().toLocaleString('pt-BR')}\n`;
+      csv += sep + '=== ATENDIMENTO ===';
+      csv += sep + section('Ranking — Empresas que mais solicitam', c.atEmpresa);
+      csv += sep + section('Por departamento', c.atDepto);
+      csv += sep + section('Por analista procurado', c.atAnalista);
+      csv += sep + section('Por demanda', c.atDemanda);
+      csv += sep + '=== GESTÃO DE CLIENTES ===';
+      csv += sep + section('Por tipo de solicitação', c.gcTipo);
+      csv += sep + section('Canal da solicitação', c.gcCanal);
+      csv += sep + '=== INSATISFAÇÃO ===';
+      csv += sep + section('Por área', c.insArea);
+      csv += sep + section('Por tipo', c.insTipo);
+      csv += sep + section('Por gravidade', c.insGrav);
+      csv += sep + section('Ranking — Empresas com mais insatisfações', c.insEmpresa);
+      csv += sep + '=== PESQUISAS ===';
+      csv += sep + `NPS Médio;${d.nps != null ? d.nps.toFixed(1) : '—'}\nCSAT Médio;${d.csat != null ? d.csat.toFixed(1) : '—'}\nCES Médio;${d.ces != null ? d.ces.toFixed(1) : '—'}`;
+
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `dashboard_${period}_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      App.Toast.ok('CSV exportado!');
+    },
+
+    exportPDF() {
+      const d = Dashboard._lastData;
+      if (!d) { App.Toast.err('Carregue o Dashboard primeiro.'); return; }
+      const period = document.getElementById('dash-period')?.value || 'todos';
+      const c = d.charts;
+
+      const table = (title, data) => {
+        if (!data || !data.length) return `<h3>${title}</h3><p style="color:#999;font-size:11px">Sem dados no período</p>`;
+        const rows = data.map((r,i) => `<tr><td>${i+1}</td><td>${r.label||'Não informado'}</td><td style="text-align:right;font-weight:600">${r.n}</td></tr>`).join('');
+        return `<h3>${title}</h3>
+          <table>
+            <thead><tr><th>#</th><th>Descrição</th><th style="text-align:right">Qtd</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`;
+      };
+
+      const npsBlock = `<h3>Pesquisas de Satisfação</h3>
+        <div style="display:flex;gap:20px;margin-top:6px">
+          <div style="background:#1a4233;color:#fff;border-radius:8px;padding:12px 20px;text-align:center">
+            <div style="font-size:10px;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:1px">NPS Médio</div>
+            <div style="font-size:24px;font-weight:800;color:#f5c518">${d.nps != null ? d.nps.toFixed(1) : '—'}</div>
+            <div style="font-size:10px;color:rgba(255,255,255,.5)">Net Promoter Score (0–10)</div>
+          </div>
+          <div style="background:#1a4233;color:#fff;border-radius:8px;padding:12px 20px;text-align:center">
+            <div style="font-size:10px;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:1px">CSAT Médio</div>
+            <div style="font-size:24px;font-weight:800;color:#68d391">${d.csat != null ? d.csat.toFixed(1) : '—'}</div>
+            <div style="font-size:10px;color:rgba(255,255,255,.5)">Satisfação (0–5)</div>
+          </div>
+          <div style="background:#1a4233;color:#fff;border-radius:8px;padding:12px 20px;text-align:center">
+            <div style="font-size:10px;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:1px">CES Médio</div>
+            <div style="font-size:24px;font-weight:800;color:#76e4f7">${d.ces != null ? d.ces.toFixed(1) : '—'}</div>
+            <div style="font-size:10px;color:rgba(255,255,255,.5)">Esforço (0–5)</div>
+          </div>
+        </div>`;
+
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+        <title>Dashboard Grupo-E</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: Arial, sans-serif; font-size: 11px; color: #222; padding: 24px; }
+          .header { background: #1a4233; color: #fff; padding: 16px 20px; border-radius: 8px; margin-bottom: 20px; }
+          .header h1 { font-size: 18px; font-weight: 800; }
+          .header p { font-size: 11px; color: rgba(255,255,255,.7); margin-top: 4px; }
+          .section { margin-bottom: 24px; border-left: 3px solid #1a4233; padding-left: 12px; }
+          .section > h2 { font-size: 13px; font-weight: 700; color: #1a4233; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px; }
+          .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+          h3 { font-size: 11px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+          table { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 8px; }
+          th { background: #1a4233; color: #fff; padding: 5px 8px; text-align: left; }
+          td { padding: 4px 8px; border-bottom: 1px solid #eee; }
+          tr:nth-child(even) td { background: #f8f8f8; }
+          @media print { body { padding: 10px; } .no-print { display: none; } }
+        </style>
+      </head><body>
+        <div class="header">
+          <h1>Dashboard — Grupo-E Soluções Empresariais</h1>
+          <p>Período: ${period} &nbsp;|&nbsp; Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
+        </div>
+
+        <div class="section">
+          <h2>Atendimento</h2>
+          <div class="grid2">
+            ${table('Ranking — Empresas que mais solicitam atendimento', c.atEmpresa)}
+            ${table('Por departamento', c.atDepto)}
+            ${table('Por analista procurado', c.atAnalista)}
+            ${table('Por demanda', c.atDemanda)}
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Gestão de Clientes</h2>
+          <div class="grid2">
+            ${table('Por tipo de solicitação', c.gcTipo)}
+            ${table('Canal da solicitação', c.gcCanal)}
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Insatisfação</h2>
+          <div class="grid2">
+            ${table('Por área', c.insArea)}
+            ${table('Por tipo', c.insTipo)}
+            ${table('Por gravidade', c.insGrav)}
+            ${table('Ranking — Empresas com mais insatisfações', c.insEmpresa)}
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Pesquisas de Satisfação</h2>
+          ${npsBlock}
+        </div>
+
+        <script>window.onload = () => { window.print(); }<\/script>
+      </body></html>`;
+
+      const win = window.open('', '_blank');
+      if (!win) { App.Toast.err('Permita popups para exportar PDF.'); return; }
+      win.document.write(html);
+      win.document.close();
+      App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
     },
 
     async clear() {
