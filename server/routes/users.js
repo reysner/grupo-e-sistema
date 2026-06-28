@@ -11,7 +11,7 @@ router.get('/', async (req, res) => {
   try {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true`).catch(()=>{});
     const result = await pool.query(`SELECT id, name, email, role, active, created_at FROM users ORDER BY created_at ASC`);
-    const users = result.rows.map(u => ({ ...u, ativo: u.active !== false }));
+    const users = result.rows.map(u => ({ ...u, ativo: u.active !== 0 }));
     res.json({ users });
   } catch (err) {
     res.status(500).json({ error: 'Erro ao buscar usuários.' });
@@ -95,15 +95,13 @@ router.patch('/:id/profile', async (req, res) => {
 // PATCH /api/users/:id/toggle
 router.patch('/:id/toggle', async (req, res) => {
   try {
-    // Auto-create column
-    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true`).catch(()=>{});
     const { rows } = await pool.query(`SELECT id, active FROM users WHERE id = $1`, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Usuario nao encontrado.' });
-    // Toggle: null or true -> false, false -> true
-    const currentActive = rows[0].active !== false;
-    const newActive = !currentActive;
+    // active is integer: 1=ativo, 0=inativo, null=ativo
+    const currentActive = rows[0].active !== 0;
+    const newActive = currentActive ? 0 : 1;
     await pool.query(`UPDATE users SET active = $1 WHERE id = $2`, [newActive, req.params.id]);
-    res.json({ ok: true, active: newActive });
+    res.json({ ok: true, active: newActive === 1 });
   } catch (err) {
     console.error('Toggle error:', err.message);
     res.status(500).json({ error: 'Erro ao alterar status: ' + err.message });
