@@ -95,18 +95,18 @@ router.patch('/:id/profile', async (req, res) => {
 // PATCH /api/users/:id/toggle
 router.patch('/:id/toggle', async (req, res) => {
   try {
-    if (req.params.id === req.user.id)
-      return res.status(400).json({ error: 'Nao e possivel desativar seu proprio usuario.' });
-    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true').catch(()=>{});
-    const { rows } = await pool.query('SELECT active FROM users WHERE id = $1', [req.params.id]);
+    // Auto-create column
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true`).catch(()=>{});
+    const { rows } = await pool.query(`SELECT id, active FROM users WHERE id = $1`, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Usuario nao encontrado.' });
-    const newActive = rows[0].active === false ? true : false;
-    await pool.query('UPDATE users SET active = $1 WHERE id = $2', [newActive, req.params.id]);
-    if (!newActive) { try { await revokeAllUserTokens(req.params.id); } catch(e) {} }
+    // Toggle: null or true -> false, false -> true
+    const currentActive = rows[0].active !== false;
+    const newActive = !currentActive;
+    await pool.query(`UPDATE users SET active = $1 WHERE id = $2`, [newActive, req.params.id]);
     res.json({ ok: true, active: newActive });
   } catch (err) {
-    console.error('Toggle error:', err);
-    res.status(500).json({ error: 'Erro ao alterar status.' });
+    console.error('Toggle error:', err.message);
+    res.status(500).json({ error: 'Erro ao alterar status: ' + err.message });
   }
 });
 
