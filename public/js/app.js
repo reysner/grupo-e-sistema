@@ -82,6 +82,23 @@ const App = (() => {
 
   // ── Util ─────────────────────────────────────────────────────────────────
   const Util = {
+    paginate(data, page, perPage=25) {
+      const total = data.length;
+      const pages = Math.ceil(total / perPage) || 1;
+      const p = Math.min(Math.max(1, page), pages);
+      return { items: data.slice((p-1)*perPage, p*perPage), page: p, pages, total, perPage };
+    },
+    renderPagination(containerId, page, pages, total, onGoFn) {
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      if (pages <= 1) { el.innerHTML = ''; return; }
+      const btn = (active, label, p) =>
+        `<button onclick="${onGoFn}(${p})" style="padding:4px 10px;border-radius:6px;border:1px solid var(--gray-200);background:${active?'var(--g700)':'#fff'};color:${active?'#fff':'var(--gray-700)'};cursor:pointer;font-size:12px;font-weight:500">${label}</button>`;
+      let btns = page > 1 ? btn(false,'‹',page-1) : '';
+      for (let i = Math.max(1,page-2); i <= Math.min(pages,page+2); i++) btns += btn(i===page,i,i);
+      if (page < pages) btns += btn(false,'›',page+1);
+      el.innerHTML = '<div style="display:flex;align-items:center;gap:6px;justify-content:center;padding:12px 0;flex-wrap:wrap"><span style="font-size:12px;color:var(--gray-400)">Total: '+total+' registro'+(total!==1?'s':'')+'</span><div style="display:flex;gap:4px">'+btns+'</div></div>';
+    },
     maskCNPJ(el) {
       let v = el.value.replace(/\D/g, '').slice(0, 14);
       if (v.length > 12) v = `${v.slice(0,2)}.${v.slice(2,5)}.${v.slice(5,8)}/${v.slice(8,12)}-${v.slice(12)}`;
@@ -281,7 +298,7 @@ const App = (() => {
 
   // ── Navigation ───────────────────────────────────────────────────────────
   const PAGE_TITLES = {
-    dashboard:'Dashboard', atendimento:'Atendimento', gestao:'Gestão de Clientes', carteira:'Inteligência da Carteira',
+    dashboard:'Dashboard', atendimento:'Atendimento', gestao:'Gestão de Clientes', carteira:'Inteligência da Carteira', perfil:'Meu Perfil',
     insatisfacao:'Insatisfação', sensiveis:'Clientes Sensíveis',
     pesquisas:'Pesquisas de Satisfação', recuperacao:'Recuperação de Clientes',
     admin:'Administração de Usuários',
@@ -299,6 +316,7 @@ const App = (() => {
       if (page === 'dashboard') Dashboard.load();
       if (page === 'pesquisas')  Pesquisas.loadGrid();
       if (page === 'carteira')     Carteira.load();
+      if (page === 'perfil')       Perfil.load();
       if (page === 'atendimento')  Atendimento.loadGrid();
       if (page === 'gestao')       Gestao.loadGrid();
       if (page === 'insatisfacao') Insatisfacao.loadGrid();
@@ -420,6 +438,13 @@ const App = (() => {
       const gcCanal = Util.val('gc-canal') === 'Outro' ? Util.val('gc-canal-outro') : Util.val('gc-canal');
       const isEntrada = gcSol==='Constituição de empresa' || gcSol==='Cliente vindo de outro contador' || gcSol==='Transformação de empresa';
       const isSaida = gcSol==='Saída de empresa' || gcSol==='Baixa de empresa';
+      // Validar honorario obrigatorio na entrada
+      if (isEntrada && !Util.val('gc-honorario')) {
+        App.Toast.err('Honorário Inicial é obrigatório para registros de entrada.'); return;
+      }
+      if (isEntrada && !Util.val('gc-data-entrada')) {
+        App.Toast.err('Data de Entrada é obrigatória.'); return;
+      }
       const token = localStorage.getItem('ge_token');
       // Se é entrada, registra automaticamente na carteira
       if (isEntrada && Util.val('gc-honorario')) {
@@ -481,7 +506,11 @@ const App = (() => {
         ['in-empresa','Empresa'],['in-reclamacao','Reclamação'],['in-gravidade','Gravidade'],
         ['in-area','Área da Insatisfação'],
       ])) return;
+      if (!Util.val('in-area')) { App.Toast.err('Selecione a Área da Insatisfação.'); return; }
       if (!inTipo) { App.Toast.err('Selecione o Tipo de Insatisfação.'); return; }
+      if (Util.val('in-tipo') === 'Outro' && !Util.val('in-tipo-outro')) {
+        App.Toast.err('Descreva o tipo de insatisfação.'); return;
+      }
       await Forms._submit('insatisfacoes', {
         analista: Util.val('in-analista'), cliente: Util.val('in-cliente'),
         cnpj: Util.val('in-cnpj'), empresa: Util.val('in-empresa'),
@@ -698,6 +727,57 @@ function inToggleArea() {
     if (outroWrap) { outroWrap.hidden = !isOutro; outroWrap.style.display = isOutro ? 'flex' : 'none'; }
   };
 }
+
+// ── Módulo Perfil ─────────────────────────────────────────────────────────────
+const Perfil = (() => {
+  function _token() { return localStorage.getItem('ge_token') || ''; }
+
+  function load() {
+    const store = localStorage.getItem('ge_user');
+    if (!store) return;
+    try {
+      const user = JSON.parse(store);
+      const nome = document.getElementById('perfil-nome');
+      const email = document.getElementById('perfil-email');
+      if (nome) nome.value = user.name || '';
+      if (email) email.value = user.email || '';
+    } catch(e) {}
+  }
+
+  async function salvar() {
+    const nome = document.getElementById('perfil-nome')?.value?.trim();
+    const senhaAtual = document.getElementById('perfil-senha-atual')?.value;
+    const senhaNova = document.getElementById('perfil-senha-nova')?.value;
+    const senhaConf = document.getElementById('perfil-senha-conf')?.value;
+    if (!nome) { App.Toast.err('Nome e obrigatorio.'); return; }
+    if (senhaNova || senhaConf) {
+      if (!senhaAtual) { App.Toast.err('Digite sua senha atual para alterar.'); return; }
+      if (senhaNova.length < 6) { App.Toast.err('Nova senha deve ter ao menos 6 caracteres.'); return; }
+      if (senhaNova !== senhaConf) { App.Toast.err('As senhas nao coincidem.'); return; }
+    }
+    const body = { nome };
+    if (senhaNova) { body.senhaAtual = senhaAtual; body.senhaNova = senhaNova; }
+    const res = await fetch('/api/auth/perfil', {
+      method: 'PATCH',
+      headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + _token() },
+      body: JSON.stringify(body)
+    });
+    if (res && res.ok) {
+      App.Toast.ok('Perfil atualizado!');
+      ['perfil-senha-atual','perfil-senha-nova','perfil-senha-conf'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+    } else {
+      const err = await res.json().catch(() => ({}));
+      App.Toast.err(err.error || 'Erro ao atualizar perfil.');
+    }
+  }
+
+  return { load, salvar };
+})();
+
+window.Perfil = Perfil;
 
 document.addEventListener('DOMContentLoaded', () => {
   // Auth
@@ -1383,6 +1463,7 @@ window.Carteira = Carteira;
 // ── Módulo Atendimento ─────────────────────────────────────────────────────────────
 const Atendimento = (() => {
   let _allData = [];
+  let _page = 1;
   function _token() { return localStorage.getItem('ge_token') || ''; }
 
   function _populateYearFilter(data) {
@@ -1397,10 +1478,15 @@ const Atendimento = (() => {
   function _filterData(data) {
     const ano = document.getElementById('at-ano-filter')?.value || 'todos';
     const mes = document.getElementById('at-mes-filter')?.value || 'todos';
+    const busca = (document.getElementById('at-busca')?.value || '').toLowerCase().trim();
     return data.filter(r => {
       const d = new Date(r.created_at);
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
       if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
+      if (busca) {
+        const searchable = [r.empresa, r.cliente, r.cnpj, r.analista].filter(Boolean).join(' ').toLowerCase();
+        if (!searchable.includes(busca)) return false;
+      }
       return true;
     });
   }
@@ -1443,7 +1529,10 @@ const Atendimento = (() => {
     const { data } = await res.json();
     _allData = data || [];
     _populateYearFilter(_allData);
-    _renderGrid(_filterData(_allData));
+    const _filtered = _filterData(_allData);
+    const _paged = App.Util.paginate(_filtered, _page);
+    _renderGrid(_paged.items);
+    App.Util.renderPagination('at-pagination', _paged.page, _paged.pages, _paged.total, 'Atendimento.goPage');
   }
 
   function exportCSV() {
@@ -1535,7 +1624,8 @@ const Atendimento = (() => {
     } else { App.Toast.err('Erro ao excluir.'); }
   }
 
-  return { loadGrid, exportCSV, exportPDF, limpar, excluir };
+  function goPage(p) { _page = p; const f = _filterData(_allData); const pg = App.Util.paginate(f, p); _renderGrid(pg.items); App.Util.renderPagination('at-pagination', pg.page, pg.pages, pg.total, 'Atendimento.goPage'); }
+  return { loadGrid, exportCSV, exportPDF, limpar, excluir, goPage };
 })();
 
 window.Atendimento = Atendimento;
@@ -1543,6 +1633,7 @@ window.Atendimento = Atendimento;
 // ── Módulo Gestão de Clientes ─────────────────────────────────────────────────────────────
 const Gestao = (() => {
   let _allData = [];
+  let _page = 1;
   function _token() { return localStorage.getItem('ge_token') || ''; }
 
   function _populateYearFilter(data) {
@@ -1557,10 +1648,15 @@ const Gestao = (() => {
   function _filterData(data) {
     const ano = document.getElementById('gc-ano-filter')?.value || 'todos';
     const mes = document.getElementById('gc-mes-filter')?.value || 'todos';
+    const busca = (document.getElementById('gc-busca')?.value || '').toLowerCase().trim();
     return data.filter(r => {
       const d = new Date(r.created_at);
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
       if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
+      if (busca) {
+        const searchable = [r.empresa, r.cliente, r.cnpj, r.analista].filter(Boolean).join(' ').toLowerCase();
+        if (!searchable.includes(busca)) return false;
+      }
       return true;
     });
   }
@@ -1603,7 +1699,10 @@ const Gestao = (() => {
     const { data } = await res.json();
     _allData = data || [];
     _populateYearFilter(_allData);
-    _renderGrid(_filterData(_allData));
+    const _filtered = _filterData(_allData);
+    const _paged = App.Util.paginate(_filtered, _page);
+    _renderGrid(_paged.items);
+    App.Util.renderPagination('gc-pagination', _paged.page, _paged.pages, _paged.total, 'Gestao.goPage');
   }
 
   function exportCSV() {
@@ -1695,7 +1794,8 @@ const Gestao = (() => {
     } else { App.Toast.err('Erro ao excluir.'); }
   }
 
-  return { loadGrid, exportCSV, exportPDF, limpar, excluir };
+  function goPage(p) { _page = p; const f = _filterData(_allData); const pg = App.Util.paginate(f, p); _renderGrid(pg.items); App.Util.renderPagination('gc-pagination', pg.page, pg.pages, pg.total, 'Gestao.goPage'); }
+  return { loadGrid, exportCSV, exportPDF, limpar, excluir, goPage };
 })();
 
 window.Gestao = Gestao;
@@ -1703,6 +1803,7 @@ window.Gestao = Gestao;
 // ── Módulo Recuperação de Experiência ─────────────────────────────────────────────────────────────
 const Recuperacao = (() => {
   let _allData = [];
+  let _page = 1;
   function _token() { return localStorage.getItem('ge_token') || ''; }
 
   function _populateYearFilter(data) {
@@ -1717,10 +1818,15 @@ const Recuperacao = (() => {
   function _filterData(data) {
     const ano = document.getElementById('rc-ano-filter')?.value || 'todos';
     const mes = document.getElementById('rc-mes-filter')?.value || 'todos';
+    const busca = (document.getElementById('rc-busca')?.value || '').toLowerCase().trim();
     return data.filter(r => {
       const d = new Date(r.created_at);
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
       if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
+      if (busca) {
+        const searchable = [r.empresa, r.cliente, r.cnpj, r.analista].filter(Boolean).join(' ').toLowerCase();
+        if (!searchable.includes(busca)) return false;
+      }
       return true;
     });
   }
@@ -1760,7 +1866,10 @@ const Recuperacao = (() => {
     const { data } = await res.json();
     _allData = data || [];
     _populateYearFilter(_allData);
-    _renderGrid(_filterData(_allData));
+    const _filtered = _filterData(_allData);
+    const _paged = App.Util.paginate(_filtered, _page);
+    _renderGrid(_paged.items);
+    App.Util.renderPagination('rc-pagination', _paged.page, _paged.pages, _paged.total, 'Recuperacao.goPage');
   }
 
   function exportCSV() {
@@ -1852,7 +1961,8 @@ const Recuperacao = (() => {
     } else { App.Toast.err('Erro ao excluir.'); }
   }
 
-  return { loadGrid, exportCSV, exportPDF, limpar, excluir };
+  function goPage(p) { _page = p; const f = _filterData(_allData); const pg = App.Util.paginate(f, p); _renderGrid(pg.items); App.Util.renderPagination('rc-pagination', pg.page, pg.pages, pg.total, 'Recuperacao.goPage'); }
+  return { loadGrid, exportCSV, exportPDF, limpar, excluir, goPage };
 })();
 
 window.Recuperacao = Recuperacao;
@@ -1860,6 +1970,7 @@ window.Recuperacao = Recuperacao;
 // ── Módulo Insatisfação ─────────────────────────────────────────────────────────────
 const Insatisfacao = (() => {
   let _allData = [];
+  let _page = 1;
   function _token() { return localStorage.getItem('ge_token') || ''; }
 
   function _populateYearFilter(data) {
@@ -1874,10 +1985,15 @@ const Insatisfacao = (() => {
   function _filterData(data) {
     const ano = document.getElementById('in-ano-filter')?.value || 'todos';
     const mes = document.getElementById('in-mes-filter')?.value || 'todos';
+    const busca = (document.getElementById('in-busca')?.value || '').toLowerCase().trim();
     return data.filter(r => {
       const d = new Date(r.created_at);
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
       if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
+      if (busca) {
+        const searchable = [r.empresa, r.cliente, r.cnpj, r.analista].filter(Boolean).join(' ').toLowerCase();
+        if (!searchable.includes(busca)) return false;
+      }
       return true;
     });
   }
@@ -1920,7 +2036,10 @@ const Insatisfacao = (() => {
     const { data } = await res.json();
     _allData = data || [];
     _populateYearFilter(_allData);
-    _renderGrid(_filterData(_allData));
+    const _filtered = _filterData(_allData);
+    const _paged = App.Util.paginate(_filtered, _page);
+    _renderGrid(_paged.items);
+    App.Util.renderPagination('in-pagination', _paged.page, _paged.pages, _paged.total, 'Insatisfacao.goPage');
   }
 
   function exportCSV() {
@@ -2012,7 +2131,8 @@ const Insatisfacao = (() => {
     } else { App.Toast.err('Erro ao excluir.'); }
   }
 
-  return { loadGrid, exportCSV, exportPDF, limpar, excluir };
+  function goPage(p) { _page = p; const f = _filterData(_allData); const pg = App.Util.paginate(f, p); _renderGrid(pg.items); App.Util.renderPagination('in-pagination', pg.page, pg.pages, pg.total, 'Insatisfacao.goPage'); }
+  return { loadGrid, exportCSV, exportPDF, limpar, excluir, goPage };
 })();
 
 window.Insatisfacao = Insatisfacao;
@@ -2020,6 +2140,7 @@ window.Insatisfacao = Insatisfacao;
 // ── Módulo Clientes Sensíveis ─────────────────────────────────────────────────────────────
 const Sensiveis = (() => {
   let _allData = [];
+  let _page = 1;
   function _token() { return localStorage.getItem('ge_token') || ''; }
 
   function _populateYearFilter(data) {
@@ -2034,10 +2155,15 @@ const Sensiveis = (() => {
   function _filterData(data) {
     const ano = document.getElementById('cs-ano-filter')?.value || 'todos';
     const mes = document.getElementById('cs-mes-filter')?.value || 'todos';
+    const busca = (document.getElementById('cs-busca')?.value || '').toLowerCase().trim();
     return data.filter(r => {
       const d = new Date(r.created_at);
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
       if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
+      if (busca) {
+        const searchable = [r.empresa, r.cliente, r.cnpj, r.analista].filter(Boolean).join(' ').toLowerCase();
+        if (!searchable.includes(busca)) return false;
+      }
       return true;
     });
   }
@@ -2078,7 +2204,10 @@ const Sensiveis = (() => {
     const { data } = await res.json();
     _allData = data || [];
     _populateYearFilter(_allData);
-    _renderGrid(_filterData(_allData));
+    const _filtered = _filterData(_allData);
+    const _paged = App.Util.paginate(_filtered, _page);
+    _renderGrid(_paged.items);
+    App.Util.renderPagination('cs-pagination', _paged.page, _paged.pages, _paged.total, 'Sensiveis.goPage');
   }
 
   function exportCSV() {
@@ -2170,7 +2299,8 @@ const Sensiveis = (() => {
     } else { App.Toast.err('Erro ao excluir.'); }
   }
 
-  return { loadGrid, exportCSV, exportPDF, limpar, excluir };
+  function goPage(p) { _page = p; const f = _filterData(_allData); const pg = App.Util.paginate(f, p); _renderGrid(pg.items); App.Util.renderPagination('cs-pagination', pg.page, pg.pages, pg.total, 'Sensiveis.goPage'); }
+  return { loadGrid, exportCSV, exportPDF, limpar, excluir, goPage };
 })();
 
 window.Sensiveis = Sensiveis;
