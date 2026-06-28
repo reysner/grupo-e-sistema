@@ -1032,237 +1032,37 @@ const Carteira = (() => {
   function _tempo(dataEntrada, dataSaida) {
     const start = new Date(dataEntrada);
     const end = dataSaida ? new Date(dataSaida) : new Date();
-    let m = (end.getFullYear()-start.getFullYear())*12 + (end.getMonth()-start.getMonth());
+    const m = (end.getFullYear()-start.getFullYear())*12 + (end.getMonth()-start.getMonth());
     const anos = Math.floor(m/12); const meses = m%12;
     return anos > 0 ? `${anos}a ${meses}m` : `${meses}m`;
   }
 
-  async function load() {
-    await Promise.all([loadDashboard(), loadGrid()]);
-  }
-
-  async function loadDashboard() {
-    const res = await fetch('/api/data/carteira/dashboard', {
-      headers: { 'Authorization': `Bearer ${_token()}` }
-    });
-    if (!res || !res.ok) return;
-    const d = await res.json();
-    const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
-    set('cart-mrr', _fmt(d.mrr));
-    set('cart-arr', _fmt(d.arr));
-    set('cart-ativos', d.ativos);
-    set('cart-ticket', _fmt(d.ticket_medio));
-    set('cart-ltv-medio', _fmt(d.ltv_medio_projetado));
-    set('cart-encerrados-sub', `${d.encerrados} encerrado${d.encerrados !== 1 ? 's' : ''}`);
-    const meses = Math.round(d.retencao_media_meses || 0);
-    const anos = Math.floor(meses / 12); const m = meses % 12;
-    set('cart-retencao', meses > 0 ? (anos > 0 ? `${anos}a ${m}m` : `${m} meses`) : '—');
-  }
-
-  async function loadGrid() {
-    const tbody = document.getElementById('cart-tbody');
-    if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
-    const status = document.getElementById('cart-status-filter')?.value || 'todos';
-    const res = await fetch(`/api/data/clientes?status=${status}`, {
-      headers: { 'Authorization': `Bearer ${_token()}` }
-    });
-    if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#e53e3e;padding:32px">Erro ao carregar.</td></tr>';
-      return;
-    }
-    const { data } = await res.json();
-    _clientes = data || [];
-    if (!_clientes.length) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum cliente cadastrado ainda.</td></tr>';
-      return;
-    }
-    // Atualiza receita total no card
-    const receitaTotal = _clientes.reduce((s,c) => s + parseFloat(c.receita_acumulada||0), 0);
-    const el = document.getElementById('cart-receita-total');
-    if (el) el.textContent = _fmt(receitaTotal);
-
-    tbody.innerHTML = _clientes.map(c => {
-      const hon = parseFloat(c.honorario_atual||c.honorario_inicial||0);
-      const rec = parseFloat(c.receita_acumulada||0);
-      const statusBadge = c.status==='ativo'
-        ? '<span style="background:#f0fff4;color:#38a169;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Ativo</span>'
-        : '<span style="background:#fff5f5;color:#e53e3e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Encerrado</span>';
-      return `<tr>
-        <td style="font-weight:600">${c.nome_empresa}</td>
-        <td style="font-size:12px;color:var(--gray-500)">${c.cnpj}</td>
-        <td style="font-weight:600;color:var(--g700)">${_fmt(hon)}</td>
-        <td>${_fmt(rec)}</td>
-        <td style="font-size:12px;color:var(--gray-500)">${_tempo(c.data_entrada, c.data_saida)}</td>
-        <td style="font-size:12px;color:var(--gray-500)">${c.origem||'—'}</td>
-        <td>${statusBadge}</td>
-        <td style="white-space:nowrap">
-          <button class="btn btn-ghost btn-sm" onclick="Carteira.verFicha('${c.id}')">Ver ficha</button>
-          ${c.status==='ativo' && App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#1D9E75;font-size:14px;padding:2px 6px" onclick="Carteira.atualizarHonorario('${c.id}')" title="Atualizar honorário">$ +</button>` : ''}
-          ${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Carteira.excluir('${c.id}')" title="Excluir">🗑</button>` : ''}
-        </td>
-      </tr>`;
-    }).join('');
-  }
-
-  function abrirCadastro() {
-    App.Modal.open('Cadastrar cliente', `
-      <div style="display:grid;gap:12px">
-        <div style="display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end">
-          <div class="field"><label>Nome da empresa <span class="req">*</span></label><input id="m-nome" type="text" placeholder="Razão social" /></div>
-          <div class="field"><label>Código</label><input id="m-codigo" type="text" placeholder="CLI-001" style="text-transform:uppercase;width:100px" /></div>
-        </div>
-        <div class="field"><label>CNPJ <span class="req">*</span></label><input id="m-cnpj" type="text" placeholder="00.000.000/0000-00" maxlength="18" onInput="App.Util.maskCNPJ(this)" /></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div class="field"><label>Data de entrada <span class="req">*</span></label><input id="m-data" type="date" /></div>
-          <div class="field"><label>Honorário inicial (R$) <span class="req">*</span></label><input id="m-honorario" type="number" min="0" step="0.01" placeholder="0,00" /></div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div class="field"><label>Origem</label>
-            <select id="m-origem"><option value="">Selecione</option><option>Indicação</option><option>Google</option><option>Instagram</option><option>LinkedIn</option><option>WhatsApp</option><option>Parceiro</option><option>Evento</option><option>Site</option><option>Tráfego Pago</option><option>Prospecção Ativa</option><option>Outro</option></select>
-          </div>
-          <div class="field"><label>CAC (R$)</label><input id="m-cac" type="number" min="0" step="0.01" placeholder="0,00" /></div>
-        </div>
-        <div class="field"><label>Regime tributário</label>
-          <select id="m-regime"><option value="">Selecione</option><option>Simples Nacional</option><option>Lucro Presumido</option><option>Lucro Real</option><option>MEI</option><option>Sem fins lucrativos</option></select>
-        </div>
-        <button class="btn btn-primary" onclick="Carteira.salvarCliente()">Cadastrar cliente</button>
-      </div>
-    `);
-  }
-
-  async function salvarCliente() {
-    const nome = document.getElementById('m-nome')?.value?.trim();
-    const cnpj = document.getElementById('m-cnpj')?.value?.trim();
-    const data = document.getElementById('m-data')?.value;
-    const hon = document.getElementById('m-honorario')?.value;
-    if (!nome || !cnpj || !data || !hon) { App.Toast.err('Preencha os campos obrigatórios.'); return; }
-    const res = await fetch('/api/data/clientes', {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${_token()}` },
-      body: JSON.stringify({
-        cnpj, nome_empresa: nome,
-        codigo: document.getElementById('m-codigo')?.value?.trim() || null,
-        regime_tributario: document.getElementById('m-regime')?.value || null,
-        data_entrada: data,
-        honorario_inicial: parseFloat(hon),
-        origem: document.getElementById('m-origem')?.value || null,
-        cac: parseFloat(document.getElementById('m-cac')?.value||0),
-      })
-    });
-    if (res && res.ok) {
-      App.Modal.close();
-      App.Toast.ok('Cliente cadastrado na carteira!');
-      await load();
-    } else { App.Toast.err('Erro ao cadastrar cliente.'); }
-  }
-
-  async function atualizarHonorario(id) {
-    App.Modal.open('Atualizar honorário', `
-      <div style="display:grid;gap:12px">
-        <div class="field"><label>Novo valor (R$) <span class="req">*</span></label><input id="h-valor" type="number" min="0" step="0.01" placeholder="0,00" /></div>
-        <div class="field"><label>Data de vigência <span class="req">*</span></label><input id="h-data" type="date" /></div>
-        <div class="field"><label>Observação</label><input id="h-obs" type="text" placeholder="Ex: Reajuste IPCA 2026" /></div>
-        <button class="btn btn-primary" onclick="Carteira.salvarHonorario('${id}')">Salvar</button>
-      </div>
-    `);
-  }
-
-  async function salvarHonorario(id) {
-    const valor = document.getElementById('h-valor')?.value;
-    const data = document.getElementById('h-data')?.value;
-    const obs = document.getElementById('h-obs')?.value;
-    if (!valor || !data) { App.Toast.err('Valor e data são obrigatórios.'); return; }
-    const res = await fetch(`/api/data/clientes/${id}/honorario`, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${_token()}` },
-      body: JSON.stringify({ valor: parseFloat(valor), data_vigencia: data, obs })
-    });
-    if (res && res.ok) {
-      App.Modal.close();
-      App.Toast.ok('Honorário atualizado!');
-      await load();
-    } else { App.Toast.err('Erro ao atualizar honorário.'); }
-  }
-
-  async function verFicha(id) {
-    const res = await fetch(`/api/data/clientes/${id}`, {
-      headers: { 'Authorization': `Bearer ${_token()}` }
-    });
-    if (!res || !res.ok) { App.Toast.err('Erro ao carregar ficha.'); return; }
-    const { cliente: c, honorarios, eventos } = await res.json();
-    const honAtual = honorarios[0]?.valor || c.honorario_inicial;
-    const recAcum = parseFloat(c.receita_acumulada||0) || honorarios.reduce((s,h,i) => {
-      const prox = honorarios[i-1]?.data_vigencia;
-      const fim = prox || (c.data_saida || new Date().toISOString().slice(0,10));
-      const meses = Math.max(0, Math.round((new Date(fim)-new Date(h.data_vigencia))/(1000*60*60*24*30)));
-      return s + meses * parseFloat(h.valor);
-    }, 0);
-    const timeline = eventos.slice(0,5).map(e => {
-      const tipo = {entrada:'🟢',reajuste:'💰',saida:'🔴',baixa:'🔴',upgrade:'⬆️'}[e.tipo]||'•';
-      return `<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:0.5px solid var(--gray-100)">
-        <span style="font-size:16px">${tipo}</span>
-        <div><div style="font-size:13px;font-weight:500">${e.descricao||e.tipo}</div>
-        <div style="font-size:11px;color:var(--gray-400)">${new Date(e.data_evento).toLocaleDateString('pt-BR')}${e.valor_novo?' — '+_fmt(e.valor_novo):''}</div></div>
-      </div>`;
-    }).join('');
-    App.Modal.open(`Ficha — ${c.nome_empresa}`, `
-      <div style="display:grid;gap:14px">
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;background:var(--gray-50);padding:14px;border-radius:8px">
-          <div style="text-align:center"><div style="font-size:11px;color:var(--gray-400);margin-bottom:4px">Honorário atual</div><div style="font-size:18px;font-weight:600;color:var(--g700)">${_fmt(honAtual)}</div></div>
-          <div style="text-align:center"><div style="font-size:11px;color:var(--gray-400);margin-bottom:4px">Receita acumulada</div><div style="font-size:18px;font-weight:600;color:var(--g700)">${_fmt(recAcum)}</div></div>
-          <div style="text-align:center"><div style="font-size:11px;color:var(--gray-400);margin-bottom:4px">Tempo de relac.</div><div style="font-size:18px;font-weight:600;color:var(--g700)">${_tempo(c.data_entrada, c.data_saida)}</div></div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
-          <div><strong>MRR:</strong> ${_fmt(honAtual)}</div>
-          <div><strong>ARR:</strong> ${_fmt(honAtual*12)}</div>
-          <div><strong>Origem:</strong> ${c.origem||'—'}</div>
-          <div><strong>CAC:</strong> ${_fmt(c.cac)}</div>
-          <div><strong>Regime:</strong> ${c.regime_tributario||'—'}</div>
-          <div><strong>Status:</strong> ${c.status}</div>
-        </div>
-        <div><strong style="font-size:13px">Histórico de honorários</strong>
-          <div style="margin-top:6px">
-          ${honorarios.map(h=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:0.5px solid var(--gray-100);font-size:12px"><span>${new Date(h.data_vigencia).toLocaleDateString('pt-BR')}</span><span style="font-weight:500">${_fmt(h.valor)}</span>${h.obs?`<span style="color:var(--gray-400)">${h.obs}</span>`:''}</div>`).join('')}
-          </div>
-        </div>
-        <div><strong style="font-size:13px">Timeline</strong><div style="margin-top:6px">${timeline}</div></div>
-      </div>
-    `);
+  function _populateYearFilter(data) {
+    const sel = document.getElementById('cart-ano-filter');
+    if (!sel) return;
+    const anos = [...new Set(data.map(r => new Date(r.data_entrada).getFullYear()))].sort((a,b)=>b-a);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="todos">Todos os anos</option>' +
+      anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>${a}</option>`).join('');
   }
 
   function _dadosFiltrados() {
     const busca = (document.getElementById('cart-busca')?.value || '').toLowerCase().trim();
     const status = document.getElementById('cart-status-filter')?.value || 'todos';
+    const ano = document.getElementById('cart-ano-filter')?.value || 'todos';
+    const mes = document.getElementById('cart-mes-filter')?.value || 'todos';
     return _clientes.filter(c => {
-      const matchStatus = status === 'todos' || c.status === status;
-      const matchBusca = !busca ||
+      const d = new Date(c.data_entrada);
+      if (status !== 'todos' && c.status !== status) return false;
+      if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
+      if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
+      if (busca && !(
         (c.nome_empresa||'').toLowerCase().includes(busca) ||
         (c.codigo||'').toLowerCase().includes(busca) ||
-        (c.cnpj||'').includes(busca);
-      return matchStatus && matchBusca;
+        (c.cnpj||'').includes(busca)
+      )) return false;
+      return true;
     });
-  }
-
-  function exportCSV() {
-    const data = _dadosFiltrados();
-    if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const cols = ['codigo','nome_empresa','cnpj','honorario_atual','receita_acumulada','data_entrada','status','origem','cac'];
-    const labels = {codigo:'Código',nome_empresa:'Empresa',cnpj:'CNPJ',honorario_atual:'Honorário Atual',
-      receita_acumulada:'Receita Acumulada',data_entrada:'Data Entrada',status:'Status',origem:'Origem',cac:'CAC'};
-    const header = cols.map(c=>labels[c]).join(';');
-    const rows = data.map(r=>cols.map(c=>`"${(r[c]??'').toString().replace(/"/g,'""')}"`).join(';'));
-    const csv = [header,...rows].join('\n');
-    const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href=url; a.download=`carteira_${new Date().toISOString().slice(0,10)}.csv`;
-    a.click(); URL.revokeObjectURL(url);
-    App.Toast.ok('CSV exportado!');
-  }
-
-  function filtrar() {
-    _renderGrid(_dadosFiltrados());
   }
 
   function _renderGrid(data) {
@@ -1296,19 +1096,80 @@ const Carteira = (() => {
     }).join('');
   }
 
+  async function load() {
+    await Promise.all([loadDashboard(), loadGrid()]);
+  }
+
+  async function loadDashboard() {
+    const res = await fetch('/api/data/carteira/dashboard', {
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (!res || !res.ok) return;
+    const d = await res.json();
+    const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
+    set('cart-mrr', _fmt(d.mrr));
+    set('cart-arr', _fmt(d.arr));
+    set('cart-ativos', d.ativos);
+    set('cart-ticket', _fmt(d.ticket_medio));
+    set('cart-ltv-medio', _fmt(d.ltv_medio_projetado));
+    set('cart-encerrados-sub', `${d.encerrados} encerrado${d.encerrados!==1?'s':''}`);
+    const meses = Math.round(d.retencao_media_meses||0);
+    const anos = Math.floor(meses/12); const m = meses%12;
+    set('cart-retencao', meses>0?(anos>0?`${anos}a ${m}m`:`${m} meses`):'—');
+  }
+
+  async function loadGrid() {
+    const tbody = document.getElementById('cart-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr>';
+    const res = await fetch('/api/data/clientes?status=todos', {
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (!res || !res.ok) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e53e3e;padding:32px">Erro ao carregar.</td></tr>';
+      return;
+    }
+    const { data } = await res.json();
+    _clientes = data || [];
+    _populateYearFilter(_clientes);
+    const receitaTotal = _clientes.reduce((s,c) => s + parseFloat(c.receita_acumulada||0), 0);
+    const el = document.getElementById('cart-receita-total');
+    if (el) el.textContent = _fmt(receitaTotal);
+    filtrar();
+  }
+
+  function filtrar() { _renderGrid(_dadosFiltrados()); }
+
+  function exportCSV() {
+    const data = _dadosFiltrados();
+    if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
+    const cols = ['codigo','nome_empresa','cnpj','honorario_atual','receita_acumulada','data_entrada','status','origem','cac'];
+    const labels = {codigo:'Código',nome_empresa:'Empresa',cnpj:'CNPJ',honorario_atual:'Honorário',
+      receita_acumulada:'Receita Acumulada',data_entrada:'Data Entrada',status:'Status',origem:'Origem',cac:'CAC'};
+    const header = cols.map(c=>labels[c]).join(';');
+    const rows = data.map(r=>cols.map(c=>`"${(r[c]??'').toString().replace(/"/g,'""')}"`).join(';'));
+    const csv = [header,...rows].join('\n');
+    const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href=url; a.download=`carteira_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    App.Toast.ok('CSV exportado!');
+  }
+
   function exportPDF() {
     const data = _dadosFiltrados();
     if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const busca = document.getElementById('cart-busca')?.value || '';
     const status = document.getElementById('cart-status-filter')?.value || 'todos';
-    const titulo = `Carteira de Clientes — ${status === 'todos' ? 'Todos' : status === 'ativo' ? 'Ativos' : 'Encerrados'}${busca ? ' / Busca: '+busca : ''}`;
+    const ano = document.getElementById('cart-ano-filter')?.value || 'todos';
+    const titulo = `Análise da Carteira — ${status==='todos'?'Todos':status==='ativo'?'Ativos':'Encerrados'} / ${ano==='todos'?'Todos os anos':ano}`;
     const cols = ['codigo','nome_empresa','cnpj','honorario_atual','receita_acumulada','data_entrada','status','origem'];
     const labels = {codigo:'Código',nome_empresa:'Empresa',cnpj:'CNPJ',honorario_atual:'Honorário',
-      receita_acumulada:'Receita Acumulada',data_entrada:'Entrada',status:'Status',origem:'Origem'};
+      receita_acumulada:'Rec. Acumulada',data_entrada:'Entrada',status:'Status',origem:'Origem'};
     const rows = data.map(r=>`<tr>${cols.map(c=>{
-      let v = r[c]??'—';
-      if(c==='honorario_atual'||c==='receita_acumulada') v = _fmt(parseFloat(v)||0);
-      if(c==='data_entrada'&&v!=='—') v = new Date(v).toLocaleDateString('pt-BR');
+      let v=r[c]??'—';
+      if(c==='honorario_atual'||c==='receita_acumulada') v=_fmt(parseFloat(v)||0);
+      if(c==='data_entrada'&&v!=='—') v=new Date(v).toLocaleDateString('pt-BR');
       return `<td>${v}</td>`;
     }).join('')}</tr>`).join('');
     const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
@@ -1348,35 +1209,99 @@ const Carteira = (() => {
       document.addEventListener('cart-confirm-limpar', () => { App.Modal.close(); resolve(true); }, {once:true});
     });
     if (!confirmado) return;
-    const token = localStorage.getItem('ge_token');
     const res = await fetch('/api/data/clientes/clear', {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
+      method:'DELETE', headers:{'Authorization':`Bearer ${_token()}`}
     });
     if (res && res.ok) {
-      _clientes = [];
-      _renderGrid([]);
-      await loadDashboard();
+      _clientes=[]; _renderGrid([]); await loadDashboard();
       App.Toast.ok('Todos os clientes foram removidos.');
     } else { App.Toast.err('Erro ao limpar.'); }
   }
 
   async function excluir(id) {
     if (!App.Auth.isAdmin()) return;
-    const token = localStorage.getItem('ge_token');
     const res = await fetch(`/api/data/clientes/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
+      method:'DELETE', headers:{'Authorization':`Bearer ${_token()}`}
     });
     if (res && res.ok) {
-      _clientes = _clientes.filter(c => c.id !== id);
-      filtrar();
-      await loadDashboard();
+      _clientes = _clientes.filter(c=>c.id!==id);
+      filtrar(); await loadDashboard();
       App.Toast.ok('Cliente excluído.');
     } else { App.Toast.err('Erro ao excluir.'); }
   }
 
-  return { load, loadDashboard, loadGrid, filtrar, abrirCadastro, salvarCliente, atualizarHonorario, salvarHonorario, verFicha, exportCSV, exportPDF, limpar, excluir };
+  async function atualizarHonorario(id) {
+    App.Modal.open('Atualizar honorário', `
+      <div style="display:grid;gap:12px">
+        <div class="field"><label>Novo valor (R$) <span class="req">*</span></label><input id="h-valor" type="number" min="0" step="0.01" placeholder="0,00" /></div>
+        <div class="field"><label>Data de vigência <span class="req">*</span></label><input id="h-data" type="date" /></div>
+        <div class="field"><label>Observação</label><input id="h-obs" type="text" placeholder="Ex: Reajuste IPCA 2026" /></div>
+        <button class="btn btn-primary" onclick="Carteira.salvarHonorario('${id}')">Salvar</button>
+      </div>
+    `);
+  }
+
+  async function salvarHonorario(id) {
+    const valor = document.getElementById('h-valor')?.value;
+    const data = document.getElementById('h-data')?.value;
+    const obs = document.getElementById('h-obs')?.value;
+    if (!valor || !data) { App.Toast.err('Valor e data são obrigatórios.'); return; }
+    const res = await fetch(`/api/data/clientes/${id}/honorario`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${_token()}`},
+      body: JSON.stringify({ valor: parseFloat(valor), data_vigencia: data, obs })
+    });
+    if (res && res.ok) {
+      App.Modal.close(); App.Toast.ok('Honorário atualizado!'); await load();
+    } else { App.Toast.err('Erro ao atualizar honorário.'); }
+  }
+
+  async function verFicha(id) {
+    const res = await fetch(`/api/data/clientes/${id}`, {
+      headers: { 'Authorization': `Bearer ${_token()}` }
+    });
+    if (!res || !res.ok) { App.Toast.err('Erro ao carregar ficha.'); return; }
+    const { cliente: c, honorarios, eventos } = await res.json();
+    const honAtual = honorarios[0]?.valor || c.honorario_inicial;
+    const timeline = eventos.slice(0,5).map(e => {
+      const tipo = {entrada:'🟢',reajuste:'💰',saida:'🔴',baixa:'🔴',upgrade:'⬆️'}[e.tipo]||'•';
+      return `<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:0.5px solid var(--gray-100)">
+        <span style="font-size:16px">${tipo}</span>
+        <div><div style="font-size:13px;font-weight:500">${e.descricao||e.tipo}</div>
+        <div style="font-size:11px;color:var(--gray-400)">${new Date(e.data_evento).toLocaleDateString('pt-BR')}${e.valor_novo?' — '+_fmt(e.valor_novo):''}</div></div>
+      </div>`;
+    }).join('');
+    App.Modal.open(`Ficha — ${c.nome_empresa}`, `
+      <div style="display:grid;gap:14px">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;background:var(--gray-50);padding:14px;border-radius:8px">
+          <div style="text-align:center"><div style="font-size:11px;color:var(--gray-400);margin-bottom:4px">Honorário atual</div><div style="font-size:18px;font-weight:600;color:var(--g700)">${_fmt(honAtual)}</div></div>
+          <div style="text-align:center"><div style="font-size:11px;color:var(--gray-400);margin-bottom:4px">Receita acumulada</div><div style="font-size:18px;font-weight:600;color:var(--g700)">${_fmt(c.receita_acumulada||0)}</div></div>
+          <div style="text-align:center"><div style="font-size:11px;color:var(--gray-400);margin-bottom:4px">Tempo de relac.</div><div style="font-size:18px;font-weight:600;color:var(--g700)">${_tempo(c.data_entrada, c.data_saida)}</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
+          <div><strong>MRR:</strong> ${_fmt(honAtual)}</div>
+          <div><strong>ARR:</strong> ${_fmt(honAtual*12)}</div>
+          <div><strong>Código:</strong> ${c.codigo||'—'}</div>
+          <div><strong>Origem:</strong> ${c.origem||'—'}</div>
+          <div><strong>CAC:</strong> ${_fmt(c.cac)}</div>
+          <div><strong>Regime:</strong> ${c.regime_tributario||'—'}</div>
+          <div><strong>Status:</strong> ${c.status}</div>
+        </div>
+        <div><strong style="font-size:13px">Histórico de honorários</strong>
+          <div style="margin-top:6px">
+          ${honorarios.map(h=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:0.5px solid var(--gray-100);font-size:12px">
+            <span>${new Date(h.data_vigencia).toLocaleDateString('pt-BR')}</span>
+            <span style="font-weight:500">${_fmt(h.valor)}</span>
+            ${h.obs?`<span style="color:var(--gray-400)">${h.obs}</span>`:''}
+          </div>`).join('')}
+          </div>
+        </div>
+        <div><strong style="font-size:13px">Timeline</strong><div style="margin-top:6px">${timeline||'<p style="color:var(--gray-400);font-size:12px">Sem eventos registrados.</p>'}</div></div>
+      </div>
+    `);
+  }
+
+  return { load, loadDashboard, loadGrid, filtrar, atualizarHonorario, salvarHonorario, verFicha, exportCSV, exportPDF, limpar, excluir };
 })();
 
 window.Carteira = Carteira;
