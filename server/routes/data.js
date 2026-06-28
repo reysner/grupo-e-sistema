@@ -556,6 +556,105 @@ router.patch('/perfil', requireAuth, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao atualizar perfil.' }); }
 });
 
+// ── CAC / INVESTIMENTOS ──────────────────────────────────────────────────────
+
+router.get('/investimentos', requireAuth, async (req, res) => {
+  try {
+    const { mes } = req.query;
+    let q = `SELECT i.*, u.name as lancado_por FROM investimentos i
+             LEFT JOIN users u ON u.id = i.user_id`;
+    const params = [];
+    if (mes && mes !== 'todos') {
+      q += ` WHERE i.mes = $1`;
+      params.push(mes);
+    }
+    q += ` ORDER BY i.mes DESC, i.created_at DESC`;
+    const { rows } = await pool.query(q, params);
+    res.json({ data: rows });
+  } catch (err) { res.status(500).json({ error: 'Erro ao buscar investimentos.' }); }
+});
+
+router.post('/investimentos', requireAdmin, async (req, res) => {
+  try {
+    const { mes, canal, valor, descricao } = req.body;
+    if (!mes || !canal || !valor)
+      return res.status(400).json({ error: 'Mês, canal e valor são obrigatórios.' });
+    const { v4: uuidv4 } = require('uuid');
+    const id = uuidv4();
+    await pool.query(
+      `INSERT INTO investimentos (id, user_id, mes, canal, valor, descricao)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [id, req.user.id, mes, canal, parseFloat(valor), descricao||null]
+    );
+    res.status(201).json({ ok: true, id });
+  } catch (err) { res.status(500).json({ error: 'Erro ao lançar investimento.' }); }
+});
+
+router.delete('/investimentos/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM investimentos WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+router.get('/cac/dashboard', requireAuth, async (req, res) => {
+  try {
+    const { mes } = req.query;
+    let pf = '';
+    const params = [];
+    if (mes && mes !== 'todos') { pf = `WHERE mes = $1`; params.push(mes); }
+
+    // Total investido no período
+    const invResult = await pool.query(
+      `SELECT COALESCE(SUM(valor),0) as total, canal, SUM(valor) as val_canal
+       FROM investimentos ${pf}
+       GROUP BY canal ORDER BY val_canal DESC`, params
+    );
+    const totalInv = invResult.rows.reduce((s,r) => s + parseFloat(r.val_canal||0), 0);
+    const melhorCanal = invResult.rows[0]?.canal || '—';
+    const maiorInv = invResult.rows[0]?.val_canal || 0;
+
+    // Clientes adquiridos no período (entradas na Carteira)
+    let cliQ = `SELECT COUNT(*) as n FROM clientes WHERE status='ativo'`;
+    let cliParams = [];
+    if (mes && mes !== 'todos') {
+      cliQ += ` AND TO_CHAR(data_entrada,'YYYY-MM') = $1`;
+      cliParams.push(mes);
+    }
+    const cliResult = await pool.query(cliQ, cliParams);
+    const totalCli = parseInt(cliResult.rows[0]?.n || 0);
+
+    // CAC médio
+    const cacMedio = totalCli > 0 ? totalInv / totalCli : 0;
+
+    // LTV médio da carteira
+    const ltvResult = await pool.query(`
+      SELECT COALESCE(AVG(
+        (SELECT valor FROM honorarios h WHERE h.cliente_id = c.id ORDER BY data_vigencia DESC LIMIT 1)
+      ), 0) * 48 as ltv_medio
+      FROM clientes c WHERE c.status = 'ativo'
+    `);
+    const ltvMedio = parseFloat(ltvResult.rows[0]?.ltv_medio || 0);
+    const ltvCac = cacMedio > 0 ? (ltvMedio / cacMedio).toFixed(1) : '—';
+
+    // Meses disponíveis para filtro
+    const meses = await pool.query(
+      `SELECT DISTINCT mes FROM investimentos ORDER BY mes DESC`
+    );
+
+    res.json({
+      totalInv, totalCli, cacMedio, melhorCanal,
+      maiorInv: parseFloat(maiorInv),
+      ltvMedio, ltvCac,
+      canais: invResult.rows,
+      meses: meses.rows.map(r => r.mes),
+    });
+  } catch (err) {
+    console.error('CAC dashboard error:', err);
+    res.status(500).json({ error: 'Erro no dashboard CAC.' });
+  }
+});
+
 module.exports.dataRouter = router;
 
 // ── ROTA PÚBLICA — pesquisa sem login ─────────────────────────────────────────
