@@ -108,19 +108,67 @@
 
         <!-- DASHBOARD -->
         <section id="page-dashboard" class="page">
+          <!-- TOOLBAR -->
           <div class="filter-row">
             <label for="dash-period">Período</label>
-            <select id="dash-period"><option value="todos">Todos</option><option value="hoje">Hoje</option><option value="semana">Esta semana</option><option value="mes">Este mês</option></select>
+            <select id="dash-period">
+              <option value="todos">Todos</option>
+              <option value="hoje">Hoje</option>
+              <option value="semana">Esta semana</option>
+              <option value="mes">Este mês</option>
+            </select>
             <button class="btn btn-danger btn-sm admin-only" id="btn-clear-dash">Limpar dados</button>
           </div>
-          <div class="stats-grid" id="stats-grid"></div>
-          <div class="charts-grid">
-            <div class="chart-card"><p class="chart-title">Atendimentos por departamento</p><div class="chart-wrap"><canvas id="c-depto"></canvas></div></div>
-            <div class="chart-card"><p class="chart-title">Gestão por tipo de solicitação</p><div class="chart-wrap"><canvas id="c-gestao"></canvas></div></div>
-            <div class="chart-card"><p class="chart-title">Insatisfações por gravidade</p><div class="chart-wrap"><canvas id="c-grav"></canvas></div></div>
-            <div class="chart-card"><p class="chart-title">Canal de solicitação</p><div class="chart-wrap"><canvas id="c-canal"></canvas></div></div>
+
+          <!-- ATENDIMENTO -->
+          <div style="margin-bottom:28px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+              <div style="width:4px;height:20px;background:var(--g500);border-radius:2px"></div>
+              <h3 style="font-size:15px;font-weight:700;color:var(--g800);margin:0">Atendimento</h3>
+            </div>
+            <div class="charts-grid">
+              <div class="chart-card"><p class="chart-title">Ranking — Empresas que mais solicitam atendimento</p><div class="chart-wrap"><canvas id="c-at-empresa"></canvas></div></div>
+              <div class="chart-card"><p class="chart-title">Por departamento</p><div class="chart-wrap"><canvas id="c-depto"></canvas></div></div>
+              <div class="chart-card"><p class="chart-title">Por analista responsável</p><div class="chart-wrap"><canvas id="c-analista"></canvas></div></div>
+              <div class="chart-card"><p class="chart-title">Por demanda</p><div class="chart-wrap"><canvas id="c-demanda"></canvas></div></div>
+            </div>
           </div>
-          <div class="nps-row" id="nps-row"></div>
+
+          <!-- GESTÃO DE CLIENTES -->
+          <div style="margin-bottom:28px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+              <div style="width:4px;height:20px;background:var(--g500);border-radius:2px"></div>
+              <h3 style="font-size:15px;font-weight:700;color:var(--g800);margin:0">Gestão de Clientes</h3>
+            </div>
+            <div class="charts-grid">
+              <div class="chart-card"><p class="chart-title">Por tipo de solicitação</p><div class="chart-wrap"><canvas id="c-gestao"></canvas></div></div>
+              <div class="chart-card"><p class="chart-title">Canal da solicitação</p><div class="chart-wrap"><canvas id="c-canal"></canvas></div></div>
+            </div>
+          </div>
+
+          <!-- INSATISFAÇÃO -->
+          <div style="margin-bottom:28px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+              <div style="width:4px;height:20px;background:var(--g500);border-radius:2px"></div>
+              <h3 style="font-size:15px;font-weight:700;color:var(--g800);margin:0">Insatisfação</h3>
+            </div>
+            <div class="charts-grid">
+              <div class="chart-card"><p class="chart-title">Por área</p><div class="chart-wrap"><canvas id="c-ins-area"></canvas></div></div>
+              <div class="chart-card"><p class="chart-title">Por tipo</p><div class="chart-wrap"><canvas id="c-ins-tipo"></canvas></div></div>
+              <div class="chart-card"><p class="chart-title">Por gravidade</p><div class="chart-wrap"><canvas id="c-grav"></canvas></div></div>
+              <div class="chart-card"><p class="chart-title">Ranking — Empresas com mais insatisfações</p><div class="chart-wrap"><canvas id="c-ins-empresa"></canvas></div></div>
+            </div>
+          </div>
+
+          <!-- PESQUISAS -->
+          <div style="margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+              <div style="width:4px;height:20px;background:var(--g500);border-radius:2px"></div>
+              <h3 style="font-size:15px;font-weight:700;color:var(--g800);margin:0">Pesquisas de Satisfação</h3>
+            </div>
+            <div class="nps-row" id="nps-row"></div>
+          </div>
+
         </section>
 
         <!-- ATENDIMENTO -->
