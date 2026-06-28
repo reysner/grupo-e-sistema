@@ -716,8 +716,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Dashboard
   document.getElementById('dash-period')?.addEventListener('change', () => App.Dashboard.load());
-  document.getElementById('btn-clear-dash')?.addEventListener('click', () => App.Dashboard.clear());
-
   // Forms
   document.getElementById('btn-at-save')?.addEventListener('click', () => App.Forms.atendimento());
   document.getElementById('btn-gc-save')?.addEventListener('click', () => App.Forms.gestao());
