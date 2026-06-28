@@ -166,10 +166,13 @@ router.get('/dashboard', async (req, res) => {
   try {
     const pf = periodFilter(req.query.period);
 
-    const groupBy = async (table, col, limit=10) => {
+    const analista = req.query.analista || '';
+    const af = analista ? ` AND analista = '${analista.replace(/'/g,"''")}' ` : '';
+
+    const groupBy = async (table, col, limit=10, extra='') => {
       const r = await pool.query(
         `SELECT COALESCE(${col},'Não informado') as label, COUNT(*) as n
-         FROM ${table} WHERE 1=1 ${pf}
+         FROM ${table} WHERE 1=1 ${pf} ${extra}
          GROUP BY ${col} ORDER BY n DESC LIMIT ${limit}`
       );
       return r.rows;
@@ -192,10 +195,10 @@ router.get('/dashboard', async (req, res) => {
       insGrav, insArea, insTipo, insEmpresa,
       nps, csat, ces,
     ] = await Promise.all([
-      safe(() => groupBy('atendimentos', 'empresa', 10)),
-      safe(() => groupBy('atendimentos', 'departamento', 8)),
-      safe(() => groupBy('atendimentos', 'procurado', 8)),
-      safe(() => groupBy('atendimentos', 'demanda', 8)),
+      safe(() => groupBy('atendimentos', 'empresa', 10, af)),
+      safe(() => groupBy('atendimentos', 'departamento', 8, af)),
+      safe(() => groupBy('atendimentos', 'procurado', 8, af)),
+      safe(() => groupBy('atendimentos', 'demanda', 8, af)),
       safe(() => groupBy('gestao_clientes', 'solicitacao', 8)),
       safe(() => groupBy('gestao_clientes', 'canal', 8)),
       safe(() => groupBy('insatisfacoes', 'gravidade', 5)),
@@ -207,13 +210,33 @@ router.get('/dashboard', async (req, res) => {
       safeAvg(() => avgCol('pesquisas', 'ces')),
     ]);
 
+    // NPS evolution by month
+    const npsEvolucao = await pool.query(`
+      SELECT TO_CHAR(created_at, 'MM/YYYY') as mes,
+        ROUND(AVG(nps)::numeric, 1) as nps,
+        ROUND(AVG(csat)::numeric, 1) as csat,
+        ROUND(AVG(ces)::numeric, 1) as ces
+      FROM pesquisas WHERE 1=1 ${pf}
+      GROUP BY TO_CHAR(created_at, 'MM/YYYY'), DATE_TRUNC('month', created_at)
+      ORDER BY DATE_TRUNC('month', created_at) ASC
+      LIMIT 12
+    `).catch(() => ({ rows: [] }));
+
+    // Analistas list for filter
+    const analistasList = await pool.query(
+      `SELECT DISTINCT analista FROM atendimentos WHERE analista IS NOT NULL ORDER BY analista`
+    ).catch(() => ({ rows: [] }));
+
+    // Meses sem reajuste per cliente (for Carteira)
     res.json({
       charts: {
-        atEmpresa, atDepto, atAnalista, atDemanda,
+        atEmpresa, atDepto, atAnalista: atAnalista, atDemanda,
         gcTipo, gcCanal,
         insGrav, insArea, insTipo, insEmpresa,
+        npsEvolucao: npsEvolucao.rows,
       },
       nps, csat, ces,
+      analistas: analistasList.rows.map(r => r.analista),
     });
   } catch (err) {
     console.error('Dashboard error:', err);
@@ -331,7 +354,10 @@ router.get('/clientes', requireAuth, async (req, res) => {
             ))) * h2.valor
           ELSE 0
         END
-      ), 0) FROM honorarios h2 WHERE h2.cliente_id = c.id) AS receita_acumulada
+      ), 0) FROM honorarios h2 WHERE h2.cliente_id = c.id) AS receita_acumulada,
+      (SELECT ROUND((EXTRACT(YEAR FROM AGE(CURRENT_DATE, MAX(h4.data_vigencia)))*12 +
+        EXTRACT(MONTH FROM AGE(CURRENT_DATE, MAX(h4.data_vigencia))))::numeric, 0)
+       FROM honorarios h4 WHERE h4.cliente_id = c.id) AS meses_sem_reajuste
       FROM clientes c`;
     const params = [];
     if (status && status !== 'todos') { q += ` WHERE c.status = $1`; params.push(status); }
