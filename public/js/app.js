@@ -633,6 +633,20 @@ const App = (() => {
       const token = localStorage.getItem('ge_token');
       // Se é entrada, registra automaticamente na carteira
       if (isEntrada && Util.val('gc-honorario')) {
+        // Calcular CAC automaticamente: investimento do mês ÷ clientes do mês
+        const dataEntrada = Util.val('gc-data-entrada') || Util.val('gc-data');
+        const mesEntrada = dataEntrada ? dataEntrada.slice(0,7) : new Date().toISOString().slice(0,7);
+        let cacCalculado = 0;
+        try {
+          const cacRes = await fetch('/api/data/cac/dashboard?mes=' + mesEntrada, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (cacRes && cacRes.ok) {
+            const cacData = await cacRes.json();
+            cacCalculado = cacData.cacMedio || 0;
+          }
+        } catch(e) {}
+
         await fetch('/api/data/clientes', {
           method: 'POST',
           headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${token}` },
@@ -641,10 +655,10 @@ const App = (() => {
             nome_empresa: Util.val('gc-empresa'),
             codigo: Util.val('gc-codigo') || null,
             regime_tributario: Util.val('gc-regime') || null,
-            data_entrada: Util.val('gc-data-entrada') || Util.val('gc-data'),
+            data_entrada: dataEntrada,
             honorario_inicial: parseFloat(Util.val('gc-honorario')) || 0,
             origem: Util.val('gc-origem') || null,
-            cac: parseFloat(Util.val('gc-cac')) || 0,
+            cac: cacCalculado,
           })
         });
       }
@@ -973,7 +987,7 @@ function gcToggleOutros() {
   if (canalWrap) { const s = canal==='Outro'; canalWrap.style.display=s?'flex':'none'; canalWrap.hidden=!s; }
   // Campos de ENTRADA (honorário, origem, CAC, regime, data-entrada)
   const isEntrada = sol==='Constituição de empresa' || sol==='Cliente vindo de outro contador' || sol==='Transformação de empresa';
-  ['gc-honorario-wrap','gc-origem-wrap','gc-cac-wrap','gc-regime-wrap','gc-data-entrada-wrap'].forEach(id => {
+  ['gc-honorario-wrap','gc-origem-wrap','gc-regime-wrap','gc-data-entrada-wrap'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.style.display = isEntrada ? 'flex' : 'none'; el.hidden = !isEntrada; }
   });
