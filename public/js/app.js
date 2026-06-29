@@ -3306,14 +3306,20 @@ const CAC = (() => {
       return;
     }
     const paged = App.Util.paginate(_data, _page);
-    tbody.innerHTML = paged.items.map(r => `<tr>
-      <td style="font-weight:600">${_mesLabel(r.mes, true)}</td>
-      <td><span style="background:var(--g100);color:var(--g700);padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600">${r.canal}</span></td>
-      <td style="font-weight:600;color:var(--g700)">${_fmt(r.valor)}</td>
-      <td style="font-size:12px;color:var(--gray-500)">${r.descricao||'—'}</td>
-      <td style="font-size:12px;color:var(--gray-400)">${r.lancado_por||'—'}</td>
-      <td>${App.Auth.isAdmin() ? '<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="CAC.excluir(\'' + r.id + '\')" title="Excluir">🗑</button>' : ''}</td>
-    </tr>`).join('');
+    tbody.innerHTML = paged.items.map(r => {
+      const recBadge = r.recorrente ? '<span style="background:#ebf8ff;color:#2b6cb0;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;margin-left:4px">↩ Recorrente</span>' : '';
+      const valorOrig = (r.valor_original && parseFloat(r.valor_original) !== parseFloat(r.valor)) ? '<div style="font-size:10px;color:var(--gray-400);text-decoration:line-through">' + _fmt(r.valor_original) + '</div>' : '';
+      const editBtn = App.Auth.isAdmin() ? '<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px" data-id="' + r.id + '" data-valor="' + r.valor + '" data-desc="' + (r.descricao||'').replace(/'/g,'') + '" onclick="CAC.editarValor(this.dataset.id,this.dataset.valor,this.dataset.desc)">✏️</button>' : '';
+      const delBtn = App.Auth.isAdmin() ? '<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 4px" data-id="' + r.id + '" onclick="CAC.excluir(this.dataset.id)">🗑</button>' : '';
+      return '<tr>' +
+        '<td style="font-weight:600">' + _mesLabel(r.mes, true) + '</td>' +
+        '<td><span style="background:var(--g100);color:var(--g700);padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600">' + r.canal + '</span>' + recBadge + '</td>' +
+        '<td>' + valorOrig + '<span style="font-weight:600;color:var(--g700)">' + _fmt(r.valor) + '</span></td>' +
+        '<td style="font-size:12px;color:var(--gray-500)">' + (r.descricao||'—') + '</td>' +
+        '<td style="font-size:12px;color:var(--gray-400)">' + (r.lancado_por||'—') + '</td>' +
+        '<td style="white-space:nowrap">' + editBtn + ' ' + delBtn + '</td>' +
+      '</tr>';
+    }).join('');
     App.Util.renderPagination('cac-pagination', paged.page, paged.pages, paged.total, 'CAC.goPage');
   }
 
@@ -3334,6 +3340,10 @@ const CAC = (() => {
         '</select></div>' +
       '<div class="field"><label>Descrição <small style="color:var(--gray-400)">(opcional)</small></label>' +
         '<input id="inv-descricao" type="text" placeholder="Ex: Campanha abertura de empresas maio/2026" /></div>' +
+      '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--gray-700);padding:8px 12px;background:var(--g100);border-radius:8px;border:1px solid var(--g200)">' +
+        '<input id="inv-recorrente" type="checkbox" style="width:16px;height:16px;accent-color:var(--g600)" />' +
+        '<div><strong>Investimento recorrente</strong><br><span style="font-size:11px;color:var(--gray-400)">Marca este canal como custo fixo mensal</span></div>' +
+      '</label>' +
       '<button class="btn btn-primary" onclick="CAC.salvar()">Lançar</button>' +
     '</div>');
   }
@@ -3347,10 +3357,34 @@ const CAC = (() => {
     const res = await fetch('/api/data/investimentos', {
       method: 'POST',
       headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + _token() },
-      body: JSON.stringify({ mes, canal, valor: parseFloat(valor), descricao: desc||null })
+      body: JSON.stringify({ mes, canal, valor: parseFloat(valor), descricao: desc||null, recorrente: document.getElementById('inv-recorrente')?.checked || false })
     });
     if (res && res.ok) { App.Modal.close(); App.Toast.ok('Investimento lançado!'); await load(); }
     else { App.Toast.err('Erro ao lançar investimento.'); }
+  }
+
+  async function editarValor(id, valorAtual, descAtual) {
+    App.Modal.open('Editar investimento', '<div style="display:grid;gap:12px">' +
+      '<div class="field"><label>Novo valor (R$) <span class="req">*</span></label>' +
+        '<input id="inv-edit-valor" type="number" min="0" step="0.01" value="' + valorAtual + '" /></div>' +
+      '<div class="field"><label>Descrição</label>' +
+        '<input id="inv-edit-desc" type="text" value="' + (descAtual||'') + '" placeholder="Descreva o ajuste" /></div>' +
+      '<p style="font-size:11px;color:var(--gray-400)">⚠️ O valor original será preservado no histórico.</p>' +
+      '<button class="btn btn-primary" data-id="' + id + '" onclick="CAC.salvarEdicao(this.dataset.id)">Salvar reajuste</button>' +
+    '</div>');
+  }
+
+  async function salvarEdicao(id) {
+    const valor = document.getElementById('inv-edit-valor')?.value;
+    const desc  = document.getElementById('inv-edit-desc')?.value;
+    if (!valor) { App.Toast.err('Valor obrigatório.'); return; }
+    const res = await fetch('/api/data/investimentos/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _token() },
+      body: JSON.stringify({ valor: parseFloat(valor), descricao: desc||null })
+    });
+    if (res && res.ok) { App.Modal.close(); App.Toast.ok('Valor atualizado!'); await load(); }
+    else App.Toast.err('Erro ao editar.');
   }
 
   async function excluir(id) {
@@ -3407,7 +3441,7 @@ const CAC = (() => {
     if (res && res.ok) { _data = []; _renderGrid(); await loadDashboard(); App.Toast.ok('Investimentos removidos.'); }
     else App.Toast.err('Erro ao limpar.');
   }
-  return { load, loadDashboard, loadGrid, goPage, abrirLancamento, salvar, excluir, limpar, exportCSV, exportPDF };
+  return { load, loadDashboard, loadGrid, goPage, abrirLancamento, salvar, editarValor, salvarEdicao, excluir, limpar, exportCSV, exportPDF };
 })();
 
 window.CAC = CAC;
