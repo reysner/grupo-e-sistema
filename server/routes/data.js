@@ -534,7 +534,6 @@ router.delete('/clear', requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro ao limpar dados.' }); }
 });
 
-module.exports = router;
 // ── PERFIL ───────────────────────────────────────────────────────────────────
 router.patch('/perfil', requireAuth, async (req, res) => {
   try {
