@@ -655,6 +655,49 @@ router.get('/cac/dashboard', requireAuth, async (req, res) => {
   }
 });
 
+// ── NOTIFICAÇÕES ─────────────────────────────────────────────────────────────
+router.get('/notificacoes', requireAuth, async (req, res) => {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS notificacoes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tipo TEXT NOT NULL, titulo TEXT NOT NULL, mensagem TEXT NOT NULL,
+      lida BOOLEAN DEFAULT false, link_modulo TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`).catch(()=>{});
+    const { rows } = await pool.query(
+      `SELECT * FROM notificacoes ORDER BY lida ASC, created_at DESC LIMIT 50`
+    );
+    const naoLidas = rows.filter(r => !r.lida).length;
+    res.json({ data: rows, naoLidas });
+  } catch (err) { res.status(500).json({ error: 'Erro ao buscar notificações.' }); }
+});
+
+router.patch('/notificacoes/:id/lida', requireAuth, async (req, res) => {
+  try {
+    await pool.query(`UPDATE notificacoes SET lida = true WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro.' }); }
+});
+
+router.patch('/notificacoes/todas/lidas', requireAuth, async (req, res) => {
+  try {
+    await pool.query(`UPDATE notificacoes SET lida = true WHERE lida = false`);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro.' }); }
+});
+
+// Criar notificação automaticamente ao registrar insatisfação alta
+router.post('/notificacoes', requireAuth, async (req, res) => {
+  try {
+    const { tipo, titulo, mensagem, link_modulo } = req.body;
+    await pool.query(
+      `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ($1,$2,$3,$4)`,
+      [tipo, titulo, mensagem, link_modulo || null]
+    );
+    res.status(201).json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro.' }); }
+});
+
 module.exports.dataRouter = router;
 
 // ── ROTA PÚBLICA — pesquisa sem login ─────────────────────────────────────────
