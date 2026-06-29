@@ -7,6 +7,24 @@ const { requireAuth, requireAdmin } = require('../auth');
 const router = express.Router();
 router.use(requireAuth);
 
+async function registrarLog(userId, userName, acao, modulo, descricao, req) {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS log_atividades (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id TEXT NOT NULL, user_name TEXT NOT NULL,
+      acao TEXT NOT NULL, modulo TEXT NOT NULL, descricao TEXT,
+      ip TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+    )`).catch(()=>{});
+    const ip = req?.ip || req?.headers?.['x-forwarded-for'] || '—';
+    await pool.query(
+      `INSERT INTO log_atividades (user_id, user_name, acao, modulo, descricao, ip)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [userId, userName, acao, modulo, descricao||null, ip]
+    );
+  } catch(e) { /* log não deve quebrar a operação principal */ }
+}
+
+
 function periodFilter(period) {
   switch (period) {
     case 'hoje':   return `AND created_at::date = CURRENT_DATE`;
@@ -883,22 +901,6 @@ router.get('/busca-global', requireAuth, async (req, res) => {
 // ── LOG DE ATIVIDADES ─────────────────────────────────────────────────────────
 
 // Middleware helper para registrar log (usado internamente)
-async function registrarLog(userId, userName, acao, modulo, descricao, req) {
-  try {
-    await pool.query(`CREATE TABLE IF NOT EXISTS log_atividades (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id TEXT NOT NULL, user_name TEXT NOT NULL,
-      acao TEXT NOT NULL, modulo TEXT NOT NULL, descricao TEXT,
-      ip TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
-    )`).catch(()=>{});
-    const ip = req?.ip || req?.headers?.['x-forwarded-for'] || '—';
-    await pool.query(
-      `INSERT INTO log_atividades (user_id, user_name, acao, modulo, descricao, ip)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [userId, userName, acao, modulo, descricao||null, ip]
-    );
-  } catch(e) { /* log não deve quebrar a operação principal */ }
-}
 
 router.get('/log-atividades', requireAdmin, async (req, res) => {
   try {
