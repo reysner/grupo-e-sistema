@@ -891,6 +891,76 @@ router.delete('/log-atividades', requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro ao limpar log.' }); }
 });
 
+// ── BACKUP DOS DADOS ──────────────────────────────────────────────────────────
+router.get('/backup', requireAdmin, async (req, res) => {
+  try {
+    const timestamp = new Date().toISOString().slice(0,19).replace('T','_').replace(/:/g,'-');
+
+    // Buscar todos os dados de todas as tabelas
+    const [
+      atendimentos, gestao, insatisfacoes, sensiveis,
+      pesquisas, recuperacoes, clientes, honorarios,
+      eventos, investimentos, notificacoes, log
+    ] = await Promise.all([
+      pool.query('SELECT * FROM atendimentos ORDER BY created_at').catch(()=>({rows:[]})),
+      pool.query('SELECT * FROM gestao_clientes ORDER BY created_at').catch(()=>({rows:[]})),
+      pool.query('SELECT * FROM insatisfacoes ORDER BY created_at').catch(()=>({rows:[]})),
+      pool.query('SELECT * FROM clientes_sensiveis ORDER BY created_at').catch(()=>({rows:[]})),
+      pool.query('SELECT * FROM pesquisas ORDER BY created_at').catch(()=>({rows:[]})),
+      pool.query('SELECT * FROM recuperacoes ORDER BY created_at').catch(()=>({rows:[]})),
+      pool.query('SELECT * FROM clientes ORDER BY created_at').catch(()=>({rows:[]})),
+      pool.query('SELECT * FROM honorarios ORDER BY created_at').catch(()=>({rows:[]})),
+      pool.query('SELECT * FROM eventos_clientes ORDER BY created_at').catch(()=>({rows:[]})),
+      pool.query('SELECT * FROM investimentos ORDER BY created_at').catch(()=>({rows:[]})),
+      pool.query('SELECT * FROM notificacoes ORDER BY created_at').catch(()=>({rows:[]})),
+      pool.query('SELECT * FROM log_atividades ORDER BY created_at DESC LIMIT 1000').catch(()=>({rows:[]})),
+    ]);
+
+    const backup = {
+      meta: {
+        sistema: 'Grupo-E',
+        gerado_em: new Date().toISOString(),
+        versao: '1.0',
+        totais: {
+          atendimentos: atendimentos.rows.length,
+          gestao: gestao.rows.length,
+          insatisfacoes: insatisfacoes.rows.length,
+          sensiveis: sensiveis.rows.length,
+          pesquisas: pesquisas.rows.length,
+          recuperacoes: recuperacoes.rows.length,
+          clientes: clientes.rows.length,
+          honorarios: honorarios.rows.length,
+          investimentos: investimentos.rows.length,
+        }
+      },
+      dados: {
+        atendimentos: atendimentos.rows,
+        gestao_clientes: gestao.rows,
+        insatisfacoes: insatisfacoes.rows,
+        clientes_sensiveis: sensiveis.rows,
+        pesquisas: pesquisas.rows,
+        recuperacoes: recuperacoes.rows,
+        clientes: clientes.rows,
+        honorarios: honorarios.rows,
+        eventos_clientes: eventos.rows,
+        investimentos: investimentos.rows,
+        notificacoes: notificacoes.rows,
+        log_atividades: log.rows,
+      }
+    };
+
+    // Registrar no log
+    await registrarLog(req.user.id, req.user.name, 'criar', 'admin', 'Backup manual realizado', req);
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="backup-grupo-e-${timestamp}.json"`);
+    res.json(backup);
+  } catch (err) {
+    console.error('Backup error:', err);
+    res.status(500).json({ error: 'Erro ao gerar backup.' });
+  }
+});
+
 module.exports.dataRouter = router;
 module.exports.registrarLog = registrarLog;
 
