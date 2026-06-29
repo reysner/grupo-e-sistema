@@ -316,18 +316,18 @@ const App = (() => {
       if (pg) pg.hidden = false;
       document.querySelectorAll(`.nav-item[data-page="${page}"]`).forEach(el => el.classList.add('active'));
       document.getElementById('page-title').textContent = PAGE_TITLES[page] || page;
-      if (page === 'dashboard') Dashboard.load();
-      if (page === 'pesquisas')  Pesquisas.loadGrid();
-      if (page === 'carteira')     Carteira.load();
-      if (page === 'perfil')       Perfil.load();
-      if (page === 'cac')          CAC.load();
-      if (page === 'log')          Log.carregar();
-      if (page === 'atendimento')  Atendimento.loadGrid();
-      if (page === 'gestao')       Gestao.loadGrid();
-      if (page === 'insatisfacao') Insatisfacao.loadGrid();
-      if (page === 'recuperacao')  Recuperacao.loadGrid();
-      if (page === 'sensiveis')   Sensiveis.loadGrid();
-      if (page === 'admin')     Admin.load();
+      if (page === 'dashboard')   window.Dashboard?.load();
+      if (page === 'pesquisas')   window.Pesquisas?.loadGrid();
+      if (page === 'carteira')    window.Carteira?.load();
+      if (page === 'perfil')      window.Perfil?.load();
+      if (page === 'cac')         window.CAC?.load();
+      if (page === 'log')         window.Log?.carregar();
+      if (page === 'atendimento') window.Atendimento?.loadGrid();
+      if (page === 'gestao')      window.Gestao?.loadGrid();
+      if (page === 'insatisfacao') window.Insatisfacao?.loadGrid();
+      if (page === 'recuperacao') window.Recuperacao?.loadGrid();
+      if (page === 'sensiveis')   window.Sensiveis?.loadGrid();
+      if (page === 'admin')       window.Admin?.load();
       return false;
     },
   };
@@ -1787,7 +1787,8 @@ window.PesquisasGrid = PesquisasGrid;
 
 // ── Módulo Pesquisas — grade de registros ─────────────────────────────────────
 const Pesquisas = (() => {
-  let _allData = [];  // cache de todas as respostas
+  let _allData = [];
+  let _page = 1;  // cache de todas as respostas
 
   function _token() { return localStorage.getItem('ge_token') || ''; }
 
