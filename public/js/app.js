@@ -2032,6 +2032,14 @@ const Pesquisas = (() => {
     else App.Toast.err('Erro ao excluir.');
   }
 
+  function goPage(p) {
+    _page = p;
+    const f = _filterData(_allData);
+    const pg = App.Util.paginate(f, p);
+    _renderGrid(pg.items);
+    App.Util.renderPagination('ps-pagination', pg.page, pg.pages, pg.total, 'Pesquisas.goPage');
+  }
+
   return { loadGrid, exportCSV, exportPDF, limpar, detail, marcarTratado, excluirPesquisa, goPage };
 })();
 
