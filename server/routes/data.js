@@ -596,18 +596,38 @@ router.get('/investimentos', requireAuth, async (req, res) => {
 
 router.post('/investimentos', requireAdmin, async (req, res) => {
   try {
-    const { mes, canal, valor, descricao } = req.body;
+    const { mes, canal, valor, descricao, recorrente } = req.body;
     if (!mes || !canal || !valor)
       return res.status(400).json({ error: 'Mês, canal e valor são obrigatórios.' });
     const { v4: uuidv4 } = require('uuid');
+    // Auto-add columns if not exist
+    await pool.query(`ALTER TABLE investimentos ADD COLUMN IF NOT EXISTS recorrente BOOLEAN DEFAULT false`).catch(()=>{});
+    await pool.query(`ALTER TABLE investimentos ADD COLUMN IF NOT EXISTS valor_original NUMERIC(10,2)`).catch(()=>{});
     const id = uuidv4();
     await pool.query(
-      `INSERT INTO investimentos (id, user_id, mes, canal, valor, descricao)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [id, req.user.id, mes, canal, parseFloat(valor), descricao||null]
+      `INSERT INTO investimentos (id, user_id, mes, canal, valor, descricao, recorrente)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [id, req.user.id, mes, canal, parseFloat(valor), descricao||null, recorrente||false]
     );
     res.status(201).json({ ok: true, id });
   } catch (err) { res.status(500).json({ error: 'Erro ao lançar investimento.' }); }
+});
+
+router.patch('/investimentos/:id', requireAdmin, async (req, res) => {
+  try {
+    const { valor, descricao } = req.body;
+    if (!valor) return res.status(400).json({ error: 'Valor obrigatório.' });
+    // Save original value on first edit if not already saved
+    await pool.query(`ALTER TABLE investimentos ADD COLUMN IF NOT EXISTS valor_original NUMERIC(10,2)`).catch(()=>{});
+    const cur = await pool.query(`SELECT valor, valor_original FROM investimentos WHERE id = $1`, [req.params.id]);
+    if (!cur.rows.length) return res.status(404).json({ error: 'Não encontrado.' });
+    const valorOriginal = cur.rows[0].valor_original || cur.rows[0].valor;
+    await pool.query(
+      `UPDATE investimentos SET valor = $1, descricao = $2, valor_original = $3 WHERE id = $4`,
+      [parseFloat(valor), descricao||cur.rows[0].descricao||null, valorOriginal, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao editar.' }); }
 });
 
 router.delete('/investimentos/:id', requireAdmin, async (req, res) => {
