@@ -801,6 +801,39 @@ router.get('/relatorio-executivo', requireAdmin, async (req, res) => {
   }
 });
 
+// ── BUSCA GLOBAL ──────────────────────────────────────────────────────────────
+router.get('/busca-global', requireAuth, async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || q.trim().length < 2)
+      return res.status(400).json({ error: 'Digite ao menos 2 caracteres.' });
+    const termo = '%' + q.trim().toLowerCase() + '%';
+
+    const [at, gc, ins, cs, rc, cli] = await Promise.all([
+      pool.query(`SELECT id,'atendimento' as modulo, empresa, cliente, cnpj, analista, created_at FROM atendimentos
+        WHERE LOWER(empresa) LIKE $1 OR LOWER(cliente) LIKE $1 OR cnpj LIKE $1 LIMIT 5`, [termo]),
+      pool.query(`SELECT id,'gestao' as modulo, empresa, '' as cliente, cnpj, analista, created_at FROM gestao_clientes
+        WHERE LOWER(empresa) LIKE $1 OR cnpj LIKE $1 LIMIT 5`, [termo]),
+      pool.query(`SELECT id,'insatisfacao' as modulo, empresa, cliente, cnpj, analista, created_at FROM insatisfacoes
+        WHERE LOWER(empresa) LIKE $1 OR LOWER(cliente) LIKE $1 OR cnpj LIKE $1 LIMIT 5`, [termo]),
+      pool.query(`SELECT id,'sensiveis' as modulo, empresa, cliente, cnpj, analista, created_at FROM clientes_sensiveis
+        WHERE LOWER(empresa) LIKE $1 OR LOWER(cliente) LIKE $1 OR cnpj LIKE $1 LIMIT 5`, [termo]),
+      pool.query(`SELECT id,'recuperacao' as modulo, empresa, cliente, cnpj, analista, created_at FROM recuperacoes
+        WHERE LOWER(empresa) LIKE $1 OR LOWER(cliente) LIKE $1 OR cnpj LIKE $1 LIMIT 5`, [termo]),
+      pool.query(`SELECT id,'carteira' as modulo, nome_empresa as empresa, '' as cliente, cnpj, '' as analista, created_at FROM clientes
+        WHERE LOWER(nome_empresa) LIKE $1 OR cnpj LIKE $1 LIMIT 5`, [termo]).catch(() => ({ rows: [] })),
+    ]);
+
+    const resultados = [...at.rows, ...gc.rows, ...ins.rows, ...cs.rows, ...rc.rows, ...cli.rows]
+      .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+    res.json({ data: resultados, total: resultados.length });
+  } catch (err) {
+    console.error('Busca global error:', err);
+    res.status(500).json({ error: 'Erro na busca.' });
+  }
+});
+
 module.exports.dataRouter = router;
 
 // ── ROTA PÚBLICA — pesquisa sem login ─────────────────────────────────────────
