@@ -661,17 +661,17 @@ router.get('/cac/dashboard', requireAuth, async (req, res) => {
     const melhorCanal = invResult.rows[0]?.canal || '—';
     const maiorInv = invResult.rows[0]?.val_canal || 0;
 
-    // Clientes adquiridos no período (entradas na Carteira)
-    let cliQ = `SELECT COUNT(*) as n FROM clientes WHERE status='ativo'`;
+    // Clientes adquiridos no período (entradas na Carteira naquele mês)
+    let cliQ = `SELECT COUNT(*) as n FROM clientes`;
     let cliParams = [];
     if (mes && mes !== 'todos') {
-      cliQ += ` AND TO_CHAR(data_entrada,'YYYY-MM') = $1`;
+      cliQ += ` WHERE TO_CHAR(data_entrada,'YYYY-MM') = $1`;
       cliParams.push(mes);
     }
     const cliResult = await pool.query(cliQ, cliParams);
     const totalCli = parseInt(cliResult.rows[0]?.n || 0);
 
-    // CAC médio
+    // CAC médio = total investido no mês ÷ clientes adquiridos no mês
     const cacMedio = totalCli > 0 ? totalInv / totalCli : 0;
 
     // LTV médio da carteira
