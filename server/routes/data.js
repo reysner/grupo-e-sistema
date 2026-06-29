@@ -547,35 +547,40 @@ router.patch('/perfil', requireAuth, async (req, res) => {
     const { nome, senhaAtual, senhaNova } = req.body;
     if (!nome) return res.status(400).json({ error: 'Nome obrigatorio.' });
     if (!senhaAtual) return res.status(400).json({ error: 'Senha atual obrigatoria.' });
-    // Validar senha atual sempre
+
     const bcrypt = require('bcryptjs');
-    const coluna = 'password_hash';
-    let u = await pool.query(`SELECT ${coluna} FROM users WHERE id = $1`, [req.user.id]);
-    // Fallback para coluna 'password'
-    if (!u.rows.length || !u.rows[0][coluna]) {
-      u = await pool.query('SELECT password FROM users WHERE id = $1', [req.user.id]);
-      const hash = u.rows[0]?.password;
-      if (!hash) return res.status(404).json({ error: 'Usuario nao encontrado.' });
-      const valid = await bcrypt.compare(senhaAtual, hash);
-      if (!valid) return res.status(400).json({ error: 'Senha atual incorreta.' });
-    } else {
-      const valid = await bcrypt.compare(senhaAtual, u.rows[0][coluna]);
-      if (!valid) return res.status(400).json({ error: 'Senha atual incorreta.' });
-    }
+
+    // Busca usuario com todas as colunas
+    const u = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
+    if (!u.rows.length) return res.status(404).json({ error: 'Usuario nao encontrado.' });
+
+    const user = u.rows[0];
+    const hashAtual = user.password_hash || user.password;
+    if (!hashAtual) return res.status(500).json({ error: 'Hash nao encontrado.' });
+
+    const valid = await bcrypt.compare(senhaAtual, hashAtual);
+    if (!valid) return res.status(400).json({ error: 'Senha atual incorreta.' });
+
     // Atualiza nome
     await pool.query('UPDATE users SET name = $1 WHERE id = $2', [nome, req.user.id]);
-    // Atualiza senha apenas se informada
+
+    // Atualiza senha se informada
     if (senhaNova) {
-      const hash = await bcrypt.hash(senhaNova, 10);
-      try {
-        await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.user.id]);
-      } catch(e) {
-        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hash, req.user.id]);
+      const novoHash = await bcrypt.hash(senhaNova, 10);
+      if (user.password_hash !== undefined) {
+        await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [novoHash, req.user.id]);
+      } else {
+        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [novoHash, req.user.id]);
       }
     }
+
     res.json({ ok: true });
-  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao atualizar perfil.' }); }
+  } catch (err) {
+    console.error('Perfil error:', err.message);
+    res.status(500).json({ error: 'Erro: ' + err.message });
+  }
 });
+
 
 // ── CAC / INVESTIMENTOS ──────────────────────────────────────────────────────
 
