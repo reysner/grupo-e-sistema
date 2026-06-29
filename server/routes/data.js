@@ -698,6 +698,109 @@ router.post('/notificacoes', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro.' }); }
 });
 
+// ── RELATÓRIO EXECUTIVO ───────────────────────────────────────────────────────
+router.get('/relatorio-executivo', requireAdmin, async (req, res) => {
+  try {
+    const { mes } = req.query; // formato: 2026-06
+    const mesAtual = mes || new Date().toISOString().slice(0,7);
+    const [ano, m] = mesAtual.split('-');
+    const inicio = `${mesAtual}-01`;
+    const fim = new Date(parseInt(ano), parseInt(m), 0).toISOString().slice(0,10);
+
+    const pf = `AND created_at >= '${inicio}' AND created_at <= '${fim} 23:59:59'`;
+
+    // Totais por módulo
+    const totais = {};
+    for (const [key, table] of [
+      ['atendimentos','atendimentos'], ['gestoes','gestao_clientes'],
+      ['insatisfacoes','insatisfacoes'], ['sensiveis','clientes_sensiveis'],
+      ['pesquisas','pesquisas'], ['recuperacoes','recuperacoes']
+    ]) {
+      const r = await pool.query(`SELECT COUNT(*) as n FROM ${table} WHERE 1=1 ${pf}`);
+      totais[key] = parseInt(r.rows[0].n);
+    }
+
+    // Insatisfações por gravidade
+    const insGrav = await pool.query(
+      `SELECT gravidade, COUNT(*) as n FROM insatisfacoes WHERE 1=1 ${pf} GROUP BY gravidade ORDER BY n DESC`
+    );
+
+    // Insatisfações por área
+    const insArea = await pool.query(
+      `SELECT COALESCE(area,'Não informado') as area, COUNT(*) as n FROM insatisfacoes WHERE 1=1 ${pf} GROUP BY area ORDER BY n DESC`
+    ).catch(() => ({ rows: [] }));
+
+    // Top empresas com insatisfação
+    const insEmpresas = await pool.query(
+      `SELECT empresa, COUNT(*) as n FROM insatisfacoes WHERE 1=1 ${pf} GROUP BY empresa ORDER BY n DESC LIMIT 5`
+    );
+
+    // Atendimentos por departamento
+    const atDepto = await pool.query(
+      `SELECT departamento, COUNT(*) as n FROM atendimentos WHERE 1=1 ${pf} GROUP BY departamento ORDER BY n DESC`
+    );
+
+    // Atendimentos por analista procurado
+    const atAnalista = await pool.query(
+      `SELECT procurado, COUNT(*) as n FROM atendimentos WHERE 1=1 ${pf} GROUP BY procurado ORDER BY n DESC LIMIT 5`
+    ).catch(() => ({ rows: [] }));
+
+    // Gestão por solicitação
+    const gcTipo = await pool.query(
+      `SELECT solicitacao, COUNT(*) as n FROM gestao_clientes WHERE 1=1 ${pf} GROUP BY solicitacao ORDER BY n DESC`
+    );
+
+    // Pesquisas NPS
+    const npsData = await pool.query(
+      `SELECT ROUND(AVG(nps)::numeric,1) as nps, ROUND(AVG(csat)::numeric,1) as csat, 
+       ROUND(AVG(ces)::numeric,1) as ces, COUNT(*) as total FROM pesquisas WHERE 1=1 ${pf}`
+    );
+
+    // Carteira métricas
+    const carteira = await pool.query(`
+      SELECT COUNT(*) FILTER (WHERE status='ativo') as ativos,
+        COUNT(*) FILTER (WHERE status='encerrado') as encerrados,
+        COALESCE(SUM(
+          (SELECT valor FROM honorarios h WHERE h.cliente_id = c.id ORDER BY data_vigencia DESC LIMIT 1)
+          FILTER (WHERE c.status='ativo')
+        ), 0) as mrr
+      FROM clientes c
+    `).catch(() => ({ rows: [{ ativos: 0, encerrados: 0, mrr: 0 }] }));
+
+    // CAC do mês
+    const cacData = await pool.query(
+      `SELECT COALESCE(SUM(valor),0) as total FROM investimentos WHERE mes = $1`, [mesAtual]
+    ).catch(() => ({ rows: [{ total: 0 }] }));
+
+    // Novos clientes no mês
+    const novosClientes = await pool.query(
+      `SELECT COUNT(*) as n FROM clientes WHERE TO_CHAR(data_entrada,'YYYY-MM') = $1`, [mesAtual]
+    ).catch(() => ({ rows: [{ n: 0 }] }));
+
+    const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const mesLabel = meses[parseInt(m)-1] + '/' + ano;
+
+    res.json({
+      mes: mesAtual, mesLabel,
+      totais,
+      insGrav: insGrav.rows,
+      insArea: insArea.rows,
+      insEmpresas: insEmpresas.rows,
+      atDepto: atDepto.rows,
+      atAnalista: atAnalista.rows,
+      gcTipo: gcTipo.rows,
+      pesquisas: npsData.rows[0],
+      carteira: carteira.rows[0],
+      cac: parseFloat(cacData.rows[0].total || 0),
+      novosClientes: parseInt(novosClientes.rows[0].n || 0),
+    });
+  } catch (err) {
+    console.error('Relatorio error:', err);
+    res.status(500).json({ error: 'Erro ao gerar relatório.' });
+  }
+});
+
 module.exports.dataRouter = router;
 
 // ── ROTA PÚBLICA — pesquisa sem login ─────────────────────────────────────────
