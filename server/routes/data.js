@@ -55,8 +55,6 @@ router.post('/gestao', async (req, res) => {
     if (!analista || !solicitacao || !cnpj || !empresa || !data_sol || !competencia || !canal)
       return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
     await pool.query(`ALTER TABLE gestao_clientes ADD COLUMN IF NOT EXISTS codigo TEXT`).catch(()=>{});
-    // Auto-add codigo column
-    await pool.query(`ALTER TABLE gestao_clientes ADD COLUMN IF NOT EXISTS codigo TEXT`).catch(()=>{});
     const id = uuidv4();
     await pool.query(
       `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
@@ -184,10 +182,6 @@ router.get('/dashboard', async (req, res) => {
       const r = await pool.query(`SELECT AVG(${col}) as v FROM ${table} WHERE 1=1 ${pf}`);
       return r.rows[0].v ? parseFloat(r.rows[0].v) : null;
     };
-
-    // Auto-migrate insatisfacoes columns
-    await pool.query(`ALTER TABLE insatisfacoes ADD COLUMN IF NOT EXISTS area TEXT`).catch(()=>{});
-    await pool.query(`ALTER TABLE insatisfacoes ADD COLUMN IF NOT EXISTS tipo TEXT`).catch(()=>{});
 
     const safe = async (fn) => { try { return await fn(); } catch(e) { return []; } };
     const safeAvg = async (fn) => { try { return await fn(); } catch(e) { return null; } };
@@ -621,6 +615,13 @@ router.delete('/investimentos/:id', requireAdmin, async (req, res) => {
     await pool.query(`DELETE FROM investimentos WHERE id = $1`, [req.params.id]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+router.delete('/investimentos/clear', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM investimentos`);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao limpar.' }); }
 });
 
 router.get('/cac/dashboard', requireAuth, async (req, res) => {
