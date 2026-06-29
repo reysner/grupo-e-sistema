@@ -1005,10 +1005,6 @@ router.get('/backup', requireAdmin, async (req, res) => {
   }
 });
 
-module.exports = router;
-module.exports.publicRouter = publicRouter;
-module.exports.registrarLog = registrarLog;
-
 // ── ROTA PÚBLICA — pesquisa sem login ─────────────────────────────────────────
 const publicRouter = require('express').Router();
 
@@ -1042,3 +1038,7 @@ publicRouter.post('/pesquisa', async (req, res) => {
 });
 
 router.publicRouter = publicRouter;
+
+module.exports = router;
+module.exports.publicRouter = publicRouter;
+module.exports.registrarLog = registrarLog;
