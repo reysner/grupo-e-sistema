@@ -1533,6 +1533,41 @@ const Log = (() => {
 
 window.Log = Log;
 
+// ── Modo Escuro ───────────────────────────────────────────────────────────────
+const DarkMode = (() => {
+  const KEY = 'ge_dark_mode';
+
+  function aplicar(ativo) {
+    document.body.classList.toggle('dark-mode', ativo);
+    const icon  = document.getElementById('dark-icon');
+    const label = document.getElementById('dark-label');
+    if (icon)  icon.textContent  = ativo ? '☀️' : '🌙';
+    if (label) label.textContent = ativo ? 'Modo claro' : 'Modo escuro';
+  }
+
+  function toggle() {
+    const ativo = !document.body.classList.contains('dark-mode');
+    localStorage.setItem(KEY, ativo ? '1' : '0');
+    aplicar(ativo);
+  }
+
+  function iniciar() {
+    const salvo = localStorage.getItem(KEY);
+    // Se nunca configurou, usa preferência do sistema
+    const prefereSistema = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const ativo = salvo !== null ? salvo === '1' : prefereSistema;
+    aplicar(ativo);
+    // Ouvir mudanças do sistema (apenas se não foi configurado manualmente)
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+      if (localStorage.getItem(KEY) === null) aplicar(e.matches);
+    });
+  }
+
+  return { toggle, iniciar };
+})();
+
+window.DarkMode = DarkMode;
+
 document.addEventListener('DOMContentLoaded', () => {
   // Auth
   document.getElementById('btn-login').addEventListener('click', () => App.Auth.login());
@@ -1597,6 +1632,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Auto login
   handleResize();
+  DarkMode.iniciar();
   (async () => { await App.Auth.tryAutoLogin(); })();
 });
 
