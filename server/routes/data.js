@@ -35,6 +35,7 @@ router.post('/atendimentos', async (req, res) => {
       `INSERT INTO atendimentos (id, user_id, analista, cliente, cnpj, empresa, departamento, procurado, demanda, resumo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [id, req.user.id, analista, cliente, cnpj, empresa, departamento, procurado, demanda, resumo || null]
     );
+    await registrarLog(req.user.id, req.user.name, 'criar', 'atendimento', `Atendimento: ${empresa||cliente}`, req);
     res.status(201).json({ id });
   } catch (err) { res.status(500).json({ error: 'Erro ao salvar atendimento.' }); }
 });
@@ -61,6 +62,7 @@ router.post('/gestao', async (req, res) => {
       `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [id, req.user.id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo || null, codigo || null]
     );
+    await registrarLog(req.user.id, req.user.name, 'criar', 'gestao', `Gestao: ${solicitacao} - ${empresa}`, req);
     res.status(201).json({ id });
   } catch (err) { res.status(500).json({ error: 'Erro.' }); }
 });
@@ -398,6 +400,7 @@ router.post('/clientes', requireAuth, async (req, res) => {
        VALUES ($1,'entrada',$2,$3,$4)`,
       [clienteId, `Entrada — ${nome_empresa}`, honorario_inicial, data_entrada]
     );
+    await registrarLog(req.user.id, req.user.name, 'criar', 'carteira', `Novo cliente: ${nome_empresa}`, req);
     res.json({ ok: true, id: clienteId });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao cadastrar cliente.' }); }
 });
@@ -447,6 +450,7 @@ router.post('/clientes/:id/honorario', requireAdmin, async (req, res) => {
        VALUES ($1,'reajuste','Atualização de honorário',$2,$3,$4)`,
       [req.params.id, valorAnterior, valor, data_vigencia]
     );
+    await registrarLog(req.user.id, req.user.name, 'editar', 'carteira', `Honorário atualizado: R$ ${valor}`, req);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao atualizar honorário.' }); }
 });
@@ -834,7 +838,61 @@ router.get('/busca-global', requireAuth, async (req, res) => {
   }
 });
 
+// ── LOG DE ATIVIDADES ─────────────────────────────────────────────────────────
+
+// Middleware helper para registrar log (usado internamente)
+async function registrarLog(userId, userName, acao, modulo, descricao, req) {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS log_atividades (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id TEXT NOT NULL, user_name TEXT NOT NULL,
+      acao TEXT NOT NULL, modulo TEXT NOT NULL, descricao TEXT,
+      ip TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+    )`).catch(()=>{});
+    const ip = req?.ip || req?.headers?.['x-forwarded-for'] || '—';
+    await pool.query(
+      `INSERT INTO log_atividades (user_id, user_name, acao, modulo, descricao, ip)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [userId, userName, acao, modulo, descricao||null, ip]
+    );
+  } catch(e) { /* log não deve quebrar a operação principal */ }
+}
+
+router.get('/log-atividades', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS log_atividades (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id TEXT NOT NULL, user_name TEXT NOT NULL,
+      acao TEXT NOT NULL, modulo TEXT NOT NULL, descricao TEXT,
+      ip TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+    )`).catch(()=>{});
+
+    const { modulo, user, limit: lim } = req.query;
+    let q = `SELECT * FROM log_atividades WHERE 1=1`;
+    const params = [];
+    if (modulo && modulo !== 'todos') { q += ` AND modulo = $${params.length+1}`; params.push(modulo); }
+    if (user && user !== 'todos') { q += ` AND user_id = $${params.length+1}`; params.push(user); }
+    q += ` ORDER BY created_at DESC LIMIT $${params.length+1}`;
+    params.push(parseInt(lim)||200);
+
+    const { rows } = await pool.query(q, params);
+
+    // Lista de usuários para filtro
+    const users = await pool.query(`SELECT DISTINCT user_id, user_name FROM log_atividades ORDER BY user_name`);
+
+    res.json({ data: rows, users: users.rows });
+  } catch (err) { res.status(500).json({ error: 'Erro ao buscar log.' }); }
+});
+
+router.delete('/log-atividades', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM log_atividades`);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao limpar log.' }); }
+});
+
 module.exports.dataRouter = router;
+module.exports.registrarLog = registrarLog;
 
 // ── ROTA PÚBLICA — pesquisa sem login ─────────────────────────────────────────
 const publicRouter = require('express').Router();
