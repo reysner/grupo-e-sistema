@@ -1005,7 +1005,8 @@ router.get('/backup', requireAdmin, async (req, res) => {
   }
 });
 
-module.exports.dataRouter = router;
+module.exports = router;
+module.exports.publicRouter = publicRouter;
 module.exports.registrarLog = registrarLog;
 
 // ── ROTA PÚBLICA — pesquisa sem login ─────────────────────────────────────────
