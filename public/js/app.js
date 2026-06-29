@@ -1777,15 +1777,11 @@ const Pesquisas = (() => {
   function _filterData(data) {
     const ano = document.getElementById('ps-ano-filter')?.value || 'todos';
     const mes = document.getElementById('ps-mes-filter')?.value || 'todos';
-    const busca = (document.getElementById('ps-busca')?.value || '').toLowerCase().trim();
     return data.filter(r => {
       const d = new Date(r.created_at);
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
       if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
-      if (busca) {
-        const s = [r.empresa, r.cliente, r.cnpj, r.analista].filter(Boolean).join(' ').toLowerCase();
-        if (!s.includes(busca)) return false;
-      }
+
       return true;
     });
   }
@@ -2302,15 +2298,11 @@ const Atendimento = (() => {
   function _filterData(data) {
     const ano = document.getElementById('at-ano-filter')?.value || 'todos';
     const mes = document.getElementById('at-mes-filter')?.value || 'todos';
-    const busca = (document.getElementById('at-busca')?.value || '').toLowerCase().trim();
     return data.filter(r => {
       const d = new Date(r.created_at);
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
       if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
-      if (busca) {
-        const searchable = [r.empresa, r.cliente, r.cnpj, r.analista].filter(Boolean).join(' ').toLowerCase();
-        if (!searchable.includes(busca)) return false;
-      }
+
       return true;
     });
   }
@@ -2472,15 +2464,11 @@ const Gestao = (() => {
   function _filterData(data) {
     const ano = document.getElementById('gc-ano-filter')?.value || 'todos';
     const mes = document.getElementById('gc-mes-filter')?.value || 'todos';
-    const busca = (document.getElementById('gc-busca')?.value || '').toLowerCase().trim();
     return data.filter(r => {
       const d = new Date(r.created_at);
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
       if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
-      if (busca) {
-        const searchable = [r.empresa, r.cliente, r.cnpj, r.analista].filter(Boolean).join(' ').toLowerCase();
-        if (!searchable.includes(busca)) return false;
-      }
+
       return true;
     });
   }
@@ -2642,15 +2630,11 @@ const Recuperacao = (() => {
   function _filterData(data) {
     const ano = document.getElementById('rc-ano-filter')?.value || 'todos';
     const mes = document.getElementById('rc-mes-filter')?.value || 'todos';
-    const busca = (document.getElementById('rc-busca')?.value || '').toLowerCase().trim();
     return data.filter(r => {
       const d = new Date(r.created_at);
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
       if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
-      if (busca) {
-        const searchable = [r.empresa, r.cliente, r.cnpj, r.analista].filter(Boolean).join(' ').toLowerCase();
-        if (!searchable.includes(busca)) return false;
-      }
+
       return true;
     });
   }
@@ -2809,15 +2793,11 @@ const Insatisfacao = (() => {
   function _filterData(data) {
     const ano = document.getElementById('in-ano-filter')?.value || 'todos';
     const mes = document.getElementById('in-mes-filter')?.value || 'todos';
-    const busca = (document.getElementById('in-busca')?.value || '').toLowerCase().trim();
     return data.filter(r => {
       const d = new Date(r.created_at);
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
       if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
-      if (busca) {
-        const searchable = [r.empresa, r.cliente, r.cnpj, r.analista].filter(Boolean).join(' ').toLowerCase();
-        if (!searchable.includes(busca)) return false;
-      }
+
       return true;
     });
   }
@@ -2979,15 +2959,11 @@ const Sensiveis = (() => {
   function _filterData(data) {
     const ano = document.getElementById('cs-ano-filter')?.value || 'todos';
     const mes = document.getElementById('cs-mes-filter')?.value || 'todos';
-    const busca = (document.getElementById('cs-busca')?.value || '').toLowerCase().trim();
     return data.filter(r => {
       const d = new Date(r.created_at);
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
       if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
-      if (busca) {
-        const searchable = [r.empresa, r.cliente, r.cnpj, r.analista].filter(Boolean).join(' ').toLowerCase();
-        if (!searchable.includes(busca)) return false;
-      }
+
       return true;
     });
   }
