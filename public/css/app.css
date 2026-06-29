@@ -414,3 +414,187 @@ body.is-admin .btn.admin-only {
   div[style*="repeat(2,minmax"] { grid-template-columns: 1fr !important; }
   .topbar-title { font-size: 15px; }
 }
+
+/* ── MODO ESCURO ─────────────────────────────────────────────────────────── */
+body.dark-mode {
+  --white: #1a1f2e;
+  --gray-50: #1e2435;
+  --gray-100: #252b3b;
+  --gray-200: #2d3448;
+  --gray-300: #3a4155;
+  --gray-400: #8892a4;
+  --gray-500: #a0abc0;
+  --gray-600: #b8c1d4;
+  --gray-700: #cdd5e0;
+  --gray-800: #e2e8f0;
+  background: #141824;
+  color: #e2e8f0;
+}
+
+body.dark-mode .sidebar {
+  background: #0f1420;
+  border-right: 1px solid #2d3448;
+}
+
+body.dark-mode .topbar {
+  background: #0f1420;
+  border-bottom: 1px solid #2d3448;
+}
+
+body.dark-mode .main-wrap {
+  background: #141824;
+}
+
+body.dark-mode .content {
+  background: #141824;
+}
+
+body.dark-mode .form-card {
+  background: #1e2435;
+  border-color: #2d3448;
+  box-shadow: 0 1px 4px rgba(0,0,0,.3);
+}
+
+body.dark-mode .data-table thead th {
+  background: #0f1420;
+}
+
+body.dark-mode .data-table tbody tr:hover td {
+  background: #252b3b;
+}
+
+body.dark-mode .data-table tbody td {
+  border-color: #2d3448;
+  color: #cdd5e0;
+}
+
+body.dark-mode .chart-card {
+  background: #1e2435;
+  border-color: #2d3448;
+}
+
+body.dark-mode .field input,
+body.dark-mode .field select,
+body.dark-mode .field textarea {
+  background: #252b3b;
+  border-color: #3a4155;
+  color: #e2e8f0;
+}
+
+body.dark-mode .field input::placeholder,
+body.dark-mode .field textarea::placeholder {
+  color: #8892a4;
+}
+
+body.dark-mode .btn-ghost {
+  background: #252b3b;
+  border-color: #3a4155;
+  color: #cdd5e0;
+}
+
+body.dark-mode .btn-ghost:hover {
+  background: #2d3448;
+}
+
+body.dark-mode .modal-backdrop {
+  background: rgba(0,0,0,.7);
+}
+
+body.dark-mode .modal-box {
+  background: #1e2435;
+  border: 1px solid #2d3448;
+}
+
+body.dark-mode .stat-card {
+  background: #1e2435;
+  border-color: #2d3448;
+}
+
+body.dark-mode .nps-row > div {
+  background: #1e2435;
+  border-color: #2d3448;
+}
+
+body.dark-mode .table-wrap {
+  border-color: #2d3448;
+}
+
+body.dark-mode .filter-row {
+  background: transparent;
+}
+
+body.dark-mode select {
+  background: #252b3b;
+  border-color: #3a4155;
+  color: #e2e8f0;
+}
+
+body.dark-mode input[type="text"],
+body.dark-mode input[type="email"],
+body.dark-mode input[type="password"],
+body.dark-mode input[type="number"],
+body.dark-mode input[type="date"],
+body.dark-mode input[type="month"] {
+  background: #252b3b;
+  border-color: #3a4155;
+  color: #e2e8f0;
+}
+
+body.dark-mode #busca-global-input {
+  background: rgba(255,255,255,.05) !important;
+  border-color: #3a4155 !important;
+  color: #e2e8f0 !important;
+}
+
+body.dark-mode #busca-global-panel,
+body.dark-mode #notif-panel {
+  background: #1e2435;
+  border-color: #2d3448;
+}
+
+body.dark-mode .nav-item {
+  color: rgba(255,255,255,.6);
+}
+
+body.dark-mode .nav-item:hover,
+body.dark-mode .nav-item.active {
+  background: rgba(255,255,255,.08);
+  color: #fff;
+}
+
+/* Toggle switch */
+.dark-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  color: rgba(255,255,255,.6);
+  font-size: 12px;
+  width: 100%;
+  text-align: left;
+  transition: background .15s;
+}
+.dark-toggle:hover { background: rgba(255,255,255,.08); color: #fff; }
+.dark-toggle-switch {
+  width: 32px; height: 17px;
+  background: rgba(255,255,255,.2);
+  border-radius: 10px;
+  position: relative;
+  transition: background .2s;
+  flex-shrink: 0;
+}
+.dark-toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 13px; height: 13px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform .2s;
+}
+body.dark-mode .dark-toggle-switch { background: var(--g500); }
+body.dark-mode .dark-toggle-switch::after { transform: translateX(15px); }
