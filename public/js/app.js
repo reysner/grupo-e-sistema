@@ -1172,6 +1172,156 @@ const Notificacoes = (() => {
 
 window.Notificacoes = Notificacoes;
 
+// ── Módulo Relatório Executivo ────────────────────────────────────────────────
+const Relatorio = (() => {
+  const _tk = () => localStorage.getItem('ge_token') || '';
+  const _fmt = (v) => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const _meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+  function abrir() {
+    const agora = new Date();
+    const mesAtual = agora.toISOString().slice(0,7);
+    App.Modal.open('📋 Relatório Executivo', '<div style="display:grid;gap:16px;padding:8px 0">' +
+      '<div class="field"><label>Selecione o mês do relatório</label>' +
+        '<input id="rel-mes" type="month" value="' + mesAtual + '" style="padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:14px;width:200px" /></div>' +
+      '<p style="font-size:13px;color:var(--gray-500)">O relatório incluirá: atendimentos, gestão de clientes, insatisfações, pesquisas NPS/CSAT/CES, indicadores da carteira e CAC do mês selecionado.</p>' +
+      '<button class="btn btn-primary" onclick="Relatorio.gerar()" style="font-size:15px;padding:12px">📋 Gerar Relatório PDF</button>' +
+    '</div>');
+  }
+
+  async function gerar() {
+    const mes = document.getElementById('rel-mes')?.value;
+    if (!mes) { App.Toast.err('Selecione o mês.'); return; }
+    App.Toast.show('Gerando relatório...', 'default');
+    const res = await fetch('/api/data/relatorio-executivo?mes=' + mes, {
+      headers: { Authorization: 'Bearer ' + _tk() }
+    });
+    if (!res || !res.ok) { App.Toast.err('Erro ao gerar relatório.'); return; }
+    const d = await res.json();
+    App.Modal.close();
+    _gerarPDF(d);
+  }
+
+  function _table(title, rows, col1, col2) {
+    if (!rows || !rows.length) return '<p style="color:#999;font-size:11px;margin:4px 0 12px">Sem dados no período</p>';
+    const trs = rows.map(function(r) {
+      const v1 = r[col1] || r.label || r.gravidade || r.area || r.solicitacao || r.departamento || r.procurado || r.empresa || '—';
+      const v2 = r[col2] || r.n || 0;
+      return '<tr><td>' + v1 + '</td><td style="text-align:right;font-weight:600">' + v2 + '</td></tr>';
+    }).join('');
+    return '<table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:12px">' +
+      '<thead><tr><th style="background:#1a4233;color:#fff;padding:5px 8px;text-align:left">' + col1.charAt(0).toUpperCase() + col1.slice(1) + '</th>' +
+      '<th style="background:#1a4233;color:#fff;padding:5px 8px;text-align:right">Qtd</th></tr></thead>' +
+      '<tbody>' + trs + '</tbody></table>';
+  }
+
+  function _gerarPDF(d) {
+    const mrr = parseFloat(d.carteira?.mrr || 0);
+    const cac = d.cac || 0;
+    const novos = d.novosClientes || 0;
+    const cacMedio = novos > 0 ? cac / novos : 0;
+
+    const html = '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">' +
+    '<title>Relatório Executivo ' + d.mesLabel + '</title>' +
+    '<style>' +
+      '* { box-sizing:border-box; margin:0; padding:0; }' +
+      'body { font-family:Arial,sans-serif; font-size:11px; color:#222; padding:24px; }' +
+      '.header { background:#1a4233; color:#fff; padding:20px 24px; border-radius:10px; margin-bottom:20px; }' +
+      '.header h1 { font-size:20px; font-weight:800; margin-bottom:4px; }' +
+      '.header p { font-size:12px; color:rgba(255,255,255,.7); }' +
+      '.section { margin-bottom:20px; border-left:3px solid #1a4233; padding-left:12px; page-break-inside:avoid; }' +
+      '.section h2 { font-size:13px; font-weight:700; color:#1a4233; text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }' +
+      '.cards { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; }' +
+      '.card { background:#f8f8f8; border-radius:8px; padding:12px 14px; border-top:3px solid #1a4233; }' +
+      '.card-label { font-size:10px; color:#666; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }' +
+      '.card-value { font-size:18px; font-weight:800; color:#1a4233; }' +
+      '.card-green { border-top-color:#38a169; }' +
+      '.card-green .card-value { color:#38a169; }' +
+      '.card-yellow { border-top-color:#d69e2e; }' +
+      '.card-yellow .card-value { color:#d69e2e; }' +
+      '.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }' +
+      'table { width:100%; border-collapse:collapse; font-size:10px; margin-bottom:8px; }' +
+      'th { background:#1a4233; color:#fff; padding:5px 8px; text-align:left; }' +
+      'td { padding:4px 8px; border-bottom:1px solid #eee; }' +
+      'tr:nth-child(even) td { background:#f8f8f8; }' +
+      '.nps-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }' +
+      '.nps-card { background:#1a4233; color:#fff; border-radius:8px; padding:14px; text-align:center; }' +
+      '.nps-label { font-size:10px; color:rgba(255,255,255,.6); text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }' +
+      '.nps-value { font-size:26px; font-weight:800; }' +
+      '.nps-sub { font-size:10px; color:rgba(255,255,255,.5); margin-top:2px; }' +
+      '@media print { body { padding:10px; } .no-print { display:none; } }' +
+    '</style></head><body>' +
+
+    '<div class="header">' +
+      '<h1>Relatório Executivo — ' + d.mesLabel + '</h1>' +
+      '<p>Grupo-E Soluções Empresariais &nbsp;|&nbsp; Gerado em: ' + new Date().toLocaleString('pt-BR') + '</p>' +
+    '</div>' +
+
+    // RESUMO OPERACIONAL
+    '<div class="section"><h2>Resumo Operacional</h2>' +
+    '<div class="cards">' +
+      '<div class="card"><div class="card-label">Atendimentos</div><div class="card-value">' + d.totais.atendimentos + '</div></div>' +
+      '<div class="card"><div class="card-label">Gestões</div><div class="card-value">' + d.totais.gestoes + '</div></div>' +
+      '<div class="card card-yellow"><div class="card-label">Insatisfações</div><div class="card-value">' + d.totais.insatisfacoes + '</div></div>' +
+      '<div class="card"><div class="card-label">Recuperações</div><div class="card-value">' + d.totais.recuperacoes + '</div></div>' +
+    '</div></div>' +
+
+    // CARTEIRA
+    '<div class="section"><h2>Inteligência da Carteira</h2>' +
+    '<div class="cards">' +
+      '<div class="card card-green"><div class="card-label">MRR</div><div class="card-value">' + _fmt(mrr) + '</div></div>' +
+      '<div class="card card-green"><div class="card-label">ARR</div><div class="card-value">' + _fmt(mrr*12) + '</div></div>' +
+      '<div class="card"><div class="card-label">Clientes ativos</div><div class="card-value">' + (d.carteira?.ativos||0) + '</div></div>' +
+      '<div class="card"><div class="card-label">Novos clientes</div><div class="card-value">' + novos + '</div></div>' +
+    '</div>' +
+    '<div class="cards">' +
+      '<div class="card"><div class="card-label">Investimento CAC</div><div class="card-value">' + _fmt(cac) + '</div></div>' +
+      '<div class="card"><div class="card-label">CAC médio</div><div class="card-value">' + (cacMedio > 0 ? _fmt(cacMedio) : '—') + '</div></div>' +
+      '<div class="card card-green"><div class="card-label">LTV/CAC</div><div class="card-value">' + (cacMedio > 0 && mrr > 0 ? (mrr*48/cacMedio).toFixed(1)+'x' : '—') + '</div></div>' +
+    '</div></div>' +
+
+    // ATENDIMENTO
+    '<div class="section"><h2>Atendimento</h2><div class="grid2">' +
+      '<div><h3 style="font-size:11px;color:#555;margin-bottom:6px">Por departamento</h3>' + _table('', d.atDepto, 'departamento', 'n') + '</div>' +
+      '<div><h3 style="font-size:11px;color:#555;margin-bottom:6px">Por analista procurado</h3>' + _table('', d.atAnalista, 'procurado', 'n') + '</div>' +
+    '</div></div>' +
+
+    // INSATISFAÇÃO
+    '<div class="section"><h2>Insatisfação</h2><div class="grid2">' +
+      '<div><h3 style="font-size:11px;color:#555;margin-bottom:6px">Por gravidade</h3>' + _table('', d.insGrav, 'gravidade', 'n') + '</div>' +
+      '<div><h3 style="font-size:11px;color:#555;margin-bottom:6px">Por área</h3>' + _table('', d.insArea, 'area', 'n') + '</div>' +
+    '</div>' +
+    '<h3 style="font-size:11px;color:#555;margin:8px 0 6px">Top empresas com insatisfações</h3>' +
+    _table('', d.insEmpresas, 'empresa', 'n') + '</div>' +
+
+    // GESTÃO
+    '<div class="section"><h2>Gestão de Clientes</h2>' +
+    '<h3 style="font-size:11px;color:#555;margin-bottom:6px">Por tipo de solicitação</h3>' +
+    _table('', d.gcTipo, 'solicitacao', 'n') + '</div>' +
+
+    // PESQUISAS
+    '<div class="section"><h2>Pesquisas de Satisfação</h2>' +
+    '<div class="nps-cards">' +
+      '<div class="nps-card"><div class="nps-label">NPS Médio</div><div class="nps-value" style="color:#f5c518">' + (d.pesquisas?.nps || '—') + '</div><div class="nps-sub">Net Promoter Score (0–10) | ' + (d.pesquisas?.total||0) + ' respostas</div></div>' +
+      '<div class="nps-card"><div class="nps-label">CSAT Médio</div><div class="nps-value" style="color:#68d391">' + (d.pesquisas?.csat || '—') + '</div><div class="nps-sub">Satisfação do cliente (0–5)</div></div>' +
+      '<div class="nps-card"><div class="nps-label">CES Médio</div><div class="nps-value" style="color:#76e4f7">' + (d.pesquisas?.ces || '—') + '</div><div class="nps-sub">Esforço do cliente (0–5)</div></div>' +
+    '</div></div>' +
+
+    '<script>window.onload=function(){window.print();}<\/script>' +
+    '</body></html>';
+
+    const win = window.open('', '_blank');
+    if (!win) { App.Toast.err('Permita popups para gerar o PDF.'); return; }
+    win.document.write(html);
+    win.document.close();
+    App.Toast.ok('Relatório gerado! Use Ctrl+P para salvar em PDF.');
+  }
+
+  return { abrir, gerar };
+})();
+
+window.Relatorio = Relatorio;
+
 document.addEventListener('DOMContentLoaded', () => {
   // Auth
   document.getElementById('btn-login').addEventListener('click', () => App.Auth.login());
