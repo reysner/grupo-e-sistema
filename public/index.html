@@ -836,7 +836,13 @@
             </div>
           </div>
           <div class="form-card">
-            <h2 class="form-title">Administração de Usuários</h2><div class="form-accent"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+              <h2 class="form-title" style="margin:0">Administração de Usuários</h2>
+              <button class="btn btn-ghost btn-sm" onclick="App.Admin.fazerBackup()" title="Gerar backup completo dos dados">
+                💾 Backup dos dados
+              </button>
+            </div>
+            <div class="form-accent"></div>
             <div class="table-wrap">
               <table class="data-table">
                 <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Ações</th></tr></thead>
