@@ -1034,15 +1034,17 @@ const Perfil = (() => {
     const senhaAtual = document.getElementById('perfil-senha-atual')?.value;
     const senhaNova = document.getElementById('perfil-senha-nova')?.value;
     const senhaConf = document.getElementById('perfil-senha-conf')?.value;
-    if (!nome) { App.Toast.err('Nome e obrigatorio.'); return; }
+    if (!nome) { App.Toast.err('Nome é obrigatório.'); return; }
+    // Senha atual obrigatória para qualquer alteração
+    if (!senhaAtual) { App.Toast.err('Digite sua senha atual para confirmar as alterações.'); return; }
+    // Validar nova senha apenas se preenchida
     if (senhaNova || senhaConf) {
-      if (!senhaAtual) { App.Toast.err('Digite sua senha atual para alterar.'); return; }
       if (senhaNova.length < 6) { App.Toast.err('Nova senha deve ter ao menos 6 caracteres.'); return; }
-      if (senhaNova !== senhaConf) { App.Toast.err('As senhas nao coincidem.'); return; }
+      if (senhaNova !== senhaConf) { App.Toast.err('As senhas não coincidem.'); return; }
     }
-    const body = { nome };
-    if (senhaNova) { body.senhaAtual = senhaAtual; body.senhaNova = senhaNova; }
-    const res = await fetch('/api/auth/perfil', {
+    const body = { nome, senhaAtual };
+    if (senhaNova) body.senhaNova = senhaNova;
+    const res = await fetch('/api/data/perfil', {
       method: 'PATCH',
       headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + _token() },
       body: JSON.stringify(body)
