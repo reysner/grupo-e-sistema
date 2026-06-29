@@ -236,6 +236,7 @@ const App = (() => {
       document.getElementById('app').hidden          = false;
       Nav.go('dashboard');
       Notificacoes.iniciar();
+      BuscaGlobal.iniciar();
     },
 
     async tryAutoLogin() {
@@ -1321,6 +1322,95 @@ const Relatorio = (() => {
 })();
 
 window.Relatorio = Relatorio;
+
+// ── Módulo Busca Global ───────────────────────────────────────────────────────
+const BuscaGlobal = (() => {
+  const _tk = () => localStorage.getItem('ge_token') || '';
+  let _timer = null;
+
+  const _modulos = {
+    atendimento:  { label: 'Atendimento',       icon: '📞', cor: '#3d9070' },
+    gestao:       { label: 'Gestão de Clientes', icon: '👥', cor: '#2b6cb0' },
+    insatisfacao: { label: 'Insatisfação',       icon: '⚠️',  cor: '#c05621' },
+    sensiveis:    { label: 'Clientes Sensíveis', icon: '💛', cor: '#b7791f' },
+    recuperacao:  { label: 'Recuperação',        icon: '🔄', cor: '#276749' },
+    carteira:     { label: 'Carteira',           icon: '💼', cor: '#553c9a' },
+  };
+
+  function buscar(q) {
+    clearTimeout(_timer);
+    const panel = document.getElementById('busca-global-panel');
+    if (!panel) return;
+    if (!q || q.trim().length < 2) {
+      panel.hidden = true;
+      return;
+    }
+    _timer = setTimeout(async function() {
+      panel.hidden = false;
+      panel.innerHTML = '<div style="padding:16px;text-align:center;color:var(--gray-400);font-size:13px">Buscando...</div>';
+      const res = await fetch('/api/data/busca-global?q=' + encodeURIComponent(q.trim()), {
+        headers: { Authorization: 'Bearer ' + _tk() }
+      });
+      if (!res || !res.ok) {
+        panel.innerHTML = '<div style="padding:16px;text-align:center;color:#e53e3e;font-size:13px">Erro na busca.</div>';
+        return;
+      }
+      const { data, total } = await res.json();
+      if (!total) {
+        panel.innerHTML = '<div style="padding:16px;text-align:center;color:var(--gray-400);font-size:13px">Nenhum resultado encontrado.</div>';
+        return;
+      }
+      panel.innerHTML = '<div style="padding:8px 14px;font-size:11px;color:var(--gray-400);border-bottom:1px solid var(--gray-100);font-weight:600">' +
+        total + ' resultado' + (total!==1?'s':'') + ' encontrado' + (total!==1?'s':'') +
+      '</div>' +
+      data.map(function(r) {
+        const mod = _modulos[r.modulo] || { label: r.modulo, icon: '•', cor: '#666' };
+        const dt = new Date(r.created_at).toLocaleDateString('pt-BR');
+        return '<div style="padding:10px 14px;border-bottom:1px solid var(--gray-100);cursor:pointer;display:flex;gap:10px;align-items:center" ' +
+          'data-modulo="' + r.modulo + '" onclick="BuscaGlobal.irPara(this.dataset.modulo)">' +
+          '<span style="font-size:18px">' + mod.icon + '</span>' +
+          '<div style="min-width:0;flex:1">' +
+            '<div style="font-size:13px;font-weight:600;color:var(--g800)">' + (r.empresa||r.nome_empresa||'—') + '</div>' +
+            (r.cliente ? '<div style="font-size:12px;color:var(--gray-500)">' + r.cliente + '</div>' : '') +
+            '<div style="display:flex;gap:8px;margin-top:2px">' +
+              '<span style="background:' + mod.cor + '20;color:' + mod.cor + ';padding:1px 8px;border-radius:10px;font-size:10px;font-weight:700">' + mod.label + '</span>' +
+              '<span style="font-size:11px;color:var(--gray-400)">' + dt + '</span>' +
+              (r.cnpj ? '<span style="font-size:11px;color:var(--gray-400)">' + r.cnpj + '</span>' : '') +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }, 350);
+  }
+
+  function irPara(modulo) {
+    const input = document.getElementById('busca-global-input');
+    const panel = document.getElementById('busca-global-panel');
+    if (input) { input.value = ''; input.style.background = 'rgba(255,255,255,.1)'; input.style.color = '#fff'; }
+    if (panel) panel.hidden = true;
+    App.Nav.go(modulo);
+  }
+
+  function iniciar() {
+    // Fechar ao clicar fora
+    document.addEventListener('click', function(e) {
+      const wrap = document.getElementById('busca-global-wrap');
+      const panel = document.getElementById('busca-global-panel');
+      if (panel && wrap && !wrap.contains(e.target)) panel.hidden = true;
+    });
+    // Fechar com ESC
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        const panel = document.getElementById('busca-global-panel');
+        if (panel) panel.hidden = true;
+      }
+    });
+  }
+
+  return { buscar, irPara, iniciar };
+})();
+
+window.BuscaGlobal = BuscaGlobal;
 
 document.addEventListener('DOMContentLoaded', () => {
   // Auth
