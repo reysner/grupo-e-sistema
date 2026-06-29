@@ -235,6 +235,7 @@ const App = (() => {
       document.getElementById('auth-screen').hidden = true;
       document.getElementById('app').hidden          = false;
       Nav.go('dashboard');
+      Notificacoes.iniciar();
     },
 
     async tryAutoLogin() {
@@ -693,11 +694,12 @@ const App = (() => {
       if (Util.val('in-tipo') === 'Outro' && !Util.val('in-tipo-outro')) {
         App.Toast.err('Descreva o tipo de insatisfação.'); return;
       }
+      const gravInsatisf = Util.val('in-gravidade');
       await Forms._submit('insatisfacoes', {
         analista: Util.val('in-analista'), cliente: Util.val('in-cliente'),
         cnpj: Util.val('in-cnpj'), empresa: Util.val('in-empresa'),
         reclamado: Util.val('in-reclamado'), reclamacao: Util.val('in-reclamacao'),
-        gravidade: Util.val('in-gravidade'),
+        gravidade: gravInsatisf,
         area: Util.val('in-area'),
         tipo: inTipo,
       }, ['in-analista','in-cliente','in-cnpj','in-empresa','in-reclamado','in-reclamacao','in-tipo-outro'], 'Insatisfação registrada!');
@@ -706,6 +708,16 @@ const App = (() => {
       document.getElementById('in-tipo').innerHTML='<option value="">Selecione a área primeiro</option>';
       const ow = document.getElementById('in-tipo-outro-wrap');
       if(ow){ow.hidden=true;ow.style.display='none';}
+      // Notificar se gravidade alta
+      if (gravInsatisf === 'Muito Alta' || gravInsatisf === 'Alta') {
+        const empresa = Util.val('in-empresa') || 'cliente';
+        Notificacoes.criar(
+          'insatisfacao_alta',
+          'Insatisfação ' + gravInsatisf + ' registrada',
+          empresa + ' — ' + (inTipo || Util.val('in-area') || 'Verifique o módulo de Insatisfação'),
+          'insatisfacao'
+        );
+      }
       Insatisfacao.loadGrid();
     },
 
@@ -1058,6 +1070,107 @@ function handleResize() {
 }
 
 window.addEventListener('resize', handleResize);
+
+// ── Módulo Notificações ───────────────────────────────────────────────────────
+const Notificacoes = (() => {
+  const _tk = () => localStorage.getItem('ge_token') || '';
+  let _open = false;
+  let _interval = null;
+
+  async function checar() {
+    const res = await fetch('/api/data/notificacoes', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) return;
+    const { data, naoLidas } = await res.json();
+    const badge = document.getElementById('notif-badge');
+    if (badge) {
+      badge.hidden = naoLidas === 0;
+      badge.textContent = naoLidas > 9 ? '9+' : naoLidas;
+    }
+    const list = document.getElementById('notif-list');
+    if (!list) return;
+    if (!data.length) {
+      list.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:13px;padding:20px">Sem notificações</p>';
+      return;
+    }
+    const icons = { insatisfacao_alta: '🚨', reajuste: '⚠️', novo_cliente: '🎉', pesquisa: '📊', default: '🔔' };
+    list.innerHTML = data.map(function(n) {
+      const icon = icons[n.tipo] || icons.default;
+      const bg = n.lida ? '' : 'background:#f0fff4;';
+      const dt = new Date(n.created_at).toLocaleString('pt-BR');
+      const dataAttrs = 'data-modulo="' + (n.link_modulo||'') + '" data-id="' + n.id + '" onclick="Notificacoes.clicar(this)"';
+      return '<div style="' + bg + 'padding:12px 16px;border-bottom:1px solid var(--gray-100);cursor:pointer" ' + dataAttrs + '>' +
+        '<div style="display:flex;gap:10px;align-items:flex-start">' +
+          '<span style="font-size:18px;flex-shrink:0">' + icon + '</span>' +
+          '<div style="min-width:0">' +
+            '<div style="font-size:13px;font-weight:' + (n.lida ? '400' : '600') + ';color:var(--g800)">' + n.titulo + '</div>' +
+            '<div style="font-size:12px;color:var(--gray-500);margin-top:2px">' + n.mensagem + '</div>' +
+            '<div style="font-size:11px;color:var(--gray-400);margin-top:4px">' + dt + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function toggle() {
+    const panel = document.getElementById('notif-panel');
+    if (!panel) return;
+    _open = !_open;
+    panel.hidden = !_open;
+    if (_open) checar();
+  }
+
+  async function marcarLida(id) {
+    await fetch('/api/data/notificacoes/' + id + '/lida', { method: 'PATCH', headers: { Authorization: 'Bearer ' + _tk() } });
+    await checar();
+  }
+
+  async function marcarTodasLidas() {
+    await fetch('/api/data/notificacoes/todas/lidas', { method: 'PATCH', headers: { Authorization: 'Bearer ' + _tk() } });
+    await checar();
+  }
+
+  async function irPara(modulo, id) {
+    await marcarLida(id);
+    const panel = document.getElementById('notif-panel');
+    if (panel) panel.hidden = true;
+    _open = false;
+    App.Nav.go(modulo);
+  }
+
+  async function criar(tipo, titulo, mensagem, link_modulo) {
+    await fetch('/api/data/notificacoes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ tipo, titulo, mensagem, link_modulo: link_modulo || null })
+    }).catch(function(){});
+    await checar();
+  }
+
+  function iniciar() {
+    checar();
+    // Verifica a cada 2 minutos
+    _interval = setInterval(checar, 2 * 60 * 1000);
+    // Fechar ao clicar fora
+    document.addEventListener('click', function(e) {
+      const panel = document.getElementById('notif-panel');
+      const btn = document.getElementById('notif-btn');
+      if (_open && panel && !panel.contains(e.target) && !btn.contains(e.target)) {
+        panel.hidden = true;
+        _open = false;
+      }
+    });
+  }
+
+  function clicar(el) {
+    const modulo = el.dataset.modulo;
+    const id = el.dataset.id;
+    if (modulo) irPara(modulo, id);
+    else marcarLida(id);
+  }
+  return { checar, toggle, marcarLida, marcarTodasLidas, irPara, clicar, criar, iniciar };
+})();
+
+window.Notificacoes = Notificacoes;
 
 document.addEventListener('DOMContentLoaded', () => {
   // Auth
