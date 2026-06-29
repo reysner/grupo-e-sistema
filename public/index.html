@@ -88,6 +88,9 @@
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/><path d="M8 12h4"/></svg>CAC / Investimentos
         </a>
         <div class="nav-sep"></div>
+        <a class="nav-item admin-only" data-page="log" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Log de Atividades
+        </a>
         <a class="nav-item admin-only" data-page="admin" href="#">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M20 12h2M2 12h2M12 20v2M12 2v2"/></svg>Administração
         </a>
@@ -773,6 +776,45 @@
                 <tbody id="cac-tbody"><tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
               </table>
               <div id="cac-pagination"></div>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- LOG DE ATIVIDADES -->
+        <section id="page-log" class="page admin-only" hidden>
+
+          <!-- TOOLBAR -->
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px;flex-wrap:wrap">
+            <select id="log-modulo-filter" onchange="Log.carregar()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os módulos</option>
+              <option value="atendimento">Atendimento</option>
+              <option value="gestao">Gestão de Clientes</option>
+              <option value="insatisfacao">Insatisfação</option>
+              <option value="carteira">Carteira</option>
+              <option value="admin">Administração</option>
+            </select>
+            <select id="log-user-filter" onchange="Log.carregar()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os usuários</option>
+            </select>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm" onclick="Log.exportCSV()">⬇ Exportar CSV</button>
+              <button class="btn btn-sm admin-only" onclick="Log.limpar()" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7">🗑 Limpar Log</button>
+            </div>
+          </div>
+
+          <!-- TABELA -->
+          <div class="form-card">
+            <h2 class="form-title">Histórico de Atividades</h2>
+            <div class="form-accent"></div>
+            <div class="table-wrap" style="margin-top:14px">
+              <table class="data-table">
+                <thead><tr>
+                  <th>Data/Hora</th><th>Usuário</th><th>Ação</th><th>Módulo</th><th>Descrição</th>
+                </tr></thead>
+                <tbody id="log-tbody"><tr><td colspan="5" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
+              </table>
+              <div id="log-pagination"></div>
             </div>
           </div>
 
