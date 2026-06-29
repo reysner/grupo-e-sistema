@@ -105,6 +105,14 @@
       <header class="topbar">
         <button class="btn-menu" id="btn-menu" onclick="toggleSidebar()" style="display:none" aria-label="Menu"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
         <h2 class="topbar-title" id="page-title">Dashboard</h2>
+        <div style="position:relative;flex:1;max-width:320px;margin:0 16px" id="busca-global-wrap">
+          <input id="busca-global-input" type="text" placeholder="🔍 Buscar empresa, cliente ou CNPJ..."
+            oninput="BuscaGlobal.buscar(this.value)"
+            style="width:100%;padding:7px 14px;border:1px solid var(--gray-200);border-radius:20px;font-size:13px;background:rgba(255,255,255,.1);color:#fff;outline:none"
+            onfocus="this.style.background='#fff';this.style.color='var(--g800)'"
+            onblur="if(!this.value){this.style.background='rgba(255,255,255,.1)';this.style.color='#fff'}" />
+          <div id="busca-global-panel" hidden style="position:absolute;top:38px;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.15);z-index:600;max-height:400px;overflow-y:auto"></div>
+        </div>
         <div style="position:relative">
           <button id="notif-btn" onclick="Notificacoes.toggle()" style="position:relative;background:none;border:none;cursor:pointer;padding:6px;color:var(--g800);display:flex;align-items:center;margin-right:8px" title="Notificações">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
