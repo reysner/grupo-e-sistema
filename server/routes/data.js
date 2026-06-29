@@ -28,7 +28,7 @@ router.get('/atendimentos', async (req, res) => {
 router.post('/atendimentos', async (req, res) => {
   try {
     const { analista, cliente, cnpj, empresa, departamento, procurado, demanda, resumo } = req.body;
-    if (!analista || !cliente || !cnpj || !empresa || !departamento || !procurado || !demanda)
+    if (!analista || !cliente || !cnpj || !empresa || !departamento || !procurado)
       return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
     const id = uuidv4();
     await pool.query(
@@ -201,7 +201,7 @@ router.get('/dashboard', async (req, res) => {
       safe(() => groupBy('atendimentos', 'empresa', 10, af)),
       safe(() => groupBy('atendimentos', 'departamento', 8, af)),
       safe(() => groupBy('atendimentos', 'procurado', 8, af)),
-      safe(() => groupBy('atendimentos', 'demanda', 8, af)),
+      safe(() => groupBy('atendimentos', 'demanda', 8, af + " AND demanda IS NOT NULL AND demanda != ''")),
       safe(() => groupBy('gestao_clientes', 'solicitacao', 8)),
       safe(() => groupBy('gestao_clientes', 'canal', 8)),
       safe(() => groupBy('insatisfacoes', 'gravidade', 5)),
