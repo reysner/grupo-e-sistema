@@ -974,6 +974,12 @@ const App = (() => {
   return { Auth, Nav, Dashboard, Forms, Admin, Modal, Util, Toast };
 })();
 
+// Expor módulos internos do App para window
+window.Dashboard = App.Dashboard;
+window.Admin     = App.Admin;
+window.Forms     = App.Forms;
+window.Nav       = App.Nav;
+
 // ── Wire all events after DOM ready (no inline onclick) ───────────────────────
 // ── Gestão de Clientes — toggles de "Outro" ──────────────────────────────────
 function gcToggleOutros() {
