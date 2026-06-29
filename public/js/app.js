@@ -1869,7 +1869,10 @@ const Pesquisas = (() => {
     const { data } = await res.json();
     _allData = data || [];
     _populateYearFilter(_allData);
-    _renderGrid(_filterData(_allData));
+    const _filt = _filterData(_allData);
+    const _paged = App.Util.paginate(_filt, _page);
+    _renderGrid(_paged.items);
+    App.Util.renderPagination('ps-pagination', _paged.page, _paged.pages, _paged.total, 'Pesquisas.goPage');
   }
 
   async function exportCSV() {
@@ -2002,6 +2005,7 @@ window.Pesquisas = Pesquisas;
 // ── Módulo Carteira ──────────────────────────────────────────────────────────
 const Carteira = (() => {
   let _clientes = [];
+  let _page = 1;
   function _token() { return localStorage.getItem('ge_token') || ''; }
   function _fmt(v) { return 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
   function _tempo(dataEntrada, dataSaida) {
@@ -2054,8 +2058,7 @@ const Carteira = (() => {
         ? '<span style="background:#f0fff4;color:#38a169;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Ativo</span>'
         : '<span style="background:#fff5f5;color:#e53e3e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Encerrado</span>';
       // Health Score (0-100)
-      const mesesRel = (() => { const s=new Date(c.data_entrada),e=c.data_saida?new Date(c.data_saida):new Date(); return (e.getFullYear()-s.getFullYear())*12+(e.getMonth()-s.getMonth()); })();
-      const scoreRetencao = Math.min(40, Math.round(mesesRel/3));
+            const scoreRetencao = Math.min(40, Math.round(mesesRel/3));
       const scoreReceita  = rec > 0 ? Math.min(30, Math.round(rec/1000)) : 0;
       const scoreSem      = c.status==='ativo' ? 20 : 0;
       const scoreReajuste = c.meses_sem_reajuste && c.meses_sem_reajuste > 12 ? 0 : 10;
@@ -2136,7 +2139,13 @@ const Carteira = (() => {
     filtrar();
   }
 
-  function filtrar() { _renderGrid(_dadosFiltrados()); }
+  function filtrar() {
+    _page = 1;
+    const f = _dadosFiltrados();
+    const pg = App.Util.paginate(f, _page, 20);
+    _renderGrid(pg.items);
+    App.Util.renderPagination('cart-pagination', pg.page, pg.pages, pg.total, 'Carteira.goPage');
+  }
 
   function exportCSV() {
     const data = _dadosFiltrados();
@@ -2299,7 +2308,8 @@ const Carteira = (() => {
     `);
   }
 
-  return { load, loadDashboard, loadGrid, filtrar, atualizarHonorario, salvarHonorario, verFicha, exportCSV, exportPDF, limpar, excluir };
+  function goPage(p) { _page = p; const f = _dadosFiltrados(); const pg = App.Util.paginate(f, p, 20); _renderGrid(pg.items); App.Util.renderPagination('cart-pagination', pg.page, pg.pages, pg.total, 'Carteira.goPage'); }
+  return { load, loadDashboard, loadGrid, filtrar, goPage, atualizarHonorario, salvarHonorario, verFicha, exportCSV, exportPDF, limpar, excluir };
 })();
 
 window.Carteira = Carteira;
@@ -3391,7 +3401,13 @@ const CAC = (() => {
     App.Toast.ok('PDF gerado!');
   }
 
-  return { load, loadDashboard, loadGrid, goPage, abrirLancamento, salvar, excluir, exportCSV, exportPDF };
+  async function limpar() {
+    if (!confirm('Limpar todos os investimentos? Esta ação não pode ser desfeita.')) return;
+    const res = await fetch('/api/data/investimentos/clear', { method: 'DELETE', headers: { Authorization: 'Bearer ' + _token() } });
+    if (res && res.ok) { _data = []; _renderGrid(); await loadDashboard(); App.Toast.ok('Investimentos removidos.'); }
+    else App.Toast.err('Erro ao limpar.');
+  }
+  return { load, loadDashboard, loadGrid, goPage, abrirLancamento, salvar, excluir, limpar, exportCSV, exportPDF };
 })();
 
 window.CAC = CAC;
