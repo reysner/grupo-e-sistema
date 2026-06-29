@@ -798,6 +798,25 @@ const App = (() => {
       }).join('');
     },
 
+    async fazerBackup() {
+      App.Toast.show('Gerando backup... aguarde.', 'default');
+      const tk = localStorage.getItem('ge_token') || '';
+      const res = await fetch('/api/data/backup', { headers: { Authorization: 'Bearer ' + tk } });
+      if (!res || !res.ok) { App.Toast.err('Erro ao gerar backup.'); return; }
+      const data = await res.json();
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url  = URL.createObjectURL(blob);
+      const ts   = new Date().toISOString().slice(0,10);
+      const a    = document.createElement('a');
+      a.href = url; a.download = 'backup-grupo-e-' + ts + '.json';
+      a.click(); URL.revokeObjectURL(url);
+      // Show summary
+      const meta = data.meta?.totais || {};
+      App.Toast.ok('Backup gerado! Registros: ' +
+        Object.entries(meta).map(function(e) { return e[0] + ': ' + e[1]; }).join(' | '));
+    },
+
     exportCSV() {
       const users = Admin._users;
       if (!users.length) { App.Toast.err('Nenhum usuário para exportar.'); return; }
