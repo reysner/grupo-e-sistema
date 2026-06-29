@@ -879,6 +879,28 @@ const App = (() => {
       Modal.close(); Toast.ok('Usuário criado!'); Admin.load();
     },
 
+    openEditProfile(id, name, email) {
+      App.Modal.open('Editar usuário', '<div style="display:grid;gap:12px">' +
+        '<div class="field"><label>Nome</label><input id="eu-name" type="text" value="' + (name||'') + '" /></div>' +
+        '<div class="field"><label>E-mail</label><input id="eu-email" type="email" value="' + (email||'') + '" /></div>' +
+        '<div class="field"><label>Função</label><select id="eu-role">' +
+          '<option value="usuario">Usuário</option>' +
+          '<option value="administrador">Administrador</option>' +
+        '</select></div>' +
+        '<button class="btn btn-primary" data-id="' + id + '" onclick="App.Admin.saveEdit(this.dataset.id)">Salvar</button>' +
+      '</div>');
+    },
+
+    async saveEdit(id) {
+      const name  = document.getElementById('eu-name')?.value?.trim();
+      const email = document.getElementById('eu-email')?.value?.trim();
+      const role  = document.getElementById('eu-role')?.value;
+      if (!name) { App.Toast.err('Nome obrigatório.'); return; }
+      const res = await API.patch('/api/users/' + id + '/profile', { name, email, role });
+      if (res && res.ok) { App.Modal.close(); App.Toast.ok('Usuário atualizado!'); Admin.load(); }
+      else App.Toast.err('Erro ao atualizar.');
+    },
+
     openEditPass(userId) {
       _editingUserId = userId;
       Modal.open('Editar senha', `<div class="field"><label>Nova senha</label><input id="m-newpass" type="password" placeholder="Mín. 6 caracteres" /></div>`, Admin._confirmEditPass);
