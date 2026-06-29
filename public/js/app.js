@@ -300,7 +300,7 @@ const App = (() => {
 
   // ── Navigation ───────────────────────────────────────────────────────────
   const PAGE_TITLES = {
-    dashboard:'Dashboard', atendimento:'Atendimento', gestao:'Gestão de Clientes', carteira:'Inteligência da Carteira', perfil:'Meu Perfil', cac:'CAC / Investimentos em Aquisição',
+    dashboard:'Dashboard', atendimento:'Atendimento', gestao:'Gestão de Clientes', carteira:'Inteligência da Carteira', perfil:'Meu Perfil', cac:'CAC / Investimentos em Aquisição', log:'Log de Atividades',
     insatisfacao:'Insatisfação', sensiveis:'Clientes Sensíveis',
     pesquisas:'Pesquisas de Satisfação', recuperacao:'Recuperação de Clientes',
     admin:'Administração de Usuários',
@@ -321,6 +321,7 @@ const App = (() => {
       if (page === 'carteira')     Carteira.load();
       if (page === 'perfil')       Perfil.load();
       if (page === 'cac')          CAC.load();
+      if (page === 'log')          Log.carregar();
       if (page === 'atendimento')  Atendimento.loadGrid();
       if (page === 'gestao')       Gestao.loadGrid();
       if (page === 'insatisfacao') Insatisfacao.loadGrid();
@@ -1411,6 +1412,107 @@ const BuscaGlobal = (() => {
 })();
 
 window.BuscaGlobal = BuscaGlobal;
+
+// ── Módulo Log de Atividades ─────────────────────────────────────────────────
+const Log = (() => {
+  let _data = [];
+  let _page = 1;
+  const _tk = () => localStorage.getItem('ge_token') || '';
+
+  const _acaoBadge = {
+    criar:   { bg:'#f0fff4', cor:'#38a169', label:'Criar'   },
+    editar:  { bg:'#ebf8ff', cor:'#2b6cb0', label:'Editar'  },
+    excluir: { bg:'#fff5f5', cor:'#e53e3e', label:'Excluir' },
+    login:   { bg:'#faf5ff', cor:'#553c9a', label:'Login'   },
+    logout:  { bg:'#f7fafc', cor:'#718096', label:'Logout'  },
+  };
+
+  const _moduloIcon = {
+    atendimento: '📞', gestao: '👥', insatisfacao: '⚠️',
+    sensiveis: '💛', carteira: '💼', recuperacao: '🔄',
+    admin: '⚙️', log: '📋', cac: '💰',
+  };
+
+  async function carregar() {
+    const tbody = document.getElementById('log-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr>';
+
+    const modulo = document.getElementById('log-modulo-filter')?.value || 'todos';
+    const user   = document.getElementById('log-user-filter')?.value || 'todos';
+
+    const res = await fetch('/api/data/log-atividades?modulo=' + modulo + '&user=' + user + '&limit=500', {
+      headers: { Authorization: 'Bearer ' + _tk() }
+    });
+    if (!res || !res.ok) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#e53e3e;padding:32px">Erro ao carregar.</td></tr>';
+      return;
+    }
+    const { data, users } = await res.json();
+    _data = data || [];
+    _page = 1;
+
+    // Populate user filter
+    const userSel = document.getElementById('log-user-filter');
+    if (userSel && users) {
+      const cur = userSel.value;
+      userSel.innerHTML = '<option value="todos">Todos os usuários</option>' +
+        users.map(function(u) { return '<option value="' + u.user_id + '" ' + (u.user_id===cur?'selected':'') + '>' + u.user_name + '</option>'; }).join('');
+    }
+    _renderGrid();
+  }
+
+  function _renderGrid() {
+    const tbody = document.getElementById('log-tbody');
+    if (!tbody) return;
+    if (!_data.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--gray-400);padding:32px">Nenhuma atividade registrada.</td></tr>';
+      return;
+    }
+    const paged = App.Util.paginate(_data, _page, 50);
+    tbody.innerHTML = paged.items.map(function(r) {
+      const acao = _acaoBadge[r.acao] || { bg:'#f7fafc', cor:'#718096', label: r.acao };
+      const icon = _moduloIcon[r.modulo] || '•';
+      const dt = new Date(r.created_at).toLocaleString('pt-BR');
+      return '<tr>' +
+        '<td style="font-size:12px;color:var(--gray-500);white-space:nowrap">' + dt + '</td>' +
+        '<td style="font-weight:600">' + r.user_name + '</td>' +
+        '<td><span style="background:' + acao.bg + ';color:' + acao.cor + ';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">' + acao.label + '</span></td>' +
+        '<td>' + icon + ' ' + r.modulo + '</td>' +
+        '<td style="font-size:12px;color:var(--gray-500)">' + (r.descricao||'—') + '</td>' +
+      '</tr>';
+    }).join('');
+    App.Util.renderPagination('log-pagination', paged.page, paged.pages, paged.total, 'Log.goPage');
+  }
+
+  function goPage(p) { _page = p; _renderGrid(); }
+
+  function exportCSV() {
+    if (!_data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
+    const header = 'Data/Hora;Usuário;Ação;Módulo;Descrição';
+    const rows = _data.map(function(r) {
+      return '"' + new Date(r.created_at).toLocaleString('pt-BR') + '";"' + r.user_name + '";"' + r.acao + '";"' + r.modulo + '";"' + (r.descricao||'') + '"';
+    });
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'log_atividades_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click(); URL.revokeObjectURL(url);
+    App.Toast.ok('CSV exportado!');
+  }
+
+  async function limpar() {
+    if (!confirm('Limpar todo o histórico de atividades? Esta ação não pode ser desfeita.')) return;
+    const res = await fetch('/api/data/log-atividades', { method: 'DELETE', headers: { Authorization: 'Bearer ' + _tk() } });
+    if (res && res.ok) { _data = []; _renderGrid(); App.Toast.ok('Log limpo.'); }
+    else App.Toast.err('Erro ao limpar.');
+  }
+
+  return { carregar, goPage, exportCSV, limpar };
+})();
+
+window.Log = Log;
 
 document.addEventListener('DOMContentLoaded', () => {
   // Auth
