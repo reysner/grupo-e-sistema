@@ -530,6 +530,7 @@
                 </tr></thead>
                 <tbody id="ps-tbody"><tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
+              <div id="ps-pagination"></div>
             </div>
           </div>
         </section>
@@ -710,6 +711,7 @@
             <div style="display:flex;gap:8px">
               <button class="btn btn-ghost btn-sm" onclick="CAC.exportCSV()">⬇ Exportar CSV</button>
               <button class="btn btn-ghost btn-sm" onclick="CAC.exportPDF()">🖨 Exportar PDF</button>
+              <button class="btn btn-sm admin-only" onclick="CAC.limpar()" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7">🗑 Limpar Registros</button>
               <button class="btn btn-success btn-sm" onclick="CAC.abrirLancamento()" style="font-weight:600">+ Lançar investimento</button>
             </div>
           </div>
