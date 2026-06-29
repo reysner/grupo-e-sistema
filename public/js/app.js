@@ -1850,7 +1850,7 @@ const Pesquisas = (() => {
         ? '<span style="background:#f0fff4;color:#38a169;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">✔ Tratado</span>'
         : '<span style="background:#fff5f5;color:#e53e3e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Pendente</span>';
       const tratarBtn = App.Auth.isAdmin() && !r.tratado
-        ? ` <button class="btn btn-success btn-sm" onclick="PesquisasGrid.marcarTratado(\'${r.id}\')">Tratar</button>`
+        ? ` <button class="btn btn-success btn-sm" onclick="Pesquisas.marcarTratado(\'${r.id}\')">Tratar</button>`
         : '';
       return `<tr style="${npsClass(r.nps)}">
         <td style="font-size:12px;color:var(--gray-500)">${d}</td>
@@ -2010,7 +2010,28 @@ const Pesquisas = (() => {
     `, () => App.Modal.close());
   }
 
-  return { loadGrid, exportCSV, exportPDF, limpar, detail };
+  async function marcarTratado(id) {
+    const tk = localStorage.getItem('ge_token') || '';
+    const res = await fetch('/api/data/pesquisas/' + id + '/tratado', {
+      method: 'PATCH',
+      headers: { 'Authorization': 'Bearer ' + tk }
+    });
+    if (res && res.ok) { App.Toast.ok('Marcado como tratado!'); loadGrid(); }
+    else App.Toast.err('Erro ao marcar.');
+  }
+
+  async function excluirPesquisa(id) {
+    if (!confirm('Excluir esta resposta?')) return;
+    const tk = localStorage.getItem('ge_token') || '';
+    const res = await fetch('/api/data/pesquisas/' + id, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + tk }
+    });
+    if (res && res.ok) { App.Toast.ok('Excluído.'); loadGrid(); }
+    else App.Toast.err('Erro ao excluir.');
+  }
+
+  return { loadGrid, exportCSV, exportPDF, limpar, detail, marcarTratado, excluirPesquisa, goPage };
 })();
 
 // Expor globalmente
