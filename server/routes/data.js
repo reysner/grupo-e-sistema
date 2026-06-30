@@ -1061,52 +1061,88 @@ publicRouter.get('/gamificacao', async (req, res) => {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       colaborador_id UUID NOT NULL REFERENCES gam_colaboradores(id) ON DELETE CASCADE,
       mes VARCHAR(7) NOT NULL,
-      foco NUMERIC(3,2) NOT NULL, dedicacao NUMERIC(3,2) NOT NULL, atitude NUMERIC(3,2) NOT NULL,
-      lancado_por TEXT, created_at TIMESTAMPTZ DEFAULT NOW(),
+      media_individual NUMERIC(4,2) NOT NULL, avaliacoes INTEGER NOT NULL DEFAULT 0,
+      lancado_por TEXT, updated_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(colaborador_id, mes)
     )`).catch(()=>{});
+    await pool.query(`CREATE TABLE IF NOT EXISTS gam_config (
+      chave TEXT PRIMARY KEY, valor NUMERIC(6,2) NOT NULL
+    )`).catch(()=>{});
+    await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('peso_minimo', 10) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
 
     const { mes } = req.query;
     const mesAtual = mes || new Date().toISOString().slice(0,7);
 
-    // Ranking do mês — média de foco+dedicacao+atitude
-    const ranking = await pool.query(`
-      SELECT c.id, c.nome,
-        ROUND(((n.foco + n.dedicacao + n.atitude) / 3.0)::numeric, 2) AS media
+    const pesoR = await pool.query(`SELECT valor FROM gam_config WHERE chave = 'peso_minimo'`);
+    const pesoMinimo = pesoR.rows[0] ? parseFloat(pesoR.rows[0].valor) : 10;
+
+    // Dados brutos do mês
+    const dadosMes = await pool.query(`
+      SELECT c.id, c.nome, n.media_individual, n.avaliacoes
       FROM gam_notas n
       JOIN gam_colaboradores c ON c.id = n.colaborador_id
       WHERE n.mes = $1 AND c.ativo = true
-      ORDER BY media DESC, c.nome ASC
     `, [mesAtual]);
 
-    // Média geral do mês
-    const mediaGeral = ranking.rows.length
-      ? (ranking.rows.reduce((s,r) => s + parseFloat(r.media), 0) / ranking.rows.length).toFixed(2)
+    // Média geral simples do mês (para usar na fórmula bayesiana)
+    const mediaGeralSimples = dadosMes.rows.length
+      ? dadosMes.rows.reduce((s,r) => s + parseFloat(r.media_individual), 0) / dadosMes.rows.length
+      : 0;
+
+    // Calcula nota final ponderada + ordena com critério de desempate
+    const ranking = dadosMes.rows.map(r => {
+      const media = parseFloat(r.media_individual);
+      const aval  = parseInt(r.avaliacoes);
+      const final = ((media * aval) + (mediaGeralSimples * pesoMinimo)) / (aval + pesoMinimo);
+      return { id: r.id, nome: r.nome, media: final.toFixed(2), mediaIndividual: media, avaliacoes: aval };
+    }).sort((a,b) => {
+      // Desempate: 1º quantidade de avaliações, 2º média
+      if (b.avaliacoes !== a.avaliacoes) return b.avaliacoes - a.avaliacoes;
+      return parseFloat(b.media) - parseFloat(a.media);
+    });
+
+    const mediaGeral = ranking.length
+      ? (ranking.reduce((s,r) => s + parseFloat(r.media), 0) / ranking.length).toFixed(2)
       : null;
 
-    // Consolidado acumulado (desde o início da gamificação) por colaborador
-    const consolidado = await pool.query(`
-      SELECT c.id, c.nome,
-        ROUND(AVG((n.foco + n.dedicacao + n.atitude) / 3.0)::numeric, 2) AS media_geral,
-        COUNT(n.id) AS meses_avaliados
+    // Consolidado acumulado (desde o início) — soma de avaliações e média ponderada geral
+    const todasNotas = await pool.query(`
+      SELECT c.id, c.nome, n.media_individual, n.avaliacoes, n.mes
       FROM gam_notas n
       JOIN gam_colaboradores c ON c.id = n.colaborador_id
       WHERE c.ativo = true
-      GROUP BY c.id, c.nome
-      ORDER BY media_geral DESC, c.nome ASC
     `);
 
-    // Meses disponíveis
-    const meses = await pool.query(`SELECT DISTINCT mes FROM gam_notas ORDER BY mes DESC`);
+    const porColaborador = {};
+    todasNotas.rows.forEach(r => {
+      if (!porColaborador[r.id]) porColaborador[r.id] = { nome: r.nome, totalAval: 0, somaPonderada: 0, meses: 0 };
+      const aval = parseInt(r.avaliacoes);
+      porColaborador[r.id].totalAval += aval;
+      porColaborador[r.id].somaPonderada += parseFloat(r.media_individual) * aval;
+      porColaborador[r.id].meses += 1;
+    });
 
-    // Data de início da gamificação (primeiro mês lançado)
+    const mediaGeralHistorica = todasNotas.rows.length
+      ? todasNotas.rows.reduce((s,r) => s + parseFloat(r.media_individual), 0) / todasNotas.rows.length
+      : 0;
+
+    const consolidado = Object.values(porColaborador).map(c => {
+      const mediaIndividualAcumulada = c.totalAval > 0 ? c.somaPonderada / c.totalAval : 0;
+      const final = ((mediaIndividualAcumulada * c.totalAval) + (mediaGeralHistorica * pesoMinimo)) / (c.totalAval + pesoMinimo);
+      return { nome: c.nome, media_geral: final.toFixed(2), meses_avaliados: c.meses, total_avaliacoes: c.totalAval };
+    }).sort((a,b) => {
+      if (b.total_avaliacoes !== a.total_avaliacoes) return b.total_avaliacoes - a.total_avaliacoes;
+      return parseFloat(b.media_geral) - parseFloat(a.media_geral);
+    });
+
+    const meses = await pool.query(`SELECT DISTINCT mes FROM gam_notas ORDER BY mes DESC`);
     const inicio = await pool.query(`SELECT MIN(mes) as primeiro_mes FROM gam_notas`);
 
     res.json({
       mes: mesAtual,
-      ranking: ranking.rows,
+      ranking,
       mediaGeral,
-      consolidado: consolidado.rows,
+      consolidado,
       meses: meses.rows.map(r => r.mes),
       inicioGamificacao: inicio.rows[0]?.primeiro_mes || null,
     });
@@ -1130,11 +1166,49 @@ async function ensureGamTables() {
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     colaborador_id UUID NOT NULL REFERENCES gam_colaboradores(id) ON DELETE CASCADE,
     mes VARCHAR(7) NOT NULL,
-    foco NUMERIC(3,2) NOT NULL, dedicacao NUMERIC(3,2) NOT NULL, atitude NUMERIC(3,2) NOT NULL,
-    lancado_por TEXT, created_at TIMESTAMPTZ DEFAULT NOW(),
+    media_individual NUMERIC(4,2) NOT NULL,
+    avaliacoes INTEGER NOT NULL DEFAULT 0,
+    lancado_por TEXT, updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(colaborador_id, mes)
   )`).catch(()=>{});
+  await pool.query(`CREATE TABLE IF NOT EXISTS gam_config (
+    chave TEXT PRIMARY KEY, valor NUMERIC(6,2) NOT NULL
+  )`).catch(()=>{});
+  await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('peso_minimo', 10) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
 }
+
+async function getPesoMinimo() {
+  const r = await pool.query(`SELECT valor FROM gam_config WHERE chave = 'peso_minimo'`);
+  return r.rows[0] ? parseFloat(r.rows[0].valor) : 10;
+}
+
+// Fórmula de média ponderada com peso mínimo (Bayesian average)
+function notaFinal(mediaIndividual, avaliacoes, mediaGeral, pesoMinimo) {
+  if (avaliacoes === 0) return null;
+  return ((mediaIndividual * avaliacoes) + (mediaGeral * pesoMinimo)) / (avaliacoes + pesoMinimo);
+}
+
+// ── Configuração — Peso Mínimo (admin) ───────────────────────────────────────
+router.get('/gam/config', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const peso = await getPesoMinimo();
+    res.json({ peso_minimo: peso });
+  } catch (err) { res.status(500).json({ error: 'Erro ao buscar configuração.' }); }
+});
+
+router.patch('/gam/config', requireAdmin, async (req, res) => {
+  try {
+    const { peso_minimo } = req.body;
+    if (peso_minimo == null || peso_minimo < 0) return res.status(400).json({ error: 'Peso mínimo inválido.' });
+    await pool.query(
+      `INSERT INTO gam_config (chave, valor) VALUES ('peso_minimo', $1)
+       ON CONFLICT (chave) DO UPDATE SET valor = $1`,
+      [peso_minimo]
+    );
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao salvar configuração.' }); }
+});
 
 // ── Colaboradores (admin) ──────────────────────────────────────────────────
 router.get('/gam/colaboradores', requireAdmin, async (req, res) => {
@@ -1191,17 +1265,17 @@ router.get('/gam/notas', requireAdmin, async (req, res) => {
 router.post('/gam/notas', requireAdmin, async (req, res) => {
   try {
     await ensureGamTables();
-    const { colaborador_id, mes, foco, dedicacao, atitude } = req.body;
-    if (!colaborador_id || !mes || foco == null || dedicacao == null || atitude == null)
+    const { colaborador_id, mes, media_individual, avaliacoes } = req.body;
+    if (!colaborador_id || !mes || media_individual == null || avaliacoes == null)
       return res.status(400).json({ error: 'Todos os campos são obrigatórios.' });
-    if ([foco, dedicacao, atitude].some(v => v < 0 || v > 5))
-      return res.status(400).json({ error: 'Notas devem estar entre 0 e 5.' });
+    if (media_individual < 0 || media_individual > 5)
+      return res.status(400).json({ error: 'Média deve estar entre 0 e 5.' });
     await pool.query(
-      `INSERT INTO gam_notas (colaborador_id, mes, foco, dedicacao, atitude, lancado_por)
-       VALUES ($1,$2,$3,$4,$5,$6)
+      `INSERT INTO gam_notas (colaborador_id, mes, media_individual, avaliacoes, lancado_por)
+       VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (colaborador_id, mes)
-       DO UPDATE SET foco=$3, dedicacao=$4, atitude=$5, lancado_por=$6`,
-      [colaborador_id, mes, foco, dedicacao, atitude, req.user.name]
+       DO UPDATE SET media_individual=$3, avaliacoes=$4, lancado_por=$5, updated_at=NOW()`,
+      [colaborador_id, mes, media_individual, avaliacoes, req.user.name]
     );
     res.status(201).json({ ok: true });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao lançar nota.' }); }
@@ -1215,5 +1289,7 @@ router.delete('/gam/notas/:id', requireAdmin, async (req, res) => {
 });
 
 module.exports = router;
+
+
 module.exports.publicRouter = publicRouter;
 module.exports.registrarLog = registrarLog;
