@@ -3807,31 +3807,54 @@ const Gamificacao = (() => {
   }
 
   async function adicionarColaborador() {
-    const nome = document.getElementById('gam-novo-nome')?.value?.trim();
+    const input = document.getElementById('gam-novo-nome');
+    const nome = input?.value?.trim();
     if (!nome) { App.Toast.err('Digite o nome.'); return; }
-    const res = await fetch('/api/data/gam/colaboradores', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
-      body: JSON.stringify({ nome })
-    });
-    if (res && res.ok) {
-      App.Toast.ok('Colaborador adicionado!');
-      document.getElementById('gam-novo-nome').value = '';
-      await abrirColaboradores();
-    } else App.Toast.err('Erro ao adicionar.');
+    const btn = event?.target;
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch('/api/data/gam/colaboradores', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+        body: JSON.stringify({ nome })
+      });
+      if (res && res.ok) {
+        const result = await res.json();
+        _colaboradores.push(result.data);
+        _colaboradores.sort((a,b) => a.nome.localeCompare(b.nome));
+        if (input) input.value = '';
+        const list = document.getElementById('gam-colab-list');
+        if (list) list.innerHTML = _renderColabList();
+        App.Toast.ok('Colaborador adicionado!');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        App.Toast.err(err.error || 'Erro ao adicionar.');
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   async function toggleColaborador(id) {
     const res = await fetch('/api/data/gam/colaboradores/' + id + '/toggle', { method: 'PATCH', headers: { Authorization: 'Bearer ' + _tk() } });
-    if (res && res.ok) await abrirColaboradores();
-    else App.Toast.err('Erro ao alterar status.');
+    if (res && res.ok) {
+      const { ativo } = await res.json();
+      const colab = _colaboradores.find(c => c.id === id);
+      if (colab) colab.ativo = ativo;
+      const list = document.getElementById('gam-colab-list');
+      if (list) list.innerHTML = _renderColabList();
+    } else App.Toast.err('Erro ao alterar status.');
   }
 
   async function excluirColaborador(id) {
     if (!confirm('Excluir este colaborador? Todas as notas dele também serão removidas.')) return;
     const res = await fetch('/api/data/gam/colaboradores/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + _tk() } });
-    if (res && res.ok) { App.Toast.ok('Excluído.'); await abrirColaboradores(); }
-    else App.Toast.err('Erro ao excluir.');
+    if (res && res.ok) {
+      _colaboradores = _colaboradores.filter(c => c.id !== id);
+      const list = document.getElementById('gam-colab-list');
+      if (list) list.innerHTML = _renderColabList();
+      App.Toast.ok('Excluído.');
+    } else App.Toast.err('Erro ao excluir.');
   }
 
   return {
