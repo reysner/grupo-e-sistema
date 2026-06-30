@@ -3594,11 +3594,13 @@ const CAC = (() => {
 
 window.CAC = CAC;
 
-// ── Módulo Gamificação Mensal ─────────────────────────────────────────────────
+
+
+// ── Módulo Gamificação Mensal (v2 — média ponderada) ──────────────────────────
 const Gamificacao = (() => {
   const _tk = () => localStorage.getItem('ge_token') || '';
   let _colaboradores = [];
-  let _notasAtuais = [];
+  let _pesoMinimo = 10;
 
   function _mesAtual() { return new Date().toISOString().slice(0,7); }
 
@@ -3612,8 +3614,17 @@ const Gamificacao = (() => {
   async function load() {
     const mesInput = document.getElementById('gam-mes-lanc');
     if (mesInput && !mesInput.value) mesInput.value = _mesAtual();
+    await _loadConfig();
     await _populateMesFilter();
     await loadNotas();
+  }
+
+  async function _loadConfig() {
+    const res = await fetch('/api/data/gam/config', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (res && res.ok) {
+      const d = await res.json();
+      _pesoMinimo = d.peso_minimo;
+    }
   }
 
   async function _populateMesFilter() {
@@ -3625,41 +3636,47 @@ const Gamificacao = (() => {
     if (!sel) return;
     const cur = sel.value || _mesAtual();
     if (!meses.includes(_mesAtual())) meses.unshift(_mesAtual());
-    sel.innerHTML = meses.map(m => `<option value="${m}" ${m===cur?'selected':''}>${_mesLabel(m)}</option>`).join('');
+    sel.innerHTML = meses.map(m => '<option value="' + m + '" ' + (m===cur?'selected':'') + '>' + _mesLabel(m) + '</option>').join('');
   }
 
   async function loadNotas() {
     const tbody = document.getElementById('gam-tbody');
     if (!tbody) return;
     const mes = document.getElementById('gam-mes-filter')?.value || _mesAtual();
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
 
     const res = await fetch('/api/data/gam/notas?mes=' + mes, { headers: { Authorization: 'Bearer ' + _tk() } });
-    if (!res || !res.ok) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>'; return; }
+    if (!res || !res.ok) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>'; return; }
     const { data } = await res.json();
-    _notasAtuais = data || [];
 
-    if (!_notasAtuais.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Nenhuma nota lançada para ' + _mesLabel(mes) + '.</td></tr>';
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:24px">Nenhuma nota lançada para ' + _mesLabel(mes) + '.</td></tr>';
       return;
     }
 
-    const comMedia = _notasAtuais.map(n => ({
-      ...n,
-      media: ((parseFloat(n.foco) + parseFloat(n.dedicacao) + parseFloat(n.atitude)) / 3)
-    })).sort((a,b) => b.media - a.media);
+    // Calcula média geral simples do mês para a fórmula bayesiana
+    const mediaGeralSimples = data.reduce((s,n) => s + parseFloat(n.media_individual), 0) / data.length;
 
-    tbody.innerHTML = comMedia.map((n, i) => `
-      <tr>
-        <td style="font-weight:700;color:var(--g700)">${i+1}º</td>
-        <td style="font-weight:600">${n.nome}</td>
-        <td>${parseFloat(n.foco).toFixed(2)}</td>
-        <td>${parseFloat(n.dedicacao).toFixed(2)}</td>
-        <td>${parseFloat(n.atitude).toFixed(2)}</td>
-        <td><span style="background:var(--g100);color:var(--g700);padding:3px 10px;border-radius:10px;font-weight:700">${n.media.toFixed(2)}</span></td>
-        <td><button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px" onclick="Gamificacao.excluirNota('${n.id}')">🗑</button></td>
-      </tr>
-    `).join('');
+    const comNotaFinal = data.map(n => {
+      const media = parseFloat(n.media_individual);
+      const aval = parseInt(n.avaliacoes);
+      const final = ((media * aval) + (mediaGeralSimples * _pesoMinimo)) / (aval + _pesoMinimo);
+      return { ...n, notaFinal: final };
+    }).sort((a, b) => {
+      if (b.avaliacoes !== a.avaliacoes) return b.avaliacoes - a.avaliacoes;
+      return b.notaFinal - a.notaFinal;
+    });
+
+    tbody.innerHTML = comNotaFinal.map((n, i) => {
+      return '<tr>' +
+        '<td style="font-weight:700;color:var(--g700)">' + (i+1) + 'º</td>' +
+        '<td style="font-weight:600">' + n.nome + '</td>' +
+        '<td>' + parseFloat(n.media_individual).toFixed(2) + '</td>' +
+        '<td>' + n.avaliacoes + '</td>' +
+        '<td><span style="background:var(--g100);color:var(--g700);padding:3px 10px;border-radius:10px;font-weight:700">' + n.notaFinal.toFixed(2) + '</span></td>' +
+        '<td><button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px" data-id="' + n.id + '" onclick="Gamificacao.excluirNota(this.dataset.id)">🗑</button></td>' +
+      '</tr>';
+    }).join('');
   }
 
   async function excluirNota(id) {
@@ -3679,7 +3696,6 @@ const Gamificacao = (() => {
     const { data } = await res.json();
     _colaboradores = (data || []).filter(c => c.ativo);
 
-    // Load existing notes for this month to pre-fill
     const resNotas = await fetch('/api/data/gam/notas?mes=' + mes, { headers: { Authorization: 'Bearer ' + _tk() } });
     const notasData = resNotas && resNotas.ok ? (await resNotas.json()).data : [];
     const notasMap = {};
@@ -3693,37 +3709,21 @@ const Gamificacao = (() => {
       return;
     }
 
-    grid.innerHTML = `
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead><tr><th>Colaborador</th><th>Foco (0-5)</th><th>Dedicação (0-5)</th><th>Atitude (0-5)</th><th>Média</th></tr></thead>
-          <tbody>
-            ${_colaboradores.map(c => {
-              const existente = notasMap[c.id];
-              return `<tr data-colab="${c.id}">
-                <td style="font-weight:600">${c.nome}</td>
-                <td><input type="number" min="0" max="5" step="0.5" value="${existente?.foco ?? ''}" class="gam-input gam-foco" style="width:70px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px" oninput="Gamificacao._updateMedia('${c.id}')" /></td>
-                <td><input type="number" min="0" max="5" step="0.5" value="${existente?.dedicacao ?? ''}" class="gam-input gam-dedicacao" style="width:70px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px" oninput="Gamificacao._updateMedia('${c.id}')" /></td>
-                <td><input type="number" min="0" max="5" step="0.5" value="${existente?.atitude ?? ''}" class="gam-input gam-atitude" style="width:70px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px" oninput="Gamificacao._updateMedia('${c.id}')" /></td>
-                <td><span id="gam-media-${c.id}" style="font-weight:700;color:var(--g700)">${existente ? (((+existente.foco)+(+existente.dedicacao)+(+existente.atitude))/3).toFixed(2) : '—'}</span></td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-      <button class="btn btn-primary" style="margin-top:14px" onclick="Gamificacao.salvarLote('${mes}')">💾 Salvar todas as notas</button>
-    `;
-  }
-
-  function _updateMedia(colabId) {
-    const row = document.querySelector(`tr[data-colab="${colabId}"]`);
-    if (!row) return;
-    const foco = parseFloat(row.querySelector('.gam-foco').value) || 0;
-    const ded  = parseFloat(row.querySelector('.gam-dedicacao').value) || 0;
-    const ati  = parseFloat(row.querySelector('.gam-atitude').value) || 0;
-    const media = (foco + ded + ati) / 3;
-    const el = document.getElementById('gam-media-' + colabId);
-    if (el) el.textContent = media.toFixed(2);
+    grid.innerHTML = '<div class="table-wrap"><table class="data-table">' +
+      '<thead><tr><th>Colaborador</th><th>Média Individual (0-5)</th><th>Qtd. Avaliações</th><th>Última atualização</th></tr></thead>' +
+      '<tbody>' +
+      _colaboradores.map(c => {
+        const existente = notasMap[c.id];
+        const dt = existente ? new Date(existente.updated_at).toLocaleString('pt-BR') : '—';
+        return '<tr data-colab="' + c.id + '">' +
+          '<td style="font-weight:600">' + c.nome + '</td>' +
+          '<td><input type="number" min="0" max="5" step="0.01" value="' + (existente?.media_individual ?? '') + '" class="gam-input gam-media" style="width:90px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px" /></td>' +
+          '<td><input type="number" min="0" step="1" value="' + (existente?.avaliacoes ?? '') + '" class="gam-input gam-aval" style="width:90px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px" /></td>' +
+          '<td style="font-size:11px;color:var(--gray-400)">' + dt + '</td>' +
+        '</tr>';
+      }).join('') +
+      '</tbody></table></div>' +
+      '<button class="btn btn-primary" style="margin-top:14px" data-mes="' + mes + '" onclick="Gamificacao.salvarLote(this.dataset.mes)">💾 Salvar todas as notas</button>';
   }
 
   async function salvarLote(mes) {
@@ -3732,25 +3732,50 @@ const Gamificacao = (() => {
 
     for (const row of rows) {
       const colaborador_id = row.dataset.colab;
-      const foco = row.querySelector('.gam-foco').value;
-      const dedicacao = row.querySelector('.gam-dedicacao').value;
-      const atitude = row.querySelector('.gam-atitude').value;
+      const media = row.querySelector('.gam-media').value;
+      const aval  = row.querySelector('.gam-aval').value;
 
-      if (!foco && !dedicacao && !atitude) continue; // skip empty rows
+      if (!media && !aval) continue;
 
       const res = await fetch('/api/data/gam/notas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
-        body: JSON.stringify({ colaborador_id, mes, foco: parseFloat(foco)||0, dedicacao: parseFloat(dedicacao)||0, atitude: parseFloat(atitude)||0 })
+        body: JSON.stringify({ colaborador_id, mes, media_individual: parseFloat(media)||0, avaliacoes: parseInt(aval)||0 })
       });
       if (res && res.ok) salvos++; else erros++;
     }
 
     if (salvos > 0) App.Toast.ok(salvos + ' nota(s) salva(s)!' + (erros ? ' (' + erros + ' erro(s))' : ''));
-    else App.Toast.err('Nenhuma nota foi salva. Preencha os campos.');
+    else App.Toast.err('Nenhuma nota foi salva. Preencha média e avaliações.');
 
     await _populateMesFilter();
     await loadNotas();
+  }
+
+  // ── Configuração Peso Mínimo ──────────────────────────────────────────────
+  async function abrirConfig() {
+    await _loadConfig();
+    App.Modal.open('Configurar Peso Mínimo', '<div style="display:grid;gap:14px">' +
+      '<p style="font-size:13px;color:var(--gray-500)">O Peso Mínimo equilibra o ranking: colaboradores com poucas avaliações têm a nota "puxada" em direção à média geral, evitando distorções.</p>' +
+      '<div class="field"><label>Peso Mínimo</label><input id="gam-peso-input" type="number" min="0" step="1" value="' + _pesoMinimo + '" /></div>' +
+      '<button class="btn btn-primary" onclick="Gamificacao.salvarConfig()">Salvar</button>' +
+    '</div>');
+  }
+
+  async function salvarConfig() {
+    const valor = document.getElementById('gam-peso-input')?.value;
+    if (valor === '' || valor < 0) { App.Toast.err('Valor inválido.'); return; }
+    const res = await fetch('/api/data/gam/config', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ peso_minimo: parseFloat(valor) })
+    });
+    if (res && res.ok) {
+      App.Modal.close();
+      App.Toast.ok('Peso Mínimo atualizado!');
+      _pesoMinimo = parseFloat(valor);
+      loadNotas();
+    } else App.Toast.err('Erro ao salvar.');
   }
 
   // ── Gerenciar colaboradores ───────────────────────────────────────────────
@@ -3759,30 +3784,26 @@ const Gamificacao = (() => {
     const { data } = res && res.ok ? await res.json() : { data: [] };
     _colaboradores = data || [];
 
-    App.Modal.open('Gerenciar Colaboradores', `
-      <div style="display:grid;gap:14px">
-        <div style="display:flex;gap:8px">
-          <input id="gam-novo-nome" type="text" placeholder="Nome do colaborador" style="flex:1;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px" />
-          <button class="btn btn-success btn-sm" onclick="Gamificacao.adicionarColaborador()">+ Adicionar</button>
-        </div>
-        <div id="gam-colab-list" style="max-height:320px;overflow-y:auto">
-          ${_renderColabList()}
-        </div>
-      </div>
-    `);
+    App.Modal.open('Gerenciar Colaboradores', '<div style="display:grid;gap:14px">' +
+      '<div style="display:flex;gap:8px">' +
+        '<input id="gam-novo-nome" type="text" placeholder="Nome do colaborador" style="flex:1;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px" />' +
+        '<button class="btn btn-success btn-sm" onclick="Gamificacao.adicionarColaborador()">+ Adicionar</button>' +
+      '</div>' +
+      '<div id="gam-colab-list" style="max-height:320px;overflow-y:auto">' + _renderColabList() + '</div>' +
+    '</div>');
   }
 
   function _renderColabList() {
     if (!_colaboradores.length) return '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum colaborador cadastrado.</p>';
-    return _colaboradores.map(c => `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-100)">
-        <span style="font-weight:600;${!c.ativo ? 'opacity:.5;text-decoration:line-through' : ''}">${c.nome}</span>
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-sm" style="background:${c.ativo?'#fff5f5':'#f0fff4'};color:${c.ativo?'#e53e3e':'#38a169'};border:1px solid ${c.ativo?'#fed7d7':'#c6f6d5'};font-size:11px" onclick="Gamificacao.toggleColaborador('${c.id}', ${c.ativo})">${c.ativo ? 'Desativar' : 'Ativar'}</button>
-          <button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:14px" onclick="Gamificacao.excluirColaborador('${c.id}')">🗑</button>
-        </div>
-      </div>
-    `).join('');
+    return _colaboradores.map(c => {
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-100)">' +
+        '<span style="font-weight:600;' + (!c.ativo ? 'opacity:.5;text-decoration:line-through' : '') + '">' + c.nome + '</span>' +
+        '<div style="display:flex;gap:6px">' +
+          '<button class="btn btn-sm" style="background:' + (c.ativo?'#fff5f5':'#f0fff4') + ';color:' + (c.ativo?'#e53e3e':'#38a169') + ';border:1px solid ' + (c.ativo?'#fed7d7':'#c6f6d5') + ';font-size:11px" data-id="' + c.id + '" data-ativo="' + c.ativo + '" onclick="Gamificacao.toggleColaborador(this.dataset.id)">' + (c.ativo ? 'Desativar' : 'Ativar') + '</button>' +
+          '<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:14px" data-id="' + c.id + '" onclick="Gamificacao.excluirColaborador(this.dataset.id)">🗑</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
   }
 
   async function adicionarColaborador() {
@@ -3815,7 +3836,8 @@ const Gamificacao = (() => {
 
   return {
     load, loadNotas, excluirNota,
-    loadFormLancamento, _updateMedia, salvarLote,
+    loadFormLancamento, salvarLote,
+    abrirConfig, salvarConfig,
     abrirColaboradores, adicionarColaborador, toggleColaborador, excluirColaborador,
   };
 })();
