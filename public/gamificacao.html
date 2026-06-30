@@ -69,6 +69,7 @@
     .ranking-row:nth-child(even){background:var(--gray-50)}
     .ranking-pos{width:26px;height:26px;background:var(--green-pale);color:var(--green);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0}
     .ranking-nome{flex:1;font-size:14px;font-weight:600;color:var(--gray-800)}
+    .ranking-aval{font-size:11px;color:var(--gray-400);margin-right:6px}
     .ranking-nota{background:var(--green);color:#fff;padding:4px 12px;border-radius:8px;font-size:13px;font-weight:800}
 
     /* PREMIOS */
@@ -275,6 +276,7 @@
               <div class="ranking-row">
                 <div class="ranking-pos">${i + 4}º</div>
                 <div class="ranking-nome">${r.nome}</div>
+                <div class="ranking-aval">${r.avaliacoes} aval.</div>
                 <div class="ranking-nota">${parseFloat(r.media).toFixed(2)}</div>
               </div>
             `).join('')}
@@ -295,7 +297,7 @@
         <div class="consolidado-row">
           <div class="consolidado-pos">${i + 1}º</div>
           <div class="consolidado-nome">${r.nome}</div>
-          <div class="consolidado-meses">${r.meses_avaliados} ${r.meses_avaliados == 1 ? 'mês' : 'meses'}</div>
+          <div class="consolidado-meses">${r.total_avaliacoes} aval. · ${r.meses_avaliados} ${r.meses_avaliados == 1 ? 'mês' : 'meses'}</div>
           <div class="consolidado-nota">${parseFloat(r.media_geral).toFixed(2)}</div>
         </div>
       `).join('');
