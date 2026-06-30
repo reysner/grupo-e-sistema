@@ -846,6 +846,7 @@
             <div style="display:flex;gap:10px;align-items:center">
               <select id="gam-mes-filter" onchange="Gamificacao.loadNotas()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer"></select>
               <button class="btn btn-ghost btn-sm" onclick="window.open('/gamificacao','_blank')">🔗 Ver página pública</button>
+              <button class="btn btn-ghost btn-sm" onclick="Gamificacao.abrirConfig()">⚙️ Peso Mínimo</button>
             </div>
             <button class="btn btn-success btn-sm" onclick="Gamificacao.abrirColaboradores()" style="font-weight:600">👥 Gerenciar Colaboradores</button>
           </div>
@@ -867,8 +868,8 @@
             <div class="form-accent"></div>
             <div class="table-wrap" style="margin-top:14px">
               <table class="data-table">
-                <thead><tr><th>Pos.</th><th>Colaborador</th><th>Foco</th><th>Dedicação</th><th>Atitude</th><th>Média</th><th></th></tr></thead>
-                <tbody id="gam-tbody"><tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Selecione um mês</td></tr></tbody>
+                <thead><tr><th>Pos.</th><th>Colaborador</th><th>Média Individual</th><th>Avaliações</th><th>Nota Final</th><th></th></tr></thead>
+                <tbody id="gam-tbody"><tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:24px">Selecione um mês</td></tr></tbody>
               </table>
             </div>
           </div>
