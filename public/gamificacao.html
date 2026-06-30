@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gamificação Grupo-E | Ranking</title>
+<style>
+  :root {
+    --verde-escuro: #14391f;
+    --verde: #1d5a2e;
+    --dourado: #e8b923;
+    --bege: #f7efdd;
+    --prata: #c4c4c4;
+    --bronze: #c98a4b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: var(--bege);
+    color: var(--verde-escuro);
+  }
+  header {
+    background: var(--verde-escuro);
+    color: white;
+    padding: 24px 16px;
+    text-align: center;
+  }
+  header h1 {
+    margin: 0 0 4px;
+    font-size: 1.8rem;
+    letter-spacing: 1px;
+  }
+  header p { margin: 0; opacity: .85; font-size: .95rem; }
+
+  .container { max-width: 960px; margin: 0 auto; padding: 24px 16px 60px; }
+
+  .filtros {
+    display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+  .filtros select, .filtros button {
+    padding: 8px 14px; border-radius: 8px; border: 1px solid var(--verde);
+    font-size: .95rem; background: white; color: var(--verde-escuro); cursor: pointer;
+  }
+  .filtros button { background: var(--verde); color: white; border: none; font-weight: 600; }
+
+  .media-geral {
+    background: white; border: 2px solid var(--verde-escuro); border-radius: 14px;
+    max-width: 360px; margin: 0 auto 32px; padding: 16px 24px; text-align: center;
+  }
+  .media-geral .label { font-weight: 700; letter-spacing: .5px; }
+  .media-geral .valor {
+    background: var(--verde-escuro); color: white; font-size: 1.6rem; font-weight: 800;
+    border-radius: 8px; padding: 6px 16px; display: inline-block; margin-top: 8px;
+  }
+
+  .podio { display: flex; gap: 16px; justify-content: center; align-items: flex-end;
+    flex-wrap: wrap; margin-bottom: 36px; }
+  .lugar {
+    border-radius: 12px; padding: 16px; min-width: 180px; text-align: center;
+    color: var(--verde-escuro); font-weight: 700;
+  }
+  .lugar.ouro { background: linear-gradient(180deg,#fdf0c4,#f6dd8c); border: 2px solid var(--dourado); order: 2; }
+  .lugar.prata { background: linear-gradient(180deg,#f1f1f1,#dadada); border: 2px solid var(--prata); order: 1; }
+  .lugar.bronze { background: linear-gradient(180deg,#f3dcc2,#e7c099); border: 2px solid var(--bronze); order: 3; }
+  .lugar .badge { font-size: 1.4rem; margin-bottom: 6px; }
+  .lugar .nome { font-size: 1.1rem; margin: 4px 0; }
+  .lugar .nota {
+    background: var(--verde-escuro); color: white; border-radius: 8px;
+    padding: 4px 10px; display: inline-block; font-size: 1.2rem;
+  }
+  .lugar .premio { font-weight: 400; font-size: .8rem; margin-top: 6px; opacity: .85; }
+
+  table {
+    width: 100%; border-collapse: collapse; background: white;
+    border-radius: 12px; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,.08);
+  }
+  th, td { padding: 10px 14px; text-align: left; font-size: .95rem; }
+  th { background: var(--verde-escuro); color: white; }
+  tr:nth-child(even) { background: #f4efe2; }
+  td.nota, th.nota { text-align: center; }
+  td.nota span {
+    background: var(--verde-escuro); color: white; border-radius: 6px;
+    padding: 2px 10px; font-weight: 700; display: inline-block; min-width: 50px;
+  }
+
+  .secao-titulo {
+    margin: 40px 0 16px; font-size: 1.3rem; font-weight: 800; color: var(--verde-escuro);
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .premios-box {
+    background: white; border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;
+    box-shadow: 0 1px 6px rgba(0,0,0,.08);
+  }
+  .premios-box h3 { margin: 0 0 10px; color: var(--verde-escuro); }
+  .premios-box ul { margin: 0; padding-left: 18px; }
+  .premios-box li { margin-bottom: 4px; }
+
+  .vazio { text-align: center; padding: 40px 16px; opacity: .7; }
+  .loading { text-align: center; padding: 40px 16px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🏆 RESULTADO — GAMIFICAÇÃO GRUPO-E</h1>
+  <p>Foco, dedicação e atitude que geram resultados!</p>
+</header>
+
+<div class="container">
+
+  <div class="filtros">
+    <select id="selMes"></select>
+    <select id="selAno"></select>
+    <button onclick="carregarTudo()">Atualizar</button>
+  </div>
+
+  <div id="conteudoMensal" class="loading">Carregando ranking do mês…</div>
+
+  <div class="secao-titulo">📊 Consolidado anual (média de todos os meses lançados)</div>
+  <div id="conteudoAnual" class="loading">Carregando consolidado anual…</div>
+
+</div>
+
+<script>
+const API_BASE = '/api/gamificacao';
+
+const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const hoje = new Date();
+
+function montarFiltros() {
+  const selMes = document.getElementById('selMes');
+  meses.forEach((m, i) => {
+    const opt = document.createElement('option');
+    opt.value = i + 1;
+    opt.textContent = m;
+    if (i + 1 === hoje.getMonth() + 1) opt.selected = true;
+    selMes.appendChild(opt);
+  });
+
+  const selAno = document.getElementById('selAno');
+  const anoAtual = hoje.getFullYear();
+  for (let a = anoAtual; a >= anoAtual - 4; a--) {
+    const opt = document.createElement('option');
+    opt.value = a;
+    opt.textContent = a;
+    if (a === anoAtual) opt.selected = true;
+    selAno.appendChild(opt);
+  }
+}
+
+function medalha(pos) {
+  return pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : pos + 'º';
+}
+
+async function carregarRankingMensal(mes, ano) {
+  const el = document.getElementById('conteudoMensal');
+  el.className = 'loading';
+  el.textContent = 'Carregando ranking do mês…';
+  try {
+    const resp = await fetch(`${API_BASE}/ranking?mes=${mes}&ano=${ano}`);
+    const data = await resp.json();
+
+    if (!data.ranking || data.ranking.length === 0) {
+      el.className = 'vazio';
+      el.textContent = 'Nenhuma nota lançada para este período ainda.';
+      return;
+    }
+
+    const top3 = data.ranking.slice(0, 3);
+    const resto = data.ranking.slice(3);
+    const premiosMap = {};
+    (data.premiosMensal || []).forEach(p => premiosMap[p.posicao] = p.descricao);
+
+    const podioHtml = top3.map(r => {
+      const classe = r.posicao === 1 ? 'ouro' : r.posicao === 2 ? 'prata' : 'bronze';
+      return `<div class="lugar ${classe}">
+        <div class="badge">${medalha(r.posicao)}</div>
+        <div class="nome">${r.nome}</div>
+        <div class="nota">${r.nota.toFixed(2)}</div>
+        <div class="premio">${premiosMap[r.posicao] || ''}</div>
+      </div>`;
+    }).join('');
+
+    const linhasResto = resto.map(r => `
+      <tr>
+        <td>${r.posicao}º</td>
+        <td>${r.nome}</td>
+        <td class="nota"><span>${r.nota.toFixed(2)}</span></td>
+      </tr>`).join('');
+
+    el.className = '';
+    el.innerHTML = `
+      <div class="media-geral">
+        <div class="label">MÉDIA GERAL DO MÊS</div>
+        <div class="valor">${data.mediaGeral.toFixed(2)}</div>
+      </div>
+      <div class="podio">${podioHtml}</div>
+      ${resto.length ? `
+      <table>
+        <thead><tr><th>Pos.</th><th>Nome</th><th class="nota">Nota</th></tr></thead>
+        <tbody>${linhasResto}</tbody>
+      </table>` : ''}
+    `;
+  } catch (e) {
+    el.className = 'vazio';
+    el.textContent = 'Erro ao carregar ranking.';
+    console.error(e);
+  }
+}
+
+async function carregarConsolidadoAnual(ano) {
+  const el = document.getElementById('conteudoAnual');
+  el.className = 'loading';
+  el.textContent = 'Carregando consolidado anual…';
+  try {
+    const resp = await fetch(`${API_BASE}/consolidado-anual?ano=${ano}`);
+    const data = await resp.json();
+
+    if (!data.consolidado || data.consolidado.length === 0) {
+      el.className = 'vazio';
+      el.textContent = 'Nenhuma nota lançada neste ano ainda.';
+      return;
+    }
+
+    const premiosAnualMap = {};
+    (data.premiosAnual || []).forEach(p => premiosAnualMap[p.posicao] = p.descricao);
+
+    const linhas = data.consolidado.map(r => `
+      <tr>
+        <td>${medalha(r.posicao)}</td>
+        <td>${r.nome}</td>
+        <td class="nota"><span>${r.media.toFixed(2)}</span></td>
+        <td>${r.mesesLancados}</td>
+      </tr>`).join('');
+
+    el.className = '';
+    el.innerHTML = `
+      <div class="premios-box">
+        <h3>🏆 Prêmios anuais</h3>
+        <ul>
+          <li><strong>1º lugar:</strong> ${premiosAnualMap[1] || '—'}</li>
+          <li><strong>2º lugar:</strong> ${premiosAnualMap[2] || '—'}</li>
+          <li><strong>3º lugar:</strong> ${premiosAnualMap[3] || '—'}</li>
+        </ul>
+      </div>
+      <table>
+        <thead><tr><th>Pos.</th><th>Nome</th><th class="nota">Média</th><th>Meses lançados</th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table>
+    `;
+  } catch (e) {
+    el.className = 'vazio';
+    el.textContent = 'Erro ao carregar consolidado anual.';
+    console.error(e);
+  }
+}
+
+function carregarTudo() {
+  const mes = document.getElementById('selMes').value;
+  const ano = document.getElementById('selAno').value;
+  carregarRankingMensal(mes, ano);
+  carregarConsolidadoAnual(ano);
+}
+
+montarFiltros();
+carregarTudo();
+</script>
+
+</body>
+</html>
