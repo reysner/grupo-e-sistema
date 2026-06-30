@@ -1050,7 +1050,169 @@ publicRouter.post('/pesquisa', async (req, res) => {
   }
 });
 
+// ── GAMIFICAÇÃO — rota pública (ranking sem login) ──────────────────────────
+publicRouter.get('/gamificacao', async (req, res) => {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS gam_colaboradores (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      nome TEXT NOT NULL, ativo BOOLEAN DEFAULT true, created_at TIMESTAMPTZ DEFAULT NOW()
+    )`).catch(()=>{});
+    await pool.query(`CREATE TABLE IF NOT EXISTS gam_notas (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      colaborador_id UUID NOT NULL REFERENCES gam_colaboradores(id) ON DELETE CASCADE,
+      mes VARCHAR(7) NOT NULL,
+      foco NUMERIC(3,2) NOT NULL, dedicacao NUMERIC(3,2) NOT NULL, atitude NUMERIC(3,2) NOT NULL,
+      lancado_por TEXT, created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(colaborador_id, mes)
+    )`).catch(()=>{});
+
+    const { mes } = req.query;
+    const mesAtual = mes || new Date().toISOString().slice(0,7);
+
+    // Ranking do mês — média de foco+dedicacao+atitude
+    const ranking = await pool.query(`
+      SELECT c.id, c.nome,
+        ROUND(((n.foco + n.dedicacao + n.atitude) / 3.0)::numeric, 2) AS media
+      FROM gam_notas n
+      JOIN gam_colaboradores c ON c.id = n.colaborador_id
+      WHERE n.mes = $1 AND c.ativo = true
+      ORDER BY media DESC, c.nome ASC
+    `, [mesAtual]);
+
+    // Média geral do mês
+    const mediaGeral = ranking.rows.length
+      ? (ranking.rows.reduce((s,r) => s + parseFloat(r.media), 0) / ranking.rows.length).toFixed(2)
+      : null;
+
+    // Consolidado acumulado (desde o início da gamificação) por colaborador
+    const consolidado = await pool.query(`
+      SELECT c.id, c.nome,
+        ROUND(AVG((n.foco + n.dedicacao + n.atitude) / 3.0)::numeric, 2) AS media_geral,
+        COUNT(n.id) AS meses_avaliados
+      FROM gam_notas n
+      JOIN gam_colaboradores c ON c.id = n.colaborador_id
+      WHERE c.ativo = true
+      GROUP BY c.id, c.nome
+      ORDER BY media_geral DESC, c.nome ASC
+    `);
+
+    // Meses disponíveis
+    const meses = await pool.query(`SELECT DISTINCT mes FROM gam_notas ORDER BY mes DESC`);
+
+    // Data de início da gamificação (primeiro mês lançado)
+    const inicio = await pool.query(`SELECT MIN(mes) as primeiro_mes FROM gam_notas`);
+
+    res.json({
+      mes: mesAtual,
+      ranking: ranking.rows,
+      mediaGeral,
+      consolidado: consolidado.rows,
+      meses: meses.rows.map(r => r.mes),
+      inicioGamificacao: inicio.rows[0]?.primeiro_mes || null,
+    });
+  } catch (err) {
+    console.error('Gamificação pública error:', err);
+    res.status(500).json({ error: 'Erro ao carregar ranking.' });
+  }
+});
+
 router.publicRouter = publicRouter;
+
+
+// ── GAMIFICAÇÃO MENSAL ───────────────────────────────────────────────────────
+
+async function ensureGamTables() {
+  await pool.query(`CREATE TABLE IF NOT EXISTS gam_colaboradores (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    nome TEXT NOT NULL, ativo BOOLEAN DEFAULT true, created_at TIMESTAMPTZ DEFAULT NOW()
+  )`).catch(()=>{});
+  await pool.query(`CREATE TABLE IF NOT EXISTS gam_notas (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    colaborador_id UUID NOT NULL REFERENCES gam_colaboradores(id) ON DELETE CASCADE,
+    mes VARCHAR(7) NOT NULL,
+    foco NUMERIC(3,2) NOT NULL, dedicacao NUMERIC(3,2) NOT NULL, atitude NUMERIC(3,2) NOT NULL,
+    lancado_por TEXT, created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(colaborador_id, mes)
+  )`).catch(()=>{});
+}
+
+// ── Colaboradores (admin) ──────────────────────────────────────────────────
+router.get('/gam/colaboradores', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { rows } = await pool.query(`SELECT * FROM gam_colaboradores ORDER BY nome ASC`);
+    res.json({ data: rows });
+  } catch (err) { res.status(500).json({ error: 'Erro ao listar colaboradores.' }); }
+});
+
+router.post('/gam/colaboradores', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { nome } = req.body;
+    if (!nome) return res.status(400).json({ error: 'Nome obrigatório.' });
+    const { rows } = await pool.query(
+      `INSERT INTO gam_colaboradores (nome) VALUES ($1) RETURNING *`, [nome.trim()]
+    );
+    res.status(201).json({ ok: true, data: rows[0] });
+  } catch (err) { res.status(500).json({ error: 'Erro ao adicionar colaborador.' }); }
+});
+
+router.patch('/gam/colaboradores/:id/toggle', requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT ativo FROM gam_colaboradores WHERE id = $1`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Não encontrado.' });
+    const novo = !rows[0].ativo;
+    await pool.query(`UPDATE gam_colaboradores SET ativo = $1 WHERE id = $2`, [novo, req.params.id]);
+    res.json({ ok: true, ativo: novo });
+  } catch (err) { res.status(500).json({ error: 'Erro ao alterar status.' }); }
+});
+
+router.delete('/gam/colaboradores/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM gam_colaboradores WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+// ── Notas (admin) ───────────────────────────────────────────────────────────
+router.get('/gam/notas', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { mes } = req.query;
+    let q = `SELECT n.*, c.nome FROM gam_notas n JOIN gam_colaboradores c ON c.id = n.colaborador_id`;
+    const params = [];
+    if (mes) { q += ` WHERE n.mes = $1`; params.push(mes); }
+    q += ` ORDER BY c.nome ASC`;
+    const { rows } = await pool.query(q, params);
+    res.json({ data: rows });
+  } catch (err) { res.status(500).json({ error: 'Erro ao listar notas.' }); }
+});
+
+router.post('/gam/notas', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { colaborador_id, mes, foco, dedicacao, atitude } = req.body;
+    if (!colaborador_id || !mes || foco == null || dedicacao == null || atitude == null)
+      return res.status(400).json({ error: 'Todos os campos são obrigatórios.' });
+    if ([foco, dedicacao, atitude].some(v => v < 0 || v > 5))
+      return res.status(400).json({ error: 'Notas devem estar entre 0 e 5.' });
+    await pool.query(
+      `INSERT INTO gam_notas (colaborador_id, mes, foco, dedicacao, atitude, lancado_por)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (colaborador_id, mes)
+       DO UPDATE SET foco=$3, dedicacao=$4, atitude=$5, lancado_por=$6`,
+      [colaborador_id, mes, foco, dedicacao, atitude, req.user.name]
+    );
+    res.status(201).json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao lançar nota.' }); }
+});
+
+router.delete('/gam/notas/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM gam_notas WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
 
 module.exports = router;
 module.exports.publicRouter = publicRouter;
