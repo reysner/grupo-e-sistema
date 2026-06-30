@@ -302,7 +302,7 @@ const App = (() => {
 
   // ── Navigation ───────────────────────────────────────────────────────────
   const PAGE_TITLES = {
-    dashboard:'Dashboard', atendimento:'Atendimento', gestao:'Gestão de Clientes', carteira:'Inteligência da Carteira', perfil:'Meu Perfil', cac:'CAC / Investimentos em Aquisição', log:'Log de Atividades',
+    dashboard:'Dashboard', atendimento:'Atendimento', gestao:'Gestão de Clientes', carteira:'Inteligência da Carteira', perfil:'Meu Perfil', cac:'CAC / Investimentos em Aquisição', log:'Log de Atividades', gamificacao:'Gamificação Mensal',
     insatisfacao:'Insatisfação', sensiveis:'Clientes Sensíveis',
     pesquisas:'Pesquisas de Satisfação', recuperacao:'Recuperação de Clientes',
     admin:'Administração de Usuários',
@@ -324,6 +324,7 @@ const App = (() => {
       if (page === 'perfil')      window.Perfil?.load();
       if (page === 'cac')         window.CAC?.load();
       if (page === 'log')         window.Log?.carregar();
+      if (page === 'gamificacao')  window.Gamificacao?.load();
       if (page === 'atendimento') window.Atendimento?.loadGrid();
       if (page === 'gestao')      window.Gestao?.loadGrid();
       if (page === 'insatisfacao') window.Insatisfacao?.loadGrid();
@@ -3592,3 +3593,231 @@ const CAC = (() => {
 })();
 
 window.CAC = CAC;
+
+// ── Módulo Gamificação Mensal ─────────────────────────────────────────────────
+const Gamificacao = (() => {
+  const _tk = () => localStorage.getItem('ge_token') || '';
+  let _colaboradores = [];
+  let _notasAtuais = [];
+
+  function _mesAtual() { return new Date().toISOString().slice(0,7); }
+
+  function _mesLabel(mes) {
+    if (!mes) return '—';
+    const [ano, m] = mes.split('-');
+    const nomes = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    return nomes[parseInt(m)] + '/' + ano;
+  }
+
+  async function load() {
+    const mesInput = document.getElementById('gam-mes-lanc');
+    if (mesInput && !mesInput.value) mesInput.value = _mesAtual();
+    await _populateMesFilter();
+    await loadNotas();
+  }
+
+  async function _populateMesFilter() {
+    const res = await fetch('/api/data/gam/notas', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) return;
+    const { data } = await res.json();
+    const meses = [...new Set(data.map(n => n.mes))].sort().reverse();
+    const sel = document.getElementById('gam-mes-filter');
+    if (!sel) return;
+    const cur = sel.value || _mesAtual();
+    if (!meses.includes(_mesAtual())) meses.unshift(_mesAtual());
+    sel.innerHTML = meses.map(m => `<option value="${m}" ${m===cur?'selected':''}>${_mesLabel(m)}</option>`).join('');
+  }
+
+  async function loadNotas() {
+    const tbody = document.getElementById('gam-tbody');
+    if (!tbody) return;
+    const mes = document.getElementById('gam-mes-filter')?.value || _mesAtual();
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+
+    const res = await fetch('/api/data/gam/notas?mes=' + mes, { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>'; return; }
+    const { data } = await res.json();
+    _notasAtuais = data || [];
+
+    if (!_notasAtuais.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Nenhuma nota lançada para ' + _mesLabel(mes) + '.</td></tr>';
+      return;
+    }
+
+    const comMedia = _notasAtuais.map(n => ({
+      ...n,
+      media: ((parseFloat(n.foco) + parseFloat(n.dedicacao) + parseFloat(n.atitude)) / 3)
+    })).sort((a,b) => b.media - a.media);
+
+    tbody.innerHTML = comMedia.map((n, i) => `
+      <tr>
+        <td style="font-weight:700;color:var(--g700)">${i+1}º</td>
+        <td style="font-weight:600">${n.nome}</td>
+        <td>${parseFloat(n.foco).toFixed(2)}</td>
+        <td>${parseFloat(n.dedicacao).toFixed(2)}</td>
+        <td>${parseFloat(n.atitude).toFixed(2)}</td>
+        <td><span style="background:var(--g100);color:var(--g700);padding:3px 10px;border-radius:10px;font-weight:700">${n.media.toFixed(2)}</span></td>
+        <td><button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px" onclick="Gamificacao.excluirNota('${n.id}')">🗑</button></td>
+      </tr>
+    `).join('');
+  }
+
+  async function excluirNota(id) {
+    if (!confirm('Excluir esta nota?')) return;
+    const res = await fetch('/api/data/gam/notas/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + _tk() } });
+    if (res && res.ok) { App.Toast.ok('Nota excluída.'); loadNotas(); }
+    else App.Toast.err('Erro ao excluir.');
+  }
+
+  // ── Formulário de lançamento ──────────────────────────────────────────────
+  async function loadFormLancamento() {
+    const mes = document.getElementById('gam-mes-lanc')?.value;
+    if (!mes) { App.Toast.err('Selecione o mês.'); return; }
+
+    const res = await fetch('/api/data/gam/colaboradores', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { App.Toast.err('Erro ao carregar colaboradores.'); return; }
+    const { data } = await res.json();
+    _colaboradores = (data || []).filter(c => c.ativo);
+
+    // Load existing notes for this month to pre-fill
+    const resNotas = await fetch('/api/data/gam/notas?mes=' + mes, { headers: { Authorization: 'Bearer ' + _tk() } });
+    const notasData = resNotas && resNotas.ok ? (await resNotas.json()).data : [];
+    const notasMap = {};
+    notasData.forEach(n => { notasMap[n.colaborador_id] = n; });
+
+    const grid = document.getElementById('gam-lancamento-grid');
+    if (!grid) return;
+
+    if (!_colaboradores.length) {
+      grid.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:20px">Nenhum colaborador cadastrado. Clique em "Gerenciar Colaboradores" para adicionar.</p>';
+      return;
+    }
+
+    grid.innerHTML = `
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Colaborador</th><th>Foco (0-5)</th><th>Dedicação (0-5)</th><th>Atitude (0-5)</th><th>Média</th></tr></thead>
+          <tbody>
+            ${_colaboradores.map(c => {
+              const existente = notasMap[c.id];
+              return `<tr data-colab="${c.id}">
+                <td style="font-weight:600">${c.nome}</td>
+                <td><input type="number" min="0" max="5" step="0.5" value="${existente?.foco ?? ''}" class="gam-input gam-foco" style="width:70px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px" oninput="Gamificacao._updateMedia('${c.id}')" /></td>
+                <td><input type="number" min="0" max="5" step="0.5" value="${existente?.dedicacao ?? ''}" class="gam-input gam-dedicacao" style="width:70px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px" oninput="Gamificacao._updateMedia('${c.id}')" /></td>
+                <td><input type="number" min="0" max="5" step="0.5" value="${existente?.atitude ?? ''}" class="gam-input gam-atitude" style="width:70px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px" oninput="Gamificacao._updateMedia('${c.id}')" /></td>
+                <td><span id="gam-media-${c.id}" style="font-weight:700;color:var(--g700)">${existente ? (((+existente.foco)+(+existente.dedicacao)+(+existente.atitude))/3).toFixed(2) : '—'}</span></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <button class="btn btn-primary" style="margin-top:14px" onclick="Gamificacao.salvarLote('${mes}')">💾 Salvar todas as notas</button>
+    `;
+  }
+
+  function _updateMedia(colabId) {
+    const row = document.querySelector(`tr[data-colab="${colabId}"]`);
+    if (!row) return;
+    const foco = parseFloat(row.querySelector('.gam-foco').value) || 0;
+    const ded  = parseFloat(row.querySelector('.gam-dedicacao').value) || 0;
+    const ati  = parseFloat(row.querySelector('.gam-atitude').value) || 0;
+    const media = (foco + ded + ati) / 3;
+    const el = document.getElementById('gam-media-' + colabId);
+    if (el) el.textContent = media.toFixed(2);
+  }
+
+  async function salvarLote(mes) {
+    const rows = document.querySelectorAll('tr[data-colab]');
+    let salvos = 0, erros = 0;
+
+    for (const row of rows) {
+      const colaborador_id = row.dataset.colab;
+      const foco = row.querySelector('.gam-foco').value;
+      const dedicacao = row.querySelector('.gam-dedicacao').value;
+      const atitude = row.querySelector('.gam-atitude').value;
+
+      if (!foco && !dedicacao && !atitude) continue; // skip empty rows
+
+      const res = await fetch('/api/data/gam/notas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+        body: JSON.stringify({ colaborador_id, mes, foco: parseFloat(foco)||0, dedicacao: parseFloat(dedicacao)||0, atitude: parseFloat(atitude)||0 })
+      });
+      if (res && res.ok) salvos++; else erros++;
+    }
+
+    if (salvos > 0) App.Toast.ok(salvos + ' nota(s) salva(s)!' + (erros ? ' (' + erros + ' erro(s))' : ''));
+    else App.Toast.err('Nenhuma nota foi salva. Preencha os campos.');
+
+    await _populateMesFilter();
+    await loadNotas();
+  }
+
+  // ── Gerenciar colaboradores ───────────────────────────────────────────────
+  async function abrirColaboradores() {
+    const res = await fetch('/api/data/gam/colaboradores', { headers: { Authorization: 'Bearer ' + _tk() } });
+    const { data } = res && res.ok ? await res.json() : { data: [] };
+    _colaboradores = data || [];
+
+    App.Modal.open('Gerenciar Colaboradores', `
+      <div style="display:grid;gap:14px">
+        <div style="display:flex;gap:8px">
+          <input id="gam-novo-nome" type="text" placeholder="Nome do colaborador" style="flex:1;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px" />
+          <button class="btn btn-success btn-sm" onclick="Gamificacao.adicionarColaborador()">+ Adicionar</button>
+        </div>
+        <div id="gam-colab-list" style="max-height:320px;overflow-y:auto">
+          ${_renderColabList()}
+        </div>
+      </div>
+    `);
+  }
+
+  function _renderColabList() {
+    if (!_colaboradores.length) return '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum colaborador cadastrado.</p>';
+    return _colaboradores.map(c => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-100)">
+        <span style="font-weight:600;${!c.ativo ? 'opacity:.5;text-decoration:line-through' : ''}">${c.nome}</span>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm" style="background:${c.ativo?'#fff5f5':'#f0fff4'};color:${c.ativo?'#e53e3e':'#38a169'};border:1px solid ${c.ativo?'#fed7d7':'#c6f6d5'};font-size:11px" onclick="Gamificacao.toggleColaborador('${c.id}', ${c.ativo})">${c.ativo ? 'Desativar' : 'Ativar'}</button>
+          <button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:14px" onclick="Gamificacao.excluirColaborador('${c.id}')">🗑</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function adicionarColaborador() {
+    const nome = document.getElementById('gam-novo-nome')?.value?.trim();
+    if (!nome) { App.Toast.err('Digite o nome.'); return; }
+    const res = await fetch('/api/data/gam/colaboradores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ nome })
+    });
+    if (res && res.ok) {
+      App.Toast.ok('Colaborador adicionado!');
+      document.getElementById('gam-novo-nome').value = '';
+      await abrirColaboradores();
+    } else App.Toast.err('Erro ao adicionar.');
+  }
+
+  async function toggleColaborador(id) {
+    const res = await fetch('/api/data/gam/colaboradores/' + id + '/toggle', { method: 'PATCH', headers: { Authorization: 'Bearer ' + _tk() } });
+    if (res && res.ok) await abrirColaboradores();
+    else App.Toast.err('Erro ao alterar status.');
+  }
+
+  async function excluirColaborador(id) {
+    if (!confirm('Excluir este colaborador? Todas as notas dele também serão removidas.')) return;
+    const res = await fetch('/api/data/gam/colaboradores/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + _tk() } });
+    if (res && res.ok) { App.Toast.ok('Excluído.'); await abrirColaboradores(); }
+    else App.Toast.err('Erro ao excluir.');
+  }
+
+  return {
+    load, loadNotas, excluirNota,
+    loadFormLancamento, _updateMedia, salvarLote,
+    abrirColaboradores, adicionarColaborador, toggleColaborador, excluirColaborador,
+  };
+})();
+
+window.Gamificacao = Gamificacao;
