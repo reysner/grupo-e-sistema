@@ -275,7 +275,6 @@
               <div class="ranking-row">
                 <div class="ranking-pos">${i + 4}º</div>
                 <div class="ranking-nome">${r.nome}</div>
-                <div class="ranking-aval">${r.avaliacoes} aval.</div>
                 <div class="ranking-nota">${parseFloat(r.media).toFixed(2)}</div>
               </div>
             `).join('')}
@@ -296,7 +295,6 @@
         <div class="consolidado-row">
           <div class="consolidado-pos">${i + 1}º</div>
           <div class="consolidado-nome">${r.nome}</div>
-          <div class="consolidado-meses">${r.total_avaliacoes} aval. · ${r.meses_avaliados} ${r.meses_avaliados == 1 ? 'mês' : 'meses'}</div>
           <div class="consolidado-nota">${parseFloat(r.media_geral).toFixed(2)}</div>
         </div>
       `).join('');
