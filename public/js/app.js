@@ -219,6 +219,7 @@ const App = (() => {
 
     onLoggedIn(user) {
       currentUser = user;
+      window._currentUser = user;
       document.getElementById('topbar-name').textContent = user.name;
       const pill = document.getElementById('topbar-role');
       pill.textContent = user.role === 'administrador' ? 'Administrador' : 'Usuário';
@@ -237,6 +238,7 @@ const App = (() => {
       Nav.go('dashboard');
       Notificacoes.iniciar();
       BuscaGlobal.iniciar();
+      UserMenu.iniciar();
     },
 
     async tryAutoLogin() {
@@ -1611,6 +1613,101 @@ const DarkMode = (() => {
 })();
 
 window.DarkMode = DarkMode;
+
+// ── Módulo Menu do Usuário ─────────────────────────────────────────────────────
+const UserMenu = (() => {
+  let _open = false;
+  const _tk = () => localStorage.getItem('ge_token') || '';
+
+  function toggle() {
+    const panel = document.getElementById('user-menu-panel');
+    if (!panel) return;
+    _open = !_open;
+    panel.hidden = !_open;
+    if (_open) {
+      const name  = window._currentUser?.name || document.getElementById('topbar-name')?.textContent || '';
+      const email = window._currentUser?.email || '';
+      const nameEl  = document.getElementById('user-menu-name');
+      const emailEl = document.getElementById('user-menu-email');
+      if (nameEl) nameEl.textContent = name;
+      if (emailEl) emailEl.textContent = email;
+    }
+  }
+
+  function fechar() {
+    const panel = document.getElementById('user-menu-panel');
+    if (panel) panel.hidden = true;
+    _open = false;
+  }
+
+  function editar() {
+    fechar();
+    const name  = window._currentUser?.name || '';
+    const email = window._currentUser?.email || '';
+    App.Modal.open('Editar meu perfil', '<div style="display:grid;gap:12px">' +
+      '<div class="field"><label>Nome</label><input id="um-nome" type="text" value="' + name + '" /></div>' +
+      '<div class="field"><label>E-mail</label><input id="um-email" type="email" value="' + email + '" /></div>' +
+      '<div style="border-top:1px solid var(--gray-100);margin:4px 0;padding-top:12px">' +
+        '<div style="font-size:13px;font-weight:700;color:var(--g800);margin-bottom:10px">Alterar senha</div>' +
+        '<div class="field"><label>Senha atual <span class="req">*</span></label><input id="um-senha-atual" type="password" placeholder="Necessária para confirmar" /></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">' +
+          '<div class="field"><label>Nova senha <small class="opt">(opcional)</small></label><input id="um-senha-nova" type="password" placeholder="Mínimo 6 caracteres" /></div>' +
+          '<div class="field"><label>Confirmar</label><input id="um-senha-conf" type="password" placeholder="Repita a nova senha" /></div>' +
+        '</div>' +
+      '</div>' +
+      '<button class="btn btn-primary" onclick="UserMenu.salvar()">Salvar alterações</button>' +
+    '</div>');
+  }
+
+  async function salvar() {
+    const nome       = document.getElementById('um-nome')?.value?.trim();
+    const email      = document.getElementById('um-email')?.value?.trim();
+    const senhaAtual = document.getElementById('um-senha-atual')?.value;
+    const senhaNova  = document.getElementById('um-senha-nova')?.value;
+    const senhaConf  = document.getElementById('um-senha-conf')?.value;
+
+    if (!nome) { App.Toast.err('Nome é obrigatório.'); return; }
+    if (!senhaAtual) { App.Toast.err('Digite sua senha atual para confirmar.'); return; }
+    if (senhaNova || senhaConf) {
+      if (senhaNova.length < 6) { App.Toast.err('Nova senha deve ter ao menos 6 caracteres.'); return; }
+      if (senhaNova !== senhaConf) { App.Toast.err('As senhas não coincidem.'); return; }
+    }
+
+    const body = { nome, email, senhaAtual };
+    if (senhaNova) body.senhaNova = senhaNova;
+
+    const res = await fetch('/api/data/perfil', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify(body)
+    });
+
+    if (res && res.ok) {
+      App.Modal.close();
+      App.Toast.ok('Perfil atualizado!');
+      const nameEl = document.getElementById('topbar-name');
+      if (nameEl) nameEl.textContent = nome;
+      if (window._currentUser) { window._currentUser.name = nome; window._currentUser.email = email; }
+    } else {
+      const err = await res.json().catch(() => ({}));
+      App.Toast.err(err.error || 'Erro ao atualizar perfil.');
+    }
+  }
+
+  function iniciar() {
+    document.addEventListener('click', function(e) {
+      const panel   = document.getElementById('user-menu-panel');
+      const trigger = document.getElementById('user-menu-trigger');
+      if (_open && panel && trigger && !panel.contains(e.target) && !trigger.contains(e.target)) {
+        fechar();
+      }
+    });
+  }
+
+  return { toggle, editar, salvar, iniciar };
+})();
+
+window.UserMenu = UserMenu;
 
 document.addEventListener('DOMContentLoaded', () => {
   // Auth
