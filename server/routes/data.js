@@ -1089,21 +1089,18 @@ publicRouter.get('/gamificacao', async (req, res) => {
       WHERE n.mes = $1 AND c.ativo = true
     `, [mesAtual]);
 
-    // Média geral simples do mês (componente da fórmula bayesiana)
-    // Se média individual = 0 (sem avaliações), usa a menor nota lançada no mês como base
-    const mediasValidas = dadosMes.rows.map(r => parseFloat(r.media_individual)).filter(m => m > 0);
+    // Média geral do mês: considera SOMENTE colaboradores com avaliações > 0
+    const mediasValidas = dadosMes.rows.filter(r => parseFloat(r.media_individual) > 0).map(r => parseFloat(r.media_individual));
     const notaMaisBaixa = mediasValidas.length ? Math.min(...mediasValidas) : 0;
-    const mediaGeralSimples = dadosMes.rows.length
-      ? dadosMes.rows.reduce((s,r) => {
-          const m = parseFloat(r.media_individual);
-          return s + (m > 0 ? m : notaMaisBaixa);
-        }, 0) / dadosMes.rows.length
+    const mediaGeralSimples = mediasValidas.length
+      ? mediasValidas.reduce((s,m) => s + m, 0) / mediasValidas.length
       : 0;
 
     // Calcula nota final ponderada: ((Média*Aval) + (MédiaGeral*PesoMinimo)) / (Aval+PesoMinimo)
+    // Colaboradores com 0 avaliações recebem a nota mais baixa do mês, mas não entraram no cálculo da média geral
     const ranking = dadosMes.rows.map(r => {
       let media = parseFloat(r.media_individual);
-      if (media === 0) media = notaMaisBaixa; // se zero, adota a nota mais baixa do mês
+      if (media === 0) media = notaMaisBaixa;
       const aval = parseInt(r.avaliacoes);
       const final = ((media * aval) + (mediaGeralSimples * pesoMinimo)) / (aval + pesoMinimo);
       return { id: r.id, nome: r.nome, media: final.toFixed(2), mediaIndividual: media, avaliacoes: aval };
@@ -1122,14 +1119,11 @@ publicRouter.get('/gamificacao', async (req, res) => {
       ORDER BY n.mes ASC
     `);
 
-    // Média geral histórica simples (para a fórmula bayesiana do consolidado)
-    const mediasHistValidas = todasNotas.rows.map(r => parseFloat(r.media_individual)).filter(m => m > 0);
+    // Média geral histórica: considera SOMENTE lançamentos com avaliações > 0
+    const mediasHistValidas = todasNotas.rows.filter(r => parseFloat(r.media_individual) > 0).map(r => parseFloat(r.media_individual));
     const notaMaisBaixaHist = mediasHistValidas.length ? Math.min(...mediasHistValidas) : 0;
-    const mediaGeralHistorica = todasNotas.rows.length
-      ? todasNotas.rows.reduce((s,r) => {
-          const m = parseFloat(r.media_individual);
-          return s + (m > 0 ? m : notaMaisBaixaHist);
-        }, 0) / todasNotas.rows.length
+    const mediaGeralHistorica = mediasHistValidas.length
+      ? mediasHistValidas.reduce((s,m) => s + m, 0) / mediasHistValidas.length
       : 0;
 
     // Agrupa por colaborador: soma ponderada de (média × avaliações) ao longo de todos os meses
