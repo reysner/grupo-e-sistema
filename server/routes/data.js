@@ -1070,11 +1070,16 @@ publicRouter.get('/gamificacao', async (req, res) => {
     )`).catch(()=>{});
     await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('peso_minimo', 10) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
 
-    const { mes } = req.query;
-    const mesAtual = mes || new Date().toISOString().slice(0,7);
-
     const pesoR = await pool.query(`SELECT valor FROM gam_config WHERE chave = 'peso_minimo'`);
     const pesoMinimo = pesoR.rows[0] ? parseFloat(pesoR.rows[0].valor) : 10;
+
+    // Determina o mês a usar: se não veio na query, usa o ÚLTIMO mês com notas lançadas
+    let { mes } = req.query;
+    if (!mes) {
+      const ultimoMes = await pool.query(`SELECT mes FROM gam_notas ORDER BY mes DESC LIMIT 1`);
+      mes = ultimoMes.rows[0]?.mes || new Date().toISOString().slice(0,7);
+    }
+    const mesAtual = mes;
 
     // Dados brutos do mês
     const dadosMes = await pool.query(`
@@ -1084,55 +1089,75 @@ publicRouter.get('/gamificacao', async (req, res) => {
       WHERE n.mes = $1 AND c.ativo = true
     `, [mesAtual]);
 
-    // Média geral simples do mês (para usar na fórmula bayesiana)
+    // Média geral simples do mês (componente da fórmula bayesiana)
+    // Se média individual = 0 (sem avaliações), usa a menor nota lançada no mês como base
+    const mediasValidas = dadosMes.rows.map(r => parseFloat(r.media_individual)).filter(m => m > 0);
+    const notaMaisBaixa = mediasValidas.length ? Math.min(...mediasValidas) : 0;
     const mediaGeralSimples = dadosMes.rows.length
-      ? dadosMes.rows.reduce((s,r) => s + parseFloat(r.media_individual), 0) / dadosMes.rows.length
+      ? dadosMes.rows.reduce((s,r) => {
+          const m = parseFloat(r.media_individual);
+          return s + (m > 0 ? m : notaMaisBaixa);
+        }, 0) / dadosMes.rows.length
       : 0;
 
-    // Calcula nota final ponderada + ordena com critério de desempate
+    // Calcula nota final ponderada: ((Média*Aval) + (MédiaGeral*PesoMinimo)) / (Aval+PesoMinimo)
     const ranking = dadosMes.rows.map(r => {
-      const media = parseFloat(r.media_individual);
-      const aval  = parseInt(r.avaliacoes);
+      let media = parseFloat(r.media_individual);
+      if (media === 0) media = notaMaisBaixa; // se zero, adota a nota mais baixa do mês
+      const aval = parseInt(r.avaliacoes);
       const final = ((media * aval) + (mediaGeralSimples * pesoMinimo)) / (aval + pesoMinimo);
       return { id: r.id, nome: r.nome, media: final.toFixed(2), mediaIndividual: media, avaliacoes: aval };
     }).sort((a,b) => {
-      // Desempate: 1º quantidade de avaliações, 2º média
-      if (b.avaliacoes !== a.avaliacoes) return b.avaliacoes - a.avaliacoes;
-      return parseFloat(b.media) - parseFloat(a.media);
+      // Critério principal: nota final ponderada (maior primeiro)
+      const diff = parseFloat(b.media) - parseFloat(a.media);
+      if (Math.abs(diff) > 0.005) return diff;
+      // Empate na nota: desempata por mais avaliações
+      return b.avaliacoes - a.avaliacoes;
     });
 
     const mediaGeral = ranking.length
       ? (ranking.reduce((s,r) => s + parseFloat(r.media), 0) / ranking.length).toFixed(2)
       : null;
 
-    // Consolidado acumulado (desde o início) — soma de avaliações e média ponderada geral
+    // ── Consolidado acumulado (desde o início da gamificação) ──────────────────
     const todasNotas = await pool.query(`
       SELECT c.id, c.nome, n.media_individual, n.avaliacoes, n.mes
       FROM gam_notas n
       JOIN gam_colaboradores c ON c.id = n.colaborador_id
       WHERE c.ativo = true
+      ORDER BY n.mes ASC
     `);
 
+    // Média geral histórica simples (para a fórmula bayesiana do consolidado)
+    const mediasHistValidas = todasNotas.rows.map(r => parseFloat(r.media_individual)).filter(m => m > 0);
+    const notaMaisBaixaHist = mediasHistValidas.length ? Math.min(...mediasHistValidas) : 0;
+    const mediaGeralHistorica = todasNotas.rows.length
+      ? todasNotas.rows.reduce((s,r) => {
+          const m = parseFloat(r.media_individual);
+          return s + (m > 0 ? m : notaMaisBaixaHist);
+        }, 0) / todasNotas.rows.length
+      : 0;
+
+    // Agrupa por colaborador: soma ponderada de (média × avaliações) ao longo de todos os meses
     const porColaborador = {};
     todasNotas.rows.forEach(r => {
       if (!porColaborador[r.id]) porColaborador[r.id] = { nome: r.nome, totalAval: 0, somaPonderada: 0, meses: 0 };
+      let m = parseFloat(r.media_individual);
+      if (m === 0) m = notaMaisBaixaHist;
       const aval = parseInt(r.avaliacoes);
       porColaborador[r.id].totalAval += aval;
-      porColaborador[r.id].somaPonderada += parseFloat(r.media_individual) * aval;
+      porColaborador[r.id].somaPonderada += m * aval;
       porColaborador[r.id].meses += 1;
     });
-
-    const mediaGeralHistorica = todasNotas.rows.length
-      ? todasNotas.rows.reduce((s,r) => s + parseFloat(r.media_individual), 0) / todasNotas.rows.length
-      : 0;
 
     const consolidado = Object.values(porColaborador).map(c => {
       const mediaIndividualAcumulada = c.totalAval > 0 ? c.somaPonderada / c.totalAval : 0;
       const final = ((mediaIndividualAcumulada * c.totalAval) + (mediaGeralHistorica * pesoMinimo)) / (c.totalAval + pesoMinimo);
       return { nome: c.nome, media_geral: final.toFixed(2), meses_avaliados: c.meses, total_avaliacoes: c.totalAval };
     }).sort((a,b) => {
-      if (b.total_avaliacoes !== a.total_avaliacoes) return b.total_avaliacoes - a.total_avaliacoes;
-      return parseFloat(b.media_geral) - parseFloat(a.media_geral);
+      const diff = parseFloat(b.media_geral) - parseFloat(a.media_geral);
+      if (Math.abs(diff) > 0.005) return diff;
+      return b.total_avaliacoes - a.total_avaliacoes;
     });
 
     const meses = await pool.query(`SELECT DISTINCT mes FROM gam_notas ORDER BY mes DESC`);
