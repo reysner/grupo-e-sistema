@@ -3654,17 +3654,28 @@ const Gamificacao = (() => {
       return;
     }
 
-    // Calcula média geral simples do mês para a fórmula bayesiana
-    const mediaGeralSimples = data.reduce((s,n) => s + parseFloat(n.media_individual), 0) / data.length;
+    // Se média individual = 0, adota a menor nota lançada no mês
+    const mediasValidas = data.map(n => parseFloat(n.media_individual)).filter(m => m > 0);
+    const notaMaisBaixa = mediasValidas.length ? Math.min(...mediasValidas) : 0;
+    const mediaGeralSimples = data.length
+      ? data.reduce((s,n) => {
+          const m = parseFloat(n.media_individual);
+          return s + (m > 0 ? m : notaMaisBaixa);
+        }, 0) / data.length
+      : 0;
 
     const comNotaFinal = data.map(n => {
-      const media = parseFloat(n.media_individual);
+      let media = parseFloat(n.media_individual);
+      if (media === 0) media = notaMaisBaixa;
       const aval = parseInt(n.avaliacoes);
       const final = ((media * aval) + (mediaGeralSimples * _pesoMinimo)) / (aval + _pesoMinimo);
       return { ...n, notaFinal: final };
     }).sort((a, b) => {
-      if (b.avaliacoes !== a.avaliacoes) return b.avaliacoes - a.avaliacoes;
-      return b.notaFinal - a.notaFinal;
+      // Critério principal: nota final (maior primeiro)
+      const diff = b.notaFinal - a.notaFinal;
+      if (Math.abs(diff) > 0.005) return diff;
+      // Empate na nota: desempata por mais avaliações
+      return b.avaliacoes - a.avaliacoes;
     });
 
     tbody.innerHTML = comNotaFinal.map((n, i) => {
