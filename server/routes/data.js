@@ -1107,13 +1107,7 @@ publicRouter.get('/gamificacao', async (req, res) => {
       const aval = parseInt(r.avaliacoes);
       const final = ((media * aval) + (mediaGeralSimples * pesoMinimo)) / (aval + pesoMinimo);
       return { id: r.id, nome: r.nome, media: final.toFixed(2), mediaIndividual: media, avaliacoes: aval };
-    }).sort((a,b) => {
-      // Critério principal: nota final ponderada (maior primeiro)
-      const diff = parseFloat(b.media) - parseFloat(a.media);
-      if (Math.abs(diff) > 0.005) return diff;
-      // Empate na nota: desempata por mais avaliações
-      return b.avaliacoes - a.avaliacoes;
-    });
+    }).sort((a,b) => parseFloat(b.media) - parseFloat(a.media));
 
     const mediaGeral = ranking.length
       ? (ranking.reduce((s,r) => s + parseFloat(r.media), 0) / ranking.length).toFixed(2)
@@ -1154,11 +1148,7 @@ publicRouter.get('/gamificacao', async (req, res) => {
       const mediaIndividualAcumulada = c.totalAval > 0 ? c.somaPonderada / c.totalAval : 0;
       const final = ((mediaIndividualAcumulada * c.totalAval) + (mediaGeralHistorica * pesoMinimo)) / (c.totalAval + pesoMinimo);
       return { nome: c.nome, media_geral: final.toFixed(2), meses_avaliados: c.meses, total_avaliacoes: c.totalAval };
-    }).sort((a,b) => {
-      const diff = parseFloat(b.media_geral) - parseFloat(a.media_geral);
-      if (Math.abs(diff) > 0.005) return diff;
-      return b.total_avaliacoes - a.total_avaliacoes;
-    });
+    }).sort((a,b) => parseFloat(b.media_geral) - parseFloat(a.media_geral));
 
     const meses = await pool.query(`SELECT DISTINCT mes FROM gam_notas ORDER BY mes DESC`);
     const inicio = await pool.query(`SELECT MIN(mes) as primeiro_mes FROM gam_notas`);
