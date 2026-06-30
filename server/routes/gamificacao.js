@@ -1,243 +1,187 @@
-// =========================================================
-// MÓDULO GAMIFICAÇÃO GRUPO-E
-// routes/gamificacao.js
-//
-// AJUSTE OS IMPORTS ABAIXO para apontar pro seu client do
-// Supabase e pro seu middleware de autenticação já existentes
-// no projeto Grupo-E.
-// =========================================================
-
+'use strict';
 const express = require('express');
+const { pool } = require('../db');
+const { requireAuth, requireAdmin } = require('../auth');
+
 const router = express.Router();
 
-// --- AJUSTE: caminho do seu client Supabase já configurado ---
-const supabase = require('../config/supabaseClient');
-
-// --- AJUSTE: caminho do seu middleware de autenticação já existente ---
-const { requireAuth } = require('../middlewares/auth');
-
 // ---------------------------------------------------------
-// ROTAS PÚBLICAS (sem login) — usadas pela página de visualização
+// PÚBLICAS — sem login (ranking e consolidado anual)
+// IMPORTANTE: ao contrário de data.js, este router NÃO aplica
+// router.use(requireAuth) globalmente, porque /ranking e
+// /consolidado-anual precisam ficar abertos (link público).
 // ---------------------------------------------------------
 
-// GET /api/gamificacao/ranking?mes=6&ano=2026
-// Ranking do mês + pódio + média geral do mês
+// GET /api/data/gamificacao/ranking?mes=6&ano=2026
 router.get('/ranking', async (req, res) => {
   try {
     const mes = parseInt(req.query.mes) || (new Date().getMonth() + 1);
     const ano = parseInt(req.query.ano) || new Date().getFullYear();
 
-    const { data, error } = await supabase
-      .from('gamificacao_notas')
-      .select('nota, colaborador:gamificacao_colaboradores(id, nome)')
-      .eq('mes', mes)
-      .eq('ano', ano)
-      .order('nota', { ascending: false });
+    const { rows } = await pool.query(
+      `SELECT n.nota, c.id AS colaborador_id, c.nome
+       FROM gamificacao_notas n
+       JOIN gamificacao_colaboradores c ON c.id = n.colaborador_id
+       WHERE n.mes = $1 AND n.ano = $2
+       ORDER BY n.nota DESC`,
+      [mes, ano]
+    );
 
-    if (error) throw error;
-
-    const ranking = data
-      .filter(r => r.colaborador) // ignora órfãos
-      .map((r, idx) => ({
-        posicao: idx + 1,
-        nome: r.colaborador.nome,
-        nota: Number(r.nota)
-      }));
-
+    const ranking = rows.map((r, i) => ({
+      posicao: i + 1,
+      nome: r.nome,
+      nota: Number(r.nota),
+    }));
     const mediaGeral = ranking.length
-      ? (ranking.reduce((s, r) => s + r.nota, 0) / ranking.length)
+      ? ranking.reduce((s, r) => s + r.nota, 0) / ranking.length
       : 0;
 
-    const { data: premiosMensal } = await supabase
-      .from('gamificacao_premios')
-      .select('id, posicao, descricao')
-      .eq('tipo', 'mensal')
-      .order('posicao');
+    const { rows: premiosMensal } = await pool.query(
+      `SELECT id, posicao, descricao FROM gamificacao_premios WHERE tipo = 'mensal' ORDER BY posicao`
+    );
 
-    res.json({
-      mes,
-      ano,
-      mediaGeral: Number(mediaGeral.toFixed(2)),
-      ranking,
-      premiosMensal
-    });
+    res.json({ mes, ano, mediaGeral: Number(mediaGeral.toFixed(2)), ranking, premiosMensal });
   } catch (err) {
-    console.error('Erro ao buscar ranking:', err);
+    console.error('Erro ranking gamificação:', err);
     res.status(500).json({ error: 'Erro ao buscar ranking.' });
   }
 });
 
-// GET /api/gamificacao/consolidado-anual?ano=2026
-// Média de todas as notas lançadas no ano, por colaborador
+// GET /api/data/gamificacao/consolidado-anual?ano=2026
 router.get('/consolidado-anual', async (req, res) => {
   try {
     const ano = parseInt(req.query.ano) || new Date().getFullYear();
 
-    const { data, error } = await supabase
-      .from('gamificacao_notas')
-      .select('nota, colaborador:gamificacao_colaboradores(id, nome)')
-      .eq('ano', ano);
-
-    if (error) throw error;
+    const { rows } = await pool.query(
+      `SELECT n.nota, c.id AS colaborador_id, c.nome
+       FROM gamificacao_notas n
+       JOIN gamificacao_colaboradores c ON c.id = n.colaborador_id
+       WHERE n.ano = $1`,
+      [ano]
+    );
 
     const agrupado = {};
-    data.forEach(r => {
-      if (!r.colaborador) return;
-      const id = r.colaborador.id;
-      if (!agrupado[id]) {
-        agrupado[id] = { nome: r.colaborador.nome, soma: 0, qtd: 0 };
-      }
+    rows.forEach(r => {
+      const id = r.colaborador_id;
+      if (!agrupado[id]) agrupado[id] = { nome: r.nome, soma: 0, qtd: 0 };
       agrupado[id].soma += Number(r.nota);
       agrupado[id].qtd += 1;
     });
-
     const consolidado = Object.values(agrupado)
       .map(c => ({ nome: c.nome, media: Number((c.soma / c.qtd).toFixed(2)), mesesLancados: c.qtd }))
       .sort((a, b) => b.media - a.media)
-      .map((c, idx) => ({ posicao: idx + 1, ...c }));
+      .map((c, i) => ({ posicao: i + 1, ...c }));
 
-    const { data: premiosAnual } = await supabase
-      .from('gamificacao_premios')
-      .select('id, posicao, descricao')
-      .eq('tipo', 'anual')
-      .order('posicao');
+    const { rows: premiosAnual } = await pool.query(
+      `SELECT id, posicao, descricao FROM gamificacao_premios WHERE tipo = 'anual' ORDER BY posicao`
+    );
 
     res.json({ ano, consolidado, premiosAnual });
   } catch (err) {
-    console.error('Erro ao buscar consolidado anual:', err);
+    console.error('Erro consolidado gamificação:', err);
     res.status(500).json({ error: 'Erro ao buscar consolidado anual.' });
   }
 });
 
 // ---------------------------------------------------------
-// ROTAS ADMIN (exigem login — usa o middleware já existente)
+// ADMIN — exige login (consulta liberada a qualquer logado;
+// criação/edição exige requireAdmin)
 // ---------------------------------------------------------
 
-// GET /api/gamificacao/admin/colaboradores
 router.get('/admin/colaboradores', requireAuth, async (req, res) => {
-  const { data, error } = await supabase
-    .from('gamificacao_colaboradores')
-    .select('*')
-    .order('nome');
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM gamificacao_colaboradores ORDER BY nome`
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// POST /api/gamificacao/admin/colaboradores  { nome }
-router.post('/admin/colaboradores', requireAuth, async (req, res) => {
-  const { nome } = req.body;
-  if (!nome || !nome.trim()) return res.status(400).json({ error: 'Nome é obrigatório.' });
-
-  const { data, error } = await supabase
-    .from('gamificacao_colaboradores')
-    .insert({ nome: nome.trim() })
-    .select()
-    .single();
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.status(201).json(data);
+router.post('/admin/colaboradores', requireAuth, requireAdmin, async (req, res) => {
+  const nome = (req.body.nome || '').trim();
+  if (!nome) return res.status(400).json({ error: 'Nome é obrigatório.' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO gamificacao_colaboradores (nome) VALUES ($1) RETURNING *`,
+      [nome]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// PUT /api/gamificacao/admin/colaboradores/:id  { ativo }
-router.put('/admin/colaboradores/:id', requireAuth, async (req, res) => {
+router.patch('/admin/colaboradores/:id', requireAuth, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { ativo, nome } = req.body;
-
-  const updates = {};
-  if (typeof ativo === 'boolean') updates.ativo = ativo;
-  if (nome && nome.trim()) updates.nome = nome.trim();
-
-  const { data, error } = await supabase
-    .from('gamificacao_colaboradores')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  try {
+    const { rows } = await pool.query(
+      `UPDATE gamificacao_colaboradores
+       SET ativo = COALESCE($2, ativo), nome = COALESCE($3, nome)
+       WHERE id = $1 RETURNING *`,
+      [id, typeof ativo === 'boolean' ? ativo : null, nome?.trim() || null]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// POST /api/gamificacao/admin/notas
-// body: { colaborador_id, mes, ano, nota }
-// Faz upsert: se já existe nota daquele colaborador/mes/ano, atualiza.
-router.post('/admin/notas', requireAuth, async (req, res) => {
+router.post('/admin/notas', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { colaborador_id, mes, ano, nota } = req.body;
-
     if (!colaborador_id || !mes || !ano || nota === undefined) {
       return res.status(400).json({ error: 'Campos obrigatórios: colaborador_id, mes, ano, nota.' });
     }
     if (nota < 0 || nota > 5) {
       return res.status(400).json({ error: 'Nota deve estar entre 0 e 5.' });
     }
+    const lancado_por = req.user?.name || req.user?.email || null;
 
-    const lancado_por = req.user?.nome || req.user?.email || null;
-
-    const { data, error } = await supabase
-      .from('gamificacao_notas')
-      .upsert(
-        { colaborador_id, mes, ano, nota, lancado_por },
-        { onConflict: 'colaborador_id,mes,ano' }
-      )
-      .select()
-      .single();
-
-    if (error) throw error;
-    res.status(201).json(data);
+    const { rows } = await pool.query(
+      `INSERT INTO gamificacao_notas (colaborador_id, mes, ano, nota, lancado_por)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (colaborador_id, mes, ano)
+       DO UPDATE SET nota = EXCLUDED.nota, lancado_por = EXCLUDED.lancado_por
+       RETURNING *`,
+      [colaborador_id, mes, ano, nota, lancado_por]
+    );
+    res.status(201).json(rows[0]);
   } catch (err) {
     console.error('Erro ao lançar nota:', err);
     res.status(500).json({ error: 'Erro ao lançar nota.' });
   }
 });
 
-// GET /api/gamificacao/admin/notas?mes=6&ano=2026
-// Lista as notas já lançadas no período (pra preencher o formulário admin)
 router.get('/admin/notas', requireAuth, async (req, res) => {
   const mes = parseInt(req.query.mes) || (new Date().getMonth() + 1);
   const ano = parseInt(req.query.ano) || new Date().getFullYear();
-
-  const { data, error } = await supabase
-    .from('gamificacao_notas')
-    .select('id, nota, colaborador_id')
-    .eq('mes', mes)
-    .eq('ano', ano);
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, nota, colaborador_id FROM gamificacao_notas WHERE mes = $1 AND ano = $2`,
+      [mes, ano]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// PUT /api/gamificacao/admin/premios/:id  { descricao }
-router.put('/admin/premios/:id', requireAuth, async (req, res) => {
+router.patch('/admin/premios/:id', requireAuth, requireAdmin, async (req, res) => {
   const { id } = req.params;
-  const { descricao } = req.body;
-  if (!descricao || !descricao.trim()) return res.status(400).json({ error: 'Descrição é obrigatória.' });
-
-  const { data, error } = await supabase
-    .from('gamificacao_premios')
-    .update({ descricao: descricao.trim() })
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  const descricao = (req.body.descricao || '').trim();
+  if (!descricao) return res.status(400).json({ error: 'Descrição é obrigatória.' });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE gamificacao_premios SET descricao = $2 WHERE id = $1 RETURNING *`,
+      [id, descricao]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
-
-// =========================================================
-// Como registrar no seu app.js / server.js principal:
-//
-//   const gamificacaoRoutes = require('./routes/gamificacao');
-//   app.use('/api/gamificacao', gamificacaoRoutes);
-//
-// E para servir as páginas HTML (ajuste conforme seu padrão
-// de rotas de view do Grupo-E):
-//
-//   app.get('/gamificacao', (req, res) =>
-//     res.sendFile(path.join(__dirname, 'public/gamificacao.html')));
-//
-//   app.get('/gamificacao/admin', requireAuth, (req, res) =>
-//     res.sendFile(path.join(__dirname, 'public/gamificacao-admin.html')));
-// =========================================================
