@@ -88,6 +88,9 @@
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/><path d="M8 12h4"/></svg>CAC / Investimentos
         </a>
         <div class="nav-sep"></div>
+        <a class="nav-item admin-only" data-page="gamificacao" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0012 0V2Z"/></svg>Gamificação
+        </a>
         <a class="nav-item admin-only" data-page="log" href="#">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Log de Atividades
         </a>
@@ -830,6 +833,43 @@
                 <tbody id="log-tbody"><tr><td colspan="5" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
               </table>
               <div id="log-pagination"></div>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- GAMIFICAÇÃO -->
+        <section id="page-gamificacao" class="page admin-only" hidden>
+
+          <!-- TOOLBAR -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px;flex-wrap:wrap">
+            <div style="display:flex;gap:10px;align-items:center">
+              <select id="gam-mes-filter" onchange="Gamificacao.loadNotas()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer"></select>
+              <button class="btn btn-ghost btn-sm" onclick="window.open('/gamificacao','_blank')">🔗 Ver página pública</button>
+            </div>
+            <button class="btn btn-success btn-sm" onclick="Gamificacao.abrirColaboradores()" style="font-weight:600">👥 Gerenciar Colaboradores</button>
+          </div>
+
+          <!-- LANÇAMENTO DE NOTAS -->
+          <div class="form-card" style="margin-bottom:20px">
+            <h2 class="form-title">Lançar Notas do Mês</h2>
+            <div class="form-accent"></div>
+            <div style="display:flex;gap:12px;align-items:flex-end;margin:16px 0;flex-wrap:wrap">
+              <div class="field" style="min-width:180px"><label>Mês de referência</label><input id="gam-mes-lanc" type="month" /></div>
+              <button class="btn btn-primary btn-sm" onclick="Gamificacao.loadFormLancamento()">Carregar colaboradores</button>
+            </div>
+            <div id="gam-lancamento-grid"></div>
+          </div>
+
+          <!-- RESULTADO DO MÊS -->
+          <div class="form-card">
+            <h2 class="form-title">Resultado do Mês Selecionado</h2>
+            <div class="form-accent"></div>
+            <div class="table-wrap" style="margin-top:14px">
+              <table class="data-table">
+                <thead><tr><th>Pos.</th><th>Colaborador</th><th>Foco</th><th>Dedicação</th><th>Atitude</th><th>Média</th><th></th></tr></thead>
+                <tbody id="gam-tbody"><tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px">Selecione um mês</td></tr></tbody>
+              </table>
             </div>
           </div>
 
