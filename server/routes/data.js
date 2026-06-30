@@ -555,7 +555,7 @@ router.delete('/clear', requireAdmin, async (req, res) => {
 // ── PERFIL ───────────────────────────────────────────────────────────────────
 router.patch('/perfil', requireAuth, async (req, res) => {
   try {
-    const { nome, senhaAtual, senhaNova } = req.body;
+    const { nome, email, senhaAtual, senhaNova } = req.body;
     if (!nome) return res.status(400).json({ error: 'Nome obrigatorio.' });
     if (!senhaAtual) return res.status(400).json({ error: 'Senha atual obrigatoria.' });
 
@@ -572,8 +572,21 @@ router.patch('/perfil', requireAuth, async (req, res) => {
     const valid = await bcrypt.compare(senhaAtual, hashAtual);
     if (!valid) return res.status(400).json({ error: 'Senha atual incorreta.' });
 
-    // Atualiza nome
-    await pool.query('UPDATE users SET name = $1 WHERE id = $2', [nome, req.user.id]);
+    // Verifica se e-mail ja esta em uso por outro usuario
+    if (email && email.toLowerCase().trim() !== (user.email||'').toLowerCase().trim()) {
+      const dup = await pool.query(
+        'SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2',
+        [email, req.user.id]
+      );
+      if (dup.rows.length) return res.status(400).json({ error: 'Este e-mail ja esta em uso.' });
+    }
+
+    // Atualiza nome e e-mail
+    if (email) {
+      await pool.query('UPDATE users SET name = $1, email = $2 WHERE id = $3', [nome, email.toLowerCase().trim(), req.user.id]);
+    } else {
+      await pool.query('UPDATE users SET name = $1 WHERE id = $2', [nome, req.user.id]);
+    }
 
     // Atualiza senha se informada
     if (senhaNova) {
