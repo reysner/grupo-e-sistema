@@ -67,6 +67,11 @@ app.get('/pesquisa', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'pesquisa.html'));
 });
 
+// ── Página pública da gamificação (sem login) ─────────────────────────────────
+app.get('/gamificacao', (req, res) => {
+  res.sendFile(path.join(PUBLIC, 'gamificacao.html'));
+});
+
 // ── Arquivos estáticos com MIME correto ───────────────────────────────────────
 app.get('/js/:file', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
