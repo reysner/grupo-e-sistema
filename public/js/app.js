@@ -3654,14 +3654,11 @@ const Gamificacao = (() => {
       return;
     }
 
-    // Se média individual = 0, adota a menor nota lançada no mês
-    const mediasValidas = data.map(n => parseFloat(n.media_individual)).filter(m => m > 0);
+    // Média geral: considera SOMENTE colaboradores com avaliações > 0
+    const mediasValidas = data.filter(n => parseFloat(n.media_individual) > 0).map(n => parseFloat(n.media_individual));
     const notaMaisBaixa = mediasValidas.length ? Math.min(...mediasValidas) : 0;
-    const mediaGeralSimples = data.length
-      ? data.reduce((s,n) => {
-          const m = parseFloat(n.media_individual);
-          return s + (m > 0 ? m : notaMaisBaixa);
-        }, 0) / data.length
+    const mediaGeralSimples = mediasValidas.length
+      ? mediasValidas.reduce((s,m) => s + m, 0) / mediasValidas.length
       : 0;
 
     const comNotaFinal = data.map(n => {
