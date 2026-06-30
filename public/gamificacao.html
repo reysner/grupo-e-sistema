@@ -1,273 +1,308 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gamificação Grupo-E | Ranking</title>
-<style>
-  :root {
-    --verde-escuro: #14391f;
-    --verde: #1d5a2e;
-    --dourado: #e8b923;
-    --bege: #f7efdd;
-    --prata: #c4c4c4;
-    --bronze: #c98a4b;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: 'Segoe UI', Arial, sans-serif;
-    background: var(--bege);
-    color: var(--verde-escuro);
-  }
-  header {
-    background: var(--verde-escuro);
-    color: white;
-    padding: 24px 16px;
-    text-align: center;
-  }
-  header h1 {
-    margin: 0 0 4px;
-    font-size: 1.8rem;
-    letter-spacing: 1px;
-  }
-  header p { margin: 0; opacity: .85; font-size: .95rem; }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gamificação Grupo-E — Ranking Mensal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet" />
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    :root{
+      --green:#1a4233;--green-light:#2a6e4a;--green-pale:#e8f4ef;
+      --gold:#f5c518;--gold-dark:#c9a000;
+      --silver:#c4ccd6;--silver-dark:#8a94a3;
+      --bronze:#cd7f32;--bronze-dark:#a8632a;
+      --gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;
+      --gray-400:#94a3b8;--gray-600:#475569;--gray-800:#1e293b;
+      --white:#fff;--radius:16px;--radius-sm:10px;
+      --shadow:0 4px 24px rgba(0,0,0,.08);--shadow-lg:0 12px 48px rgba(0,0,0,.14);
+    }
+    body{font-family:'Inter',sans-serif;background:linear-gradient(180deg,#fdf6e3 0%,#fff 100%);color:var(--gray-800);min-height:100vh}
 
-  .container { max-width: 960px; margin: 0 auto; padding: 24px 16px 60px; }
+    .header{background:var(--green);padding:24px 20px 60px;text-align:center;position:relative;overflow:hidden}
+    .header::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 20% 20%,rgba(245,197,24,.15) 0%,transparent 50%),radial-gradient(circle at 80% 80%,rgba(245,197,24,.1) 0%,transparent 50%)}
+    .header-inner{position:relative;z-index:1;max-width:680px;margin:0 auto}
+    .logo{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:18px}
+    .logo-icon{width:38px;height:38px;background:var(--white);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--green);font-family:'Plus Jakarta Sans',sans-serif;font-size:18px;font-weight:800;font-style:italic}
+    .logo-text{font-family:'Plus Jakarta Sans',sans-serif;font-size:17px;font-weight:800;color:var(--white)}
+    h1{font-family:'Plus Jakarta Sans',sans-serif;font-size:32px;font-weight:800;color:var(--white);letter-spacing:-.5px;margin-bottom:6px}
+    .subtitle{color:var(--gold);font-size:14px;font-weight:600;letter-spacing:.5px}
+    .tagline{color:rgba(255,255,255,.65);font-size:13px;margin-top:10px}
 
-  .filtros {
-    display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
-    margin-bottom: 24px;
-  }
-  .filtros select, .filtros button {
-    padding: 8px 14px; border-radius: 8px; border: 1px solid var(--verde);
-    font-size: .95rem; background: white; color: var(--verde-escuro); cursor: pointer;
-  }
-  .filtros button { background: var(--verde); color: white; border: none; font-weight: 600; }
+    .container{max-width:680px;margin:-36px auto 0;padding:0 16px 60px;position:relative;z-index:2}
 
-  .media-geral {
-    background: white; border: 2px solid var(--verde-escuro); border-radius: 14px;
-    max-width: 360px; margin: 0 auto 32px; padding: 16px 24px; text-align: center;
-  }
-  .media-geral .label { font-weight: 700; letter-spacing: .5px; }
-  .media-geral .valor {
-    background: var(--verde-escuro); color: white; font-size: 1.6rem; font-weight: 800;
-    border-radius: 8px; padding: 6px 16px; display: inline-block; margin-top: 8px;
-  }
+    /* MEDIA GERAL */
+    .media-card{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow-lg);padding:18px 24px;display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:24px}
+    .media-icon{width:44px;height:44px;background:var(--green-pale);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px}
+    .media-label{font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.6px}
+    .media-value{font-size:26px;font-weight:800;color:var(--green)}
 
-  .podio { display: flex; gap: 16px; justify-content: center; align-items: flex-end;
-    flex-wrap: wrap; margin-bottom: 36px; }
-  .lugar {
-    border-radius: 12px; padding: 16px; min-width: 180px; text-align: center;
-    color: var(--verde-escuro); font-weight: 700;
-  }
-  .lugar.ouro { background: linear-gradient(180deg,#fdf0c4,#f6dd8c); border: 2px solid var(--dourado); order: 2; }
-  .lugar.prata { background: linear-gradient(180deg,#f1f1f1,#dadada); border: 2px solid var(--prata); order: 1; }
-  .lugar.bronze { background: linear-gradient(180deg,#f3dcc2,#e7c099); border: 2px solid var(--bronze); order: 3; }
-  .lugar .badge { font-size: 1.4rem; margin-bottom: 6px; }
-  .lugar .nome { font-size: 1.1rem; margin: 4px 0; }
-  .lugar .nota {
-    background: var(--verde-escuro); color: white; border-radius: 8px;
-    padding: 4px 10px; display: inline-block; font-size: 1.2rem;
-  }
-  .lugar .premio { font-weight: 400; font-size: .8rem; margin-top: 6px; opacity: .85; }
+    /* FILTRO MES */
+    .filtro-mes{display:flex;justify-content:center;margin-bottom:28px}
+    .filtro-mes select{padding:8px 16px;border:1px solid var(--gray-200);border-radius:10px;font-size:13px;font-weight:600;color:var(--green);background:var(--white);cursor:pointer;box-shadow:var(--shadow)}
 
-  table {
-    width: 100%; border-collapse: collapse; background: white;
-    border-radius: 12px; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,.08);
-  }
-  th, td { padding: 10px 14px; text-align: left; font-size: .95rem; }
-  th { background: var(--verde-escuro); color: white; }
-  tr:nth-child(even) { background: #f4efe2; }
-  td.nota, th.nota { text-align: center; }
-  td.nota span {
-    background: var(--verde-escuro); color: white; border-radius: 6px;
-    padding: 2px 10px; font-weight: 700; display: inline-block; min-width: 50px;
-  }
+    /* PODIO */
+    .podio{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:end;margin-bottom:32px}
+    .podio-card{border-radius:var(--radius-sm);padding:16px 10px 18px;text-align:center;position:relative;box-shadow:var(--shadow)}
+    .podio-card.p1{background:linear-gradient(160deg,#fff9e0,#fdf0bd);border:2px solid var(--gold);order:2;padding-top:28px;transform:translateY(-12px)}
+    .podio-card.p2{background:linear-gradient(160deg,#f4f6f8,#e4e8ec);border:2px solid var(--silver-dark);order:1}
+    .podio-card.p3{background:linear-gradient(160deg,#fdf0e4,#f5dcc4);border:2px solid var(--bronze);order:3}
+    .podio-badge{position:absolute;top:-14px;left:50%;transform:translateX(-50%);width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+    .p1 .podio-badge{background:var(--gold);width:38px;height:38px;font-size:16px;top:-18px}
+    .p2 .podio-badge{background:var(--silver-dark)}
+    .p3 .podio-badge{background:var(--bronze)}
+    .podio-trophy{font-size:26px;margin-bottom:6px}
+    .p1 .podio-trophy{font-size:34px}
+    .podio-nome{font-size:13px;font-weight:800;color:var(--green);margin-bottom:8px;word-break:break-word}
+    .p1 .podio-nome{font-size:15px}
+    .podio-nota{display:inline-block;background:var(--green);color:#fff;padding:4px 14px;border-radius:8px;font-size:15px;font-weight:800}
+    .p1 .podio-nota{font-size:18px;padding:5px 16px}
 
-  .secao-titulo {
-    margin: 40px 0 16px; font-size: 1.3rem; font-weight: 800; color: var(--verde-escuro);
-    display: flex; align-items: center; gap: 8px;
-  }
+    /* RANKING LIST */
+    .ranking-header{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+    .ranking-header-icon{font-size:20px}
+    .ranking-header h2{font-size:16px;font-weight:800;color:var(--green)}
+    .ranking-list{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:32px}
+    .ranking-row{display:flex;align-items:center;gap:12px;padding:13px 18px;border-bottom:1px solid var(--gray-100)}
+    .ranking-row:last-child{border-bottom:none}
+    .ranking-row:nth-child(even){background:var(--gray-50)}
+    .ranking-pos{width:26px;height:26px;background:var(--green-pale);color:var(--green);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0}
+    .ranking-nome{flex:1;font-size:14px;font-weight:600;color:var(--gray-800)}
+    .ranking-nota{background:var(--green);color:#fff;padding:4px 12px;border-radius:8px;font-size:13px;font-weight:800}
 
-  .premios-box {
-    background: white; border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;
-    box-shadow: 0 1px 6px rgba(0,0,0,.08);
-  }
-  .premios-box h3 { margin: 0 0 10px; color: var(--verde-escuro); }
-  .premios-box ul { margin: 0; padding-left: 18px; }
-  .premios-box li { margin-bottom: 4px; }
+    /* PREMIOS */
+    .premios-section{margin-bottom:32px}
+    .premios-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .premio-card{background:var(--white);border-radius:var(--radius-sm);box-shadow:var(--shadow);padding:16px;text-align:center}
+    .premio-card .emoji{font-size:28px;margin-bottom:6px}
+    .premio-card .titulo{font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+    .premio-card .desc{font-size:13px;font-weight:700;color:var(--green)}
 
-  .vazio { text-align: center; padding: 40px 16px; opacity: .7; }
-  .loading { text-align: center; padding: 40px 16px; }
-</style>
+    /* CONSOLIDADO */
+    .consolidado-card{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;margin-bottom:24px}
+    .consolidado-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:6px}
+    .consolidado-header h2{font-size:15px;font-weight:800;color:var(--green)}
+    .consolidado-sub{font-size:11px;color:var(--gray-400)}
+    .consolidado-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--gray-100)}
+    .consolidado-row:last-child{border-bottom:none}
+    .consolidado-pos{width:22px;font-size:12px;font-weight:700;color:var(--gray-400)}
+    .consolidado-nome{flex:1;font-size:13px;font-weight:600;color:var(--gray-800)}
+    .consolidado-meses{font-size:11px;color:var(--gray-400);margin-right:8px}
+    .consolidado-nota{font-size:13px;font-weight:800;color:var(--green-light)}
+
+    .footer-msg{text-align:center;padding:20px;color:var(--gray-400);font-size:12px}
+
+    .loading,.empty{text-align:center;padding:60px 20px;color:var(--gray-400);font-size:14px}
+
+    @media(max-width:480px){
+      h1{font-size:24px}
+      .media-value{font-size:21px}
+      .podio-card.p1{transform:translateY(-8px)}
+    }
+  </style>
 </head>
 <body>
 
-<header>
-  <h1>🏆 RESULTADO — GAMIFICAÇÃO GRUPO-E</h1>
-  <p>Foco, dedicação e atitude que geram resultados!</p>
-</header>
-
-<div class="container">
-
-  <div class="filtros">
-    <select id="selMes"></select>
-    <select id="selAno"></select>
-    <button onclick="carregarTudo()">Atualizar</button>
+  <div class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <div class="logo-icon">e</div>
+        <div class="logo-text">GRUPO-E</div>
+      </div>
+      <h1>🏆 Resultado Parcial</h1>
+      <div class="subtitle">FOCO, DEDICAÇÃO E ATITUDE QUE GERAM RESULTADOS!</div>
+      <div class="tagline" id="periodo-label">Carregando...</div>
+    </div>
   </div>
 
-  <div id="conteudoMensal" class="loading">Carregando ranking do mês…</div>
+  <div class="container">
 
-  <div class="secao-titulo">📊 Consolidado anual (média de todos os meses lançados)</div>
-  <div id="conteudoAnual" class="loading">Carregando consolidado anual…</div>
+    <div class="media-card">
+      <div class="media-icon">📈</div>
+      <div>
+        <div class="media-label">Média Geral do Mês</div>
+        <div class="media-value" id="media-geral">—</div>
+      </div>
+    </div>
 
-</div>
+    <div class="filtro-mes">
+      <select id="mes-select" onchange="carregarMes(this.value)">
+        <option>Carregando meses...</option>
+      </select>
+    </div>
 
-<script>
-const API_BASE = '/api/gamificacao';
+    <div id="conteudo-mes">
+      <div class="loading">Carregando ranking...</div>
+    </div>
 
-const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-const hoje = new Date();
+    <div class="premios-section">
+      <div class="ranking-header">
+        <span class="ranking-header-icon">🎁</span>
+        <h2>Premiação Mensal</h2>
+      </div>
+      <div class="premios-grid">
+        <div class="premio-card">
+          <div class="emoji">🥇</div>
+          <div class="titulo">1º Lugar</div>
+          <div class="desc">R$ 200 Cartão iFood</div>
+        </div>
+        <div class="premio-card">
+          <div class="emoji">🥈</div>
+          <div class="titulo">2º Lugar</div>
+          <div class="desc">Vale Almoço</div>
+        </div>
+        <div class="premio-card">
+          <div class="emoji">🥉</div>
+          <div class="titulo">3º Lugar</div>
+          <div class="desc">Chocolate Cacau Show</div>
+        </div>
+        <div class="premio-card">
+          <div class="emoji">🏆</div>
+          <div class="titulo">Anual</div>
+          <div class="desc">Smart TV, Air Fryer, Alexa</div>
+        </div>
+      </div>
+    </div>
 
-function montarFiltros() {
-  const selMes = document.getElementById('selMes');
-  meses.forEach((m, i) => {
-    const opt = document.createElement('option');
-    opt.value = i + 1;
-    opt.textContent = m;
-    if (i + 1 === hoje.getMonth() + 1) opt.selected = true;
-    selMes.appendChild(opt);
-  });
+    <div class="consolidado-card">
+      <div class="consolidado-header">
+        <h2>📊 Consolidado Geral</h2>
+        <span class="consolidado-sub" id="inicio-label"></span>
+      </div>
+      <div id="consolidado-list">
+        <div class="loading">Carregando...</div>
+      </div>
+    </div>
 
-  const selAno = document.getElementById('selAno');
-  const anoAtual = hoje.getFullYear();
-  for (let a = anoAtual; a >= anoAtual - 4; a--) {
-    const opt = document.createElement('option');
-    opt.value = a;
-    opt.textContent = a;
-    if (a === anoAtual) opt.selected = true;
-    selAno.appendChild(opt);
-  }
-}
+    <div class="footer-msg">
+      ⭐ Pequenas atitudes hoje, grandes conquistas sempre. Continue assim — você é inspiração! 🚀
+    </div>
 
-function medalha(pos) {
-  return pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : pos + 'º';
-}
+  </div>
 
-async function carregarRankingMensal(mes, ano) {
-  const el = document.getElementById('conteudoMensal');
-  el.className = 'loading';
-  el.textContent = 'Carregando ranking do mês…';
-  try {
-    const resp = await fetch(`${API_BASE}/ranking?mes=${mes}&ano=${ano}`);
-    const data = await resp.json();
+  <script>
+    let _allMonths = [];
+    let _currentMonth = null;
 
-    if (!data.ranking || data.ranking.length === 0) {
-      el.className = 'vazio';
-      el.textContent = 'Nenhuma nota lançada para este período ainda.';
-      return;
+    const trophyIcons = ['🥇','🥈','🥉'];
+    const medalIcons = ['1º','2º','3º'];
+
+    function fmtMesLabel(mes) {
+      if (!mes) return '';
+      const [ano, m] = mes.split('-');
+      const nomes = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+      return nomes[parseInt(m)] + '/' + ano;
     }
 
-    const top3 = data.ranking.slice(0, 3);
-    const resto = data.ranking.slice(3);
-    const premiosMap = {};
-    (data.premiosMensal || []).forEach(p => premiosMap[p.posicao] = p.descricao);
+    async function init() {
+      try {
+        const res = await fetch('/api/public/gamificacao');
+        if (!res.ok) throw new Error('Erro ao carregar');
+        const data = await res.json();
+        _allMonths = data.meses || [];
+        _currentMonth = data.mes;
 
-    const podioHtml = top3.map(r => {
-      const classe = r.posicao === 1 ? 'ouro' : r.posicao === 2 ? 'prata' : 'bronze';
-      return `<div class="lugar ${classe}">
-        <div class="badge">${medalha(r.posicao)}</div>
-        <div class="nome">${r.nome}</div>
-        <div class="nota">${r.nota.toFixed(2)}</div>
-        <div class="premio">${premiosMap[r.posicao] || ''}</div>
-      </div>`;
-    }).join('');
+        // Populate month selector
+        const sel = document.getElementById('mes-select');
+        if (_allMonths.length) {
+          sel.innerHTML = _allMonths.map(m =>
+            `<option value="${m}" ${m === _currentMonth ? 'selected' : ''}>${fmtMesLabel(m)}</option>`
+          ).join('');
+        } else {
+          sel.innerHTML = '<option>Nenhum mês lançado ainda</option>';
+        }
 
-    const linhasResto = resto.map(r => `
-      <tr>
-        <td>${r.posicao}º</td>
-        <td>${r.nome}</td>
-        <td class="nota"><span>${r.nota.toFixed(2)}</span></td>
-      </tr>`).join('');
+        renderMes(data);
+        renderConsolidado(data);
 
-    el.className = '';
-    el.innerHTML = `
-      <div class="media-geral">
-        <div class="label">MÉDIA GERAL DO MÊS</div>
-        <div class="valor">${data.mediaGeral.toFixed(2)}</div>
-      </div>
-      <div class="podio">${podioHtml}</div>
-      ${resto.length ? `
-      <table>
-        <thead><tr><th>Pos.</th><th>Nome</th><th class="nota">Nota</th></tr></thead>
-        <tbody>${linhasResto}</tbody>
-      </table>` : ''}
-    `;
-  } catch (e) {
-    el.className = 'vazio';
-    el.textContent = 'Erro ao carregar ranking.';
-    console.error(e);
-  }
-}
-
-async function carregarConsolidadoAnual(ano) {
-  const el = document.getElementById('conteudoAnual');
-  el.className = 'loading';
-  el.textContent = 'Carregando consolidado anual…';
-  try {
-    const resp = await fetch(`${API_BASE}/consolidado-anual?ano=${ano}`);
-    const data = await resp.json();
-
-    if (!data.consolidado || data.consolidado.length === 0) {
-      el.className = 'vazio';
-      el.textContent = 'Nenhuma nota lançada neste ano ainda.';
-      return;
+        if (data.inicioGamificacao) {
+          document.getElementById('inicio-label').textContent = 'Desde ' + fmtMesLabel(data.inicioGamificacao);
+        }
+      } catch (err) {
+        document.getElementById('conteudo-mes').innerHTML = '<div class="empty">Não foi possível carregar o ranking. Tente novamente mais tarde.</div>';
+        document.getElementById('consolidado-list').innerHTML = '';
+      }
     }
 
-    const premiosAnualMap = {};
-    (data.premiosAnual || []).forEach(p => premiosAnualMap[p.posicao] = p.descricao);
+    async function carregarMes(mes) {
+      try {
+        const res = await fetch('/api/public/gamificacao?mes=' + mes);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        renderMes(data);
+      } catch (err) {
+        document.getElementById('conteudo-mes').innerHTML = '<div class="empty">Erro ao carregar este mês.</div>';
+      }
+    }
 
-    const linhas = data.consolidado.map(r => `
-      <tr>
-        <td>${medalha(r.posicao)}</td>
-        <td>${r.nome}</td>
-        <td class="nota"><span>${r.media.toFixed(2)}</span></td>
-        <td>${r.mesesLancados}</td>
-      </tr>`).join('');
+    function renderMes(data) {
+      document.getElementById('periodo-label').textContent = 'Resultado de ' + fmtMesLabel(data.mes);
+      document.getElementById('media-geral').textContent = data.mediaGeral || '—';
 
-    el.className = '';
-    el.innerHTML = `
-      <div class="premios-box">
-        <h3>🏆 Prêmios anuais</h3>
-        <ul>
-          <li><strong>1º lugar:</strong> ${premiosAnualMap[1] || '—'}</li>
-          <li><strong>2º lugar:</strong> ${premiosAnualMap[2] || '—'}</li>
-          <li><strong>3º lugar:</strong> ${premiosAnualMap[3] || '—'}</li>
-        </ul>
-      </div>
-      <table>
-        <thead><tr><th>Pos.</th><th>Nome</th><th class="nota">Média</th><th>Meses lançados</th></tr></thead>
-        <tbody>${linhas}</tbody>
-      </table>
-    `;
-  } catch (e) {
-    el.className = 'vazio';
-    el.textContent = 'Erro ao carregar consolidado anual.';
-    console.error(e);
-  }
-}
+      const ranking = data.ranking || [];
+      const cont = document.getElementById('conteudo-mes');
 
-function carregarTudo() {
-  const mes = document.getElementById('selMes').value;
-  const ano = document.getElementById('selAno').value;
-  carregarRankingMensal(mes, ano);
-  carregarConsolidadoAnual(ano);
-}
+      if (!ranking.length) {
+        cont.innerHTML = '<div class="empty">Nenhuma nota lançada para este mês ainda.</div>';
+        return;
+      }
 
-montarFiltros();
-carregarTudo();
-</script>
+      const top3 = ranking.slice(0, 3);
+      const resto = ranking.slice(3);
+
+      let podioHtml = '<div class="podio">';
+      top3.forEach((r, i) => {
+        podioHtml += `
+          <div class="podio-card p${i+1}">
+            <div class="podio-badge">${medalIcons[i]}</div>
+            <div class="podio-trophy">${trophyIcons[i]}</div>
+            <div class="podio-nome">${r.nome}</div>
+            <div class="podio-nota">${parseFloat(r.media).toFixed(2)}</div>
+          </div>`;
+      });
+      podioHtml += '</div>';
+
+      let listHtml = '';
+      if (resto.length) {
+        listHtml = `
+          <div class="ranking-header">
+            <span class="ranking-header-icon">🏅</span>
+            <h2>Ranking Completo</h2>
+          </div>
+          <div class="ranking-list">
+            ${resto.map((r, i) => `
+              <div class="ranking-row">
+                <div class="ranking-pos">${i + 4}º</div>
+                <div class="ranking-nome">${r.nome}</div>
+                <div class="ranking-nota">${parseFloat(r.media).toFixed(2)}</div>
+              </div>
+            `).join('')}
+          </div>`;
+      }
+
+      cont.innerHTML = podioHtml + listHtml;
+    }
+
+    function renderConsolidado(data) {
+      const cons = data.consolidado || [];
+      const list = document.getElementById('consolidado-list');
+      if (!cons.length) {
+        list.innerHTML = '<div class="empty">Sem dados ainda.</div>';
+        return;
+      }
+      list.innerHTML = cons.map((r, i) => `
+        <div class="consolidado-row">
+          <div class="consolidado-pos">${i + 1}º</div>
+          <div class="consolidado-nome">${r.nome}</div>
+          <div class="consolidado-meses">${r.meses_avaliados} ${r.meses_avaliados == 1 ? 'mês' : 'meses'}</div>
+          <div class="consolidado-nota">${parseFloat(r.media_geral).toFixed(2)}</div>
+        </div>
+      `).join('');
+    }
+
+    init();
+  </script>
 
 </body>
 </html>
