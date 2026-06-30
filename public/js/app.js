@@ -3670,13 +3670,7 @@ const Gamificacao = (() => {
       const aval = parseInt(n.avaliacoes);
       const final = ((media * aval) + (mediaGeralSimples * _pesoMinimo)) / (aval + _pesoMinimo);
       return { ...n, notaFinal: final };
-    }).sort((a, b) => {
-      // Critério principal: nota final (maior primeiro)
-      const diff = b.notaFinal - a.notaFinal;
-      if (Math.abs(diff) > 0.005) return diff;
-      // Empate na nota: desempata por mais avaliações
-      return b.avaliacoes - a.avaliacoes;
-    });
+    }).sort((a, b) => b.notaFinal - a.notaFinal);
 
     tbody.innerHTML = comNotaFinal.map((n, i) => {
       return '<tr>' +
