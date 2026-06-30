@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gamificação | Administração</title>
+<style>
+  :root { --verde-escuro:#14391f; --verde:#1d5a2e; --bege:#f7efdd; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:'Segoe UI',Arial,sans-serif; background:var(--bege); color:var(--verde-escuro); }
+  header { background:var(--verde-escuro); color:white; padding:20px 16px; text-align:center; }
+  header h1 { margin:0; font-size:1.5rem; }
+  .container { max-width:900px; margin:0 auto; padding:24px 16px 60px; }
+
+  .card { background:white; border-radius:12px; padding:20px; margin-bottom:24px; box-shadow:0 1px 6px rgba(0,0,0,.08); }
+  .card h2 { margin-top:0; font-size:1.1rem; color:var(--verde-escuro); }
+
+  .linha { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; }
+  label { display:block; font-size:.85rem; font-weight:600; margin-bottom:4px; }
+  select, input, button {
+    padding:8px 10px; border-radius:8px; border:1px solid #ccc; font-size:.95rem;
+  }
+  button { background:var(--verde); color:white; border:none; font-weight:600; cursor:pointer; }
+  button:hover { opacity:.9; }
+  button.secundario { background:white; color:var(--verde-escuro); border:1px solid var(--verde); }
+
+  table { width:100%; border-collapse:collapse; margin-top:12px; }
+  th, td { padding:8px 10px; text-align:left; border-bottom:1px solid #eee; font-size:.92rem; }
+  th { background:var(--verde-escuro); color:white; }
+  input.nota-input { width:80px; }
+
+  .msg { padding:8px 12px; border-radius:8px; margin-bottom:12px; font-size:.9rem; display:none; }
+  .msg.ok { background:#dff5e1; color:#14391f; display:block; }
+  .msg.erro { background:#fde2e2; color:#7a1d1d; display:block; }
+
+  .novo-colaborador { display:flex; gap:8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚙️ Gamificação Grupo-E — Administração</h1>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <h2>👤 Colaboradores</h2>
+    <div class="novo-colaborador">
+      <input type="text" id="novoNome" placeholder="Nome do colaborador">
+      <button onclick="adicionarColaborador()">Adicionar</button>
+    </div>
+    <table>
+      <thead><tr><th>Nome</th><th>Status</th><th>Ação</th></tr></thead>
+      <tbody id="tabelaColaboradores"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>📝 Lançamento de notas mensais</h2>
+    <div id="msgNotas" class="msg"></div>
+    <div class="linha">
+      <div>
+        <label>Mês</label>
+        <select id="mesLanc"></select>
+      </div>
+      <div>
+        <label>Ano</label>
+        <select id="anoLanc"></select>
+      </div>
+      <button class="secundario" onclick="carregarFormularioNotas()">Carregar período</button>
+    </div>
+
+    <table>
+      <thead><tr><th>Colaborador</th><th>Nota (0 a 5)</th></tr></thead>
+      <tbody id="tabelaNotas"></tbody>
+    </table>
+
+    <div style="margin-top:16px;">
+      <button onclick="salvarTodasNotas()">Salvar notas do período</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🏆 Prêmios</h2>
+    <div id="msgPremios" class="msg"></div>
+    <table>
+      <thead><tr><th>Tipo</th><th>Posição</th><th>Descrição</th><th>Ação</th></tr></thead>
+      <tbody id="tabelaPremios"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+const API_BASE = '/api/gamificacao';
+const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const hoje = new Date();
+let colaboradoresCache = [];
+
+function montarSeletoresPeriodo() {
+  const selMes = document.getElementById('mesLanc');
+  meses.forEach((m, i) => {
+    const opt = document.createElement('option');
+    opt.value = i + 1;
+    opt.textContent = m;
+    if (i + 1 === hoje.getMonth() + 1) opt.selected = true;
+    selMes.appendChild(opt);
+  });
+  const selAno = document.getElementById('anoLanc');
+  const anoAtual = hoje.getFullYear();
+  for (let a = anoAtual - 1; a <= anoAtual + 1; a++) {
+    const opt = document.createElement('option');
+    opt.value = a;
+    opt.textContent = a;
+    if (a === anoAtual) opt.selected = true;
+    selAno.appendChild(opt);
+  }
+}
+
+function mostrarMsg(elId, texto, tipo) {
+  const el = document.getElementById(elId);
+  el.textContent = texto;
+  el.className = 'msg ' + tipo;
+  setTimeout(() => { el.className = 'msg'; }, 4000);
+}
+
+async function carregarColaboradores() {
+  const resp = await fetch(`${API_BASE}/admin/colaboradores`, { credentials: 'include' });
+  colaboradoresCache = await resp.json();
+  const tbody = document.getElementById('tabelaColaboradores');
+  tbody.innerHTML = colaboradoresCache.map(c => `
+    <tr>
+      <td>${c.nome}</td>
+      <td>${c.ativo ? 'Ativo' : 'Inativo'}</td>
+      <td><button class="secundario" onclick="alternarStatus(${c.id}, ${!c.ativo})">${c.ativo ? 'Desativar' : 'Ativar'}</button></td>
+    </tr>`).join('');
+}
+
+async function adicionarColaborador() {
+  const nome = document.getElementById('novoNome').value.trim();
+  if (!nome) return;
+  await fetch(`${API_BASE}/admin/colaboradores`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ nome })
+  });
+  document.getElementById('novoNome').value = '';
+  carregarColaboradores();
+}
+
+async function alternarStatus(id, ativo) {
+  await fetch(`${API_BASE}/admin/colaboradores/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ ativo })
+  });
+  carregarColaboradores();
+}
+
+async function carregarFormularioNotas() {
+  const mes = document.getElementById('mesLanc').value;
+  const ano = document.getElementById('anoLanc').value;
+
+  const respNotas = await fetch(`${API_BASE}/admin/notas?mes=${mes}&ano=${ano}`, { credentials: 'include' });
+  const notasExistentes = await respNotas.json();
+  const notaMap = {};
+  notasExistentes.forEach(n => notaMap[n.colaborador_id] = n.nota);
+
+  const ativos = colaboradoresCache.filter(c => c.ativo);
+  const tbody = document.getElementById('tabelaNotas');
+  tbody.innerHTML = ativos.map(c => `
+    <tr>
+      <td>${c.nome}</td>
+      <td>
+        <input type="number" class="nota-input" min="0" max="5" step="0.01"
+          data-colaborador="${c.id}" value="${notaMap[c.id] ?? ''}">
+      </td>
+    </tr>`).join('');
+}
+
+async function salvarTodasNotas() {
+  const mes = parseInt(document.getElementById('mesLanc').value);
+  const ano = parseInt(document.getElementById('anoLanc').value);
+  const inputs = document.querySelectorAll('.nota-input');
+
+  let erros = 0;
+  for (const input of inputs) {
+    const valor = input.value;
+    if (valor === '') continue;
+    const colaborador_id = parseInt(input.dataset.colaborador);
+    const nota = parseFloat(valor);
+
+    try {
+      const resp = await fetch(`${API_BASE}/admin/notas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ colaborador_id, mes, ano, nota })
+      });
+      if (!resp.ok) erros++;
+    } catch (e) {
+      erros++;
+    }
+  }
+
+  if (erros === 0) {
+    mostrarMsg('msgNotas', 'Notas salvas com sucesso!', 'ok');
+  } else {
+    mostrarMsg('msgNotas', `${erros} nota(s) não foram salvas. Verifique os valores.`, 'erro');
+  }
+}
+
+async function carregarPremios() {
+  // Busca via rota pública de ranking/consolidado pra pegar os prêmios cadastrados
+  const [r1, r2] = await Promise.all([
+    fetch(`${API_BASE}/ranking?mes=${hoje.getMonth()+1}&ano=${hoje.getFullYear()}`).then(r => r.json()),
+    fetch(`${API_BASE}/consolidado-anual?ano=${hoje.getFullYear()}`).then(r => r.json())
+  ]);
+
+  const linhas = [
+    ...(r1.premiosMensal || []).map(p => ({ ...p, tipo: 'mensal' })),
+    ...(r2.premiosAnual || []).map(p => ({ ...p, tipo: 'anual' }))
+  ];
+
+  const tbody = document.getElementById('tabelaPremios');
+  tbody.innerHTML = linhas.map(p => `
+    <tr>
+      <td>${p.tipo === 'mensal' ? 'Mensal' : 'Anual'}</td>
+      <td>${p.posicao}º</td>
+      <td><input type="text" id="premio-${p.tipo}-${p.posicao}" value="${p.descricao}" style="width:100%"></td>
+      <td><button class="secundario" onclick="salvarPremio('${p.tipo}', ${p.posicao})">Salvar</button></td>
+    </tr>`).join('');
+}
+
+async function salvarPremio(tipo, posicao) {
+  const input = document.getElementById(`premio-${tipo}-${posicao}`);
+  const descricao = input.value.trim();
+  if (!descricao) return;
+
+  // Precisamos do id do prêmio — buscamos rapidamente via lista pública
+  const resp = await fetch(`${API_BASE}/ranking?mes=${hoje.getMonth()+1}&ano=${hoje.getFullYear()}`);
+  const data = await resp.json();
+  let premio = (data.premiosMensal || []).find(p => p.posicao === posicao && tipo === 'mensal');
+
+  if (!premio) {
+    const resp2 = await fetch(`${API_BASE}/consolidado-anual?ano=${hoje.getFullYear()}`);
+    const data2 = await resp2.json();
+    premio = (data2.premiosAnual || []).find(p => p.posicao === posicao && tipo === 'anual');
+  }
+
+  if (!premio || !premio.id) {
+    mostrarMsg('msgPremios', 'Não foi possível identificar o prêmio (ajuste a rota para retornar o id).', 'erro');
+    return;
+  }
+
+  const r = await fetch(`${API_BASE}/admin/premios/${premio.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ descricao })
+  });
+
+  if (r.ok) mostrarMsg('msgPremios', 'Prêmio atualizado!', 'ok');
+  else mostrarMsg('msgPremios', 'Erro ao atualizar prêmio.', 'erro');
+}
+
+async function init() {
+  montarSeletoresPeriodo();
+  await carregarColaboradores();
+  await carregarFormularioNotas();
+  await carregarPremios();
+}
+
+init();
+</script>
+
+</body>
+</html>
