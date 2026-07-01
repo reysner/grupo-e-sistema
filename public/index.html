@@ -91,6 +91,9 @@
         <a class="nav-item admin-only" data-page="gamificacao" href="#">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0012 0V2Z"/></svg>Gamificação
         </a>
+        <a class="nav-item admin-only" data-page="tickets" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 5v2M15 11v2M15 17v2M5 5h14a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4V7a2 2 0 0 1 2-2z"/></svg>Tickets
+        </a>
         <a class="nav-item admin-only" data-page="log" href="#">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Log de Atividades
         </a>
@@ -874,6 +877,21 @@
             </div>
           </div>
 
+        </section>
+
+        <!-- TICKETS CONTÁBEIS -->
+        <section id="page-tickets" class="page admin-only" hidden>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-sm" id="tk-filtro-todos"    onclick="Tickets.filtrar('todos')"     style="font-weight:600">Todos</button>
+              <button class="btn btn-sm" id="tk-filtro-nova"     onclick="Tickets.filtrar('nova')"      style="background:#fee2e2;color:#991b1b;border:none">🔴 Nova</button>
+              <button class="btn btn-sm" id="tk-filtro-resolv"   onclick="Tickets.filtrar('resolvendo')"style="background:#fef9c3;color:#854d0e;border:none">🟡 Resolvendo</button>
+              <button class="btn btn-sm" id="tk-filtro-encerrada"onclick="Tickets.filtrar('encerrada')" style="background:#dcfce7;color:#166534;border:none">🟢 Encerrada</button>
+            </div>
+          </div>
+          <div id="tk-lista">
+            <div style="text-align:center;color:var(--gray-400);padding:40px">Carregando tickets...</div>
+          </div>
         </section>
 
         <!-- ADMINISTRAÇÃO -->
