@@ -3686,7 +3686,18 @@ const Gamificacao = (() => {
       .map(n => ({ ...n, notaFinal: menorNotaFinal }));
 
     const comNotaFinal = [...comNotaFinalCalc, ...semNotaFinalCalc]
-      .sort((a, b) => b.notaFinal - a.notaFinal);
+      .sort((a, b) => {
+        // Critério principal: maior nota final
+        const diff = b.notaFinal - a.notaFinal;
+        if (Math.abs(diff) >= 0.005) return diff;
+        // Desempate 1: maior número de avaliações
+        if (parseInt(b.avaliacoes) !== parseInt(a.avaliacoes)) return parseInt(b.avaliacoes) - parseInt(a.avaliacoes);
+        // Desempate 2: maior média individual
+        const diffMi = parseFloat(b.media_individual) - parseFloat(a.media_individual);
+        if (Math.abs(diffMi) >= 0.005) return diffMi;
+        // Desempate 3: ordem alfabética
+        return (a.nome||'').localeCompare(b.nome||'', 'pt-BR');
+      });
 
     tbody.innerHTML = comNotaFinal.map((n, i) => {
       return '<tr>' +
