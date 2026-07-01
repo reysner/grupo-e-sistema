@@ -3662,25 +3662,31 @@ const Gamificacao = (() => {
       return;
     }
 
-    // Média geral: MÉDIASE — média das médias individuais de quem tem avaliacoes > 0
+    // Média Geral: MÉDIASE — apenas quem tem avaliacoes > 0
     const comAvaliacoes = data.filter(n => parseInt(n.avaliacoes) > 0);
     const mediasValidas = comAvaliacoes.map(n => parseFloat(n.media_individual));
-    const notaMaisBaixa = mediasValidas.length ? Math.min(...mediasValidas) : 0;
     const mediaGeralSimples = mediasValidas.length
       ? mediasValidas.reduce((s,m) => s + m, 0) / mediasValidas.length
       : 0;
 
-    const comNotaFinal = data.map(n => {
+    // 1º: calcula nota final de quem tem avaliações
+    const comNotaFinalCalc = comAvaliacoes.map(n => {
       const media = parseFloat(n.media_individual);
       const aval = parseInt(n.avaliacoes);
-      let notaFinal;
-      if (aval === 0 || media === 0) {
-        notaFinal = notaMaisBaixa; // recebe a nota mais baixa do mês direto, sem fórmula
-      } else {
-        notaFinal = ((media * aval) + (mediaGeralSimples * _pesoMinimo)) / (aval + _pesoMinimo);
-      }
+      const notaFinal = ((media * aval) + (mediaGeralSimples * _pesoMinimo)) / (aval + _pesoMinimo);
       return { ...n, notaFinal };
-    }).sort((a, b) => b.notaFinal - a.notaFinal);
+    });
+
+    // 2º: menor nota FINAL (após fórmula)
+    const menorNotaFinal = comNotaFinalCalc.length ? Math.min(...comNotaFinalCalc.map(n => n.notaFinal)) : 0;
+
+    // 3º: zerados recebem a menor nota final
+    const semNotaFinalCalc = data
+      .filter(n => parseInt(n.avaliacoes) === 0)
+      .map(n => ({ ...n, notaFinal: menorNotaFinal }));
+
+    const comNotaFinal = [...comNotaFinalCalc, ...semNotaFinalCalc]
+      .sort((a, b) => b.notaFinal - a.notaFinal);
 
     tbody.innerHTML = comNotaFinal.map((n, i) => {
       return '<tr>' +
