@@ -3662,8 +3662,9 @@ const Gamificacao = (() => {
       return;
     }
 
-    // Média geral: considera SOMENTE colaboradores com avaliações > 0
-    const mediasValidas = data.filter(n => parseFloat(n.media_individual) > 0).map(n => parseFloat(n.media_individual));
+    // Média geral: MÉDIASE — média das médias individuais de quem tem avaliacoes > 0
+    const comAvaliacoes = data.filter(n => parseInt(n.avaliacoes) > 0);
+    const mediasValidas = comAvaliacoes.map(n => parseFloat(n.media_individual));
     const notaMaisBaixa = mediasValidas.length ? Math.min(...mediasValidas) : 0;
     const mediaGeralSimples = mediasValidas.length
       ? mediasValidas.reduce((s,m) => s + m, 0) / mediasValidas.length
