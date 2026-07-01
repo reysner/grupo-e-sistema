@@ -218,6 +218,12 @@ const App = (() => {
     },
 
     onLoggedIn(user) {
+      // Usuário contábil só tem acesso ao portal /contabil — redireciona imediatamente
+      if (user.role === 'contabil') {
+        window.location.href = '/contabil';
+        return;
+      }
+
       currentUser = user;
       window._currentUser = user;
       document.getElementById('topbar-name').textContent = user.name;
@@ -244,6 +250,12 @@ const App = (() => {
     async tryAutoLogin() {
       Store.load();
       if (!_accessToken || !currentUser) return false;
+
+      // Bloqueia contábil de usar o sistema principal
+      if (currentUser.role === 'contabil') {
+        window.location.href = '/contabil';
+        return false;
+      }
 
       // Restore session from localStorage immediately — don't show login screen
       Auth.onLoggedIn(currentUser);
