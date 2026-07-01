@@ -1340,6 +1340,244 @@ router.delete('/gam/notas/:id', requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
 });
 
+
+// ── Mapeamento de checklist por regime + tipo ─────────────────────────────────
+const CHECKLIST_MAP = {
+  'Baixa de empresa': {
+    'Simples Nacional':  ['Balanço','DRE','DEFIS','REINF'],
+    'Lucro Presumido':   ['Balanço','DRE','ECD Baixa','ECF Baixa','DEFIS','REINF'],
+    'Lucro Real':        ['Balanço','DRE','ECD Baixa','ECF Baixa','DEFIS','REINF'],
+  },
+  'Saída de empresa': {
+    'Simples Nacional':  ['Balanço','DRE','REINF'],
+    'Lucro Presumido':   ['Balanço','DRE','ECD','REINF'],
+    'Lucro Real':        ['Balanço','DRE','ECD','REINF'],
+  },
+};
+
+function buildChecklist(tipo, regime) {
+  const itens = (CHECKLIST_MAP[tipo] || {})[regime] || [];
+  return itens.map(item => ({ item, ok: false, por: null, em: null }));
+}
+
+async function ensureTicketTables() {
+  await pool.query(`CREATE TABLE IF NOT EXISTS tickets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    gestao_id UUID, empresa TEXT NOT NULL, cnpj TEXT NOT NULL,
+    regime TEXT NOT NULL, tipo_movimentacao TEXT NOT NULL,
+    checklist JSONB NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'nova',
+    observacoes TEXT, criado_por TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`).catch(()=>{});
+  await pool.query(`CREATE TABLE IF NOT EXISTS ticket_interacoes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    autor_id UUID, autor_nome TEXT NOT NULL, comentario TEXT NOT NULL,
+    is_automatica BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT NOW()
+  )`).catch(()=>{});
+  await pool.query(`CREATE TABLE IF NOT EXISTS ticket_mencoes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    usuario_id UUID NOT NULL, UNIQUE(ticket_id, usuario_id)
+  )`).catch(()=>{});
+}
+
+// ── TICKETS — rotas admin ─────────────────────────────────────────────────────
+
+// Listar tickets (admin vê todos, contábil vê só os mencionados)
+router.get('/tickets', requireAuth, async (req, res) => {
+  try {
+    await ensureTicketTables();
+    const isAdmin = req.user.role === 'administrador';
+    let rows;
+    if (isAdmin) {
+      const r = await pool.query(`
+        SELECT t.*,
+          EXTRACT(DAY FROM NOW() - t.created_at)::int AS dias,
+          COALESCE(json_agg(DISTINCT jsonb_build_object('id', u.id, 'nome', u.name))
+            FILTER (WHERE u.id IS NOT NULL), '[]') AS mencoes
+        FROM tickets t
+        LEFT JOIN ticket_mencoes tm ON tm.ticket_id = t.id
+        LEFT JOIN users u ON u.id = tm.usuario_id
+        GROUP BY t.id ORDER BY t.created_at DESC
+      `);
+      rows = r.rows;
+    } else {
+      const r = await pool.query(`
+        SELECT t.*,
+          EXTRACT(DAY FROM NOW() - t.created_at)::int AS dias,
+          COALESCE(json_agg(DISTINCT jsonb_build_object('id', u.id, 'nome', u.name))
+            FILTER (WHERE u.id IS NOT NULL), '[]') AS mencoes
+        FROM tickets t
+        JOIN ticket_mencoes tm2 ON tm2.ticket_id = t.id AND tm2.usuario_id = $1
+        LEFT JOIN ticket_mencoes tm ON tm.ticket_id = t.id
+        LEFT JOIN users u ON u.id = tm.usuario_id
+        GROUP BY t.id ORDER BY t.created_at DESC
+      `, [req.user.id]);
+      rows = r.rows;
+    }
+    res.json({ data: rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar tickets.' }); }
+});
+
+// Criar ticket
+router.post('/tickets', requireAdmin, async (req, res) => {
+  try {
+    await ensureTicketTables();
+    const { gestao_id, empresa, cnpj, regime, tipo_movimentacao, observacoes, mencoes } = req.body;
+    if (!empresa || !cnpj || !regime || !tipo_movimentacao)
+      return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
+    const checklist = buildChecklist(tipo_movimentacao, regime);
+    const { rows } = await pool.query(
+      `INSERT INTO tickets (gestao_id, empresa, cnpj, regime, tipo_movimentacao, checklist, observacoes, criado_por)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [gestao_id||null, empresa, cnpj, regime, tipo_movimentacao, JSON.stringify(checklist), observacoes||null, req.user.name]
+    );
+    const ticket = rows[0];
+    // Inserir menções e notificar
+    if (mencoes && mencoes.length) {
+      for (const uid of mencoes) {
+        await pool.query(`INSERT INTO ticket_mencoes (ticket_id, usuario_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [ticket.id, uid]);
+        await pool.query(
+          `INSERT INTO notificacoes (user_id, tipo, mensagem, referencia_id)
+           VALUES ($1,'ticket','Você foi mencionado em um ticket: '||$2,$3)`,
+          [uid, empresa, ticket.id]
+        ).catch(()=>{});
+      }
+    }
+    // Interação de abertura
+    if (observacoes) {
+      await pool.query(
+        `INSERT INTO ticket_interacoes (ticket_id, autor_nome, comentario) VALUES ($1,$2,$3)`,
+        [ticket.id, req.user.name, observacoes]
+      );
+    }
+    res.status(201).json({ ok: true, data: ticket });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao criar ticket.' }); }
+});
+
+// Buscar ticket + interações
+router.get('/tickets/:id', requireAuth, async (req, res) => {
+  try {
+    const t = await pool.query(`
+      SELECT t.*,
+        EXTRACT(DAY FROM NOW() - t.created_at)::int AS dias,
+        COALESCE(json_agg(DISTINCT jsonb_build_object('id', u.id, 'nome', u.name))
+          FILTER (WHERE u.id IS NOT NULL), '[]') AS mencoes
+      FROM tickets t
+      LEFT JOIN ticket_mencoes tm ON tm.ticket_id = t.id
+      LEFT JOIN users u ON u.id = tm.usuario_id
+      WHERE t.id = $1 GROUP BY t.id
+    `, [req.params.id]);
+    if (!t.rows.length) return res.status(404).json({ error: 'Ticket não encontrado.' });
+    const interacoes = await pool.query(
+      `SELECT * FROM ticket_interacoes WHERE ticket_id = $1 ORDER BY created_at ASC`,
+      [req.params.id]
+    );
+    res.json({ data: { ...t.rows[0], interacoes: interacoes.rows } });
+  } catch (err) { res.status(500).json({ error: 'Erro ao buscar ticket.' }); }
+});
+
+// Adicionar interação + mudar status para resolvendo
+router.post('/tickets/:id/interacoes', requireAuth, async (req, res) => {
+  try {
+    const { comentario, mencoes_novas } = req.body;
+    if (!comentario) return res.status(400).json({ error: 'Comentário obrigatório.' });
+    // Muda status para resolvendo se era nova
+    const t = await pool.query(`SELECT * FROM tickets WHERE id = $1`, [req.params.id]);
+    if (!t.rows.length) return res.status(404).json({ error: 'Ticket não encontrado.' });
+    const ticket = t.rows[0];
+    if (ticket.status === 'nova') {
+      await pool.query(`UPDATE tickets SET status='resolvendo', updated_at=NOW() WHERE id=$1`, [req.params.id]);
+      // Notifica admins
+      const admins = await pool.query(`SELECT id FROM users WHERE role='administrador' AND active=1`);
+      for (const a of admins.rows) {
+        await pool.query(
+          `INSERT INTO notificacoes (user_id, tipo, mensagem, referencia_id) VALUES ($1,'ticket',$2,$3)`,
+          [a.id, `Ticket "${ticket.empresa}" está sendo resolvido`, req.params.id]
+        ).catch(()=>{});
+      }
+    }
+    // Adiciona novas menções se houver
+    if (mencoes_novas && mencoes_novas.length) {
+      for (const uid of mencoes_novas) {
+        await pool.query(`INSERT INTO ticket_mencoes (ticket_id, usuario_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [req.params.id, uid]);
+        await pool.query(
+          `INSERT INTO notificacoes (user_id, tipo, mensagem, referencia_id) VALUES ($1,'ticket',$2,$3)`,
+          [uid, `Você foi mencionado no ticket "${ticket.empresa}"`, req.params.id]
+        ).catch(()=>{});
+      }
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO ticket_interacoes (ticket_id, autor_id, autor_nome, comentario) VALUES ($1,$2,$3,$4) RETURNING *`,
+      [req.params.id, req.user.id, req.user.name, comentario]
+    );
+    res.status(201).json({ ok: true, data: rows[0] });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao adicionar interação.' }); }
+});
+
+// Marcar item do checklist
+router.patch('/tickets/:id/checklist', requireAuth, async (req, res) => {
+  try {
+    const { item_index } = req.body;
+    const t = await pool.query(`SELECT * FROM tickets WHERE id=$1`, [req.params.id]);
+    if (!t.rows.length) return res.status(404).json({ error: 'Não encontrado.' });
+    const ticket = t.rows[0];
+    // Verifica permissão: admin ou mencionado
+    const isAdmin = req.user.role === 'administrador';
+    if (!isAdmin) {
+      const m = await pool.query(`SELECT id FROM ticket_mencoes WHERE ticket_id=$1 AND usuario_id=$2`, [req.params.id, req.user.id]);
+      if (!m.rows.length) return res.status(403).json({ error: 'Sem permissão.' });
+    }
+    const checklist = ticket.checklist;
+    if (item_index < 0 || item_index >= checklist.length)
+      return res.status(400).json({ error: 'Item inválido.' });
+    checklist[item_index].ok  = !checklist[item_index].ok;
+    checklist[item_index].por = checklist[item_index].ok ? req.user.name : null;
+    checklist[item_index].em  = checklist[item_index].ok ? new Date().toISOString() : null;
+    await pool.query(`UPDATE tickets SET checklist=$1, updated_at=NOW() WHERE id=$2`, [JSON.stringify(checklist), req.params.id]);
+    // Verifica se todos marcados
+    const todosOk = checklist.every(c => c.ok);
+    if (todosOk) {
+      const msg = 'Documentos direcionados via e-mail para cs@escritorial.com.br para encaminhamento ao cliente.';
+      await pool.query(
+        `INSERT INTO ticket_interacoes (ticket_id, autor_nome, comentario, is_automatica) VALUES ($1,'Sistema',$2,true)`,
+        [req.params.id, msg]
+      );
+      // Notifica admins
+      const admins = await pool.query(`SELECT id FROM users WHERE role='administrador' AND active=1`);
+      for (const a of admins.rows) {
+        await pool.query(
+          `INSERT INTO notificacoes (user_id, tipo, mensagem, referencia_id) VALUES ($1,'ticket',$2,$3)`,
+          [a.id, `✅ Checklist completo — ticket "${ticket.empresa}" pronto para encerrar`, req.params.id]
+        ).catch(()=>{});
+      }
+    }
+    res.json({ ok: true, checklist, todosOk });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao marcar item.' }); }
+});
+
+// Encerrar / Reabrir ticket (admin only)
+router.patch('/tickets/:id/status', requireAdmin, async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['encerrada','resolvendo'].includes(status)) return res.status(400).json({ error: 'Status inválido.' });
+    await pool.query(`UPDATE tickets SET status=$1, updated_at=NOW() WHERE id=$2`, [status, req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao atualizar status.' }); }
+});
+
+// Listar usuários contábil+admin para mencionar
+router.get('/tickets-usuarios', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, name, role FROM users WHERE role IN ('contabil','administrador') AND active=1 ORDER BY name ASC`
+    );
+    res.json({ data: rows });
+  } catch (err) { res.status(500).json({ error: 'Erro ao listar usuários.' }); }
+});
+
 module.exports = router;
 
 
