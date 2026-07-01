@@ -72,6 +72,11 @@ app.get('/gamificacao', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'gamificacao.html'));
 });
 
+// ── Página do contábil (login próprio) ────────────────────────────────────────
+app.get('/contabil', (req, res) => {
+  res.sendFile(path.join(PUBLIC, 'contabil.html'));
+});
+
 // ── Arquivos estáticos com MIME correto ───────────────────────────────────────
 app.get('/js/:file', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
