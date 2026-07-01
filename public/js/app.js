@@ -302,7 +302,7 @@ const App = (() => {
 
   // ── Navigation ───────────────────────────────────────────────────────────
   const PAGE_TITLES = {
-    dashboard:'Dashboard', atendimento:'Atendimento', gestao:'Gestão de Clientes', carteira:'Inteligência da Carteira', perfil:'Meu Perfil', cac:'CAC / Investimentos em Aquisição', log:'Log de Atividades', gamificacao:'Gamificação Mensal',
+    dashboard:'Dashboard', atendimento:'Atendimento', gestao:'Gestão de Clientes', carteira:'Inteligência da Carteira', perfil:'Meu Perfil', cac:'CAC / Investimentos em Aquisição', log:'Log de Atividades', gamificacao:'Gamificação Mensal', tickets:'Tickets Contábeis',
     insatisfacao:'Insatisfação', sensiveis:'Clientes Sensíveis',
     pesquisas:'Pesquisas de Satisfação', recuperacao:'Recuperação de Clientes',
     admin:'Administração de Usuários',
@@ -325,6 +325,7 @@ const App = (() => {
       if (page === 'cac')         window.CAC?.load();
       if (page === 'log')         window.Log?.carregar();
       if (page === 'gamificacao')  window.Gamificacao?.load();
+      if (page === 'tickets')       window.Tickets?.load();
       if (page === 'atendimento') window.Atendimento?.loadGrid();
       if (page === 'gestao')      window.Gestao?.loadGrid();
       if (page === 'insatisfacao') window.Insatisfacao?.loadGrid();
@@ -692,6 +693,14 @@ const App = (() => {
         data_sol: Util.val('gc-data'), competencia: Util.val('gc-competencia'),
         canal: gcCanal,
       }, ['gc-analista','gc-cnpj','gc-empresa','gc-data','gc-competencia','gc-motivo'], 'Gestão salva!');
+      // Oferece abrir ticket para Baixa ou Saída de empresa
+      const _gcSol  = document.getElementById('gc-solicitacao')?.value || '';
+      const _gcReg  = document.getElementById('gc-regime')?.value || '';
+      const _gcEmp  = document.getElementById('gc-empresa')?.value || '';
+      const _gcCnpj = document.getElementById('gc-cnpj')?.value || '';
+      if ((_gcSol === 'Baixa de empresa' || _gcSol === 'Saída de empresa') && App.Auth.isAdmin()) {
+        setTimeout(() => window.Tickets?.perguntarAbrirTicket(_gcSol, _gcReg, _gcEmp, _gcCnpj), 400);
+      }
       document.getElementById('gc-solicitacao').value='';
       document.getElementById('gc-canal').value='';
       document.getElementById('gc-sol-outro').value='';
@@ -3898,3 +3907,253 @@ const Gamificacao = (() => {
 })();
 
 window.Gamificacao = Gamificacao;
+
+// ── Módulo Tickets Contábeis ──────────────────────────────────────────────────
+const Tickets = (() => {
+  const _tk = () => localStorage.getItem('ge_token') || '';
+  let _todos = [];
+  let _filtroAtual = 'todos';
+
+  const CHECKLIST_MAP = {
+    'Baixa de empresa': {
+      'Simples Nacional': ['Balanço','DRE','DEFIS','REINF'],
+      'Lucro Presumido':  ['Balanço','DRE','ECD Baixa','ECF Baixa','DEFIS','REINF'],
+      'Lucro Real':       ['Balanço','DRE','ECD Baixa','ECF Baixa','DEFIS','REINF'],
+    },
+    'Saída de empresa': {
+      'Simples Nacional': ['Balanço','DRE','REINF'],
+      'Lucro Presumido':  ['Balanço','DRE','ECD','REINF'],
+      'Lucro Real':       ['Balanço','DRE','ECD','REINF'],
+    },
+  };
+
+  const STATUS_LABEL = { nova:'🔴 Nova', resolvendo:'🟡 Resolvendo', encerrada:'🟢 Encerrada' };
+  const STATUS_COLOR = { nova:'#fee2e2', resolvendo:'#fef9c3', encerrada:'#dcfce7' };
+  const STATUS_TEXT  = { nova:'#991b1b', resolvendo:'#854d0e', encerrada:'#166534' };
+
+  async function load() {
+    const lista = document.getElementById('tk-lista');
+    if (!lista) return;
+    lista.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:40px">Carregando...</div>';
+    const res = await fetch('/api/data/tickets', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { lista.innerHTML = '<div style="text-align:center;color:#e53e3e;padding:40px">Erro ao carregar tickets.</div>'; return; }
+    const { data } = await res.json();
+    _todos = data || [];
+    _renderLista();
+  }
+
+  function filtrar(f) {
+    _filtroAtual = f;
+    ['todos','nova','resolv','encerrada'].forEach(k => {
+      const btn = document.getElementById('tk-filtro-' + k);
+      if (btn) btn.style.fontWeight = (k === f || (k==='resolv' && f==='resolvendo')) ? '800' : '600';
+    });
+    _renderLista();
+  }
+
+  function _renderLista() {
+    const lista = document.getElementById('tk-lista');
+    if (!lista) return;
+    const filtrados = _filtroAtual === 'todos' ? _todos : _todos.filter(t => t.status === _filtroAtual);
+    if (!filtrados.length) {
+      lista.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:40px">Nenhum ticket encontrado.</div>';
+      return;
+    }
+    lista.innerHTML = filtrados.map(t => {
+      const dias = parseInt(t.dias) || 0;
+      const total = t.checklist?.length || 0;
+      const feitos = t.checklist?.filter(c => c.ok).length || 0;
+      const mencoes = (t.mencoes||[]).map(m => m.nome).join(', ') || '—';
+      return '<div style="background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:16px 20px;margin-bottom:12px;cursor:pointer;transition:box-shadow .15s" onclick="Tickets.abrirTicket(\'' + t.id + '\')" onmouseover="this.style.boxShadow=\'0 4px 16px rgba(0,0,0,.08)\'" onmouseout="this.style.boxShadow=\'none\'">' +
+        '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">' +
+          '<div>' +
+            '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+              '<span style="font-weight:800;font-size:15px;color:var(--g800)">' + t.empresa + '</span>' +
+              '<span style="background:' + STATUS_COLOR[t.status] + ';color:' + STATUS_TEXT[t.status] + ';padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">' + STATUS_LABEL[t.status] + '</span>' +
+              '<span style="font-size:11px;color:var(--gray-400)">' + dias + ' dia' + (dias!==1?'s':'') + ' aberto</span>' +
+            '</div>' +
+            '<div style="font-size:12px;color:var(--gray-500);margin-top:4px">' + t.cnpj + ' · ' + t.regime + ' · ' + t.tipo_movimentacao + '</div>' +
+            '<div style="font-size:12px;color:var(--gray-400);margin-top:2px">Responsáveis: ' + mencoes + '</div>' +
+          '</div>' +
+          '<div style="text-align:right;flex-shrink:0">' +
+            '<div style="font-size:12px;font-weight:700;color:var(--g700)">' + feitos + '/' + total + ' itens</div>' +
+            '<div style="background:var(--gray-100);border-radius:6px;height:6px;width:80px;margin-top:4px;overflow:hidden">' +
+              '<div style="background:var(--g700);height:100%;width:' + (total ? Math.round(feitos/total*100) : 0) + '%"></div>' +
+            '</div>' +
+            '<div style="font-size:11px;color:var(--gray-400);margin-top:4px">Aberto por ' + t.criado_por + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  async function abrirTicket(id) {
+    const res = await fetch('/api/data/tickets/' + id, { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { App.Toast.err('Erro ao carregar ticket.'); return; }
+    const { data: t } = await res.json();
+    const diasStr = (parseInt(t.dias)||0) + ' dia(s) aberto(s)';
+
+    const checklistHtml = (t.checklist||[]).map((c, i) => {
+      const cor = c.ok ? '#166534' : 'var(--gray-600)';
+      const bg  = c.ok ? '#dcfce7' : '#f8fafc';
+      const info = c.ok ? ' — ' + c.por + ' em ' + new Date(c.em).toLocaleString('pt-BR') : '';
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:' + bg + ';border-radius:8px;margin-bottom:6px">' +
+        '<input type="checkbox" ' + (c.ok?'checked':'') + ' style="width:16px;height:16px;cursor:pointer" data-idx="' + i + '" data-tid="' + id + '" onchange="Tickets.marcarItem(\'' + id + '\',' + i + ',this)">' +
+        '<span style="font-weight:600;color:' + cor + '">' + (c.ok?'✅ ':'') + c.item + (c.ok?' OK':'') + '</span>' +
+        '<span style="font-size:11px;color:var(--gray-400)">' + info + '</span>' +
+      '</div>';
+    }).join('');
+
+    const interacoesHtml = (t.interacoes||[]).map(i => {
+      const bg = i.is_automatica ? '#f0fdf4' : '#f8fafc';
+      const bord = i.is_automatica ? '#bbf7d0' : 'var(--gray-200)';
+      return '<div style="background:' + bg + ';border:1px solid ' + bord + ';border-radius:8px;padding:10px 14px;margin-bottom:8px">' +
+        '<div style="display:flex;justify-content:space-between;margin-bottom:4px">' +
+          '<span style="font-size:12px;font-weight:700;color:var(--g700)">' + (i.is_automatica ? '🤖 Sistema' : i.autor_nome) + '</span>' +
+          '<span style="font-size:11px;color:var(--gray-400)">' + new Date(i.created_at).toLocaleString('pt-BR') + '</span>' +
+        '</div>' +
+        '<div style="font-size:13px;color:var(--gray-700)">' + i.comentario + '</div>' +
+      '</div>';
+    }).join('') || '<div style="color:var(--gray-400);font-size:13px;padding:8px">Nenhuma interação ainda.</div>';
+
+    const isAdmin = App.Auth.isAdmin();
+    const statusBtns = isAdmin ? (
+      t.status !== 'encerrada'
+        ? '<button class="btn btn-success btn-sm" onclick="Tickets.mudarStatus(\'' + id + '\',\'encerrada\')">✅ Encerrar ticket</button>'
+        : '<button class="btn btn-ghost btn-sm" onclick="Tickets.mudarStatus(\'' + id + '\',\'resolvendo\')">🔄 Reabrir ticket</button>'
+    ) : '';
+
+    App.Modal.open('Ticket — ' + t.empresa,
+      '<div style="display:grid;gap:16px">' +
+        '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">' +
+          '<span style="background:' + STATUS_COLOR[t.status] + ';color:' + STATUS_TEXT[t.status] + ';padding:3px 12px;border-radius:20px;font-size:12px;font-weight:700">' + STATUS_LABEL[t.status] + '</span>' +
+          '<span style="font-size:12px;color:var(--gray-500)">⏱ ' + diasStr + '</span>' +
+          '<span style="font-size:12px;color:var(--gray-500)">' + t.cnpj + ' · ' + t.regime + ' · ' + t.tipo_movimentacao + '</span>' +
+        '</div>' +
+        (t.observacoes ? '<div style="background:#f8fafc;border-radius:8px;padding:10px 14px;font-size:13px;color:var(--gray-700)"><strong>Observações:</strong> ' + t.observacoes + '</div>' : '') +
+        '<div>' +
+          '<div style="font-size:13px;font-weight:700;color:var(--g800);margin-bottom:8px">📋 Checklist</div>' +
+          checklistHtml +
+        '</div>' +
+        '<div>' +
+          '<div style="font-size:13px;font-weight:700;color:var(--g800);margin-bottom:8px">💬 Interações</div>' +
+          interacoesHtml +
+        '</div>' +
+        '<div>' +
+          '<div style="font-size:13px;font-weight:700;color:var(--g800);margin-bottom:6px">Adicionar comentário</div>' +
+          '<textarea id="tk-comentario-input" style="width:100%;min-height:70px;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;resize:vertical" placeholder="Digite seu comentário..."></textarea>' +
+          '<div style="display:flex;gap:8px;margin-top:8px;justify-content:space-between;align-items:center">' +
+            statusBtns +
+            '<button class="btn btn-primary btn-sm" onclick="Tickets.enviarComentario(\'' + id + '\')">Enviar</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>',
+      null, { noFooter: true }
+    );
+  }
+
+  async function marcarItem(ticketId, idx, checkbox) {
+    const res = await fetch('/api/data/tickets/' + ticketId + '/checklist', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ item_index: idx })
+    });
+    if (res && res.ok) {
+      const { todosOk } = await res.json();
+      if (todosOk) App.Toast.ok('✅ Checklist completo! Documentos direcionados para cs@escritorial.com.br');
+      await abrirTicket(ticketId);
+      load();
+    } else {
+      checkbox.checked = !checkbox.checked;
+      App.Toast.err('Erro ao marcar item.');
+    }
+  }
+
+  async function enviarComentario(ticketId) {
+    const comentario = document.getElementById('tk-comentario-input')?.value?.trim();
+    if (!comentario) { App.Toast.err('Digite um comentário.'); return; }
+    const res = await fetch('/api/data/tickets/' + ticketId + '/interacoes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ comentario })
+    });
+    if (res && res.ok) {
+      App.Toast.ok('Comentário enviado!');
+      await abrirTicket(ticketId);
+      load();
+    } else App.Toast.err('Erro ao enviar comentário.');
+  }
+
+  async function mudarStatus(ticketId, status) {
+    const res = await fetch('/api/data/tickets/' + ticketId + '/status', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ status })
+    });
+    if (res && res.ok) {
+      App.Modal.close();
+      App.Toast.ok(status === 'encerrada' ? 'Ticket encerrado!' : 'Ticket reaberto!');
+      load();
+    } else App.Toast.err('Erro ao atualizar status.');
+  }
+
+  async function perguntarAbrirTicket(solicitacao, regime, empresa, cnpj) {
+    // Verifica se há checklist para esse tipo+regime
+    const itens = (CHECKLIST_MAP[solicitacao] || {})[regime] || [];
+    const itensHtml = itens.length
+      ? '<div style="margin:8px 0;display:flex;flex-wrap:wrap;gap:6px">' + itens.map(i => '<span style="background:var(--g100);color:var(--g700);padding:2px 10px;border-radius:6px;font-size:12px;font-weight:600">' + i + '</span>').join('') + '</div>'
+      : '<div style="color:var(--gray-400);font-size:12px">Nenhum checklist padrão para este regime.</div>';
+
+    // Carrega usuários para mencionar
+    const resU = await fetch('/api/data/tickets-usuarios', { headers: { Authorization: 'Bearer ' + _tk() } });
+    const usuarios = resU && resU.ok ? (await resU.json()).data || [] : [];
+    const usersHtml = usuarios.map(u =>
+      '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer">' +
+        '<input type="checkbox" value="' + u.id + '" class="tk-mencao-check" style="width:14px;height:14px"> ' +
+        '<span style="font-size:13px">' + u.name + ' <span style="color:var(--gray-400);font-size:11px">(' + u.role + ')</span></span>' +
+      '</label>'
+    ).join('');
+
+    App.Modal.open('📋 Abrir Ticket Contábil',
+      '<div style="display:grid;gap:14px">' +
+        '<div style="background:#f8fafc;border-radius:8px;padding:10px 14px">' +
+          '<div style="font-weight:700;color:var(--g800)">' + empresa + '</div>' +
+          '<div style="font-size:12px;color:var(--gray-500)">' + cnpj + ' · ' + (regime||'Regime não informado') + ' · ' + solicitacao + '</div>' +
+        '</div>' +
+        '<div>' +
+          '<div style="font-size:13px;font-weight:700;margin-bottom:4px">Checklist automático:</div>' +
+          itensHtml +
+        '</div>' +
+        '<div class="field"><label>Observações (opcional)</label><textarea id="tk-obs-nova" style="width:100%;min-height:60px;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;resize:vertical" placeholder="Informe o que é necessário..."></textarea></div>' +
+        '<div>' +
+          '<div style="font-size:13px;font-weight:700;margin-bottom:6px">Mencionar analistas:</div>' +
+          '<div style="max-height:160px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px;padding:8px 12px">' + (usersHtml || '<span style="color:var(--gray-400);font-size:13px">Nenhum usuário contábil cadastrado ainda.</span>') + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+          '<button class="btn btn-ghost" onclick="App.Modal.close()">Cancelar</button>' +
+          '<button class="btn btn-primary" onclick="Tickets.criarTicket(\'' + solicitacao + '\',\'' + (regime||'') + '\',\'' + empresa + '\',\'' + cnpj + '\')">Abrir Ticket</button>' +
+        '</div>' +
+      '</div>',
+      null, { noFooter: true }
+    );
+  }
+
+  async function criarTicket(tipo, regime, empresa, cnpj) {
+    const obs = document.getElementById('tk-obs-nova')?.value?.trim() || null;
+    const mencoes = [...document.querySelectorAll('.tk-mencao-check:checked')].map(c => c.value);
+    const res = await fetch('/api/data/tickets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ empresa, cnpj, regime, tipo_movimentacao: tipo, observacoes: obs, mencoes })
+    });
+    if (res && res.ok) {
+      App.Modal.close();
+      App.Toast.ok('Ticket aberto para o Contábil!');
+      if (document.getElementById('page-tickets') && !document.getElementById('page-tickets').hidden) load();
+    } else App.Toast.err('Erro ao abrir ticket.');
+  }
+
+  return { load, filtrar, abrirTicket, marcarItem, enviarComentario, mudarStatus, perguntarAbrirTicket, criarTicket };
+})();
+
+window.Tickets = Tickets;
