@@ -1115,7 +1115,18 @@ publicRouter.get('/gamificacao', async (req, res) => {
     // Ranking completo ordenado por nota final
     const ranking = [...comNotaFinal, ...semNotaFinal]
       .map(r => ({ ...r, media: parseFloat(r.media).toFixed(2) }))
-      .sort((a,b) => parseFloat(b.media) - parseFloat(a.media));
+      .sort((a,b) => {
+        // Critério principal: maior nota final
+        const diff = parseFloat(b.media) - parseFloat(a.media);
+        if (Math.abs(diff) >= 0.005) return diff;
+        // Desempate 1: maior número de avaliações
+        if (b.avaliacoes !== a.avaliacoes) return b.avaliacoes - a.avaliacoes;
+        // Desempate 2: maior média individual
+        const diffMi = parseFloat(b.mediaIndividual) - parseFloat(a.mediaIndividual);
+        if (Math.abs(diffMi) >= 0.005) return diffMi;
+        // Desempate 3: ordem alfabética
+        return a.nome.localeCompare(b.nome, 'pt-BR');
+      });
 
     // Média exibida = MÉDIASE (apenas quem tem avaliações > 0), não a média do ranking final
     const mediaGeral = mediaGeralSimples > 0 ? mediaGeralSimples.toFixed(2) : null;
@@ -1157,7 +1168,14 @@ publicRouter.get('/gamificacao', async (req, res) => {
         final = ((mediaIndividualAcumulada * c.totalAval) + (mediaGeralHistorica * pesoMinimo)) / (c.totalAval + pesoMinimo);
       }
       return { nome: c.nome, media_geral: final.toFixed(2), meses_avaliados: c.meses, total_avaliacoes: c.totalAval };
-    }).sort((a,b) => parseFloat(b.media_geral) - parseFloat(a.media_geral));
+    }).sort((a,b) => {
+      const diff = parseFloat(b.media_geral) - parseFloat(a.media_geral);
+      if (Math.abs(diff) >= 0.005) return diff;
+      if (b.total_avaliacoes !== a.total_avaliacoes) return b.total_avaliacoes - a.total_avaliacoes;
+      const diffMi = parseFloat(b.media_individual_acumulada||0) - parseFloat(a.media_individual_acumulada||0);
+      if (Math.abs(diffMi) >= 0.005) return diffMi;
+      return a.nome.localeCompare(b.nome, 'pt-BR');
+    });
 
     const meses = await pool.query(`SELECT DISTINCT mes FROM gam_notas ORDER BY mes DESC`);
     const inicio = await pool.query(`SELECT MIN(mes) as primeiro_mes FROM gam_notas`);
