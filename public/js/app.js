@@ -1025,7 +1025,10 @@ function gcToggleOutros() {
   if (canalWrap) { const s = canal==='Outro'; canalWrap.style.display=s?'flex':'none'; canalWrap.hidden=!s; }
   // Campos de ENTRADA (honorário, origem, CAC, regime, data-entrada)
   const isEntrada = sol==='Constituição de empresa' || sol==='Cliente vindo de outro contador' || sol==='Transformação de empresa';
-  ['gc-honorario-wrap','gc-origem-wrap','gc-regime-wrap','gc-data-entrada-wrap'].forEach(id => {
+  // Regime Tributário é campo fixo — sempre visível independente da solicitação
+  const gcRegimeWrap = document.getElementById('gc-regime-wrap');
+  if (gcRegimeWrap) { gcRegimeWrap.style.display = 'flex'; gcRegimeWrap.hidden = false; }
+  ['gc-honorario-wrap','gc-origem-wrap','gc-data-entrada-wrap'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.style.display = isEntrada ? 'flex' : 'none'; el.hidden = !isEntrada; }
   });
