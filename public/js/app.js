@@ -3670,11 +3670,15 @@ const Gamificacao = (() => {
       : 0;
 
     const comNotaFinal = data.map(n => {
-      let media = parseFloat(n.media_individual);
-      if (media === 0) media = notaMaisBaixa;
+      const media = parseFloat(n.media_individual);
       const aval = parseInt(n.avaliacoes);
-      const final = ((media * aval) + (mediaGeralSimples * _pesoMinimo)) / (aval + _pesoMinimo);
-      return { ...n, notaFinal: final };
+      let notaFinal;
+      if (aval === 0 || media === 0) {
+        notaFinal = notaMaisBaixa; // recebe a nota mais baixa do mês direto, sem fórmula
+      } else {
+        notaFinal = ((media * aval) + (mediaGeralSimples * _pesoMinimo)) / (aval + _pesoMinimo);
+      }
+      return { ...n, notaFinal };
     }).sort((a, b) => b.notaFinal - a.notaFinal);
 
     tbody.innerHTML = comNotaFinal.map((n, i) => {
