@@ -1089,28 +1089,33 @@ publicRouter.get('/gamificacao', async (req, res) => {
       WHERE n.mes = $1 AND c.ativo = true
     `, [mesAtual]);
 
-    // Média geral do mês: MÉDIASE — média das médias individuais de quem tem avaliacoes > 0
-    // Equivalente a =MÉDIASE(media_individual; avaliacoes; "<>0")
+    // Média Geral do mês: MÉDIASE — apenas quem tem avaliacoes > 0
     const comAvaliacoes = dadosMes.rows.filter(r => parseInt(r.avaliacoes) > 0);
     const mediasValidas = comAvaliacoes.map(r => parseFloat(r.media_individual));
-    const notaMaisBaixa = mediasValidas.length ? Math.min(...mediasValidas) : 0;
     const mediaGeralSimples = mediasValidas.length
       ? mediasValidas.reduce((s,m) => s + m, 0) / mediasValidas.length
       : 0;
 
-    // Calcula nota final ponderada: ((Média*Aval) + (MédiaGeral*PesoMinimo)) / (Aval+PesoMinimo)
-    // Colaboradores com 0 avaliações recebem a nota mais baixa do mês DIRETAMENTE (sem fórmula)
-    const ranking = dadosMes.rows.map(r => {
+    // 1º passo: calcula nota final apenas de quem tem avaliações > 0
+    const comNotaFinal = comAvaliacoes.map(r => {
       const media = parseFloat(r.media_individual);
       const aval = parseInt(r.avaliacoes);
-      let notaFinal;
-      if (aval === 0 || media === 0) {
-        notaFinal = notaMaisBaixa; // recebe a nota mais baixa direto, sem passar pela fórmula
-      } else {
-        notaFinal = ((media * aval) + (mediaGeralSimples * pesoMinimo)) / (aval + pesoMinimo);
-      }
-      return { id: r.id, nome: r.nome, media: notaFinal.toFixed(2), mediaIndividual: media, avaliacoes: aval };
-    }).sort((a,b) => parseFloat(b.media) - parseFloat(a.media));
+      const notaFinal = ((media * aval) + (mediaGeralSimples * pesoMinimo)) / (aval + pesoMinimo);
+      return { id: r.id, nome: r.nome, media: notaFinal, mediaIndividual: media, avaliacoes: aval };
+    });
+
+    // 2º passo: menor nota FINAL (após fórmula) — é o que os zerados recebem
+    const menorNotaFinal = comNotaFinal.length ? Math.min(...comNotaFinal.map(r => r.media)) : 0;
+
+    // 3º passo: zerados recebem a menor nota final
+    const semNotaFinal = dadosMes.rows
+      .filter(r => parseInt(r.avaliacoes) === 0)
+      .map(r => ({ id: r.id, nome: r.nome, media: menorNotaFinal, mediaIndividual: 0, avaliacoes: 0 }));
+
+    // Ranking completo ordenado por nota final
+    const ranking = [...comNotaFinal, ...semNotaFinal]
+      .map(r => ({ ...r, media: parseFloat(r.media).toFixed(2) }))
+      .sort((a,b) => parseFloat(b.media) - parseFloat(a.media));
 
     const mediaGeral = ranking.length
       ? (ranking.reduce((s,r) => s + parseFloat(r.media), 0) / ranking.length).toFixed(2)
