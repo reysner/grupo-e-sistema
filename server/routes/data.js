@@ -1131,49 +1131,59 @@ publicRouter.get('/gamificacao', async (req, res) => {
     // Média exibida = MÉDIASE (apenas quem tem avaliações > 0), não a média do ranking final
     const mediaGeral = mediaGeralSimples > 0 ? mediaGeralSimples.toFixed(2) : null;
 
-    // ── Consolidado acumulado (desde o início da gamificação) ──────────────────
-    const todasNotas = await pool.query(`
-      SELECT c.id, c.nome, n.media_individual, n.avaliacoes, n.mes
-      FROM gam_notas n
-      JOIN gam_colaboradores c ON c.id = n.colaborador_id
-      WHERE c.ativo = true
-      ORDER BY n.mes ASC
-    `);
+    // ── Consolidado acumulado: média das notas finais mensais por colaborador ──
+    // Para cada mês, recalcula as notas finais com a mesma fórmula do ranking mensal
+    // e depois tira a média simples dessas notas finais ao longo dos meses
 
-    // Média geral histórica: considera SOMENTE lançamentos com avaliações > 0
-    const mediasHistValidas = todasNotas.rows.filter(r => parseFloat(r.media_individual) > 0).map(r => parseFloat(r.media_individual));
-    const notaMaisBaixaHist = mediasHistValidas.length ? Math.min(...mediasHistValidas) : 0;
-    const mediaGeralHistorica = mediasHistValidas.length
-      ? mediasHistValidas.reduce((s,m) => s + m, 0) / mediasHistValidas.length
-      : 0;
+    // Busca todos os meses disponíveis
+    const mesesDisp = await pool.query(`SELECT DISTINCT mes FROM gam_notas ORDER BY mes ASC`);
+    const todosMeses = mesesDisp.rows.map(r => r.mes);
 
-    // Agrupa por colaborador: soma ponderada de (média × avaliações) ao longo de todos os meses
-    const porColaborador = {};
-    todasNotas.rows.forEach(r => {
-      if (!porColaborador[r.id]) porColaborador[r.id] = { nome: r.nome, totalAval: 0, somaPonderada: 0, meses: 0 };
-      let m = parseFloat(r.media_individual);
-      if (m === 0) m = notaMaisBaixaHist;
-      const aval = parseInt(r.avaliacoes);
-      porColaborador[r.id].totalAval += aval;
-      porColaborador[r.id].somaPonderada += m * aval;
-      porColaborador[r.id].meses += 1;
-    });
+    // Para cada mês, calcula a nota final de cada colaborador (mesma lógica do ranking mensal)
+    const notasFinalPorMes = {}; // { colaborador_id: [nota_final_mes1, nota_final_mes2, ...] }
+    const nomesPorId = {};
 
-    const consolidado = Object.values(porColaborador).map(c => {
-      let final;
-      if (c.totalAval === 0) {
-        final = notaMaisBaixaHist; // sem avaliações: recebe a nota mais baixa histórica
-      } else {
-        const mediaIndividualAcumulada = c.somaPonderada / c.totalAval;
-        final = ((mediaIndividualAcumulada * c.totalAval) + (mediaGeralHistorica * pesoMinimo)) / (c.totalAval + pesoMinimo);
-      }
-      return { nome: c.nome, media_geral: final.toFixed(2), meses_avaliados: c.meses, total_avaliacoes: c.totalAval };
+    for (const mes of todosMeses) {
+      const dadosMesC = await pool.query(`
+        SELECT c.id, c.nome, n.media_individual, n.avaliacoes
+        FROM gam_notas n
+        JOIN gam_colaboradores c ON c.id = n.colaborador_id
+        WHERE n.mes = $1 AND c.ativo = true
+      `, [mes]);
+
+      const comAvalC = dadosMesC.rows.filter(r => parseInt(r.avaliacoes) > 0);
+      const mediasC = comAvalC.map(r => parseFloat(r.media_individual));
+      const mediaGeralC = mediasC.length ? mediasC.reduce((s,m) => s+m, 0) / mediasC.length : 0;
+
+      // Calcula nota final de quem tem avaliações
+      const notasC = comAvalC.map(r => {
+        const mi = parseFloat(r.media_individual);
+        const av = parseInt(r.avaliacoes);
+        return { id: r.id, nome: r.nome, nf: ((mi*av)+(mediaGeralC*pesoMinimo))/(av+pesoMinimo) };
+      });
+      const menorC = notasC.length ? Math.min(...notasC.map(r => r.nf)) : 0;
+
+      // Atribui nota a todos (zerados recebem a menor nota final do mês)
+      dadosMesC.rows.forEach(r => {
+        nomesPorId[r.id] = r.nome;
+        if (!notasFinalPorMes[r.id]) notasFinalPorMes[r.id] = [];
+        const encontrado = notasC.find(n => n.id === r.id);
+        notasFinalPorMes[r.id].push(encontrado ? encontrado.nf : menorC);
+      });
+    }
+
+    // Calcula média das notas finais mensais (simples: soma / quantidade de meses)
+    const consolidado = Object.entries(notasFinalPorMes).map(([id, notas]) => {
+      const media = notas.reduce((s,n) => s+n, 0) / notas.length;
+      return {
+        nome: nomesPorId[id],
+        media_geral: media.toFixed(2),
+        meses_avaliados: notas.length,
+        total_avaliacoes: 0
+      };
     }).sort((a,b) => {
       const diff = parseFloat(b.media_geral) - parseFloat(a.media_geral);
       if (Math.abs(diff) >= 0.005) return diff;
-      if (b.total_avaliacoes !== a.total_avaliacoes) return b.total_avaliacoes - a.total_avaliacoes;
-      const diffMi = parseFloat(b.media_individual_acumulada||0) - parseFloat(a.media_individual_acumulada||0);
-      if (Math.abs(diffMi) >= 0.005) return diffMi;
       return a.nome.localeCompare(b.nome, 'pt-BR');
     });
 
