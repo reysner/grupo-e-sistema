@@ -1097,13 +1097,17 @@ publicRouter.get('/gamificacao', async (req, res) => {
       : 0;
 
     // Calcula nota final ponderada: ((Média*Aval) + (MédiaGeral*PesoMinimo)) / (Aval+PesoMinimo)
-    // Colaboradores com 0 avaliações recebem a nota mais baixa do mês, mas não entraram no cálculo da média geral
+    // Colaboradores com 0 avaliações recebem a nota mais baixa do mês DIRETAMENTE (sem fórmula)
     const ranking = dadosMes.rows.map(r => {
-      let media = parseFloat(r.media_individual);
-      if (media === 0) media = notaMaisBaixa;
+      const media = parseFloat(r.media_individual);
       const aval = parseInt(r.avaliacoes);
-      const final = ((media * aval) + (mediaGeralSimples * pesoMinimo)) / (aval + pesoMinimo);
-      return { id: r.id, nome: r.nome, media: final.toFixed(2), mediaIndividual: media, avaliacoes: aval };
+      let notaFinal;
+      if (aval === 0 || media === 0) {
+        notaFinal = notaMaisBaixa; // recebe a nota mais baixa direto, sem passar pela fórmula
+      } else {
+        notaFinal = ((media * aval) + (mediaGeralSimples * pesoMinimo)) / (aval + pesoMinimo);
+      }
+      return { id: r.id, nome: r.nome, media: notaFinal.toFixed(2), mediaIndividual: media, avaliacoes: aval };
     }).sort((a,b) => parseFloat(b.media) - parseFloat(a.media));
 
     const mediaGeral = ranking.length
@@ -1139,8 +1143,13 @@ publicRouter.get('/gamificacao', async (req, res) => {
     });
 
     const consolidado = Object.values(porColaborador).map(c => {
-      const mediaIndividualAcumulada = c.totalAval > 0 ? c.somaPonderada / c.totalAval : 0;
-      const final = ((mediaIndividualAcumulada * c.totalAval) + (mediaGeralHistorica * pesoMinimo)) / (c.totalAval + pesoMinimo);
+      let final;
+      if (c.totalAval === 0) {
+        final = notaMaisBaixaHist; // sem avaliações: recebe a nota mais baixa histórica
+      } else {
+        const mediaIndividualAcumulada = c.somaPonderada / c.totalAval;
+        final = ((mediaIndividualAcumulada * c.totalAval) + (mediaGeralHistorica * pesoMinimo)) / (c.totalAval + pesoMinimo);
+      }
       return { nome: c.nome, media_geral: final.toFixed(2), meses_avaliados: c.meses, total_avaliacoes: c.totalAval };
     }).sort((a,b) => parseFloat(b.media_geral) - parseFloat(a.media_geral));
 
