@@ -954,14 +954,22 @@ const App = (() => {
   // ── Modal ─────────────────────────────────────────────────────────────────
   let _modalCallback = null;
   const Modal = {
-    open(title, bodyHTML, onConfirm) {
+    open(title, bodyHTML, onConfirm, opts) {
       _modalCallback = onConfirm;
       document.getElementById('modal-title').textContent = title;
       document.getElementById('modal-body').innerHTML    = bodyHTML;
       document.getElementById('modal-confirm').onclick   = () => _modalCallback?.();
+      // Esconde rodapé se opts.noFooter = true
+      const footer = document.getElementById('modal-footer');
+      if (footer) footer.hidden = !!(opts && opts.noFooter);
       document.getElementById('modal-backdrop').hidden   = false;
     },
-    close() { document.getElementById('modal-backdrop').hidden = true; _modalCallback = null; },
+    close() {
+      document.getElementById('modal-backdrop').hidden = true;
+      _modalCallback = null;
+      const footer = document.getElementById('modal-footer');
+      if (footer) footer.hidden = false; // restore for next modal
+    },
   };
 
   // ── Token keep-alive ──────────────────────────────────────────────────────
@@ -2360,7 +2368,7 @@ const Carteira = (() => {
             <button class="btn" style="background:#e53e3e;color:#fff;border:none"
               onclick="document.dispatchEvent(new CustomEvent('cart-confirm-limpar'))">Sim, limpar tudo</button>
           </div>
-        </div>`, () => resolve(false));
+        </div>`, () => resolve(false), { noFooter: true });
       document.addEventListener('cart-confirm-limpar', () => { App.Modal.close(); resolve(true); }, {once:true});
     });
     if (!confirmado) return;
@@ -2597,7 +2605,7 @@ const Atendimento = (() => {
             <button class="btn" style="background:#e53e3e;color:#fff;border:none"
               onclick="document.dispatchEvent(new CustomEvent('at-confirm-limpar'))">Sim, limpar tudo</button>
           </div>
-        </div>`, () => resolve(false));
+        </div>`, () => resolve(false), { noFooter: true });
       document.addEventListener('at-confirm-limpar', () => { App.Modal.close(); resolve(true); }, {once:true});
     });
     if (!confirmado) return;
@@ -2763,7 +2771,7 @@ const Gestao = (() => {
             <button class="btn" style="background:#e53e3e;color:#fff;border:none"
               onclick="document.dispatchEvent(new CustomEvent('gc-confirm-limpar'))">Sim, limpar tudo</button>
           </div>
-        </div>`, () => resolve(false));
+        </div>`, () => resolve(false), { noFooter: true });
       document.addEventListener('gc-confirm-limpar', () => { App.Modal.close(); resolve(true); }, {once:true});
     });
     if (!confirmado) return;
@@ -2926,7 +2934,7 @@ const Recuperacao = (() => {
             <button class="btn" style="background:#e53e3e;color:#fff;border:none"
               onclick="document.dispatchEvent(new CustomEvent('rc-confirm-limpar'))">Sim, limpar tudo</button>
           </div>
-        </div>`, () => resolve(false));
+        </div>`, () => resolve(false), { noFooter: true });
       document.addEventListener('rc-confirm-limpar', () => { App.Modal.close(); resolve(true); }, {once:true});
     });
     if (!confirmado) return;
@@ -3092,7 +3100,7 @@ const Insatisfacao = (() => {
             <button class="btn" style="background:#e53e3e;color:#fff;border:none"
               onclick="document.dispatchEvent(new CustomEvent('in-confirm-limpar'))">Sim, limpar tudo</button>
           </div>
-        </div>`, () => resolve(false));
+        </div>`, () => resolve(false), { noFooter: true });
       document.addEventListener('in-confirm-limpar', () => { App.Modal.close(); resolve(true); }, {once:true});
     });
     if (!confirmado) return;
@@ -3256,7 +3264,7 @@ const Sensiveis = (() => {
             <button class="btn" style="background:#e53e3e;color:#fff;border:none"
               onclick="document.dispatchEvent(new CustomEvent('cs-confirm-limpar'))">Sim, limpar tudo</button>
           </div>
-        </div>`, () => resolve(false));
+        </div>`, () => resolve(false), { noFooter: true });
       document.addEventListener('cs-confirm-limpar', () => { App.Modal.close(); resolve(true); }, {once:true});
     });
     if (!confirmado) return;
