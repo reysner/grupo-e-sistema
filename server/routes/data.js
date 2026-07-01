@@ -1117,9 +1117,8 @@ publicRouter.get('/gamificacao', async (req, res) => {
       .map(r => ({ ...r, media: parseFloat(r.media).toFixed(2) }))
       .sort((a,b) => parseFloat(b.media) - parseFloat(a.media));
 
-    const mediaGeral = ranking.length
-      ? (ranking.reduce((s,r) => s + parseFloat(r.media), 0) / ranking.length).toFixed(2)
-      : null;
+    // Média exibida = MÉDIASE (apenas quem tem avaliações > 0), não a média do ranking final
+    const mediaGeral = mediaGeralSimples > 0 ? mediaGeralSimples.toFixed(2) : null;
 
     // ── Consolidado acumulado (desde o início da gamificação) ──────────────────
     const todasNotas = await pool.query(`
