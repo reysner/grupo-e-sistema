@@ -1089,8 +1089,10 @@ publicRouter.get('/gamificacao', async (req, res) => {
       WHERE n.mes = $1 AND c.ativo = true
     `, [mesAtual]);
 
-    // Média geral do mês: considera SOMENTE colaboradores com avaliações > 0
-    const mediasValidas = dadosMes.rows.filter(r => parseFloat(r.media_individual) > 0).map(r => parseFloat(r.media_individual));
+    // Média geral do mês: MÉDIASE — média das médias individuais de quem tem avaliacoes > 0
+    // Equivalente a =MÉDIASE(media_individual; avaliacoes; "<>0")
+    const comAvaliacoes = dadosMes.rows.filter(r => parseInt(r.avaliacoes) > 0);
+    const mediasValidas = comAvaliacoes.map(r => parseFloat(r.media_individual));
     const notaMaisBaixa = mediasValidas.length ? Math.min(...mediasValidas) : 0;
     const mediaGeralSimples = mediasValidas.length
       ? mediasValidas.reduce((s,m) => s + m, 0) / mediasValidas.length
