@@ -282,48 +282,6 @@ router.delete('/pesquisas/clear', requireAdmin, async (req, res) => {
 // ── CLEAR PESQUISAS ──────────────────────────────────────────────────────────────
 
 // ── DELETE INDIVIDUAL ────────────────────────────────────────────────────────────
-router.delete('/atendimentos/:id', requireAdmin, async (req, res) => {
-  try {
-    await pool.query(`DELETE FROM atendimentos WHERE id = $1`, [req.params.id]);
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
-});
-
-router.delete('/gestao/:id', requireAdmin, async (req, res) => {
-  try {
-    await pool.query(`DELETE FROM gestao_clientes WHERE id = $1`, [req.params.id]);
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
-});
-
-router.delete('/insatisfacoes/:id', requireAdmin, async (req, res) => {
-  try {
-    await pool.query(`DELETE FROM insatisfacoes WHERE id = $1`, [req.params.id]);
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
-});
-
-router.delete('/sensiveis/:id', requireAdmin, async (req, res) => {
-  try {
-    await pool.query(`DELETE FROM clientes_sensiveis WHERE id = $1`, [req.params.id]);
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
-});
-
-router.delete('/pesquisas/:id', requireAdmin, async (req, res) => {
-  try {
-    await pool.query(`DELETE FROM pesquisas WHERE id = $1`, [req.params.id]);
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
-});
-
-router.delete('/recuperacoes/:id', requireAdmin, async (req, res) => {
-  try {
-    await pool.query(`DELETE FROM recuperacoes WHERE id = $1`, [req.params.id]);
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
-});
-
 router.delete('/atendimentos/clear', requireAdmin, async (req, res) => {
   try {
     await pool.query(`DELETE FROM atendimentos`);
@@ -335,12 +293,54 @@ router.delete('/gestao/clear', requireAdmin, async (req, res) => {
   try {
     await pool.query(`DELETE FROM gestao_clientes`);
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: 'Erro ao limpar.' }); }
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+router.delete('/insatisfacoes/clear', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM insatisfacoes`);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+router.delete('/sensiveis/clear', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM clientes_sensiveis`);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+router.delete('/pesquisas/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM pesquisas WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
 });
 
 router.delete('/recuperacoes/clear', requireAdmin, async (req, res) => {
   try {
     await pool.query(`DELETE FROM recuperacoes`);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+router.delete('/atendimentos/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM atendimentos WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+router.delete('/gestao/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM gestao_clientes WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao limpar.' }); }
+});
+
+router.delete('/recuperacoes/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM recuperacoes WHERE id = $1`, [req.params.id]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao limpar.' }); }
 });
@@ -511,32 +511,32 @@ router.get('/carteira/dashboard', requireAuth, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro no dashboard.' }); }
 });
 
-router.delete('/clientes/:id', requireAdmin, async (req, res) => {
+router.delete('/clientes/clear', requireAdmin, async (req, res) => {
   try {
-    await pool.query('DELETE FROM clientes WHERE id = $1', [req.params.id]);
+    await pool.query('DELETE FROM clientes');
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
 });
 
-router.delete('/clientes/clear', requireAdmin, async (req, res) => {
+router.delete('/clientes/:id', requireAdmin, async (req, res) => {
   try {
-    await pool.query('DELETE FROM clientes');
+    await pool.query('DELETE FROM clientes WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao limpar.' }); }
 });
 
 // ── CLEAR INSATISFACOES ──────────────────────────────────────────────────────────
-router.delete('/insatisfacoes/clear', requireAdmin, async (req, res) => {
+router.delete('/insatisfacoes/:id', requireAdmin, async (req, res) => {
   try {
-    await pool.query(`DELETE FROM insatisfacoes`);
+    await pool.query(`DELETE FROM insatisfacoes WHERE id = $1`, [req.params.id]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao limpar registros.' }); }
 });
 
 // ── CLEAR SENSIVEIS ──────────────────────────────────────────────────────────────
-router.delete('/sensiveis/clear', requireAdmin, async (req, res) => {
+router.delete('/sensiveis/:id', requireAdmin, async (req, res) => {
   try {
-    await pool.query(`DELETE FROM clientes_sensiveis`);
+    await pool.query(`DELETE FROM clientes_sensiveis WHERE id = $1`, [req.params.id]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao limpar registros.' }); }
 });
@@ -660,16 +660,16 @@ router.patch('/investimentos/:id', requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro ao editar.' }); }
 });
 
-router.delete('/investimentos/:id', requireAdmin, async (req, res) => {
+router.delete('/investimentos/clear', requireAdmin, async (req, res) => {
   try {
-    await pool.query(`DELETE FROM investimentos WHERE id = $1`, [req.params.id]);
+    await pool.query(`DELETE FROM investimentos`);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
 });
 
-router.delete('/investimentos/clear', requireAdmin, async (req, res) => {
+router.delete('/investimentos/:id', requireAdmin, async (req, res) => {
   try {
-    await pool.query(`DELETE FROM investimentos`);
+    await pool.query(`DELETE FROM investimentos WHERE id = $1`, [req.params.id]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao limpar.' }); }
 });
