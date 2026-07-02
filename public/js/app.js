@@ -699,6 +699,11 @@ const App = (() => {
           }
         }
       }
+      // Captura os dados do ticket ANTES do _submit (que limpa o formulário)
+      const _gcSol  = gcSol;
+      const _gcReg  = Util.val('gc-regime') || '';
+      const _gcEmp  = Util.val('gc-empresa') || '';
+      const _gcCnpj = Util.val('gc-cnpj') || '';
       await Forms._submit('gestao', {
         analista: Util.val('gc-analista'), solicitacao: gcSol,
         cnpj: Util.val('gc-cnpj'), empresa: Util.val('gc-empresa'),
@@ -708,10 +713,6 @@ const App = (() => {
         codigo: Util.val('gc-codigo') || null,
       }, ['gc-analista','gc-cnpj','gc-empresa','gc-data','gc-competencia','gc-motivo'], 'Gestão salva!');
       // Oferece abrir ticket para Baixa ou Saída de empresa
-      const _gcSol  = document.getElementById('gc-solicitacao')?.value || '';
-      const _gcReg  = document.getElementById('gc-regime')?.value || '';
-      const _gcEmp  = document.getElementById('gc-empresa')?.value || '';
-      const _gcCnpj = document.getElementById('gc-cnpj')?.value || '';
       if ((_gcSol === 'Baixa de empresa' || _gcSol === 'Saída de empresa') && App.Auth.isAdmin()) {
         setTimeout(() => window.Tickets?.perguntarAbrirTicket(_gcSol, _gcReg, _gcEmp, _gcCnpj), 400);
       }
@@ -4125,7 +4126,17 @@ const Tickets = (() => {
     } else App.Toast.err('Erro ao atualizar status.');
   }
 
+  let _ticketPend = null;
+
   async function perguntarAbrirTicket(solicitacao, regime, empresa, cnpj) {
+    empresa = (empresa || '').trim();
+    cnpj = (cnpj || '').trim();
+    if (!empresa || !cnpj) {
+      App.Toast.err('Preencha Empresa e CNPJ antes de abrir o ticket.');
+      return;
+    }
+    // Guarda os dados do ticket em memória (evita perder empresa/cnpj no onclick)
+    _ticketPend = { solicitacao, regime, empresa, cnpj };
     // Verifica se há checklist para esse tipo+regime
     const itens = (CHECKLIST_MAP[solicitacao] || {})[regime] || [];
     const itensHtml = itens.length
@@ -4160,20 +4171,25 @@ const Tickets = (() => {
         '</div>' +
         '<div style="display:flex;gap:8px;justify-content:flex-end">' +
           '<button class="btn btn-ghost" onclick="App.Modal.close()">Cancelar</button>' +
-          '<button class="btn btn-primary" onclick="Tickets.criarTicket(\'' + solicitacao + '\',\'' + (regime||'') + '\',\'' + empresa + '\',\'' + cnpj + '\')">Abrir Ticket</button>' +
+          '<button class="btn btn-primary" onclick="Tickets.criarTicket()">Abrir Ticket</button>' +
         '</div>' +
       '</div>',
       null, { noFooter: true }
     );
   }
 
-  async function criarTicket(tipo, regime, empresa, cnpj) {
+  async function criarTicket() {
+    if (!_ticketPend || !_ticketPend.empresa || !_ticketPend.cnpj) {
+      App.Toast.err('Dados do ticket incompletos. Feche e tente novamente.');
+      return;
+    }
+    const { solicitacao, regime, empresa, cnpj } = _ticketPend;
     const obs = document.getElementById('tk-obs-nova')?.value?.trim() || null;
     const mencoes = [...document.querySelectorAll('.tk-mencao-check:checked')].map(c => c.value);
     const res = await fetch('/api/data/tickets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
-      body: JSON.stringify({ empresa, cnpj, regime, tipo_movimentacao: tipo, observacoes: obs, mencoes })
+      body: JSON.stringify({ empresa, cnpj, regime, tipo_movimentacao: solicitacao, observacoes: obs, mencoes })
     });
     if (res && res.ok) {
       App.Modal.close();
