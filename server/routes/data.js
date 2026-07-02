@@ -1435,16 +1435,18 @@ router.post('/tickets', requireAdmin, async (req, res) => {
       [gestao_id||null, empresa, cnpj, regime, tipo_movimentacao, JSON.stringify(checklist), observacoes||null, req.user.name]
     );
     const ticket = rows[0];
-    // Inserir menções e notificar
-    if (mencoes && mencoes.length) {
-      for (const uid of mencoes) {
-        await pool.query(`INSERT INTO ticket_mencoes (ticket_id, usuario_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [ticket.id, uid]);
-        await pool.query(
-          `INSERT INTO notificacoes (user_id, tipo, mensagem, referencia_id)
-           VALUES ($1,'ticket','Você foi mencionado em um ticket: '||$2,$3)`,
-          [uid, empresa, ticket.id]
-        ).catch(()=>{});
-      }
+    // Admins são incluídos automaticamente em todos os tickets
+    const adminsRes = await pool.query(`SELECT id FROM users WHERE role='administrador' AND active=1`);
+    const adminIds = adminsRes.rows.map(r => r.id.toString());
+    const todasMencoes = [...new Set([...(mencoes||[]), ...adminIds])];
+
+    for (const uid of todasMencoes) {
+      await pool.query(`INSERT INTO ticket_mencoes (ticket_id, usuario_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [ticket.id, uid]);
+      await pool.query(
+        `INSERT INTO notificacoes (user_id, tipo, mensagem, referencia_id)
+         VALUES ($1,'ticket','Novo ticket aberto: '||$2,$3)`,
+        [uid, empresa, ticket.id]
+      ).catch(()=>{});
     }
     // Interação de abertura
     if (observacoes) {
@@ -1572,7 +1574,7 @@ router.patch('/tickets/:id/status', requireAdmin, async (req, res) => {
 router.get('/tickets-usuarios', requireAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, name, role FROM users WHERE role IN ('contabil','administrador') AND active=1 ORDER BY name ASC`
+      `SELECT id, name, role FROM users WHERE role = 'contabil' AND active=1 ORDER BY name ASC`
     );
     res.json({ data: rows });
   } catch (err) { res.status(500).json({ error: 'Erro ao listar usuários.' }); }
