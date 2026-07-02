@@ -931,7 +931,7 @@ const App = (() => {
           '<option value="contabil"' + (role==='contabil'?' selected':'') + '>Contábil — só Portal Contábil</option>' +
         '</select></div>' +
         '<button class="btn btn-primary" data-id="' + id + '" onclick="App.Admin.saveEdit(this.dataset.id)">Salvar</button>' +
-      '</div>');
+      '</div>', null, { noFooter: true });
     },
 
     async saveEdit(id) {
