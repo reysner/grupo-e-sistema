@@ -2245,7 +2245,12 @@ const Carteira = (() => {
         ? '<span style="background:#f0fff4;color:#38a169;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Ativo</span>'
         : '<span style="background:#fff5f5;color:#e53e3e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Encerrado</span>';
       // Health Score (0-100)
-            const scoreRetencao = Math.min(40, Math.round(mesesRel/3));
+      const _iniRel = new Date(c.data_entrada);
+      const _fimRel = c.data_saida ? new Date(c.data_saida) : new Date();
+      const mesesRel = c.data_entrada
+        ? Math.max(0, (_fimRel.getFullYear()-_iniRel.getFullYear())*12 + (_fimRel.getMonth()-_iniRel.getMonth()))
+        : 0;
+      const scoreRetencao = Math.min(40, Math.round(mesesRel/3));
       const scoreReceita  = rec > 0 ? Math.min(30, Math.round(rec/1000)) : 0;
       const scoreSem      = c.status==='ativo' ? 20 : 0;
       const scoreReajuste = c.meses_sem_reajuste && c.meses_sem_reajuste > 12 ? 0 : 10;
