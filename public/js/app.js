@@ -704,6 +704,15 @@ const App = (() => {
       const _gcReg  = Util.val('gc-regime') || '';
       const _gcEmp  = Util.val('gc-empresa') || '';
       const _gcCnpj = Util.val('gc-cnpj') || '';
+      const _gcDados = {
+        analista: Util.val('gc-analista') || '',
+        codigo: Util.val('gc-codigo') || '',
+        data_sol: Util.val('gc-data') || '',
+        canal: gcCanal || '',
+        competencia: Util.val('gc-competencia') || '',
+        motivo: Util.val('gc-motivo-saida') || Util.val('gc-motivo') || '',
+        data_encerramento: Util.val('gc-data-saida') || '',
+      };
       await Forms._submit('gestao', {
         analista: Util.val('gc-analista'), solicitacao: gcSol,
         cnpj: Util.val('gc-cnpj'), empresa: Util.val('gc-empresa'),
@@ -714,7 +723,7 @@ const App = (() => {
       }, ['gc-analista','gc-cnpj','gc-empresa','gc-data','gc-competencia','gc-motivo'], 'Gestão salva!');
       // Oferece abrir ticket para Baixa ou Saída de empresa
       if ((_gcSol === 'Baixa de empresa' || _gcSol === 'Saída de empresa') && App.Auth.isAdmin()) {
-        setTimeout(() => window.Tickets?.perguntarAbrirTicket(_gcSol, _gcReg, _gcEmp, _gcCnpj), 400);
+        setTimeout(() => window.Tickets?.perguntarAbrirTicket(_gcSol, _gcReg, _gcEmp, _gcCnpj, _gcDados), 400);
       }
       document.getElementById('gc-solicitacao').value='';
       document.getElementById('gc-canal').value='';
@@ -4046,6 +4055,25 @@ const Tickets = (() => {
     }).join('') || '<div style="color:var(--gray-400);font-size:13px;padding:8px">Nenhuma interação ainda.</div>';
 
     const isAdmin = App.Auth.isAdmin();
+
+    // Bloco com os dados vindos da Gestão de Clientes
+    let dg = t.dados_gestao;
+    if (typeof dg === 'string') { try { dg = JSON.parse(dg); } catch(e){ dg = null; } }
+    const _fmtData = (d) => { if (!d) return ''; const dt = new Date(d); return isNaN(dt) ? d : dt.toLocaleDateString('pt-BR'); };
+    const _linha = (rot, val) => val ? '<div style="display:flex;gap:6px;font-size:12px;padding:2px 0"><span style="color:var(--gray-400);min-width:130px">' + rot + '</span><span style="color:var(--gray-700);font-weight:600">' + val + '</span></div>' : '';
+    const dadosGestaoHtml = (dg && Object.keys(dg).length) ? (
+      '<div style="background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:12px 14px">' +
+        '<div style="font-size:12px;font-weight:700;color:var(--g800);margin-bottom:8px">📄 Dados da Gestão de Clientes</div>' +
+        _linha('Analista', dg.analista) +
+        _linha('Código do cliente', dg.codigo) +
+        _linha('Data da solicitação', _fmtData(dg.data_sol)) +
+        _linha('Canal', dg.canal) +
+        _linha('Competência', _fmtData(dg.competencia)) +
+        _linha('Motivo da saída', dg.motivo) +
+        _linha('Data de encerramento', _fmtData(dg.data_encerramento)) +
+      '</div>'
+    ) : '';
+
     const statusBtns = isAdmin ? (
       t.status !== 'encerrada'
         ? '<button class="btn btn-success btn-sm" onclick="Tickets.mudarStatus(\'' + id + '\',\'encerrada\')">✅ Encerrar ticket</button>'
@@ -4060,6 +4088,7 @@ const Tickets = (() => {
           '<span style="font-size:12px;color:var(--gray-500)">' + t.cnpj + ' · ' + t.regime + ' · ' + t.tipo_movimentacao + '</span>' +
         '</div>' +
         (t.observacoes ? '<div style="background:#f8fafc;border-radius:8px;padding:10px 14px;font-size:13px;color:var(--gray-700)"><strong>Observações:</strong> ' + t.observacoes + '</div>' : '') +
+        dadosGestaoHtml +
         '<div>' +
           '<div style="font-size:13px;font-weight:700;color:var(--g800);margin-bottom:8px">📋 Checklist</div>' +
           checklistHtml +
@@ -4128,7 +4157,7 @@ const Tickets = (() => {
 
   let _ticketPend = null;
 
-  async function perguntarAbrirTicket(solicitacao, regime, empresa, cnpj) {
+  async function perguntarAbrirTicket(solicitacao, regime, empresa, cnpj, dados) {
     empresa = (empresa || '').trim();
     cnpj = (cnpj || '').trim();
     if (!empresa || !cnpj) {
@@ -4136,7 +4165,7 @@ const Tickets = (() => {
       return;
     }
     // Guarda os dados do ticket em memória (evita perder empresa/cnpj no onclick)
-    _ticketPend = { solicitacao, regime, empresa, cnpj };
+    _ticketPend = { solicitacao, regime, empresa, cnpj, dados: dados || {} };
     // Verifica se há checklist para esse tipo+regime
     const itens = (CHECKLIST_MAP[solicitacao] || {})[regime] || [];
     const itensHtml = itens.length
@@ -4183,13 +4212,13 @@ const Tickets = (() => {
       App.Toast.err('Dados do ticket incompletos. Feche e tente novamente.');
       return;
     }
-    const { solicitacao, regime, empresa, cnpj } = _ticketPend;
+    const { solicitacao, regime, empresa, cnpj, dados } = _ticketPend;
     const obs = document.getElementById('tk-obs-nova')?.value?.trim() || null;
     const mencoes = [...document.querySelectorAll('.tk-mencao-check:checked')].map(c => c.value);
     const res = await fetch('/api/data/tickets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
-      body: JSON.stringify({ empresa, cnpj, regime, tipo_movimentacao: solicitacao, observacoes: obs, mencoes })
+      body: JSON.stringify({ empresa, cnpj, regime, tipo_movimentacao: solicitacao, observacoes: obs, mencoes, dados_gestao: dados || {} })
     });
     if (res && res.ok) {
       App.Modal.close();
