@@ -926,8 +926,9 @@ const App = (() => {
         '<div class="field"><label>Nome</label><input id="eu-name" type="text" value="' + (name||'') + '" /></div>' +
         '<div class="field"><label>E-mail</label><input id="eu-email" type="email" value="' + (email||'') + '" /></div>' +
         '<div class="field"><label>Função</label><select id="eu-role">' +
-          '<option value="usuario">Usuário</option>' +
-          '<option value="administrador">Administrador</option>' +
+          '<option value="usuario"' + (role==='usuario'?' selected':'') + '>Usuário</option>' +
+          '<option value="administrador"' + (role==='administrador'?' selected':'') + '>Administrador</option>' +
+          '<option value="contabil"' + (role==='contabil'?' selected':'') + '>Contábil — só Portal Contábil</option>' +
         '</select></div>' +
         '<button class="btn btn-primary" data-id="' + id + '" onclick="App.Admin.saveEdit(this.dataset.id)">Salvar</button>' +
       '</div>');
