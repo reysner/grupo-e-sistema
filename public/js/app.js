@@ -827,7 +827,7 @@ const App = (() => {
           <td><span class="role-pill ${u.role==='administrador'?'admin':'user'}">${u.role==='administrador'?'Administrador':'Usuário'}</span></td>
           <td><span style="background:${ativo?'#f0fff4':'#fff5f5'};color:${ativo?'#38a169':'#e53e3e'};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${ativo?'Ativo':'Inativo'}</span></td>
           <td style="white-space:nowrap;display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditProfile('${u.id}','${u.name}','${u.email}')">✏️ Editar</button>
+            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditProfile('${u.id}','${u.name}','${u.email}','${u.role}')">✏️ Editar</button>
             <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditPass('${u.id}')">🔑 Senha</button>
             <button class="btn btn-sm" style="background:${ativo?'#fff5f5':'#f0fff4'};color:${ativo?'#e53e3e':'#38a169'};border:1px solid ${ativo?'#fed7d7':'#c6f6d5'}" onclick="App.Admin.toggleAtivo('${u.id}','${u.name}',${ativo})">${ativo?'⏸ Desativar':'▶ Ativar'}</button>
             <button class="btn btn-danger btn-sm" onclick="App.Admin.deleteUser('${u.id}','${u.name}')">🗑 Excluir</button>
@@ -921,7 +921,7 @@ const App = (() => {
       Modal.close(); Toast.ok('Usuário criado!'); Admin.load();
     },
 
-    openEditProfile(id, name, email) {
+    openEditProfile(id, name, email, role) {
       App.Modal.open('Editar usuário', '<div style="display:grid;gap:12px">' +
         '<div class="field"><label>Nome</label><input id="eu-name" type="text" value="' + (name||'') + '" /></div>' +
         '<div class="field"><label>E-mail</label><input id="eu-email" type="email" value="' + (email||'') + '" /></div>' +
