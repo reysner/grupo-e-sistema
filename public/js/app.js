@@ -4141,8 +4141,9 @@ const Tickets = (() => {
         '</div>' +
         '<div class="field"><label>Observações (opcional)</label><textarea id="tk-obs-nova" style="width:100%;min-height:60px;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;resize:vertical" placeholder="Informe o que é necessário..."></textarea></div>' +
         '<div>' +
-          '<div style="font-size:13px;font-weight:700;margin-bottom:6px">Mencionar analistas:</div>' +
-          '<div style="max-height:160px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px;padding:8px 12px">' + (usersHtml || '<span style="color:var(--gray-400);font-size:13px">Nenhum usuário contábil cadastrado ainda.</span>') + '</div>' +
+          '<div style="font-size:13px;font-weight:700;margin-bottom:4px">Mencionar analistas contábeis:</div>' +
+          '<div style="font-size:11px;color:var(--gray-400);margin-bottom:6px">⚡ Administradores são notificados automaticamente.</div>' +
+          '<div style="max-height:160px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px;padding:8px 12px">' + (usersHtml || '<span style="color:var(--gray-400);font-size:13px">Cadastre usuários com perfil Contábil para mencionar.</span>') + '</div>' +
         '</div>' +
         '<div style="display:flex;gap:8px;justify-content:flex-end">' +
           '<button class="btn btn-ghost" onclick="App.Modal.close()">Cancelar</button>' +
