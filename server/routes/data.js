@@ -69,18 +69,20 @@ router.get('/gestao', async (req, res) => {
 
 router.post('/gestao', async (req, res) => {
   try {
-    const { analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo } = req.body;
+    const { analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario } = req.body;
     if (!analista || !solicitacao || !cnpj || !empresa || !data_sol || !competencia || !canal)
       return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
     await pool.query(`ALTER TABLE gestao_clientes ADD COLUMN IF NOT EXISTS codigo TEXT`).catch(()=>{});
+    await pool.query(`ALTER TABLE gestao_clientes ADD COLUMN IF NOT EXISTS regime_tributario TEXT`).catch(()=>{});
     const id = uuidv4();
     await pool.query(
-      `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [id, req.user.id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo || null, codigo || null]
+      `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [id, req.user.id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo || null, codigo || null, regime_tributario || null]
     );
     await registrarLog(req.user.id, req.user.name, 'criar', 'gestao', `Gestao: ${solicitacao} - ${empresa}`, req);
     res.status(201).json({ id });
-  } catch (err) { res.status(500).json({ error: 'Erro.' }); }
+  } catch (err) { console.error('Gestao POST error:', err); res.status(500).json({ error: 'Erro ao salvar gestão.' }); }
 });
 
 // ── INSATISFAÇÕES ─────────────────────────────────────────────────────────────
@@ -1373,13 +1375,13 @@ async function ensureTicketTables() {
   await pool.query(`CREATE TABLE IF NOT EXISTS ticket_interacoes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-    autor_id UUID, autor_nome TEXT NOT NULL, comentario TEXT NOT NULL,
+    autor_id TEXT, autor_nome TEXT NOT NULL, comentario TEXT NOT NULL,
     is_automatica BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT NOW()
   )`).catch(()=>{});
   await pool.query(`CREATE TABLE IF NOT EXISTS ticket_mencoes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-    usuario_id UUID NOT NULL, UNIQUE(ticket_id, usuario_id)
+    usuario_id TEXT NOT NULL, UNIQUE(ticket_id, usuario_id)
   )`).catch(()=>{});
 }
 
@@ -1568,6 +1570,14 @@ router.patch('/tickets/:id/status', requireAdmin, async (req, res) => {
     await pool.query(`UPDATE tickets SET status=$1, updated_at=NOW() WHERE id=$2`, [status, req.params.id]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao atualizar status.' }); }
+});
+
+// Excluir ticket (admin only) — a cascata remove interações e menções junto
+router.delete('/tickets/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM tickets WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { console.error('Delete ticket error:', err); res.status(500).json({ error: 'Erro ao excluir ticket.' }); }
 });
 
 // Listar usuários contábil+admin para mencionar
