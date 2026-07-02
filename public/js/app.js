@@ -904,7 +904,11 @@ const App = (() => {
         <div class="field" style="margin-top:12px"><label>E-mail</label><input id="m-email" type="email" placeholder="email@dominio.com" /></div>
         <div class="field" style="margin-top:12px"><label>Senha</label><input id="m-pass" type="password" placeholder="Mín. 6 caracteres" /></div>
         <div class="field" style="margin-top:12px"><label>Perfil</label>
-          <select id="m-role"><option value="usuario">Usuário</option><option value="administrador">Administrador</option></select>
+          <select id="m-role">
+            <option value="usuario">Usuário</option>
+            <option value="administrador">Administrador</option>
+            <option value="contabil">Contábil — acesso só ao Portal Contábil</option>
+          </select>
         </div>`, Admin._confirmAdd);
     },
 
