@@ -4008,6 +4008,7 @@ const Tickets = (() => {
               '<div style="background:var(--g700);height:100%;width:' + (total ? Math.round(feitos/total*100) : 0) + '%"></div>' +
             '</div>' +
             '<div style="font-size:11px;color:var(--gray-400);margin-top:4px">Aberto por ' + t.criado_por + '</div>' +
+            (App.Auth.isAdmin() ? '<button title="Excluir ticket" onclick="event.stopPropagation();Tickets.excluir(\'' + t.id + '\')" style="margin-top:8px;background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer">🗑 Excluir</button>' : '') +
           '</div>' +
         '</div>' +
       '</div>';
@@ -4181,7 +4182,17 @@ const Tickets = (() => {
     } else App.Toast.err('Erro ao abrir ticket.');
   }
 
-  return { load, filtrar, abrirTicket, marcarItem, enviarComentario, mudarStatus, perguntarAbrirTicket, criarTicket };
+  async function excluir(id) {
+    App.Modal.open('Excluir ticket',
+      '<p style="color:var(--gray-600)">Excluir este ticket permanentemente? Esta ação não pode ser desfeita.</p>',
+      async () => {
+        const res = await fetch('/api/data/tickets/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + _tk() } });
+        if (res && res.ok) { App.Modal.close(); App.Toast.ok('Ticket excluído.'); load(); }
+        else App.Toast.err('Erro ao excluir ticket.');
+      });
+  }
+
+  return { load, filtrar, abrirTicket, marcarItem, enviarComentario, mudarStatus, perguntarAbrirTicket, criarTicket, excluir };
 })();
 
 window.Tickets = Tickets;
