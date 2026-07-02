@@ -129,6 +129,7 @@ let _user  = null;
 let _todos = [];
 let _filtro = 'todos';
 let _ticketAberto = null;
+let _contabeis = [];
 
 const STATUS_LABEL = { nova:'🔴 Nova', resolvendo:'🟡 Resolvendo', encerrada:'🟢 Encerrada' };
 const STATUS_BG    = { nova:'#fee2e2', resolvendo:'#fef9c3', encerrada:'#dcfce7' };
@@ -238,6 +239,11 @@ async function abrirTicket(id) {
   const res = await api('/api/data/tickets/' + id);
   if (!res.ok) return;
   const { data: t } = await res.json();
+  // Lista de analistas contábeis (para menção com @Nome)
+  try {
+    const resU = await api('/api/data/tickets-usuarios');
+    _contabeis = resU.ok ? ((await resU.json()).data || []) : [];
+  } catch(e) { _contabeis = []; }
   document.getElementById('modal-titulo').textContent = t.empresa;
 
   const dias = parseInt(t.dias) || 0;
@@ -303,7 +309,8 @@ async function abrirTicket(id) {
     '<div style="font-size:13px;font-weight:700;margin:14px 0 8px">💬 Interações</div>' +
     intHtml +
     '<div style="font-size:13px;font-weight:700;margin:14px 0 6px">Adicionar comentário</div>' +
-    '<textarea id="ctb-comentario" placeholder="Digite seu comentário..."></textarea>' +
+    (_contabeis.length ? '<div style="font-size:11px;color:var(--gray-500);margin-bottom:6px">Para convidar, escreva <strong>@Nome</strong> no comentário. Disponíveis: ' + _contabeis.map(u => '<span style="background:#dcfce7;color:#166534;padding:1px 8px;border-radius:10px;font-weight:600;margin:0 2px;cursor:pointer" onclick="inserirMencao(\'' + u.name.replace(/'/g,"\\'") + '\')">@' + u.name + '</span>').join('') + '</div>' : '') +
+    '<textarea id="ctb-comentario" placeholder="Digite seu comentário... use @Nome para convidar um analista"></textarea>' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">' +
       (statusBtns || '<div></div>') +
       '<button class="btn btn-primary" onclick="enviarComentario()">Enviar</button>' +
@@ -328,14 +335,39 @@ async function marcarItem(idx, checkbox) {
   }
 }
 
+function inserirMencao(nome) {
+  const ta = document.getElementById('ctb-comentario');
+  if (!ta) return;
+  const sep = ta.value && !ta.value.endsWith(' ') ? ' ' : '';
+  ta.value = ta.value + sep + '@' + nome + ' ';
+  ta.focus();
+}
+
+// Detecta @Nome no texto e devolve os IDs dos contábeis mencionados
+function resolverMencoes(texto) {
+  const ids = [];
+  const nomes = [];
+  (_contabeis || []).forEach(u => {
+    // Casa @ seguido do nome completo do contábil (case-insensitive)
+    const escapado = u.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('@' + escapado + '(?![\\w])', 'i');
+    if (re.test(texto)) { ids.push(u.id); nomes.push(u.name); }
+  });
+  return { ids, nomes };
+}
+
 async function enviarComentario() {
   const comentario = document.getElementById('ctb-comentario')?.value?.trim();
   if (!comentario) { alert('Digite um comentário.'); return; }
+  const { ids, nomes } = resolverMencoes(comentario);
+  const body = { comentario };
+  if (ids.length) body.mencoes_novas = ids;
   const res = await api('/api/data/tickets/' + _ticketAberto + '/interacoes', {
     method: 'POST',
-    body: JSON.stringify({ comentario })
+    body: JSON.stringify(body)
   });
   if (res.ok) {
+    if (nomes.length) alert('Comentário enviado. Convidado(s): ' + nomes.join(', '));
     await abrirTicket(_ticketAberto);
     carregarTickets();
   } else alert('Erro ao enviar comentário.');
