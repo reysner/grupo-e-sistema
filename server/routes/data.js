@@ -1372,6 +1372,7 @@ async function ensureTicketTables() {
     observacoes TEXT, criado_por TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
   )`).catch(()=>{});
+  await pool.query(`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS dados_gestao JSONB DEFAULT '{}'`).catch(()=>{});
   await pool.query(`CREATE TABLE IF NOT EXISTS ticket_interacoes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
@@ -1427,14 +1428,14 @@ router.get('/tickets', requireAuth, async (req, res) => {
 router.post('/tickets', requireAdmin, async (req, res) => {
   try {
     await ensureTicketTables();
-    const { gestao_id, empresa, cnpj, regime, tipo_movimentacao, observacoes, mencoes } = req.body;
+    const { gestao_id, empresa, cnpj, regime, tipo_movimentacao, observacoes, mencoes, dados_gestao } = req.body;
     if (!empresa || !cnpj || !regime || !tipo_movimentacao)
       return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
     const checklist = buildChecklist(tipo_movimentacao, regime);
     const { rows } = await pool.query(
-      `INSERT INTO tickets (gestao_id, empresa, cnpj, regime, tipo_movimentacao, checklist, observacoes, criado_por)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [gestao_id||null, empresa, cnpj, regime, tipo_movimentacao, JSON.stringify(checklist), observacoes||null, req.user.name]
+      `INSERT INTO tickets (gestao_id, empresa, cnpj, regime, tipo_movimentacao, checklist, observacoes, criado_por, dados_gestao)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [gestao_id||null, empresa, cnpj, regime, tipo_movimentacao, JSON.stringify(checklist), observacoes||null, req.user.name, JSON.stringify(dados_gestao||{})]
     );
     const ticket = rows[0];
     // Admins são incluídos automaticamente em todos os tickets
