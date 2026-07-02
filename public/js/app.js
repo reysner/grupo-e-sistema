@@ -634,7 +634,7 @@ const App = (() => {
     },
 
     async gestao() {
-      if (!Util.requireFields([['gc-analista','Analista'],['gc-solicitacao','Solicitação'],['gc-cnpj','CNPJ'],['gc-empresa','Empresa'],['gc-data','Data'],['gc-competencia','Competência'],['gc-canal','Canal']])) return;
+      if (!Util.requireFields([['gc-analista','Analista'],['gc-solicitacao','Solicitação'],['gc-cnpj','CNPJ'],['gc-empresa','Empresa'],['gc-data','Data'],['gc-competencia','Competência'],['gc-canal','Canal'],['gc-regime','Regime Tributário']])) return;
       const gcSol = Util.val('gc-solicitacao') === 'Outro' ? Util.val('gc-sol-outro') : Util.val('gc-solicitacao');
       const gcCanal = Util.val('gc-canal') === 'Outro' ? Util.val('gc-canal-outro') : Util.val('gc-canal');
       const isEntrada = gcSol==='Constituição de empresa' || gcSol==='Cliente vindo de outro contador' || gcSol==='Transformação de empresa';
@@ -704,6 +704,8 @@ const App = (() => {
         cnpj: Util.val('gc-cnpj'), empresa: Util.val('gc-empresa'),
         data_sol: Util.val('gc-data'), competencia: Util.val('gc-competencia'),
         canal: gcCanal,
+        regime_tributario: Util.val('gc-regime') || null,
+        codigo: Util.val('gc-codigo') || null,
       }, ['gc-analista','gc-cnpj','gc-empresa','gc-data','gc-competencia','gc-motivo'], 'Gestão salva!');
       // Oferece abrir ticket para Baixa ou Saída de empresa
       const _gcSol  = document.getElementById('gc-solicitacao')?.value || '';
