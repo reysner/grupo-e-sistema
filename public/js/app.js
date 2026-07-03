@@ -4000,11 +4000,14 @@ const Tickets = (() => {
     const lista = document.getElementById('tk-lista');
     if (!lista) return;
     const filtrados = _filtroAtual === 'todos' ? _todos : _todos.filter(t => t.status === _filtroAtual);
+    const barraLimpar = (App.Auth.isAdmin() && _todos.length)
+      ? '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button onclick="Tickets.limparTickets()" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer">🗑 Limpar Tickets</button></div>'
+      : '';
     if (!filtrados.length) {
-      lista.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:40px">Nenhum ticket encontrado.</div>';
+      lista.innerHTML = barraLimpar + '<div style="text-align:center;color:var(--gray-400);padding:40px">Nenhum ticket encontrado.</div>';
       return;
     }
-    lista.innerHTML = filtrados.map(t => {
+    lista.innerHTML = barraLimpar + filtrados.map(t => {
       const dias = parseInt(t.dias) || 0;
       const total = t.checklist?.length || 0;
       const feitos = t.checklist?.filter(c => c.ok).length || 0;
@@ -4246,7 +4249,17 @@ const Tickets = (() => {
       });
   }
 
-  return { load, filtrar, abrirTicket, marcarItem, enviarComentario, mudarStatus, perguntarAbrirTicket, criarTicket, excluir };
+  async function limparTickets() {
+    App.Modal.open('Limpar todos os tickets',
+      '<p style="color:var(--gray-600)">Isso vai excluir <strong>todos</strong> os tickets (e suas menções e interações), inclusive no Portal Contábil. Esta ação não pode ser desfeita.</p>',
+      async () => {
+        const res = await fetch('/api/data/tickets/clear', { method: 'DELETE', headers: { Authorization: 'Bearer ' + _tk() } });
+        if (res && res.ok) { App.Modal.close(); App.Toast.ok('Todos os tickets foram removidos.'); load(); }
+        else App.Toast.err('Erro ao limpar tickets.');
+      });
+  }
+
+  return { load, filtrar, abrirTicket, marcarItem, enviarComentario, mudarStatus, perguntarAbrirTicket, criarTicket, excluir, limparTickets };
 })();
 
 window.Tickets = Tickets;
