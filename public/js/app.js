@@ -300,6 +300,20 @@ const App = (() => {
       el.textContent = msg;
       el.hidden = false;
     },
+    async esqueciSenha() {
+      const email = (document.getElementById('login-email')?.value || '').trim();
+      const box = document.getElementById('forgot-msg');
+      const mostrar = (txt, cor) => { if (box) { box.style.display = 'block'; box.style.color = cor; box.textContent = txt; } };
+      if (!email) { mostrar('Digite seu e-mail no campo acima e clique novamente em "Esqueci minha senha".', '#fecaca'); return; }
+      try {
+        await fetch('/api/auth/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+      } catch (e) { /* resposta é sempre genérica */ }
+      mostrar('Se o e-mail estiver cadastrado, enviamos o link de recuperação. Verifique sua caixa de entrada (e o spam).', '#bbf7d0');
+    },
     showLogin() {
       document.getElementById('auth-alert').hidden    = true;
       document.getElementById('form-login').hidden    = false;
@@ -1767,6 +1781,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-google').addEventListener('click', () => App.Auth.loginGoogle());
   document.getElementById('btn-show-register').addEventListener('click', () => App.Auth.showRegister());
   document.getElementById('btn-show-login').addEventListener('click', () => App.Auth.showLogin());
+  { const bf = document.getElementById('btn-forgot'); if (bf) bf.addEventListener('click', () => App.Auth.esqueciSenha()); }
   document.getElementById('btn-logout').addEventListener('click', (e) => { e.preventDefault(); App.Auth.logout(); });
   document.getElementById('btn-logout-top').addEventListener('click', () => App.Auth.logout());
 
