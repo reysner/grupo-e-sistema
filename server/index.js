@@ -12,6 +12,7 @@ const authRoutes  = require('./routes/auth');
 const dataRoutes  = require('./routes/data');
 const usersRoutes = require('./routes/users');
 const gamificacaoRoutes = require('./routes/gamificacao');
+const resetRoutes = require('./reset');
 
 
 const app    = express();
@@ -55,6 +56,7 @@ if (APP_URL) {
 
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.use('/api/public', dataRoutes.publicRouter);   // sem autenticação
+app.use('/api/auth',   resetRoutes);               // recuperação de senha (forgot/reset) — sem login
 app.use('/api/auth',   authRoutes);
 app.use('/api/data',   dataRoutes);
 app.use('/api/users',  usersRoutes);
