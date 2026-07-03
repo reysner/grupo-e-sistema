@@ -2728,7 +2728,7 @@ const Gestao = (() => {
         <td>${r.solicitacao}</td>
         <td>${r.canal||'—'}</td>
         <td style="font-size:12px;color:var(--gray-500)">${r.data_sol ? new Date(r.data_sol).toLocaleDateString('pt-BR') : '—'}</td>
-        <td style="font-size:12px;color:var(--gray-500)">${r.competencia ? new Date(r.competencia).toLocaleDateString('pt-BR') : '—'}</td>
+        <td style="font-size:12px;color:var(--gray-500)">${r.competencia ? (String(r.competencia).match(/^(\d{4})-(\d{2})/) ? RegExp.$2 + '/' + RegExp.$1 : new Date(r.competencia).toLocaleDateString('pt-BR')) : '—'}</td>
         <td>${lixeira}</td></tr>`;
     }).join('');
   }
@@ -4060,6 +4060,7 @@ const Tickets = (() => {
     let dg = t.dados_gestao;
     if (typeof dg === 'string') { try { dg = JSON.parse(dg); } catch(e){ dg = null; } }
     const _fmtData = (d) => { if (!d) return ''; const dt = new Date(d); return isNaN(dt) ? d : dt.toLocaleDateString('pt-BR'); };
+    const _fmtComp = (c) => { if (!c) return ''; const m = String(c).match(/^(\d{4})-(\d{2})/); return m ? m[2] + '/' + m[1] : c; };
     const _linha = (rot, val) => val ? '<div style="display:flex;gap:6px;font-size:12px;padding:2px 0"><span style="color:var(--gray-400);min-width:130px">' + rot + '</span><span style="color:var(--gray-700);font-weight:600">' + val + '</span></div>' : '';
     const dadosGestaoHtml = (dg && Object.keys(dg).length) ? (
       '<div style="background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:12px 14px">' +
@@ -4068,7 +4069,7 @@ const Tickets = (() => {
         _linha('Código do cliente', dg.codigo) +
         _linha('Data da solicitação', _fmtData(dg.data_sol)) +
         _linha('Canal', dg.canal) +
-        _linha('Competência', _fmtData(dg.competencia)) +
+        _linha('Competência', _fmtComp(dg.competencia)) +
         _linha('Motivo da saída', dg.motivo) +
         _linha('Data de encerramento', _fmtData(dg.data_encerramento)) +
       '</div>'
