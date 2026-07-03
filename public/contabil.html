@@ -97,6 +97,10 @@
     <div class="field"><label>Senha</label><input id="l-senha" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter') login()" /></div>
     <button class="btn-login" onclick="login()">Entrar</button>
     <div class="login-err" id="l-err"></div>
+    <div style="text-align:center;margin-top:14px">
+      <a href="#" onclick="esqueciSenha(event)" style="color:rgba(255,255,255,.8);font-size:13px;text-decoration:underline">Esqueci minha senha</a>
+    </div>
+    <div id="l-recuperar-msg" style="margin-top:12px;font-size:13px;text-align:center;color:#dcfce7;display:none"></div>
   </div>
 </div>
 
