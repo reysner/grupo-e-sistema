@@ -53,7 +53,7 @@ function requireAuth(req, res, next) {
     const payload = jwt.verify(token, ACCESS_SECRET, { issuer: 'grupo-e' });
     req.user = { id: payload.sub, name: payload.name, role: payload.role };
     // Usuário contábil só pode acessar rotas de tickets — bloqueia o resto
-    const isTicketRoute = req.path && (req.path.includes('/tickets') || req.path.includes('/auth'));
+    const isTicketRoute = req.path && (req.path.includes('/tickets') || req.path.includes('/auth') || req.path.includes('/perfil'));
     if (payload.role === 'contabil' && !isTicketRoute) {
       return res.status(403).json({ error: 'Acesso restrito ao portal contábil.' });
     }
