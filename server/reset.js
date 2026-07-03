@@ -42,16 +42,17 @@ router.post('/forgot-password', async (req, res) => {
       [token, user.id, expiresAt]
     );
 
-    try {
-      await enviarEmailRecuperacao(user.email, user.name, token);
-    } catch (e) {
-      console.error('[forgot-password] falha ao enviar e-mail:', e.message);
-      // Ainda assim devolve resposta genérica (não expõe erro de infra ao usuário)
-    }
-    return res.json(respostaPadrao);
+    // Responde IMEDIATAMENTE (não espera o e-mail sair) — evita travar a requisição
+    res.json(respostaPadrao);
+
+    // Envia o e-mail em segundo plano; qualquer falha vai só para o log
+    enviarEmailRecuperacao(user.email, user.name, token)
+      .then(() => console.log('[forgot-password] e-mail enviado para', user.email))
+      .catch(e => console.error('[forgot-password] falha ao enviar e-mail:', e.message));
+    return;
   } catch (err) {
     console.error('forgot-password error:', err);
-    return res.json({ ok: true, message: 'Se o e-mail estiver cadastrado, enviaremos as instruções de recuperação.' });
+    if (!res.headersSent) return res.json({ ok: true, message: 'Se o e-mail estiver cadastrado, enviaremos as instruções de recuperação.' });
   }
 });
 
