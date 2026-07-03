@@ -611,11 +611,12 @@ const App = (() => {
   const Forms = {
     async _submit(endpoint, body, clearIds, toastMsg) {
       const res = await API.post(`/api/data/${endpoint}`, body);
-      if (!res) return;
+      if (!res) return null;
       const data = await res.json();
-      if (!res.ok) { Toast.err(data.error || 'Erro ao salvar.'); return; }
+      if (!res.ok) { Toast.err(data.error || 'Erro ao salvar.'); return null; }
       Util.clear(clearIds);
       Toast.ok(toastMsg);
+      return data.id || null;
     },
 
     async atendimento() {
@@ -713,7 +714,7 @@ const App = (() => {
         motivo: Util.val('gc-motivo-saida') || Util.val('gc-motivo') || '',
         data_encerramento: Util.val('gc-data-saida') || '',
       };
-      await Forms._submit('gestao', {
+      const _gestaoId = await Forms._submit('gestao', {
         analista: Util.val('gc-analista'), solicitacao: gcSol,
         cnpj: Util.val('gc-cnpj'), empresa: Util.val('gc-empresa'),
         data_sol: Util.val('gc-data'), competencia: Util.val('gc-competencia'),
@@ -723,7 +724,7 @@ const App = (() => {
       }, ['gc-analista','gc-cnpj','gc-empresa','gc-data','gc-competencia','gc-motivo'], 'Gestão salva!');
       // Oferece abrir ticket para Baixa ou Saída de empresa
       if ((_gcSol === 'Baixa de empresa' || _gcSol === 'Saída de empresa') && App.Auth.isAdmin()) {
-        setTimeout(() => window.Tickets?.perguntarAbrirTicket(_gcSol, _gcReg, _gcEmp, _gcCnpj, _gcDados), 400);
+        setTimeout(() => window.Tickets?.perguntarAbrirTicket(_gcSol, _gcReg, _gcEmp, _gcCnpj, _gcDados, _gestaoId), 400);
       }
       document.getElementById('gc-solicitacao').value='';
       document.getElementById('gc-canal').value='';
@@ -2728,7 +2729,14 @@ const Gestao = (() => {
         <td>${r.solicitacao}</td>
         <td>${r.canal||'—'}</td>
         <td style="font-size:12px;color:var(--gray-500)">${r.data_sol ? new Date(r.data_sol).toLocaleDateString('pt-BR') : '—'}</td>
-        <td style="font-size:12px;color:var(--gray-500)">${r.competencia ? (String(r.competencia).match(/^(\d{4})-(\d{2})/) ? RegExp.$2 + '/' + RegExp.$1 : new Date(r.competencia).toLocaleDateString('pt-BR')) : '—'}</td>
+        <td style="font-size:12px;color:var(--gray-500)">${(() => {
+          const c = r.competencia;
+          if (!c) return '—';
+          const m = String(c).match(/^(\d{4})-(\d{2})/);
+          if (m) return m[2] + '/' + m[1];
+          const d = new Date(c);
+          return isNaN(d.getTime()) ? String(c) : d.toLocaleDateString('pt-BR');
+        })()}</td>
         <td>${lixeira}</td></tr>`;
     }).join('');
   }
@@ -4158,7 +4166,7 @@ const Tickets = (() => {
 
   let _ticketPend = null;
 
-  async function perguntarAbrirTicket(solicitacao, regime, empresa, cnpj, dados) {
+  async function perguntarAbrirTicket(solicitacao, regime, empresa, cnpj, dados, gestaoId) {
     empresa = (empresa || '').trim();
     cnpj = (cnpj || '').trim();
     if (!empresa || !cnpj) {
@@ -4166,7 +4174,7 @@ const Tickets = (() => {
       return;
     }
     // Guarda os dados do ticket em memória (evita perder empresa/cnpj no onclick)
-    _ticketPend = { solicitacao, regime, empresa, cnpj, dados: dados || {} };
+    _ticketPend = { solicitacao, regime, empresa, cnpj, dados: dados || {}, gestao_id: gestaoId || null };
     // Verifica se há checklist para esse tipo+regime
     const itens = (CHECKLIST_MAP[solicitacao] || {})[regime] || [];
     const itensHtml = itens.length
@@ -4213,13 +4221,13 @@ const Tickets = (() => {
       App.Toast.err('Dados do ticket incompletos. Feche e tente novamente.');
       return;
     }
-    const { solicitacao, regime, empresa, cnpj, dados } = _ticketPend;
+    const { solicitacao, regime, empresa, cnpj, dados, gestao_id } = _ticketPend;
     const obs = document.getElementById('tk-obs-nova')?.value?.trim() || null;
     const mencoes = [...document.querySelectorAll('.tk-mencao-check:checked')].map(c => c.value);
     const res = await fetch('/api/data/tickets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
-      body: JSON.stringify({ empresa, cnpj, regime, tipo_movimentacao: solicitacao, observacoes: obs, mencoes, dados_gestao: dados || {} })
+      body: JSON.stringify({ empresa, cnpj, regime, tipo_movimentacao: solicitacao, observacoes: obs, mencoes, dados_gestao: dados || {}, gestao_id: gestao_id || null })
     });
     if (res && res.ok) {
       App.Modal.close();
