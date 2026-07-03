@@ -335,9 +335,11 @@ router.delete('/atendimentos/:id', requireAdmin, async (req, res) => {
 
 router.delete('/gestao/:id', requireAdmin, async (req, res) => {
   try {
+    // Remove o ticket vinculado a este registro de Gestão (cascata apaga menções e interações)
+    await pool.query(`DELETE FROM tickets WHERE gestao_id = $1`, [req.params.id]).catch(()=>{});
     await pool.query(`DELETE FROM gestao_clientes WHERE id = $1`, [req.params.id]);
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: 'Erro ao limpar.' }); }
+  } catch (err) { console.error('Delete gestao error:', err); res.status(500).json({ error: 'Erro ao excluir.' }); }
 });
 
 router.delete('/recuperacoes/:id', requireAdmin, async (req, res) => {
