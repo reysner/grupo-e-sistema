@@ -1575,6 +1575,14 @@ router.patch('/tickets/:id/status', requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro ao atualizar status.' }); }
 });
 
+// Limpar TODOS os tickets (admin only) — cascata remove interações e menções
+router.delete('/tickets/clear', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM tickets`);
+    res.json({ ok: true });
+  } catch (err) { console.error('Clear tickets error:', err); res.status(500).json({ error: 'Erro ao limpar tickets.' }); }
+});
+
 // Excluir ticket (admin only) — a cascata remove interações e menções junto
 router.delete('/tickets/:id', requireAdmin, async (req, res) => {
   try {
