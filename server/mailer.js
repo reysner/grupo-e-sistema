@@ -26,6 +26,10 @@ function getTransporter() {
     connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 12000,
+    // Render não tem rota de saída IPv6 -> força IPv4
+    family: 4,
+    dnsTimeout: 10000,
+    tls: { family: 4 },
   });
   return _transporter;
 }
