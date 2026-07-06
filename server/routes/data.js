@@ -1553,11 +1553,8 @@ router.patch('/tickets/:id/checklist', requireAuth, async (req, res) => {
     // Verifica se todos marcados
     const todosOk = checklist.every(c => c.ok);
     if (todosOk) {
-      const msg = 'Documentos direcionados via e-mail para cs@escritorial.com.br para encaminhamento ao cliente.';
-      await pool.query(
-        `INSERT INTO ticket_interacoes (ticket_id, autor_nome, comentario, is_automatica) VALUES ($1,'Sistema',$2,true)`,
-        [req.params.id, msg]
-      );
+      // A mensagem "Documentos direcionados..." NÃO é mais gravada no histórico;
+      // ela aparece apenas junto do botão "Finalizar ticket" no portal.
       // Notifica admins
       const admins = await pool.query(`SELECT id FROM users WHERE role='administrador' AND active=1`);
       for (const a of admins.rows) {
