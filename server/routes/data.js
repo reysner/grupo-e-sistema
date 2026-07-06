@@ -1550,6 +1550,17 @@ router.patch('/tickets/:id/checklist', requireAuth, async (req, res) => {
     checklist[item_index].por = checklist[item_index].ok ? req.user.name : null;
     checklist[item_index].em  = checklist[item_index].ok ? new Date().toISOString() : null;
     await pool.query(`UPDATE tickets SET checklist=$1, updated_at=NOW() WHERE id=$2`, [JSON.stringify(checklist), req.params.id]);
+    // Se o ticket estava "nova" e um item foi marcado, muda para "resolvendo"
+    if (ticket.status === 'nova' && checklist[item_index].ok) {
+      await pool.query(`UPDATE tickets SET status='resolvendo', updated_at=NOW() WHERE id=$1`, [req.params.id]);
+      const adminsNotif = await pool.query(`SELECT id FROM users WHERE role='administrador' AND active=1`);
+      for (const a of adminsNotif.rows) {
+        await pool.query(
+          `INSERT INTO notificacoes (user_id, tipo, mensagem, referencia_id) VALUES ($1,'ticket',$2,$3)`,
+          [a.id, `Ticket "${ticket.empresa}" está sendo resolvido`, req.params.id]
+        ).catch(()=>{});
+      }
+    }
     // Verifica se todos marcados
     const todosOk = checklist.every(c => c.ok);
     if (todosOk) {
