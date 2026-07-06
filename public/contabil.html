@@ -363,6 +363,17 @@ async function abrirTicket(id) {
     ? '<button class="btn btn-ghost" onclick="reabrirTicket(\'' + id + '\')">🔄 Reabrir</button>'
     : '';
 
+  // Botão "Finalizar" para o contábil quando o checklist estiver 100% completo
+  const totalItens = (t.checklist || []).length;
+  const feitosItens = (t.checklist || []).filter(c => c.ok).length;
+  const checklistCompleto = totalItens > 0 && feitosItens === totalItens;
+  const btnFinalizar = (!isAdmin && checklistCompleto && t.status !== 'encerrada')
+    ? '<div style="margin-top:14px;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;text-align:center">' +
+        '<div style="font-size:13px;color:#166534;margin-bottom:10px">✅ Checklist completo! Os documentos foram direcionados para <strong>cs@escritorial.com.br</strong>.</div>' +
+        '<button class="btn btn-primary" onclick="finalizarTicket(\'' + id + '\')" style="background:#166534">Finalizar ticket</button>' +
+      '</div>'
+    : '';
+
   // Bloco com os dados vindos da Gestão de Clientes
   let dg = t.dados_gestao;
   if (typeof dg === 'string') { try { dg = JSON.parse(dg); } catch(e){ dg = null; } }
@@ -392,6 +403,7 @@ async function abrirTicket(id) {
     dadosGestaoHtml +
     '<div style="font-size:13px;font-weight:700;margin-bottom:8px">📋 Checklist</div>' +
     checklistHtml +
+    btnFinalizar +
     '<div style="font-size:13px;font-weight:700;margin:14px 0 8px">💬 Interações</div>' +
     intHtml +
     '<div style="font-size:13px;font-weight:700;margin:14px 0 6px">Adicionar comentário</div>' +
@@ -443,9 +455,10 @@ function resolverMencoes(texto) {
 }
 
 async function enviarComentario() {
-  const comentario = document.getElementById('ctb-comentario')?.value?.trim();
-  if (!comentario) { alert('Digite um comentário.'); return; }
+  const comentario = document.getElementById('ctb-comentario')?.value?.trim() || '';
   const { ids, nomes } = resolverMencoes(comentario);
+  // Comentário é opcional; só bloqueia se não houver nada para enviar (nem texto, nem menção)
+  if (!comentario && !ids.length) { alert('Escreva um comentário ou mencione um analista com @Nome.'); return; }
   const body = { comentario };
   if (ids.length) body.mencoes_novas = ids;
   const res = await api('/api/data/tickets/' + _ticketAberto + '/interacoes', {
@@ -453,10 +466,17 @@ async function enviarComentario() {
     body: JSON.stringify(body)
   });
   if (res.ok) {
-    if (nomes.length) alert('Comentário enviado. Convidado(s): ' + nomes.join(', '));
+    if (nomes.length) alert('Enviado. Convidado(s): ' + nomes.join(', '));
     await abrirTicket(_ticketAberto);
     carregarTickets();
-  } else alert('Erro ao enviar comentário.');
+  } else alert('Erro ao enviar.');
+}
+
+async function finalizarTicket(id) {
+  if (!confirm('Finalizar este ticket? O checklist está completo e os documentos já foram direcionados ao CS.')) return;
+  const res = await api('/api/data/tickets/' + id + '/finalizar', { method: 'PATCH' });
+  if (res.ok) { alert('Ticket finalizado com sucesso!'); fecharModal(); carregarTickets(); }
+  else alert('Erro ao finalizar o ticket.');
 }
 
 async function encerrarTicket(id) {
