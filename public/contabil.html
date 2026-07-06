@@ -424,7 +424,7 @@ async function marcarItem(idx, checkbox) {
   });
   if (res.ok) {
     const { todosOk } = await res.json();
-    if (todosOk) alert('✅ Checklist completo! Documentos direcionados para cs@escritorial.com.br');
+    // Ao completar, o bloco verde com o botão "Finalizar" já mostra a mensagem — sem alert.
     await abrirTicket(_ticketAberto);
     carregarTickets();
   } else {
