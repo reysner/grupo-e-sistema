@@ -1490,7 +1490,9 @@ router.get('/tickets/:id', requireAuth, async (req, res) => {
 router.post('/tickets/:id/interacoes', requireAuth, async (req, res) => {
   try {
     const { comentario, mencoes_novas } = req.body;
-    if (!comentario) return res.status(400).json({ error: 'Comentário obrigatório.' });
+    const temComentario = comentario && comentario.trim();
+    const temMencao = mencoes_novas && mencoes_novas.length;
+    if (!temComentario && !temMencao) return res.status(400).json({ error: 'Informe um comentário ou uma menção.' });
     // Muda status para resolvendo se era nova
     const t = await pool.query(`SELECT * FROM tickets WHERE id = $1`, [req.params.id]);
     if (!t.rows.length) return res.status(404).json({ error: 'Ticket não encontrado.' });
@@ -1516,11 +1518,15 @@ router.post('/tickets/:id/interacoes', requireAuth, async (req, res) => {
         ).catch(()=>{});
       }
     }
-    const { rows } = await pool.query(
-      `INSERT INTO ticket_interacoes (ticket_id, autor_id, autor_nome, comentario) VALUES ($1,$2,$3,$4) RETURNING *`,
-      [req.params.id, req.user.id, req.user.name, comentario]
-    );
-    res.status(201).json({ ok: true, data: rows[0] });
+    let novaInteracao = null;
+    if (temComentario) {
+      const { rows } = await pool.query(
+        `INSERT INTO ticket_interacoes (ticket_id, autor_id, autor_nome, comentario) VALUES ($1,$2,$3,$4) RETURNING *`,
+        [req.params.id, req.user.id, req.user.name, comentario.trim()]
+      );
+      novaInteracao = rows[0];
+    }
+    res.status(201).json({ ok: true, data: novaInteracao });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao adicionar interação.' }); }
 });
 
@@ -1563,6 +1569,37 @@ router.patch('/tickets/:id/checklist', requireAuth, async (req, res) => {
     }
     res.json({ ok: true, checklist, todosOk });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao marcar item.' }); }
+});
+
+// Finalizar ticket (contábil ou admin) — só permite se o checklist estiver 100% completo
+router.patch('/tickets/:id/finalizar', requireAuth, async (req, res) => {
+  try {
+    const t = await pool.query(`SELECT * FROM tickets WHERE id = $1`, [req.params.id]);
+    if (!t.rows.length) return res.status(404).json({ error: 'Ticket não encontrado.' });
+    const ticket = t.rows[0];
+    // Se não for admin, precisa ser um usuário mencionado no ticket
+    if (req.user.role !== 'administrador') {
+      const m = await pool.query(`SELECT id FROM ticket_mencoes WHERE ticket_id = $1 AND usuario_id = $2`, [req.params.id, req.user.id]);
+      if (!m.rows.length) return res.status(403).json({ error: 'Sem permissão para finalizar este ticket.' });
+    }
+    const checklist = ticket.checklist || [];
+    const completo = checklist.length > 0 && checklist.every(c => c.ok);
+    if (!completo) return res.status(400).json({ error: 'O checklist precisa estar completo para finalizar.' });
+    await pool.query(`UPDATE tickets SET status = 'encerrada', updated_at = NOW() WHERE id = $1`, [req.params.id]);
+    // Registra interação de finalização e notifica admins
+    await pool.query(
+      `INSERT INTO ticket_interacoes (ticket_id, autor_nome, comentario, is_automatica) VALUES ($1,$2,$3,true)`,
+      [req.params.id, req.user.name, `Ticket finalizado por ${req.user.name} — checklist completo.`]
+    ).catch(()=>{});
+    const admins = await pool.query(`SELECT id FROM users WHERE role='administrador' AND active=1`);
+    for (const a of admins.rows) {
+      await pool.query(
+        `INSERT INTO notificacoes (user_id, tipo, mensagem, referencia_id) VALUES ($1,'ticket',$2,$3)`,
+        [a.id, `Ticket "${ticket.empresa}" foi finalizado`, req.params.id]
+      ).catch(()=>{});
+    }
+    res.json({ ok: true });
+  } catch (err) { console.error('Finalizar ticket error:', err); res.status(500).json({ error: 'Erro ao finalizar ticket.' }); }
 });
 
 // Encerrar / Reabrir ticket (admin only)
