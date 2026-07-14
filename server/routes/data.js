@@ -198,6 +198,15 @@ router.get('/dashboard', async (req, res) => {
       );
       return r.rows;
     };
+    // Versão SEM limite (para exportações completas: CSV, PDF, relatório)
+    const groupByFull = async (table, col, extra='') => {
+      const r = await pool.query(
+        `SELECT COALESCE(${col},'Não informado') as label, COUNT(*) as n
+         FROM ${table} WHERE 1=1 ${pf} ${extra}
+         GROUP BY ${col} ORDER BY n DESC`
+      );
+      return r.rows;
+    };
     const avgCol = async (table, col) => {
       const r = await pool.query(`SELECT AVG(${col}) as v FROM ${table} WHERE 1=1 ${pf}`);
       return r.rows[0].v ? parseFloat(r.rows[0].v) : null;
@@ -245,11 +254,35 @@ router.get('/dashboard', async (req, res) => {
     ).catch(() => ({ rows: [] }));
 
     // Meses sem reajuste per cliente (for Carteira)
+    // Versões COMPLETAS (sem limite) para exportações
+    const [
+      fEmpresa, fDepto, fAnalista, fDemanda,
+      fGcTipo, fGcCanal,
+      fInsGrav, fInsArea, fInsTipo, fInsEmpresa,
+    ] = await Promise.all([
+      safe(() => groupByFull('atendimentos', 'empresa', af)),
+      safe(() => groupByFull('atendimentos', 'departamento', af)),
+      safe(() => groupByFull('atendimentos', 'procurado', af)),
+      safe(() => groupByFull('atendimentos', 'demanda', af + " AND demanda IS NOT NULL AND demanda != ''")),
+      safe(() => groupByFull('gestao_clientes', 'solicitacao')),
+      safe(() => groupByFull('gestao_clientes', 'canal')),
+      safe(() => groupByFull('insatisfacoes', 'gravidade')),
+      safe(() => groupByFull('insatisfacoes', 'area')),
+      safe(() => groupByFull('insatisfacoes', 'tipo')),
+      safe(() => groupByFull('insatisfacoes', 'empresa')),
+    ]);
+
     res.json({
       charts: {
         atEmpresa, atDepto, atAnalista: atAnalista, atDemanda,
         gcTipo, gcCanal,
         insGrav, insArea, insTipo, insEmpresa,
+        npsEvolucao: npsEvolucao.rows,
+      },
+      chartsFull: {
+        atEmpresa: fEmpresa, atDepto: fDepto, atAnalista: fAnalista, atDemanda: fDemanda,
+        gcTipo: fGcTipo, gcCanal: fGcCanal,
+        insGrav: fInsGrav, insArea: fInsArea, insTipo: fInsTipo, insEmpresa: fInsEmpresa,
         npsEvolucao: npsEvolucao.rows,
       },
       nps, csat, ces,
@@ -813,7 +846,7 @@ router.get('/relatorio-executivo', requireAdmin, async (req, res) => {
 
     // Top empresas com insatisfação
     const insEmpresas = await pool.query(
-      `SELECT empresa, COUNT(*) as n FROM insatisfacoes WHERE 1=1 ${pf} GROUP BY empresa ORDER BY n DESC LIMIT 5`
+      `SELECT empresa, COUNT(*) as n FROM insatisfacoes WHERE 1=1 ${pf} GROUP BY empresa ORDER BY n DESC`
     );
 
     // Atendimentos por departamento
@@ -823,7 +856,7 @@ router.get('/relatorio-executivo', requireAdmin, async (req, res) => {
 
     // Atendimentos por analista procurado
     const atAnalista = await pool.query(
-      `SELECT procurado, COUNT(*) as n FROM atendimentos WHERE 1=1 ${pf} GROUP BY procurado ORDER BY n DESC LIMIT 5`
+      `SELECT procurado, COUNT(*) as n FROM atendimentos WHERE 1=1 ${pf} GROUP BY procurado ORDER BY n DESC`
     ).catch(() => ({ rows: [] }));
 
     // Gestão por solicitação
