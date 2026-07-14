@@ -446,7 +446,7 @@ const App = (() => {
       const d = Dashboard._lastData;
       if (!d) { App.Toast.err('Carregue o Dashboard primeiro.'); return; }
       const period = document.getElementById('dash-period')?.value || 'todos';
-      const c = d.charts;
+      const c = d.chartsFull || d.charts;
       const rows = [];
       const sep = '\n\n';
 
@@ -488,7 +488,7 @@ const App = (() => {
       const d = Dashboard._lastData;
       if (!d) { App.Toast.err('Carregue o Dashboard primeiro.'); return; }
       const period = document.getElementById('dash-period')?.value || 'todos';
-      const c = d.charts;
+      const c = d.chartsFull || d.charts;
 
       const table = (title, data) => {
         if (!data || !data.length) return `<h3>${title}</h3><p style="color:#999;font-size:11px">Sem dados no período</p>`;
