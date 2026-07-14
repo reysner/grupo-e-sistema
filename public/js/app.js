@@ -2606,8 +2606,8 @@ const Atendimento = (() => {
   function exportCSV() {
     const data = _filterData(_allData);
     if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const cols = ['created_at', 'analista', 'cliente', 'cnpj', 'empresa', 'departamento', 'demanda', 'resumo'];
-    const labels = {'created_at':'Data','analista':'Analista','cliente':'Cliente','cnpj':'CNPJ','empresa':'Empresa','departamento':'Departamento','demanda':'Demanda','resumo':'Resumo'};
+    const cols = ['created_at', 'analista', 'cliente', 'cnpj', 'empresa', 'departamento', 'procurado', 'demanda', 'resumo'];
+    const labels = {'created_at':'Data','analista':'Analista','cliente':'Cliente','cnpj':'CNPJ','empresa':'Empresa','departamento':'Departamento','procurado':'Procurado','demanda':'Demanda','resumo':'Resumo'};
     const header = cols.map(c=>labels[c]||c).join(';');
     const rows = data.map(r => cols.map(c => {
       let v = r[c] ?? '';
@@ -2628,8 +2628,8 @@ const Atendimento = (() => {
   function exportPDF() {
     const data = _filterData(_allData);
     if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const cols = ['created_at', 'analista', 'cliente', 'cnpj', 'empresa', 'departamento', 'demanda', 'resumo'];
-    const labels = {'created_at':'Data','analista':'Analista','cliente':'Cliente','cnpj':'CNPJ','empresa':'Empresa','departamento':'Departamento','demanda':'Demanda','resumo':'Resumo'};
+    const cols = ['created_at', 'analista', 'cliente', 'cnpj', 'empresa', 'departamento', 'procurado', 'demanda', 'resumo'];
+    const labels = {'created_at':'Data','analista':'Analista','cliente':'Cliente','cnpj':'CNPJ','empresa':'Empresa','departamento':'Departamento','procurado':'Procurado','demanda':'Demanda','resumo':'Resumo'};
     const ano = document.getElementById('at-ano-filter')?.value||'todos';
     const mes = document.getElementById('at-mes-filter')?.value||'todos';
     const titulo = `Atendimento — ${ano==='todos'?'Todos os anos':ano} / ${mes==='todos'?'Todos os meses':mes}`;
