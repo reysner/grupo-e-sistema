@@ -74,6 +74,26 @@ router.post('/ingerir', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/cs/diagnostico?ticketId=46072 — testa a ligação com o Zappy usando
+ * SÓ o endpoint que já está confirmado (GET /tickets/:id), sem depender da
+ * hipótese do endpoint de listagem em lote. Serve pra isolar o problema:
+ * se isso falhar, é ZAPPY_BASE_URL/ZAPPY_TOKEN; se isso funcionar mas
+ * POST /ingerir falhar, é só o endpoint de listagem que está errado.
+ */
+router.get('/diagnostico', requireAuth, requireAdmin, async (req, res) => {
+  const ticketId = req.query.ticketId;
+  if (!ticketId) return res.status(400).json({ error: 'Passe ?ticketId=NUMERO de um ticket real do Zappy.' });
+  try {
+    const zappyClient = criarClienteZappy();
+    const ticket = await zappyClient.obterTicket(ticketId);
+    res.json({ ok: true, ticket });
+  } catch (e) {
+    console.error('[cs] GET /diagnostico falhou:', e);
+    res.status(500).json({ ok: false, error: e.message, status: e.status, body: e.body });
+  }
+});
+
 /** GET /api/cs/vinculos/pendentes — fila de de-para aguardando confirmação humana. */
 router.get('/vinculos/pendentes', requireAuth, async (req, res) => {
   try {
