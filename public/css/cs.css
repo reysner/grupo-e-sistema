@@ -1,0 +1,18 @@
+/* Módulo Sucesso do Cliente — estilos da aba "Agora"
+   Classes prefixadas com "cs-" para não colidir com o CSS existente.
+   Ajustar cores/fontes para bater com o resto do app quando integrar. */
+
+.cs-agora { margin: 12px 0; }
+
+.cs-tabela { width: 100%; border-collapse: collapse; font-size: 14px; }
+.cs-tabela th {
+  text-align: left; padding: 8px 10px; border-bottom: 2px solid #ddd;
+  font-weight: 600; color: #333;
+}
+.cs-tabela td { padding: 8px 10px; border-bottom: 1px solid #eee; }
+
+.cs-linha.cs-vermelho { background: #fdecec; }
+.cs-linha.cs-amarelo  { background: #fff8e1; }
+
+.cs-ok { color: #2e7d32; font-weight: 600; padding: 12px 0; }
+.cs-erro { color: #c62828; font-weight: 600; padding: 12px 0; }
