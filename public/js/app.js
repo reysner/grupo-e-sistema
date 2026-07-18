@@ -4278,3 +4278,146 @@ const Tickets = (() => {
 })();
 
 window.Tickets = Tickets;
+/**
+ * Módulo Sucesso do Cliente — Frontend da aba "Agora"
+ * ------------------------------------------------------------------
+ * Convenção real confirmada no app.js (não a que eu tinha suposto antes):
+ * cada módulo é um IIFE atribuído a `window.NomeDoModulo` (ex.: window.Tickets,
+ * window.Carteira, window.Sensiveis) — NÃO window.App.<Modulo>. O objeto
+ * `App` (App.Toast, App.Modal, App.Util, App.Auth) é só o núcleo compartilhado.
+ *
+ * IMPORTANTE: o prefixo "cs-" já é usado pelo módulo "Clientes Sensíveis"
+ * (cs-pagination, cs-grid, cs-tbody...). Pra não colidir nem confundir,
+ * este arquivo usa o prefixo "radar-" nos ids/classes (o nome que a própria
+ * Continuidade já usa pra essa tela: "o radar de tickets fora do SLA").
+ *
+ * Nome do módulo: window.SucessoCliente (chave de página: "sucesso-cliente").
+ *
+ * INTEGRAÇÃO (já ajustada para os arquivos reais que a Thais subiu):
+ *
+ * 1. public/index.html — nav item (perto do de Tickets, dentro da <nav class="sidebar-nav">):
+ *      <a class="nav-item admin-only" data-page="sucesso-cliente" href="#">
+ *        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+ *          <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+ *        </svg>Sucesso do Cliente
+ *      </a>
+ *
+ * 2. public/index.html — seção da página (perto de <section id="page-tickets">):
+ *      <section id="page-sucesso-cliente" class="page admin-only" hidden>
+ *        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+ *          <div id="radar-resumo" style="color:var(--gray-500);font-size:13px"></div>
+ *          <button class="btn btn-sm" onclick="SucessoCliente.ingerirAgora()">🔄 Atualizar agora</button>
+ *        </div>
+ *        <div id="radar-container"></div>
+ *      </section>
+ *
+ * 3. public/index.html — no fim do <body>, perto dos outros <script src="js/...">:
+ *      <link rel="stylesheet" href="css/cs.css">
+ *      <script src="js/cs.js"></script>
+ *
+ * 4. public/js/app.js — PAGE_TITLES (perto do topo, junto dos outros):
+ *      'sucesso-cliente':'Sucesso do Cliente',
+ *
+ * 5. public/js/app.js — dentro de Nav.go(page), junto das outras linhas "if (page === ...)":
+ *      if (page === 'sucesso-cliente') window.SucessoCliente?.load();
+ */
+(function () {
+  'use strict';
+ 
+  const SucessoCliente = {
+    _timer: null,
+    _intervaloMs: 60000, // 1 min — ~600 tickets/mês é volume baixo, não precisa ser mais agressivo
+ 
+    /** Chamado pelo Nav.go('sucesso-cliente') ao abrir a aba. */
+    async load() {
+      await this.carregar();
+      if (this._timer) clearInterval(this._timer);
+      this._timer = setInterval(() => this.carregar(), this._intervaloMs);
+    },
+ 
+    /** Opcional: parar o auto-refresh se algum dia o app tiver hook de "saiu da aba". */
+    destruir() {
+      if (this._timer) clearInterval(this._timer);
+      this._timer = null;
+    },
+ 
+    async carregar() {
+      const container = document.getElementById('radar-container');
+      const resumo = document.getElementById('radar-resumo');
+      if (!container) return;
+      try {
+        const resp = await fetch('/api/cs/agora', { headers: SucessoCliente._authHeaders() });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const { tickets } = await resp.json();
+        SucessoCliente._render(container, tickets || []);
+        if (resumo) {
+          resumo.textContent = (tickets || []).length
+            ? `${tickets.length} ticket${tickets.length !== 1 ? 's' : ''} fora do SLA agora`
+            : 'Tudo dentro do SLA';
+        }
+      } catch (e) {
+        container.innerHTML = '<p class="radar-erro">Não foi possível carregar o radar agora.</p>';
+        console.error('[SucessoCliente] carregar()', e);
+      }
+    },
+ 
+    async ingerirAgora() {
+      try {
+        const resp = await fetch('/api/cs/ingerir', { method: 'POST', headers: SucessoCliente._authHeaders() });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        if (window.App && App.Toast) App.Toast.ok(`Ingestão concluída: ${data.processados} tickets atualizados.`);
+        await SucessoCliente.carregar();
+      } catch (e) {
+        if (window.App && App.Toast) App.Toast.err('Falha ao atualizar tickets.');
+        console.error('[SucessoCliente] ingerirAgora()', e);
+      }
+    },
+ 
+    // Mesmo padrão usado nos outros módulos do app.js (ex.: linha "const _tk = () => localStorage.getItem('ge_token') || '';")
+    _authHeaders() {
+      const token = localStorage.getItem('ge_token') || '';
+      return token ? { Authorization: 'Bearer ' + token } : {};
+    },
+ 
+    _render(container, tickets) {
+      if (!tickets.length) {
+        container.innerHTML = '<p class="radar-ok">✅ Nenhum ticket fora do SLA agora.</p>';
+        return;
+      }
+      const linhas = tickets.map(SucessoCliente._linha).join('');
+      container.innerHTML =
+        '<table class="radar-tabela">' +
+        '<thead><tr><th></th><th>Empresa</th><th>Departamento</th><th>Analista</th><th>Relógio</th><th>Tempo</th></tr></thead>' +
+        '<tbody>' + linhas + '</tbody>' +
+        '</table>';
+    },
+ 
+    _linha(t) {
+      let sla = {};
+      try { sla = typeof t.sla === 'string' ? JSON.parse(t.sla) : (t.sla || {}); } catch (e) { sla = {}; }
+      const radar = sla.radar || null;
+      const cor = t.pior_status === 'vermelho' ? '🔴' : (t.pior_status === 'amarelo' ? '🟡' : '⚪');
+      const empresa = t.empresa_nome || t.empresa_texto || '(sem vínculo)';
+      const relogio = radar ? radar.rotulo : '—';
+      const tempo = radar ? (radar.minutos_uteis + ' min (limite ' + (radar.limite ?? '—') + ')') : '—';
+      return (
+        '<tr class="radar-linha radar-' + (t.pior_status || '') + '">' +
+        '<td>' + cor + '</td>' +
+        '<td>' + SucessoCliente._esc(empresa) + '</td>' +
+        '<td>' + SucessoCliente._esc(t.departamento || '—') + '</td>' +
+        '<td>' + SucessoCliente._esc(t.analista || '—') + '</td>' +
+        '<td>' + SucessoCliente._esc(relogio) + '</td>' +
+        '<td>' + SucessoCliente._esc(tempo) + '</td>' +
+        '</tr>'
+      );
+    },
+ 
+    _esc(s) {
+      const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => map[c]);
+    },
+  };
+ 
+  window.SucessoCliente = SucessoCliente;
+})();
