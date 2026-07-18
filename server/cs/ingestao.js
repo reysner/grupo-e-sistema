@@ -135,17 +135,26 @@ async function persistirTicket(pool, linha, mensagens) {
  */
 async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPaginas = 100 }) {
   const dataInicio = await obterDataInicio(pool);
-  const ultimaExecucao = await obterUltimaExecucao(pool);
-  const cursorISO = (ultimaExecucao || dataInicio).toISOString();
+
+  // Fila/usuário não vêm no ticket (a API pública só dá o ID) — busca uma
+  // vez por execução e monta um mapa id->nome. Baixo volume (poucas
+  // dezenas de filas/usuários), então cabe tudo numa página de 100.
+  const [filas, usuarios] = await Promise.all([
+    zappyClient.listarFilas().catch(() => []),
+    zappyClient.listarUsuarios().catch(() => []),
+  ]);
+  const filaMap = Object.fromEntries(filas.map(f => [String(f.id), f.name]));
+  const usuarioMap = Object.fromEntries(usuarios.map(u => [String(u.id), u.name]));
+  const contatoCache = new Map(); // contactId -> contato (evita buscar 2x na mesma execução)
 
   let processados = 0;
   let ignoradosPreDataInicio = 0;
   const erros = [];
 
-  let pageNumber = 1;
+  let page = 1;
   let hasMore = true;
-  while (hasMore && pageNumber <= maxPaginas) {
-    const resp = await zappyClient.listarTickets({ pageNumber, updatedAt: cursorISO });
+  while (hasMore && page <= maxPaginas) {
+    const resp = await zappyClient.listarTickets({ page, pageSize: 100 });
     const tickets = resp.tickets || [];
     hasMore = !!resp.hasMore && tickets.length > 0;
 
@@ -158,15 +167,31 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
           continue;
         }
 
+        let contato = null;
+        if (ticketZappy.contactId != null) {
+          const cid = String(ticketZappy.contactId);
+          if (contatoCache.has(cid)) {
+            contato = contatoCache.get(cid);
+          } else {
+            contato = await zappyClient.obterContato(ticketZappy.contactId).catch(() => null);
+            contatoCache.set(cid, contato);
+          }
+        }
+
+        const contexto = {
+          contato,
+          filaNome: filaMap[String(ticketZappy.queueId)] || null,
+          analistaNome: usuarioMap[String(ticketZappy.userId)] || null,
+        };
+
         const mensagensZappy = await zappyClient.obterMensagens(ticketZappy.id);
-        const generico = traduzirTicket(ticketZappy, mensagensZappy);
+        const generico = traduzirTicket(ticketZappy, mensagensZappy, contexto);
         const sla = calcularSLA(generico, agora);
 
-        const contato = ticketZappy.contact || {};
         const vinculo = await garantirVinculo(pool, {
-          nome: contato.name,
-          telefone: contato.number,
-          tags: contato.tags,
+          nome: contato ? contato.name : null,
+          telefone: contato ? contato.number : null,
+          tags: contato ? contato.tags : null,
         });
 
         const linha = montarLinhaTicket(generico, sla, vinculo);
@@ -176,7 +201,7 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
         erros.push({ ticketId: ticketZappy && ticketZappy.id, erro: e.message });
       }
     }
-    pageNumber++;
+    page++;
   }
 
   await marcarUltimaExecucao(pool, agora);
