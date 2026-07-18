@@ -13,7 +13,6 @@ const dataRoutes  = require('./routes/data');
 const usersRoutes = require('./routes/users');
 const gamificacaoRoutes = require('./routes/gamificacao');
 const resetRoutes = require('./reset');
-const csRoutes = require('./cs/routes');
 
 
 const app    = express();
@@ -60,7 +59,6 @@ app.use('/api/public', dataRoutes.publicRouter);   // sem autenticação
 app.use('/api/auth',   resetRoutes);               // recuperação de senha (forgot/reset) — sem login
 app.use('/api/auth',   authRoutes);
 app.use('/api/data',   dataRoutes);
-app.use('/api/cs',     csRoutes);
 app.use('/api/users',  usersRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
@@ -125,6 +123,23 @@ initDB().then(async () => {
   }
 
   setInterval(() => pruneExpiredTokens().catch(console.error), 24 * 60 * 60 * 1000);
+
+  // Sucesso do Cliente — ingestão automática periódica (não depende de ninguém clicar em nada)
+  if (process.env.ZAPPY_BASE_URL && process.env.ZAPPY_TOKEN) {
+    const { ingerirTickets } = require('./cs/ingestao');
+    const { criarClienteZappy } = require('./cs/zappyClient');
+    const rodarIngestaoCS = async () => {
+      try {
+        const resultado = await ingerirTickets({ zappyClient: criarClienteZappy(), pool });
+        console.log('[CS] Ingestão automática:', resultado);
+      } catch (e) {
+        console.error('[CS] Falha na ingestão automática:', e.message);
+      }
+    };
+    setInterval(rodarIngestaoCS, 5 * 60 * 1000); // a cada 5 min
+    rodarIngestaoCS(); // já roda uma vez ao subir
+  }
+
   app.listen(PORT, () => console.log(`🚀 Grupo-E rodando na porta ${PORT}`));
 }).catch(err => {
   console.error('❌ Erro ao conectar ao banco:', err);
