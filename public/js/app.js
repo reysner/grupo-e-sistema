@@ -332,6 +332,7 @@ const App = (() => {
     insatisfacao:'Insatisfação', sensiveis:'Clientes Sensíveis',
     pesquisas:'Pesquisas de Satisfação', recuperacao:'Recuperação de Clientes',
     admin:'Administração de Usuários',
+    'sucesso-cliente':'Sucesso do Cliente',
   };
 
   const Nav = {
