@@ -61,14 +61,34 @@ function criarClienteZappy(opts = {}) {
         ...(init.headers || {}),
       },
     });
-    if (!resp.ok) {
-      const texto = await resp.text().catch(() => '');
-      const err = new Error(`zappyClient: ${init.method || 'GET'} ${path} -> HTTP ${resp.status}`);
+    // Lê como texto primeiro — NUNCA chama resp.json() direto. Se o endpoint
+    // não existir, é comum o servidor devolver a página HTML padrão com
+    // status 200 (não um 404 estruturado), e resp.json() quebraria com um
+    // erro genérico ("Unexpected token '<'") que não diz o que fazer.
+    const texto = await resp.text();
+    let corpo;
+    try {
+      corpo = texto ? JSON.parse(texto) : {};
+    } catch (e) {
+      const err = new Error(
+        `zappyClient: resposta de ${init.method || 'GET'} ${path} não é JSON (status HTTP ${resp.status}). ` +
+        `Provável ZAPPY_BASE_URL errado ou esse endpoint não existe nesta instância. ` +
+        `Início da resposta: ${texto.slice(0, 150).replace(/\s+/g, ' ')}`
+      );
       err.status = resp.status;
+      err.notJson = true;
       err.body = texto;
       throw err;
     }
-    return resp.json();
+    if (!resp.ok) {
+      const err = new Error(
+        `zappyClient: ${init.method || 'GET'} ${path} -> HTTP ${resp.status}: ${corpo.message || corpo.error || texto.slice(0, 200)}`
+      );
+      err.status = resp.status;
+      err.body = corpo;
+      throw err;
+    }
+    return corpo;
   }
 
   /** CONFIRMADO — GET /tickets/:id */
@@ -117,15 +137,26 @@ function criarClienteZappy(opts = {}) {
         }),
       });
       return normalizarListaTickets(resp);
-    } catch (e) {
-      if (e.status !== 404 && e.status !== 405) throw e;
-      // fallback padrão (B)
-      const qs = new URLSearchParams({ pageNumber: String(pageNumber), showAll: 'true' });
-      if (status) qs.set('status', status);
-      if (updatedAt) qs.set('updatedAt', updatedAt);
-      if (queueIds) qs.set('queueIds', JSON.stringify(queueIds));
-      const resp = await chamar(`/tickets?${qs.toString()}`);
-      return normalizarListaTickets(resp);
+    } catch (eA) {
+      // Cai para o padrão (B) em QUALQUER falha do (A) — não só 404/405.
+      // Na prática, um endpoint inexistente costuma devolver a página HTML
+      // padrão com status 200 (pego pelo `notJson` acima), não um 404 limpo.
+      try {
+        const qs = new URLSearchParams({ pageNumber: String(pageNumber), showAll: 'true' });
+        if (status) qs.set('status', status);
+        if (updatedAt) qs.set('updatedAt', updatedAt);
+        if (queueIds) qs.set('queueIds', JSON.stringify(queueIds));
+        const resp = await chamar(`/tickets?${qs.toString()}`);
+        return normalizarListaTickets(resp);
+      } catch (eB) {
+        const erroFinal = new Error(
+          `listarTickets: nem o padrão (A) POST /tickets/get nem o (B) GET /tickets funcionaram. ` +
+          `(A): ${eA.message} | (B): ${eB.message}`
+        );
+        erroFinal.tentativaA = eA;
+        erroFinal.tentativaB = eB;
+        throw erroFinal;
+      }
     }
   }
 
