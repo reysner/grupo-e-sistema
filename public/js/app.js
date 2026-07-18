@@ -359,6 +359,7 @@ const App = (() => {
       if (page === 'recuperacao') window.Recuperacao?.loadGrid();
       if (page === 'sensiveis')   window.Sensiveis?.loadGrid();
       if (page === 'admin')        (window.Admin || Admin)?.load();
+      if (page === 'sucesso-cliente') window.SucessoCliente?.load();
       return false;
     },
   };
