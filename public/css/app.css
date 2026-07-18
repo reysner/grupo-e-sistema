@@ -574,3 +574,19 @@ body.dark-mode #toast.error   { background:#742a2a; color:#feb2b2; border-color:
 }
 body.dark-mode .dark-toggle-switch             { background:var(--g500); }
 body.dark-mode .dark-toggle-switch::after      { transform:translateX(15px); }
+/* Módulo Sucesso do Cliente — estilos da aba "Agora"
+   Classes prefixadas com "radar-" (NÃO "cs-" — esse prefixo já é usado
+   pelo módulo "Clientes Sensíveis": cs-pagination, cs-grid, cs-tbody...). */
+ 
+.radar-tabela { width: 100%; border-collapse: collapse; font-size: 14px; }
+.radar-tabela th {
+  text-align: left; padding: 8px 10px; border-bottom: 2px solid #ddd;
+  font-weight: 600; color: #333;
+}
+.radar-tabela td { padding: 8px 10px; border-bottom: 1px solid #eee; }
+ 
+.radar-linha.radar-vermelho { background: #fdecec; }
+.radar-linha.radar-amarelo  { background: #fff8e1; }
+ 
+.radar-ok { color: #2e7d32; font-weight: 600; padding: 12px 0; }
+.radar-erro { color: #c62828; font-weight: 600; padding: 12px 0; }
