@@ -2,56 +2,47 @@
 /**
  * Módulo Sucesso do Cliente — Cliente HTTP da API do Zappy Contábil
  * ------------------------------------------------------------------
- * Isola TODAS as chamadas de rede num único lugar, para que, quando a
- * documentação oficial do Zappy chegar (pendência 2 da Continuidade),
- * o ajuste seja só aqui — nada no resto do módulo muda.
+ * PENDÊNCIA 2 RESOLVIDA nesta sessão: achamos a documentação OFICIAL
+ * (Swagger/OpenAPI) publicada pelo próprio Zappy em
+ * https://api-{subdominio}.zapcontabil.chat/api-docs — "API ZapContábil"
+ * v2.1.0. Isso substitui a hipótese anterior (baseada em semelhança com
+ * o Whaticket) por endpoints 100% confirmados.
  *
- * O QUE JÁ ESTÁ CONFIRMADO (seção 4 do handoff, testado com o ticket real
- * #46072):
- *   - GET {baseUrl}/tickets/:id                  -> dados do ticket
- *   - GET {baseUrl}/tickets/:id?pageNumber=N      -> { count, messages:[...] }
- *   - Autenticação: Authorization: Bearer <token>
+ * IMPORTANTE — a API pública é mais enxuta do que os campos vistos por
+ * F12 dentro do próprio site do Zappy (aquilo é a API INTERNA do
+ * front-end deles, autenticada por sessão/cookie, não pela chave de API
+ * Bearer). A API pública (esta aqui) NÃO tem: `metas`, `rate`
+ * (avaliação), `botOptionId`, nem objetos aninhados `queue`/`contact`
+ * dentro do ticket — só os IDs (`queueId`, `contactId`, `userId`). Por
+ * isso este cliente busca fila/usuário/contato à parte.
  *
- * O QUE É HIPÓTESE (pendência 2 — a confirmar com o suporte do Zappy):
- *   A estrutura do ticket (queueId, botOptionId, botListId, metas,
- *   feedbackScaleUsed, rate, fromMe, ack, mediaType, responseSeconds) é
- *   IDÊNTICA à família de sistemas "Whaticket" (open source, muito usado
- *   como base white-label de multiatendimento WhatsApp no Brasil). Se o
- *   Zappy for um fork dessa base — o que os campos fortemente sugerem —
- *   o endpoint de LISTAGEM em lote (que falta pra ingestão) deve ser um
- *   destes dois padrões conhecidos dessa família:
+ * Endpoints usados (todos confirmados no swagger.json):
+ *   GET  /api/tickets?page=&pageSize=        -> { tickets, count, page, pageSize, pageCount }
+ *   GET  /api/tickets/:id                    -> Ticket { id, status, userId, contactId, queueId, whatsappId, createdAt, updatedAt, ... }
+ *   GET  /api/messages?ticketId=&page=&pageSize= -> { messages, count, ... } (MessageObject: fromMe, ack, mediaType, body, createdAt, ...)
+ *   GET  /api/contacts/:id                   -> Contact { id, name, number, tags, ... }
+ *   GET  /api/queues?page=&pageSize=         -> { queues: [{id, name, color}] }
+ *   GET  /api/users?page=&pageSize=          -> { users: [{id, name, email, ...}] }
  *
- *     (A) POST {baseUrl}/tickets/get
- *         body: { userId, queueIds, pageNumber, status, tags, date, updatedAt, searchParam }
- *         (padrão "Whaticket SaaS")
+ * Autenticação: Authorization: Bearer <ZAPPY_TOKEN> (scheme "bearer" confirmado no swagger).
  *
- *     (B) GET {baseUrl}/tickets?pageNumber=N&status=...&searchParam=...&showAll=true&queueIds=[...]
- *         resposta: { tickets:[...], count, hasMore }
- *         (padrão "Whaticket Community")
- *
- *   Este cliente tenta (A) e, se dermos 404/405, cai para (B) — mas o
- *   ideal é a Thais perguntar direto ao suporte do Zappy (mensagem pronta
- *   no CONTINUIDADE_SUCESSO_DO_CLIENTE.md, seção 5) e travar em UM só.
+ * NÃO CONFIRMADO / NÃO EXISTE na API pública: avaliação (rate) do
+ * atendimento e histórico de transferência de fila com timestamp exato.
+ * Isso limita um pouco os relógios 2 (transferência) e a nota de
+ * satisfação do PRD — ver nota na Continuidade.
  *
  * Configuração via variáveis de ambiente (Render → Environment):
- *   ZAPPY_BASE_URL  ex.: https://api.seudominio.zappy.com.br
- *   ZAPPY_TOKEN     Bearer token (NUNCA commitar no código/GitHub)
+ *   ZAPPY_BASE_URL  ex.: https://api-escritorial.zapcontabil.chat  (SEM /api no final)
+ *   ZAPPY_TOKEN     Bearer token gerado em Zappy → Configurações → Conexões
  */
 
 function criarClienteZappy(opts = {}) {
   const baseUrl = (opts.baseUrl ?? process.env.ZAPPY_BASE_URL ?? '').replace(/\/+$/, '');
   const token = opts.token ?? process.env.ZAPPY_TOKEN;
 
-  if (!baseUrl || !token) {
-    // Não lança erro aqui: permite instanciar o módulo em testes/dry-run
-    // sem credenciais. Só falha quando alguém tentar de fato chamar a rede.
-  }
-
   async function chamar(path, init = {}) {
     if (!baseUrl || !token) {
-      throw new Error(
-        'zappyClient: faltam ZAPPY_BASE_URL/ZAPPY_TOKEN. Configure no Render → Environment.'
-      );
+      throw new Error('zappyClient: faltam ZAPPY_BASE_URL/ZAPPY_TOKEN. Configure no Render → Environment.');
     }
     const resp = await fetch(`${baseUrl}${path}`, {
       ...init,
@@ -61,10 +52,9 @@ function criarClienteZappy(opts = {}) {
         ...(init.headers || {}),
       },
     });
-    // Lê como texto primeiro — NUNCA chama resp.json() direto. Se o endpoint
-    // não existir, é comum o servidor devolver a página HTML padrão com
-    // status 200 (não um 404 estruturado), e resp.json() quebraria com um
-    // erro genérico ("Unexpected token '<'") que não diz o que fazer.
+    // Lê como texto primeiro — nunca resp.json() direto. Se o caminho estiver
+    // errado (ex.: sem o prefixo /api), o servidor pode devolver a página
+    // HTML do site em vez de um erro estruturado, e isso dá um erro claro.
     const texto = await resp.text();
     let corpo;
     try {
@@ -72,8 +62,7 @@ function criarClienteZappy(opts = {}) {
     } catch (e) {
       const err = new Error(
         `zappyClient: resposta de ${init.method || 'GET'} ${path} não é JSON (status HTTP ${resp.status}). ` +
-        `Provável ZAPPY_BASE_URL errado ou esse endpoint não existe nesta instância. ` +
-        `Início da resposta: ${texto.slice(0, 150).replace(/\s+/g, ' ')}`
+        `Provável ZAPPY_BASE_URL errado ou o caminho não existe. Início da resposta: ${texto.slice(0, 150).replace(/\s+/g, ' ')}`
       );
       err.status = resp.status;
       err.notJson = true;
@@ -91,22 +80,30 @@ function criarClienteZappy(opts = {}) {
     return corpo;
   }
 
-  /** CONFIRMADO — GET /tickets/:id */
+  /** GET /api/tickets/:id */
   async function obterTicket(id) {
-    return chamar(`/tickets/${id}`);
+    return chamar(`/api/tickets/${id}`);
   }
 
   /**
-   * CONFIRMADO — GET /tickets/:id?pageNumber=N -> { count, messages }
-   * Pagina até esgotar (o Zappy pagina mensagens junto com o ticket).
+   * GET /api/tickets?page=&pageSize= — máx. 100 por página (limite do Zappy).
+   * @returns {{ tickets: Array, count: number, page: number, pageSize: number, hasMore: boolean }}
    */
-  async function obterMensagens(id) {
+  async function listarTickets({ page = 1, pageSize = 100 } = {}) {
+    const resp = await chamar(`/api/tickets?page=${page}&pageSize=${pageSize}`);
+    const tickets = resp.tickets || [];
+    const count = resp.count ?? tickets.length;
+    const hasMore = page * pageSize < count;
+    return { tickets, count, page: resp.page ?? page, pageSize: resp.pageSize ?? pageSize, hasMore };
+  }
+
+  /** GET /api/messages?ticketId=&page=&pageSize= — pagina até esgotar. */
+  async function obterMensagens(ticketId) {
     const todas = [];
-    let pageNumber = 1;
-    // trava de segurança: nunca mais que 50 páginas por ticket (evita loop infinito
-    // se a paginação real não bater com essa hipótese)
-    for (; pageNumber <= 50; pageNumber++) {
-      const resp = await chamar(`/tickets/${id}?pageNumber=${pageNumber}`);
+    let page = 1;
+    const pageSize = 100;
+    for (; page <= 50; page++) { // trava de segurança
+      const resp = await chamar(`/api/messages?ticketId=${ticketId}&page=${page}&pageSize=${pageSize}`);
       const pagina = resp.messages || [];
       todas.push(...pagina);
       if (!pagina.length || todas.length >= (resp.count ?? Infinity)) break;
@@ -114,61 +111,24 @@ function criarClienteZappy(opts = {}) {
     return todas;
   }
 
-  /**
-   * HIPÓTESE (pendência 2) — lista tickets em lote.
-   * Tenta o padrão (A) POST /tickets/get; se não existir, cai para (B) GET /tickets.
-   * @param {object} filtros { pageNumber, status, queueIds, updatedAt }
-   * @returns {{ tickets: Array, count: number, hasMore: boolean }}
-   */
-  async function listarTickets(filtros = {}) {
-    const { pageNumber = 1, status = null, queueIds = null, updatedAt = null } = filtros;
-    try {
-      const resp = await chamar('/tickets/get', {
-        method: 'POST',
-        body: JSON.stringify({
-          userId: null,
-          queueIds: queueIds ?? null,
-          pageNumber,
-          status,
-          tags: null,
-          date: null,
-          updatedAt,
-          searchParam: null,
-        }),
-      });
-      return normalizarListaTickets(resp);
-    } catch (eA) {
-      // Cai para o padrão (B) em QUALQUER falha do (A) — não só 404/405.
-      // Na prática, um endpoint inexistente costuma devolver a página HTML
-      // padrão com status 200 (pego pelo `notJson` acima), não um 404 limpo.
-      try {
-        const qs = new URLSearchParams({ pageNumber: String(pageNumber), showAll: 'true' });
-        if (status) qs.set('status', status);
-        if (updatedAt) qs.set('updatedAt', updatedAt);
-        if (queueIds) qs.set('queueIds', JSON.stringify(queueIds));
-        const resp = await chamar(`/tickets?${qs.toString()}`);
-        return normalizarListaTickets(resp);
-      } catch (eB) {
-        const erroFinal = new Error(
-          `listarTickets: nem o padrão (A) POST /tickets/get nem o (B) GET /tickets funcionaram. ` +
-          `(A): ${eA.message} | (B): ${eB.message}`
-        );
-        erroFinal.tentativaA = eA;
-        erroFinal.tentativaB = eB;
-        throw erroFinal;
-      }
-    }
+  /** GET /api/contacts/:id */
+  async function obterContato(id) {
+    return chamar(`/api/contacts/${id}`);
   }
 
-  function normalizarListaTickets(resp) {
-    return {
-      tickets: resp.tickets || resp.data || [],
-      count: resp.count ?? (resp.tickets || resp.data || []).length,
-      hasMore: resp.hasMore ?? false,
-    };
+  /** GET /api/queues?page=&pageSize= — usado pra montar o mapa id->nome do setor. */
+  async function listarFilas() {
+    const resp = await chamar(`/api/queues?page=1&pageSize=100`);
+    return resp.queues || [];
   }
 
-  return { obterTicket, obterMensagens, listarTickets };
+  /** GET /api/users?page=&pageSize= — usado pra montar o mapa id->nome do atendente. */
+  async function listarUsuarios() {
+    const resp = await chamar(`/api/users?page=1&pageSize=100`);
+    return resp.users || [];
+  }
+
+  return { obterTicket, obterMensagens, listarTickets, obterContato, listarFilas, listarUsuarios };
 }
 
 module.exports = { criarClienteZappy };
