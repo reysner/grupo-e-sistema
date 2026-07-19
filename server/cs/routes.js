@@ -57,7 +57,7 @@ router.get('/agora', requireAuth, async (req, res) => {
     res.json({ tickets: rows });
   } catch (e) {
     console.error('[cs] GET /agora falhou:', e);
-    res.status(500).json({ error: 'Falha ao carregar o radar de tickets.' });
+    res.status(500).json({ error: 'Falha ao carregar o radar de tickets: ' + e.message });
   }
 });
 
