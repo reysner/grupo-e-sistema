@@ -279,8 +279,10 @@ router.get('/dashboard', requireAuth, async (req, res) => {
  *
  * Também inclui "resposta_continua" (dentro de porEtapa) e
  * porAnalistaRespostaContinua: tempo de resposta em CADA turno do cliente
- * ao longo da conversa inteira (não só a 1ª resposta), vindo de
- * sla->'trocas' — ver slaEngine.calcularTrocas / ingestao.js.
+ * DEPOIS da transferência (não só a 1ª resposta), vindo de
+ * sla->'trocasPosTransferencia' — ver slaEngine.calcularTrocas e
+ * resolverHoraTransferencia em ingestao.js. Isola o trabalho de quem
+ * recebeu o ticket transferido do trabalho de quem aceitou/transferiu antes.
  */
 router.get('/dashboard/etapas', requireAuth, async (req, res) => {
   try {
@@ -336,8 +338,11 @@ router.get('/dashboard/etapas', requireAuth, async (req, res) => {
          LIMIT 15
       `, params),
       // "Resposta contínua": tempo médio e % dentro do SLA em CADA turno do
-      // cliente ao longo da conversa inteira (não só a 1ª resposta) —
-      // vem de sla->'trocas' (ver slaEngine.calcularTrocas / ingestao.js).
+      // cliente DEPOIS da transferência (não só a 1ª resposta) — vem de
+      // sla->'trocasPosTransferencia' (ver slaEngine.calcularTrocas e
+      // resolverHoraTransferencia em ingestao.js). Fica só com o que é do
+      // analista que recebeu o ticket, sem misturar o que foi de quem
+      // aceitou/transferiu antes (ex.: recepção do Sucesso do Cliente).
       pool.query(`
         SELECT COUNT(*)::int AS total,
                ROUND(AVG((r->>'minutos_uteis')::numeric))::int AS media_minutos,
@@ -345,13 +350,13 @@ router.get('/dashboard/etapas', requireAuth, async (req, res) => {
                COUNT(*) FILTER (WHERE r->>'status' = 'amarelo')::int AS amarelos,
                COUNT(*) FILTER (WHERE r->>'status' = 'vermelho')::int AS vermelhos
           FROM cs_tickets t,
-               LATERAL jsonb_array_elements(COALESCE(t.sla->'trocas', '[]'::jsonb)) AS r
+               LATERAL jsonb_array_elements(COALESCE(t.sla->'trocasPosTransferencia', '[]'::jsonb)) AS r
           ${cond} AND r->>'em_curso' = 'false'
       `, params),
-      // Mesmo "resposta contínua", mas por analista (pior primeiro) — usa o
-      // analista FINAL do ticket como atribuição (a API do Zappy não guarda
-      // quem mandou cada mensagem individualmente, só quem é o responsável
-      // pelo ticket como um todo).
+      // Mesmo "resposta contínua" (pós-transferência), mas por analista (pior
+      // primeiro) — usa o analista FINAL do ticket como atribuição (a API do
+      // Zappy não guarda quem mandou cada mensagem individualmente, só quem
+      // é o responsável pelo ticket como um todo).
       pool.query(`
         SELECT t.analista AS label,
                COUNT(*)::int AS total,
@@ -360,7 +365,7 @@ router.get('/dashboard/etapas', requireAuth, async (req, res) => {
                COUNT(*) FILTER (WHERE r->>'status' = 'amarelo')::int AS amarelos,
                COUNT(*) FILTER (WHERE r->>'status' = 'vermelho')::int AS vermelhos
           FROM cs_tickets t,
-               LATERAL jsonb_array_elements(COALESCE(t.sla->'trocas', '[]'::jsonb)) AS r
+               LATERAL jsonb_array_elements(COALESCE(t.sla->'trocasPosTransferencia', '[]'::jsonb)) AS r
           ${cond} AND t.analista IS NOT NULL AND r->>'em_curso' = 'false'
          GROUP BY t.analista
         HAVING COUNT(*) >= 3
