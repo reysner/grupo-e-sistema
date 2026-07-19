@@ -154,10 +154,14 @@ function statusSLA(minutos, limite) {
 
 // ── Limites de SLA (os 5 relógios) ────────────────────────────────────────────
 const LIMITES = {
-  aceite: 15,         // 1ª msg do cliente → alguém aceita
-  transferencia: 15,  // aceite → transferência efetiva
-  departamento: 30,   // chegou no depto → analista interage
-  promessa: 15,       // respondeu sem resolver → transferir/encerrar/nova msg
+  aceite: 15,               // 1ª msg do cliente → alguém aceita
+  transferencia: 15,        // aceite → transferência efetiva
+  departamento: 30,         // chegou no depto → analista interage
+  promessa: 15,             // respondeu dizendo que VAI TRANSFERIR e não transferiu ainda
+  promessa_resolucao: 120,  // respondeu dizendo que vai RESOLVER DIRETO (sem transferir) —
+                             // prazo maior (2h) pra silêncio, mas qualquer troca específica
+                             // com o cliente > 30min nesse meio tempo já vira vermelho
+                             // (ver pareceIntencaoTransferir/calcularSLA em slaEngine.js).
 };
 
 module.exports = {
