@@ -458,13 +458,22 @@ const App = (() => {
       try {
         const qs = new URLSearchParams({ period: period || 'todos' });
         if (analista) qs.set('analista', analista);
-        const res = await API.get(`/api/cs/dashboard?${qs.toString()}`);
-        if (!res || !res.ok) return;
-        const d = await res.json();
-        Dashboard.renderChartStatusCS(d.porStatus || []);
-        Dashboard.renderChart('cs-dash-departamento', 'bar', d.porDepartamento || [], 'Departamento');
-        Dashboard.renderChart('cs-dash-analista', 'bar', d.porAnalista || [], 'Analista', { indexAxis: 'y' });
-        Dashboard.renderChartDesempenhoCS(d.desempenhoAnalistas || []);
+        const [res, resEtapas] = await Promise.all([
+          API.get(`/api/cs/dashboard?${qs.toString()}`),
+          API.get(`/api/cs/dashboard/etapas?${qs.toString()}`),
+        ]);
+        if (res && res.ok) {
+          const d = await res.json();
+          Dashboard.renderChartStatusCS(d.porStatus || []);
+          Dashboard.renderChart('cs-dash-departamento', 'bar', d.porDepartamento || [], 'Departamento');
+          Dashboard.renderChart('cs-dash-analista', 'bar', d.porAnalista || [], 'Analista', { indexAxis: 'y' });
+          Dashboard.renderChartDesempenhoCS(d.desempenhoAnalistas || []);
+        }
+        if (resEtapas && resEtapas.ok) {
+          const dE = await resEtapas.json();
+          Dashboard.renderChartEtapas(dE.porEtapa || []);
+          Dashboard.renderChartAnalistaDepartamento(dE.porAnalistaDepartamento || []);
+        }
       } catch (e) {
         console.error('[Dashboard] carregarSucessoCliente()', e);
       }
@@ -523,6 +532,90 @@ const App = (() => {
           responsive: true,
           maintainAspectRatio: false,
           plugins: { legend: { display: false } },
+          scales: {
+            x: { min: 0, max: 100, ticks: { font: { size: 10 }, callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
+            y: { ticks: { font: { size: 10 } }, grid: { display: false } },
+          },
+          onClick: async (evt, elementos) => {
+            if (!elementos.length) return;
+            const analista = labels[elementos[0].index];
+            Nav.go('sucesso-cliente');
+            await window.SucessoCliente?.load();
+            window.SucessoCliente?.filtrarPorAnalista(analista);
+          },
+        },
+      });
+    },
+
+    /**
+     * "% dentro do SLA por etapa" — usa /api/cs/dashboard/etapas. Cada etapa
+     * (aceite/transferência/departamento/promessa) já vem calculada e salva
+     * por ticket (cs_tickets.sla) — aqui só resume tempo médio e % dentro
+     * do prazo de cada uma, pra saber ONDE o atendimento está travando.
+     */
+    renderChartEtapas(linhas) {
+      const id = 'cs-dash-etapas';
+      if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
+      const ctx = document.getElementById(id);
+      if (!ctx) return;
+      if (!linhas || !linhas.length) {
+        ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados no período</p>';
+        return;
+      }
+      const ROTULOS = { aceite: 'Aceite', transferencia: 'Transferência', departamento: 'Analista (pós-transferência)', promessa: 'Promessa' };
+      const ORDEM = ['aceite', 'transferencia', 'departamento', 'promessa'];
+      const porChave = Object.fromEntries(linhas.map(r => [r.etapa, r]));
+      const presentes = ORDEM.filter(k => porChave[k]);
+      const labels = presentes.map(k => ROTULOS[k]);
+      const pctVals = presentes.map(k => porChave[k].pct ?? 0);
+      const mediaVals = presentes.map(k => porChave[k].media_minutos ?? 0);
+      const cores = pctVals.map(p => (p < 50 ? '#e53e3e' : p < 80 ? '#f5c518' : '#38a169'));
+      _charts[id] = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: '% dentro do SLA', data: pctVals, backgroundColor: cores, borderRadius: 4 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { afterLabel: (item) => `Tempo médio: ${mediaVals[item.dataIndex]} min` } },
+          },
+          scales: {
+            y: { min: 0, max: 100, ticks: { font: { size: 10 }, callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
+            x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+          },
+        },
+      });
+    },
+
+    /**
+     * Ranking de analistas SÓ na etapa "departamento" (resposta depois que o
+     * ticket foi transferido pra ele) — responde diretamente "quem demora
+     * pra pegar o ticket depois que a bola foi devolvida". Pior primeiro,
+     * clique numa barra filtra o Histórico por esse analista.
+     */
+    renderChartAnalistaDepartamento(linhas) {
+      const id = 'cs-dash-analista-departamento';
+      if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
+      const ctx = document.getElementById(id);
+      if (!ctx) return;
+      if (!linhas || !linhas.length) {
+        ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados suficientes ainda (precisa de pelo menos 3 tickets transferidos por analista)</p>';
+        return;
+      }
+      const labels = linhas.map(r => r.label || 'Não informado');
+      const pctVals = linhas.map(r => r.pct ?? 0);
+      const mediaVals = linhas.map(r => r.media_minutos ?? 0);
+      const cores = pctVals.map(p => (p < 50 ? '#e53e3e' : p < 80 ? '#f5c518' : '#38a169'));
+      _charts[id] = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: '% dentro do SLA (pós-transferência)', data: pctVals, backgroundColor: cores, borderRadius: 4 }] },
+        options: {
+          indexAxis: 'y',
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { afterLabel: (item) => `Tempo médio: ${mediaVals[item.dataIndex]} min` } },
+          },
           scales: {
             x: { min: 0, max: 100, ticks: { font: { size: 10 }, callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
             y: { ticks: { font: { size: 10 } }, grid: { display: false } },
