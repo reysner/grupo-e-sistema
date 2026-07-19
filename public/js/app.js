@@ -4318,6 +4318,16 @@ window.Tickets = Tickets;
  *        </div>
  *
  *        <div id="cs-dashboard" hidden style="margin-bottom:24px">
+ *          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+ *            <select id="cs-dash-ano" class="radar-select" onchange="SucessoCliente.carregarDashboard()"><option value="">Todos os anos</option></select>
+ *            <select id="cs-dash-mes" class="radar-select" onchange="SucessoCliente.carregarDashboard()">
+ *              <option value="">Todos os meses</option>
+ *              <option value="1">Janeiro</option><option value="2">Fevereiro</option><option value="3">Março</option>
+ *              <option value="4">Abril</option><option value="5">Maio</option><option value="6">Junho</option>
+ *              <option value="7">Julho</option><option value="8">Agosto</option><option value="9">Setembro</option>
+ *              <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+ *            </select>
+ *          </div>
  *          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
  *            <div class="nps-card"><div class="nps-label">Total de tickets</div><div class="nps-value" id="cs-kpi-total" style="color:#1a4233">—</div></div>
  *            <div class="nps-card"><div class="nps-label">Fora do SLA agora</div><div class="nps-value" id="cs-kpi-risco" style="color:#e53e3e">—</div></div>
@@ -4328,6 +4338,9 @@ window.Tickets = Tickets;
  *            <div style="height:260px"><canvas id="cs-chart-departamento"></canvas></div>
  *            <div style="height:260px;grid-column:1 / -1"><canvas id="cs-chart-analista"></canvas></div>
  *          </div>
+ *          <h4 style="margin:20px 0 4px">% dentro do SLA por analista (pior primeiro)</h4>
+ *          <p style="color:var(--gray-500);font-size:12px;margin-bottom:8px">Clique numa barra pra ver os tickets vermelhos desse analista no Histórico, abaixo.</p>
+ *          <div style="height:300px"><canvas id="cs-chart-desempenho"></canvas></div>
  *        </div>
  *
  *        <div id="radar-diagnostico"></div>
@@ -4480,14 +4493,34 @@ window.Tickets = Tickets;
     async carregarDashboard() {
       const painel = document.getElementById('cs-dashboard');
       if (!painel) return;
+      const selAno = document.getElementById('cs-dash-ano');
+      const selMes = document.getElementById('cs-dash-mes');
+      const ano = (selAno || {}).value || '';
+      const mes = (selMes || {}).value || '';
       try {
-        const resp = await fetch('/api/cs/dashboard', { headers: SucessoCliente._authHeaders() });
+        const qs = new URLSearchParams();
+        if (ano) qs.set('ano', ano);
+        if (mes) qs.set('mes', mes);
+        const resp = await fetch('/api/cs/dashboard?' + qs.toString(), { headers: SucessoCliente._authHeaders() });
         const texto = await resp.text();
         let data;
         try { data = texto ? JSON.parse(texto) : {}; } catch (e) { data = null; }
         if (!resp.ok || !data) {
           const detalhe = data && data.error ? data.error : (texto || '').slice(0, 200);
           throw new Error('HTTP ' + resp.status + (detalhe ? ' — ' + detalhe : ''));
+        }
+
+        // Popula o select de anos uma vez (sem apagar o que o usuário já escolheu).
+        if (selAno && !selAno.dataset.preenchido) {
+          const atual = selAno.value;
+          (data.anos || []).forEach(a => {
+            const opt = document.createElement('option');
+            opt.value = String(a);
+            opt.textContent = String(a);
+            selAno.appendChild(opt);
+          });
+          selAno.value = atual;
+          selAno.dataset.preenchido = '1';
         }
 
         const total = data.totalTickets || 0;
@@ -4507,12 +4540,65 @@ window.Tickets = Tickets;
           (data.porStatus || []).map(r => ({ label: labelStatus[r.label] || r.label, n: r.n })), 'Status SLA');
         SucessoCliente._renderChart('cs-chart-departamento', 'bar', data.porDepartamento || [], 'Departamento');
         SucessoCliente._renderChart('cs-chart-analista', 'bar', data.porAnalista || [], 'Analista', { indexAxis: 'y' });
+        SucessoCliente._renderChartDesempenho(data.desempenhoAnalistas || []);
       } catch (e) {
         painel.innerHTML =
           '<p class="radar-erro">Não foi possível carregar o dashboard.</p>' +
           '<p style="font-family:monospace;font-size:12px;color:var(--gray-500)">' + SucessoCliente._esc(e.message) + '</p>';
         console.error('[SucessoCliente] carregarDashboard()', e);
       }
+    },
+
+    /**
+     * Gráfico "% dentro do SLA por analista" — ordenado do pior pro melhor
+     * (o backend já manda nessa ordem), cor por faixa (vermelho <50%,
+     * amarelo 50–79%, verde ≥80%) em vez de uma cor por analista. Clicar
+     * numa barra filtra o Histórico por esse analista + status vermelho,
+     * pra já mostrar os tickets que justificam o número.
+     */
+    _renderChartDesempenho(linhas) {
+      const id = 'cs-chart-desempenho';
+      if (typeof Chart === 'undefined') return;
+      if (_csCharts[id]) { _csCharts[id].destroy(); delete _csCharts[id]; }
+      const ctx = document.getElementById(id);
+      if (!ctx) return;
+      if (!linhas.length) {
+        ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados suficientes ainda (precisa de pelo menos 3 tickets por analista)</p>';
+        return;
+      }
+      const labels = linhas.map(r => r.label || 'Não informado');
+      const dataVals = linhas.map(r => r.pct ?? 0);
+      const cores = dataVals.map(p => (p < 50 ? '#e53e3e' : p < 80 ? '#f5c518' : '#38a169'));
+      _csCharts[id] = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: '% dentro do SLA', data: dataVals, backgroundColor: cores, borderRadius: 4 }] },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { min: 0, max: 100, ticks: { font: { size: 10 }, callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
+            y: { ticks: { font: { size: 10 } }, grid: { display: false } },
+          },
+          onClick: (evt, elementos) => {
+            if (!elementos.length) return;
+            const analista = labels[elementos[0].index];
+            SucessoCliente.filtrarPorAnalista(analista);
+          },
+        },
+      });
+    },
+
+    /** Ao clicar numa barra do gráfico de desempenho: filtra o Histórico por esse analista + vermelho. */
+    filtrarPorAnalista(nomeAnalista) {
+      const selAna = document.getElementById('hist-analista');
+      const selStatus = document.getElementById('hist-status');
+      if (selAna) selAna.value = nomeAnalista;
+      if (selStatus) selStatus.value = 'vermelho';
+      SucessoCliente.filtrarHistorico();
+      const container = document.getElementById('hist-container');
+      if (container) container.scrollIntoView({ behavior: 'smooth', block: 'start' });
     },
 
     /** Mesmo padrão de renderChart usado no Dashboard principal do app.js, só que isolado aqui dentro. */
