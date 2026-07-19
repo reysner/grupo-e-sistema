@@ -61,6 +61,7 @@ app.use('/api/auth',   authRoutes);
 app.use('/api/data',   dataRoutes);
 app.use('/api/users',  usersRoutes);
 app.use('/api/cs',     require('./cs/routes'));    // Sucesso do Cliente — radar de SLA
+app.use('/api/analistas', require('./routes/analistas'));  // lista de analistas p/ dropdowns
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
