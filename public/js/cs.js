@@ -29,6 +29,7 @@
  *          <div style="display:flex;gap:8px">
  *            <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.testarConexao()">🔧 Testar conexão com Zappy</button>
  *            <button class="btn btn-sm" onclick="SucessoCliente.ingerirAgora()">🔄 Atualizar agora</button>
+ *            <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.iniciarBackfill()">📥 Carregar últimos 90 dias</button>
  *          </div>
  *        </div>
  *        <div id="radar-diagnostico"></div>
@@ -134,6 +135,29 @@
       } catch (e) {
         if (window.App && App.Toast) App.Toast.err('Falha ao atualizar tickets.');
         console.error('[SucessoCliente] ingerirAgora()', e);
+      }
+    },
+
+    /**
+     * Botão "Carregar últimos 90 dias" — carga retroativa ÚNICA (não é o que
+     * roda automaticamente a cada 5 min). Pede confirmação porque pode levar
+     * alguns minutos; a chamada volta na hora (roda em segundo plano no
+     * servidor) e os tickets vão aparecendo no Histórico conforme processados.
+     */
+    async iniciarBackfill() {
+      const ok = window.confirm(
+        'Isso vai buscar os tickets dos últimos 90 dias (carga única, não afeta a coleta automática).\n\n' +
+        'Pode levar alguns minutos rodando em segundo plano. Continuar?'
+      );
+      if (!ok) return;
+      try {
+        const resp = await fetch('/api/cs/backfill?dias=90', { method: 'POST', headers: SucessoCliente._authHeaders() });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        if (window.App && App.Toast) App.Toast.ok(data.mensagem || 'Carga retroativa iniciada.');
+      } catch (e) {
+        if (window.App && App.Toast) App.Toast.err('Falha ao iniciar carga retroativa: ' + e.message);
+        console.error('[SucessoCliente] iniciarBackfill()', e);
       }
     },
 
