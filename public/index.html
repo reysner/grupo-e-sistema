@@ -910,6 +910,21 @@
   </div>
   <div id="radar-diagnostico"></div>
   <div id="radar-container"></div>
+          <hr style="margin:32px 0;border:none;border-top:1px solid var(--gray-200)">
+
+<h3 style="margin-bottom:12px">Histórico de Atendimentos</h3>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+  <select id="hist-departamento" class="radar-select"><option value="">Todos os departamentos</option></select>
+  <select id="hist-analista" class="radar-select"><option value="">Todos os analistas</option></select>
+  <select id="hist-status" class="radar-select">
+    <option value="">Todos os status</option>
+    <option value="vermelho">🔴 Vermelho</option>
+    <option value="amarelo">🟡 Amarelo</option>
+    <option value="verde">⚪ Verde</option>
+  </select>
+  <button class="btn btn-sm" onclick="SucessoCliente.filtrarHistorico()">Filtrar</button>
+</div>
+<div id="hist-container"></div>
 </section>
         <!-- ADMINISTRAÇÃO -->
 
