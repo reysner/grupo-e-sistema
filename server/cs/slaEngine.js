@@ -69,6 +69,78 @@ function pareceIntencaoTransferir(texto) {
   return FRASES_TRANSFERENCIA.some(frase => t.includes(frase));
 }
 
+/**
+ * Frases (normalizadas, sem acento) que indicam que o CLIENTE está
+ * sinalizando risco de cancelamento — intenção explícita de trocar de
+ * contabilidade, ou reclamação forte de padrão de erro/atendimento. São
+ * frases de várias palavras (não palavras soltas tipo "erro" ou "ruim")
+ * de propósito: mensagem de chat do dia a dia é muito mais barulhenta que
+ * comentário de pesquisa (ex.: "deu erro no boleto" é rotina, não é
+ * sinal de churn) — casar só frase composta reduz falso positivo.
+ * Calibrada com exemplo real da Thais: "já não aguento tanto erros, vou
+ * procurar outra contabilidade, vocês erram demais".
+ */
+const FRASES_CHURN = [
+  // Intenção explícita de trocar/cancelar
+  'vou procurar outra contabilidade',
+  'vou procurar outro contador',
+  'vou procurar outra empresa de contabilidade',
+  'vou procurar outro escritorio',
+  'procurar outra contabilidade',
+  'procurar outro contador',
+  'vou trocar de contabilidade',
+  'vou trocar de contador',
+  'quero trocar de contador',
+  'quero trocar de contabilidade',
+  'trocar de contabilidade',
+  'trocar de contador',
+  'quero cancelar',
+  'vou cancelar',
+  'quero encerrar o contrato',
+  'quero encerrar a parceria',
+  'quero rescindir',
+  'vou rescindir',
+  'nao quero mais ser cliente',
+  'nao quero mais continuar com voces',
+  'nao quero mais trabalhar com voces',
+  // Frustração repetida / padrão de erros (frase composta, não palavra solta)
+  'nao aguento mais',
+  'ja nao aguento',
+  'erram demais',
+  'erram muito',
+  'tanto erro',
+  'muito erro',
+  'cansei de erro',
+  'cansado de tanto erro',
+  'cansada de tanto erro',
+  'sempre um problema',
+  'toda hora um erro',
+  'descaso total',
+  'descaso completo',
+  // Insatisfação forte / recomendação negativa
+  'pessimo atendimento',
+  'nunca mais indico',
+  'nao recomendo',
+  'nao indico',
+  'muito insatisfeito',
+  'muito insatisfeita',
+  'extremamente insatisfeito',
+  'extremamente insatisfeita',
+  'isso e um absurdo',
+  'um absurdo isso',
+];
+
+/**
+ * Se o texto tiver algum sinal de churn, devolve a frase que bateu (útil
+ * pra mostrar o motivo na tela); senão, devolve null. Casamento por
+ * substring, então pequenas variações da frase ainda batem.
+ */
+function detectarSinalChurn(texto) {
+  const t = normalizarTexto(texto);
+  if (!t) return null;
+  return FRASES_CHURN.find(frase => t.includes(frase)) || null;
+}
+
 /** Ordena por hora (ascendente), tolerando Date ou ISO string */
 function ordenarPorHora(arr) {
   return [...arr].sort((a, b) => new Date(a.hora) - new Date(b.hora));
@@ -274,4 +346,4 @@ function calcularTrocas(mensagens, agora = new Date()) {
   return trocas;
 }
 
-module.exports = { calcularSLA, calcularTrocas, ROTULOS, LIMITE_TROCA, pareceIntencaoTransferir, FRASES_TRANSFERENCIA };
+module.exports = { calcularSLA, calcularTrocas, ROTULOS, LIMITE_TROCA, pareceIntencaoTransferir, FRASES_TRANSFERENCIA, detectarSinalChurn, FRASES_CHURN };
