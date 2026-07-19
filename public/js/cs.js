@@ -33,6 +33,22 @@
  *        </div>
  *        <div id="radar-diagnostico"></div>
  *        <div id="radar-container"></div>
+ *
+ *        <hr style="margin:32px 0;border:none;border-top:1px solid var(--gray-200)">
+ *
+ *        <h3 style="margin-bottom:12px">Histórico de Atendimentos</h3>
+ *        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+ *          <select id="hist-departamento" class="radar-select"><option value="">Todos os departamentos</option></select>
+ *          <select id="hist-analista" class="radar-select"><option value="">Todos os analistas</option></select>
+ *          <select id="hist-status" class="radar-select">
+ *            <option value="">Todos os status</option>
+ *            <option value="vermelho">🔴 Vermelho</option>
+ *            <option value="amarelo">🟡 Amarelo</option>
+ *            <option value="verde">⚪ Verde</option>
+ *          </select>
+ *          <button class="btn btn-sm" onclick="SucessoCliente.filtrarHistorico()">Filtrar</button>
+ *        </div>
+ *        <div id="hist-container"></div>
  *      </section>
  *
  * 3. public/index.html — no fim do <body>, perto dos outros <script src="js/...">:
@@ -55,6 +71,8 @@
     /** Chamado pelo Nav.go('sucesso-cliente') ao abrir a aba. */
     async load() {
       await this.carregar();
+      await this.carregarFiltros();
+      await this.filtrarHistorico();
       if (this._timer) clearInterval(this._timer);
       this._timer = setInterval(() => this.carregar(), this._intervaloMs);
     },
@@ -142,6 +160,101 @@
       } catch (e) {
         div.innerHTML = '<div style="background:#fdecec;border-radius:8px;padding:12px">❌ Falha ao testar: ' + SucessoCliente._esc(e.message) + '</div>';
       }
+    },
+
+    /**
+     * Popula os <select> de departamento/analista da tela de Histórico com
+     * os valores já vistos nos tickets gravados (GET /api/cs/filtros).
+     * Chamado uma vez ao abrir a aba (load()).
+     */
+    async carregarFiltros() {
+      const selDep = document.getElementById('hist-departamento');
+      const selAna = document.getElementById('hist-analista');
+      if (!selDep || !selAna) return; // seção de histórico ainda não colada no HTML
+      try {
+        const resp = await fetch('/api/cs/filtros', { headers: SucessoCliente._authHeaders() });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const { departamentos, analistas } = await resp.json();
+        const preencher = (select, valores) => {
+          const atual = select.value;
+          select.querySelectorAll('option[data-dinamico]').forEach(o => o.remove());
+          (valores || []).forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = v;
+            opt.setAttribute('data-dinamico', '1');
+            select.appendChild(opt);
+          });
+          select.value = atual;
+        };
+        preencher(selDep, departamentos);
+        preencher(selAna, analistas);
+      } catch (e) {
+        console.error('[SucessoCliente] carregarFiltros()', e);
+      }
+    },
+
+    /**
+     * Busca o histórico de tickets (GET /api/cs/historico) já aplicando os
+     * filtros selecionados nos <select> da tela, e renderiza a tabela.
+     * Chamado pelo botão "Filtrar" e uma vez ao abrir a aba.
+     */
+    async filtrarHistorico() {
+      const container = document.getElementById('hist-container');
+      if (!container) return; // seção de histórico ainda não colada no HTML
+      const departamento = (document.getElementById('hist-departamento') || {}).value || '';
+      const analista = (document.getElementById('hist-analista') || {}).value || '';
+      const status = (document.getElementById('hist-status') || {}).value || '';
+      container.innerHTML = '<p style="color:var(--gray-500)">Carregando...</p>';
+      try {
+        const qs = new URLSearchParams();
+        if (departamento) qs.set('departamento', departamento);
+        if (analista) qs.set('analista', analista);
+        if (status) qs.set('status', status);
+        const resp = await fetch('/api/cs/historico?' + qs.toString(), { headers: SucessoCliente._authHeaders() });
+        const texto = await resp.text();
+        let data;
+        try { data = texto ? JSON.parse(texto) : {}; } catch (e) { data = null; }
+        if (!resp.ok || !data) {
+          const detalhe = data && data.error ? data.error : (texto || '').slice(0, 200);
+          throw new Error('HTTP ' + resp.status + (detalhe ? ' — ' + detalhe : ''));
+        }
+        SucessoCliente._renderHistorico(container, data.tickets || []);
+      } catch (e) {
+        container.innerHTML =
+          '<p class="radar-erro">Não foi possível carregar o histórico.</p>' +
+          '<p style="font-family:monospace;font-size:12px;color:var(--gray-500)">' + SucessoCliente._esc(e.message) + '</p>';
+        console.error('[SucessoCliente] filtrarHistorico()', e);
+      }
+    },
+
+    _renderHistorico(container, tickets) {
+      if (!tickets.length) {
+        container.innerHTML = '<p style="color:var(--gray-500)">Nenhum ticket encontrado com esses filtros.</p>';
+        return;
+      }
+      const linhas = tickets.map(SucessoCliente._linhaHistorico).join('');
+      container.innerHTML =
+        '<table class="radar-tabela">' +
+        '<thead><tr><th></th><th>Empresa</th><th>Departamento</th><th>Analista</th><th>Abertura</th><th>Encerramento</th></tr></thead>' +
+        '<tbody>' + linhas + '</tbody>' +
+        '</table>';
+    },
+
+    _linhaHistorico(t) {
+      const cor = t.pior_status === 'vermelho' ? '🔴' : (t.pior_status === 'amarelo' ? '🟡' : '⚪');
+      const empresa = t.empresa_nome || t.empresa_texto || '(sem vínculo)';
+      const fmt = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+      return (
+        '<tr class="radar-linha radar-' + (t.pior_status || '') + '">' +
+        '<td>' + cor + '</td>' +
+        '<td>' + SucessoCliente._esc(empresa) + '</td>' +
+        '<td>' + SucessoCliente._esc(t.departamento || '—') + '</td>' +
+        '<td>' + SucessoCliente._esc(t.analista || '—') + '</td>' +
+        '<td>' + fmt(t.abertura) + '</td>' +
+        '<td>' + fmt(t.encerramento) + '</td>' +
+        '</tr>'
+      );
     },
 
     // Mesmo padrão usado nos outros módulos do app.js (ex.: linha "const _tk = () => localStorage.getItem('ge_token') || '';")
