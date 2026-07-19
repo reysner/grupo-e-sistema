@@ -122,19 +122,52 @@ async function persistirTicket(pool, linha, mensagens) {
   return ticketId;
 }
 
+/** Formata uma Date como AAAA-MM-DD (a API só filtra mensagens por dia, não por hora). */
+function paraDataAPI(d) {
+  return d.toISOString().slice(0, 10);
+}
+
 /**
- * Ingesta uma leva de tickets. Injeção de dependências para permitir teste
- * com mocks (zappyClient e pool falsos) sem rede nem Postgres reais.
+ * Descobre quais tickets tiveram mensagem a partir de `dateFrom`, usando
+ * GET /api/messages (que aceita filtro de data) em vez de paginar TODOS
+ * os tickets. Essencial aqui: o Grupo-E já passa de 10.000 tickets no
+ * histórico — listar tudo a cada execução seria lento e desnecessário,
+ * já que só uns 20/dia têm mensagem nova.
+ */
+async function descobrirTicketsComAtividade(zappyClient, dateFrom, maxPaginas) {
+  const ticketIds = new Set();
+  let page = 1;
+  let hasMore = true;
+  while (hasMore && page <= maxPaginas) {
+    const resp = await zappyClient.listarMensagensRecentes({ dateFrom, page, pageSize: 100 });
+    for (const m of resp.messages || []) {
+      if (m.ticketId != null) ticketIds.add(String(m.ticketId));
+    }
+    hasMore = resp.hasMore;
+    page++;
+  }
+  return [...ticketIds];
+}
+
+/**
+ * Ingesta os tickets com atividade recente. Injeção de dependências para
+ * permitir teste com mocks (zappyClient e pool falsos) sem rede nem
+ * Postgres reais.
  *
  * @param {object} deps
  * @param {object} deps.zappyClient  ver zappyClient.js (criarClienteZappy)
  * @param {object} deps.pool         pool pg (ou compatível com .query())
  * @param {Date}   [deps.agora]      instante de referência p/ SLA (default: now)
  * @param {number} [deps.maxPaginas] trava de segurança de paginação (default 100)
- * @returns {{processados: number, ignoradosPreDataInicio: number, erros: Array}}
+ * @returns {{processados: number, ignoradosPreDataInicio: number, erros: Array, ticketsComAtividade: number}}
  */
 async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPaginas = 100 }) {
   const dataInicio = await obterDataInicio(pool);
+  const ultimaExecucao = await obterUltimaExecucao(pool);
+  // Um dia de folga pra trás, pra não perder mensagem que chegou perto da virada do dia
+  // (a API só filtra por dia, não por hora).
+  const cursor = ultimaExecucao && ultimaExecucao > dataInicio ? ultimaExecucao : dataInicio;
+  const dateFrom = paraDataAPI(cursor);
 
   // Fila/usuário não vêm no ticket (a API pública só dá o ID) — busca uma
   // vez por execução e monta um mapa id->nome. Baixo volume (poucas
@@ -151,61 +184,57 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
   let ignoradosPreDataInicio = 0;
   const erros = [];
 
-  let page = 1;
-  let hasMore = true;
-  while (hasMore && page <= maxPaginas) {
-    const resp = await zappyClient.listarTickets({ page, pageSize: 100 });
-    const tickets = resp.tickets || [];
-    hasMore = !!resp.hasMore && tickets.length > 0;
+  const ticketIds = await descobrirTicketsComAtividade(zappyClient, dateFrom, maxPaginas);
 
-    for (const ticketZappy of tickets) {
-      try {
-        // Sem carga retroativa: nunca processa ticket aberto antes do go-live,
-        // mesmo que a API devolva (reabertura de ticket antigo, por ex.).
-        if (ticketZappy.createdAt && new Date(ticketZappy.createdAt) < dataInicio) {
-          ignoradosPreDataInicio++;
-          continue;
-        }
+  for (const ticketId of ticketIds) {
+    let ticketZappy = null;
+    try {
+      ticketZappy = await zappyClient.obterTicket(ticketId);
 
-        let contato = null;
-        if (ticketZappy.contactId != null) {
-          const cid = String(ticketZappy.contactId);
-          if (contatoCache.has(cid)) {
-            contato = contatoCache.get(cid);
-          } else {
-            contato = await zappyClient.obterContato(ticketZappy.contactId).catch(() => null);
-            contatoCache.set(cid, contato);
-          }
-        }
-
-        const contexto = {
-          contato,
-          filaNome: filaMap[String(ticketZappy.queueId)] || null,
-          analistaNome: usuarioMap[String(ticketZappy.userId)] || null,
-        };
-
-        const mensagensZappy = await zappyClient.obterMensagens(ticketZappy.id);
-        const generico = traduzirTicket(ticketZappy, mensagensZappy, contexto);
-        const sla = calcularSLA(generico, agora);
-
-        const vinculo = await garantirVinculo(pool, {
-          nome: contato ? contato.name : null,
-          telefone: contato ? contato.number : null,
-          tags: contato ? contato.tags : null,
-        });
-
-        const linha = montarLinhaTicket(generico, sla, vinculo);
-        await persistirTicket(pool, linha, generico.mensagens);
-        processados++;
-      } catch (e) {
-        erros.push({ ticketId: ticketZappy && ticketZappy.id, erro: e.message });
+      // Sem carga retroativa: nunca processa ticket aberto antes do go-live,
+      // mesmo que tenha tido mensagem nova (ex.: reabertura de ticket antigo).
+      if (ticketZappy.createdAt && new Date(ticketZappy.createdAt) < dataInicio) {
+        ignoradosPreDataInicio++;
+        continue;
       }
+
+      let contato = null;
+      if (ticketZappy.contactId != null) {
+        const cid = String(ticketZappy.contactId);
+        if (contatoCache.has(cid)) {
+          contato = contatoCache.get(cid);
+        } else {
+          contato = await zappyClient.obterContato(ticketZappy.contactId).catch(() => null);
+          contatoCache.set(cid, contato);
+        }
+      }
+
+      const contexto = {
+        contato,
+        filaNome: filaMap[String(ticketZappy.queueId)] || null,
+        analistaNome: usuarioMap[String(ticketZappy.userId)] || null,
+      };
+
+      const mensagensZappy = await zappyClient.obterMensagens(ticketZappy.id);
+      const generico = traduzirTicket(ticketZappy, mensagensZappy, contexto);
+      const sla = calcularSLA(generico, agora);
+
+      const vinculo = await garantirVinculo(pool, {
+        nome: contato ? contato.name : null,
+        telefone: contato ? contato.number : null,
+        tags: contato ? contato.tags : null,
+      });
+
+      const linha = montarLinhaTicket(generico, sla, vinculo);
+      await persistirTicket(pool, linha, generico.mensagens);
+      processados++;
+    } catch (e) {
+      erros.push({ ticketId: ticketZappy ? ticketZappy.id : ticketId, erro: e.message });
     }
-    page++;
   }
 
   await marcarUltimaExecucao(pool, agora);
-  return { processados, ignoradosPreDataInicio, erros };
+  return { processados, ignoradosPreDataInicio, erros, ticketsComAtividade: ticketIds.length };
 }
 
 // ── Execução direta: `node server/cs/ingestao.js` ───────────────────────────
