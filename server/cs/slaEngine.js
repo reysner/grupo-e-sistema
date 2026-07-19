@@ -22,9 +22,52 @@ const ROTULOS = {
   aceite: 'Aceite da recepção',
   transferencia: 'Transferência',
   departamento: 'Início no departamento',
-  promessa: 'Promessa não cumprida',
+  promessa: 'Promessa de transferência não cumprida',
+  promessa_resolucao: 'Resolvendo direto (sem transferir)',
   vez_cliente: 'Cliente aguardando resposta',
 };
+
+/**
+ * Frases (normalizadas, sem acento) que indicam que quem respondeu está
+ * avisando que VAI TRANSFERIR o atendimento — em vez de resolver a demanda
+ * diretamente. Lista calibrada com exemplos reais de como o time escreve
+ * (ver conversa com a Thais). Casamento é por trecho (substring), então
+ * pequenas variações de frase ainda batem.
+ */
+const FRASES_TRANSFERENCIA = [
+  'vou te transferir',
+  'vou transferir',
+  'vou te direcionar',
+  'vou direcionar',
+  'vou te enviar',
+  'vou enviar voce',
+  'vou encaminhar',
+  'vou conectar',
+  'so um momento',
+  'so um instante',
+  'um momento, por gentileza',
+  'analista responsavel dara continuidade',
+  'responsavel por essa demanda',
+  'dara continuidade ao seu atendimento',
+  'especialista dara sequencia',
+  'equipe responsavel assumira',
+  'enquanto realizo a transferencia',
+  'enquanto direciono',
+  'em instantes voce sera atendido',
+  'sera atendido pelo analista',
+  'setor responsavel',
+];
+
+function normalizarTexto(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+/** true se o texto parece avisar que a pessoa VAI TRANSFERIR (em vez de resolver direto). */
+function pareceIntencaoTransferir(texto) {
+  const t = normalizarTexto(texto);
+  if (!t) return false;
+  return FRASES_TRANSFERENCIA.some(frase => t.includes(frase));
+}
 
 /** Ordena por hora (ascendente), tolerando Date ou ISO string */
 function ordenarPorHora(arr) {
@@ -42,6 +85,15 @@ function primeiraMsg(mensagens, remetente, apos = null, inclusivo = false) {
     mensagens.filter(m => m.remetente === remetente && passa(m.hora))
   );
   return lista.length ? new Date(lista[0].hora) : null;
+}
+
+/** Igual a primeiraMsg, mas devolve a mensagem inteira (pra ler o texto), não só a hora. */
+function primeiraMsgObjeto(mensagens, remetente, apos = null, inclusivo = false) {
+  const passa = (h) => !apos || (inclusivo ? new Date(h) >= apos : new Date(h) > apos);
+  const lista = ordenarPorHora(
+    mensagens.filter(m => m.remetente === remetente && passa(m.hora))
+  );
+  return lista.length ? lista[0] : null;
 }
 
 /**
@@ -75,7 +127,8 @@ function calcularSLA(ticket, agora = new Date()) {
   // ── Relógio 2 — TRANSFERÊNCIA ───────────────────────────────────────────────
   // Corre do aceite até a transferência. MAS: se o escritório já respondeu algo
   // após o aceite (fez uma promessa), o trecho parado vira PROMESSA, não transferência.
-  const respAposAceite = tAceite ? primeiraMsg(mensagens, 'escritorio', tAceite, true) : null;
+  const respAposAceiteObj = tAceite ? primeiraMsgObjeto(mensagens, 'escritorio', tAceite, true) : null;
+  const respAposAceite = respAposAceiteObj ? new Date(respAposAceiteObj.hora) : null;
   if (tAceite) {
     if (tTransferencia) {
       // transferiu: mede aceite -> transferência (sempre vale)
@@ -101,12 +154,27 @@ function calcularSLA(ticket, agora = new Date()) {
 
   // ── Relógio 5 — PROMESSA ────────────────────────────────────────────────────
   // Escritório respondeu ANTES de transferir e o ticket ficou parado (sem transferir
-  // nem encerrar) por tempo demais. Pega o "vou direcionar" que não direcionou.
+  // nem encerrar). Duas situações bem diferentes, separadas pelo TEXTO da resposta:
+  //   - Avisou que VAI TRANSFERIR (ex.: "vou te direcionar") e não transferiu ainda
+  //     -> tipo 'promessa', prazo curto (15min, mesmo padrão da transferência real).
+  //   - Não falou em transferir (interpretado como "vou resolver isso eu mesma(o)")
+  //     -> tipo 'promessa_resolucao', prazo maior (2h de silêncio é aceitável).
+  //     MAS: mesmo dentro das 2h, se o cliente mandou mensagem nesse meio tempo e a
+  //     resposta a ELA especificamente passou de 30min, já conta negativo — não dá
+  //     pra esconder uma demora pontual atrás do prazo geral mais folgado.
   if (tAceite && !tTransferencia && respAposAceite) {
     const fim = tEncerramento || agora;
     const emCurso = !tEncerramento;
     const min = T.minutosUteis(respAposAceite, fim);
-    relogios.push(montar('promessa', respAposAceite, fim, min, emCurso));
+    if (pareceIntencaoTransferir(respAposAceiteObj.texto)) {
+      relogios.push(montar('promessa', respAposAceite, fim, min, emCurso));
+    } else {
+      const mensagensDepoisDaResposta = mensagens.filter(m => new Date(m.hora) >= respAposAceite);
+      const trocasNaJanela = calcularTrocas(mensagensDepoisDaResposta, agora);
+      const teveTrocaLenta = trocasNaJanela.some(t => t.status !== 'verde');
+      const status = (min > T.LIMITES.promessa_resolucao || teveTrocaLenta) ? 'vermelho' : 'verde';
+      relogios.push(montar('promessa_resolucao', respAposAceite, fim, min, emCurso, status));
+    }
   }
 
   // ── Relógio 4 — VEZ DO CLIENTE (ball in court) ──────────────────────────────
@@ -134,9 +202,9 @@ function calcularSLA(ticket, agora = new Date()) {
   };
 }
 
-function montar(tipo, inicio, fim, minutos, emCurso) {
+function montar(tipo, inicio, fim, minutos, emCurso, statusForcado = null) {
   const limite = T.LIMITES[tipo] || null;
-  const status = limite ? T.statusSLA(minutos, limite) : 'neutro';
+  const status = statusForcado || (limite ? T.statusSLA(minutos, limite) : 'neutro');
   return {
     tipo,
     rotulo: ROTULOS[tipo],
@@ -206,4 +274,4 @@ function calcularTrocas(mensagens, agora = new Date()) {
   return trocas;
 }
 
-module.exports = { calcularSLA, calcularTrocas, ROTULOS, LIMITE_TROCA };
+module.exports = { calcularSLA, calcularTrocas, ROTULOS, LIMITE_TROCA, pareceIntencaoTransferir, FRASES_TRANSFERENCIA };
