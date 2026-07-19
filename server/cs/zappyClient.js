@@ -44,14 +44,32 @@ function criarClienteZappy(opts = {}) {
     if (!baseUrl || !token) {
       throw new Error('zappyClient: faltam ZAPPY_BASE_URL/ZAPPY_TOKEN. Configure no Render → Environment.');
     }
-    const resp = await fetch(`${baseUrl}${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        ...(init.headers || {}),
-      },
-    });
+    // Timeout de segurança: sem isso, um fetch() que trava (Zappy não responde
+    // nem dá erro) fica pendurado PARA SEMPRE — e como o backfill roda em
+    // segundo plano numa Promise sem await, ele nunca solta a trava
+    // `backfillEmAndamento` nem loga conclusão. 30s é generoso pra uma API
+    // interna, mas corta qualquer travamento real.
+    const controle = new AbortController();
+    const timeoutId = setTimeout(() => controle.abort(), 30000);
+    let resp;
+    try {
+      resp = await fetch(`${baseUrl}${path}`, {
+        ...init,
+        signal: controle.signal,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          ...(init.headers || {}),
+        },
+      });
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        throw new Error(`zappyClient: ${init.method || 'GET'} ${path} não respondeu em 30s (timeout).`);
+      }
+      throw e;
+    } finally {
+      clearTimeout(timeoutId);
+    }
     // Lê como texto primeiro — nunca resp.json() direto. Se o caminho estiver
     // errado (ex.: sem o prefixo /api), o servidor pode devolver a página
     // HTML do site em vez de um erro estruturado, e isso dá um erro claro.
