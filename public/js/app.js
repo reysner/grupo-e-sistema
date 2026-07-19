@@ -5299,7 +5299,10 @@ window.Tickets = Tickets;
       if (c === 'empresa') return r.empresa_nome || r.empresa_texto || '—';
       if (c === 'abertura' || c === 'encerramento') return r[c] ? new Date(r[c]).toLocaleString('pt-BR') : '—';
       if (c === 'pior_status') {
-        return r.pior_status === 'vermelho' ? 'Vermelho' : r.pior_status === 'amarelo' ? 'Amarelo' : r.pior_status === 'verde' ? 'Verde' : '—';
+        // Com filtro de etapa ativo, exporta o status DAQUELA etapa (mesma
+        // lógica da bolinha na tela) em vez do status geral do ticket.
+        const s = r.etapa_status || r.pior_status;
+        return s === 'vermelho' ? 'Vermelho' : s === 'amarelo' ? 'Amarelo' : s === 'verde' ? 'Verde' : '—';
       }
       return r[c] ?? '—';
     },
@@ -5365,11 +5368,17 @@ window.Tickets = Tickets;
     },
 
     _linhaHistorico(t) {
-      const cor = t.pior_status === 'vermelho' ? '🔴' : (t.pior_status === 'amarelo' ? '🟡' : '🟢');
+      // Quando o Histórico está filtrado por uma ETAPA específica (ex.:
+      // "Promessa de transferência"), a bolinha mostra o status DAQUELA
+      // etapa (t.etapa_status) — não o status geral do ticket (pior_status),
+      // que costuma estar verde em ticket já encerrado mesmo quando aquela
+      // etapa em particular foi vermelha no seu momento.
+      const statusExibido = t.etapa_status || t.pior_status;
+      const cor = statusExibido === 'vermelho' ? '🔴' : (statusExibido === 'amarelo' ? '🟡' : '🟢');
       const empresa = t.empresa_nome || t.empresa_texto || '(sem vínculo)';
       const fmt = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
       return (
-        '<tr class="radar-linha radar-' + (t.pior_status || '') + '">' +
+        '<tr class="radar-linha radar-' + (statusExibido || '') + '">' +
         '<td>' + cor + '</td>' +
         '<td>#' + SucessoCliente._esc(t.zappy_id || '—') + '</td>' +
         '<td>' + SucessoCliente._esc(empresa) + '</td>' +
