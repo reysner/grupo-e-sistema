@@ -11,6 +11,8 @@
  *
  * Endpoints:
  *   GET  /api/cs/agora                    -> radar de tickets em risco (só vínculos tipo='cliente')
+ *   GET  /api/cs/historico                 -> lista de tickets p/ tela de relatórios (filtros: departamento/analista/status)
+ *   GET  /api/cs/filtros                   -> opções de departamento/analista já vistas, p/ popular os selects
  *   POST /api/cs/ingerir                   -> dispara a ingestão manualmente (admin)
  *   GET  /api/cs/vinculos/pendentes        -> fila de de-para aguardando confirmação humana
  *   POST /api/cs/vinculos/:id/confirmar    -> confirma um vínculo (empresa/tipo)
@@ -58,6 +60,60 @@ router.get('/agora', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('[cs] GET /agora falhou:', e);
     res.status(500).json({ error: 'Falha ao carregar o radar de tickets: ' + e.message });
+  }
+});
+
+/**
+ * GET /api/cs/historico?departamento=&analista=&status= — lista tickets (TODOS,
+ * não só os em risco agora) para a tela de relatórios/histórico. `status` aqui
+ * é o pior_status já calculado (vermelho/amarelo/verde). Limita a 500 linhas
+ * mais recentes para não pesar a tela.
+ */
+router.get('/historico', requireAuth, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const { departamento, analista, status } = req.query;
+    const condicoes = [];
+    const valores = [];
+    if (departamento) { valores.push(departamento); condicoes.push(`t.departamento = $${valores.length}`); }
+    if (analista) { valores.push(analista); condicoes.push(`t.analista = $${valores.length}`); }
+    if (status) { valores.push(status); condicoes.push(`t.pior_status = $${valores.length}`); }
+    const where = condicoes.length ? 'WHERE ' + condicoes.join(' AND ') : '';
+    const { rows } = await pool.query(`
+      SELECT t.id, t.zappy_id, t.empresa_texto, v.empresa_nome, t.departamento,
+             t.analista, t.status, t.pior_status, t.sla, t.abertura, t.encerramento, t.updated_at
+        FROM cs_tickets t
+        LEFT JOIN cs_vinculos v ON v.id = t.vinculo_id
+        ${where}
+       ORDER BY t.abertura DESC NULLS LAST
+       LIMIT 500
+    `, valores);
+    res.json({ tickets: rows });
+  } catch (e) {
+    console.error('[cs] GET /historico falhou:', e);
+    res.status(500).json({ error: 'Falha ao carregar histórico: ' + e.message });
+  }
+});
+
+/**
+ * GET /api/cs/filtros — opções (departamento/analista) já vistas nos tickets
+ * gravados, pra popular os <select> da tela de histórico sem depender de
+ * mais uma chamada ao Zappy.
+ */
+router.get('/filtros', requireAuth, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const [deps, anals] = await Promise.all([
+      pool.query(`SELECT DISTINCT departamento FROM cs_tickets WHERE departamento IS NOT NULL ORDER BY departamento`),
+      pool.query(`SELECT DISTINCT analista FROM cs_tickets WHERE analista IS NOT NULL ORDER BY analista`),
+    ]);
+    res.json({
+      departamentos: deps.rows.map(r => r.departamento),
+      analistas: anals.rows.map(r => r.analista),
+    });
+  } catch (e) {
+    console.error('[cs] GET /filtros falhou:', e);
+    res.status(500).json({ error: e.message });
   }
 });
 
