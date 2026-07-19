@@ -4322,15 +4322,14 @@ window.Tickets = Tickets;
  *
  *        <h3 style="margin-bottom:12px">Histórico de Atendimentos</h3>
  *        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
- *          <select id="hist-departamento" class="radar-select"><option value="">Todos os departamentos</option></select>
- *          <select id="hist-analista" class="radar-select"><option value="">Todos os analistas</option></select>
- *          <select id="hist-status" class="radar-select">
+ *          <select id="hist-departamento" class="radar-select" onchange="SucessoCliente.filtrarHistorico()"><option value="">Todos os departamentos</option></select>
+ *          <select id="hist-analista" class="radar-select" onchange="SucessoCliente.filtrarHistorico()"><option value="">Todos os analistas</option></select>
+ *          <select id="hist-status" class="radar-select" onchange="SucessoCliente.filtrarHistorico()">
  *            <option value="">Todos os status</option>
  *            <option value="vermelho">🔴 Vermelho</option>
  *            <option value="amarelo">🟡 Amarelo</option>
  *            <option value="verde">🟢 Verde</option>
  *          </select>
- *          <button class="btn btn-sm" onclick="SucessoCliente.filtrarHistorico()">Filtrar</button>
  *          <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.exportHistoricoCSV()">⬇ Exportar CSV</button>
  *          <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.exportHistoricoPDF()">🖶 Exportar PDF</button>
  *        </div>
@@ -4552,9 +4551,9 @@ window.Tickets = Tickets;
     // Colunas/labels compartilhadas pelos dois exports (mesmo padrão usado em
     // app.js — ver Atendimento.exportCSV/exportPDF: separador ";", BOM no CSV,
     // popup + window.print() no PDF).
-    _colunasHistorico: ['abertura', 'encerramento', 'empresa', 'departamento', 'analista', 'pior_status'],
+    _colunasHistorico: ['zappy_id', 'abertura', 'encerramento', 'empresa', 'departamento', 'analista', 'pior_status'],
     _labelsHistorico: {
-      abertura: 'Abertura', encerramento: 'Encerramento', empresa: 'Empresa',
+      zappy_id: 'Ticket', abertura: 'Abertura', encerramento: 'Encerramento', empresa: 'Empresa',
       departamento: 'Departamento', analista: 'Analista', pior_status: 'Status SLA',
     },
     _valorHistorico(r, c) {
@@ -4621,7 +4620,7 @@ window.Tickets = Tickets;
       const linhas = tickets.map(SucessoCliente._linhaHistorico).join('');
       container.innerHTML =
         '<table class="radar-tabela">' +
-        '<thead><tr><th></th><th>Empresa</th><th>Departamento</th><th>Analista</th><th>Abertura</th><th>Encerramento</th></tr></thead>' +
+        '<thead><tr><th></th><th>Ticket</th><th>Empresa</th><th>Departamento</th><th>Analista</th><th>Abertura</th><th>Encerramento</th></tr></thead>' +
         '<tbody>' + linhas + '</tbody>' +
         '</table>';
     },
@@ -4633,6 +4632,7 @@ window.Tickets = Tickets;
       return (
         '<tr class="radar-linha radar-' + (t.pior_status || '') + '">' +
         '<td>' + cor + '</td>' +
+        '<td>#' + SucessoCliente._esc(t.zappy_id || '—') + '</td>' +
         '<td>' + SucessoCliente._esc(empresa) + '</td>' +
         '<td>' + SucessoCliente._esc(t.departamento || '—') + '</td>' +
         '<td>' + SucessoCliente._esc(t.analista || '—') + '</td>' +
@@ -4751,7 +4751,7 @@ window.Tickets = Tickets;
       const linhas = tickets.map(SucessoCliente._linha).join('');
       container.innerHTML =
         '<table class="radar-tabela">' +
-        '<thead><tr><th></th><th>Empresa</th><th>Departamento</th><th>Analista</th><th>Relógio</th><th>Tempo</th></tr></thead>' +
+        '<thead><tr><th></th><th>Ticket</th><th>Empresa</th><th>Departamento</th><th>Analista</th><th>Relógio</th><th>Tempo</th></tr></thead>' +
         '<tbody>' + linhas + '</tbody>' +
         '</table>';
     },
@@ -4767,6 +4767,7 @@ window.Tickets = Tickets;
       return (
         '<tr class="radar-linha radar-' + (t.pior_status || '') + '">' +
         '<td>' + cor + '</td>' +
+        '<td>#' + SucessoCliente._esc(t.zappy_id || '—') + '</td>' +
         '<td>' + SucessoCliente._esc(empresa) + '</td>' +
         '<td>' + SucessoCliente._esc(t.departamento || '—') + '</td>' +
         '<td>' + SucessoCliente._esc(t.analista || '—') + '</td>' +
