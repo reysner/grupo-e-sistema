@@ -13,7 +13,7 @@ async function init() {
       name       TEXT NOT NULL,
       email      TEXT NOT NULL UNIQUE,
       password   TEXT NOT NULL,
-      role       TEXT NOT NULL DEFAULT 'usuario' CHECK(role IN ('administrador','usuario')),
+      role       TEXT NOT NULL DEFAULT 'usuario' CHECK(role IN ('administrador','usuario','contabil')),
       active     INTEGER NOT NULL DEFAULT 1,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
