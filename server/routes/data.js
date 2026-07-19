@@ -188,7 +188,9 @@ router.get('/dashboard', async (req, res) => {
     const pf = periodFilter(req.query.period);
 
     const analista = req.query.analista || '';
-    const af = analista ? ` AND analista = '${analista.replace(/'/g,"''")}' ` : '';
+    // Filtra por PROCURADO (quem o cliente pediu), não por analista (quem digitou o registro) —
+    // é o que bate com o gráfico "Por analista procurado" e com o conceito usado no Zappy.
+    const af = analista ? ` AND procurado = '${analista.replace(/'/g,"''")}' ` : '';
 
     const groupBy = async (table, col, limit=10, extra='') => {
       const r = await pool.query(
@@ -250,7 +252,7 @@ router.get('/dashboard', async (req, res) => {
 
     // Analistas list for filter
     const analistasList = await pool.query(
-      `SELECT DISTINCT analista FROM atendimentos WHERE analista IS NOT NULL ORDER BY analista`
+      `SELECT DISTINCT procurado FROM atendimentos WHERE procurado IS NOT NULL ORDER BY procurado`
     ).catch(() => ({ rows: [] }));
 
     // Meses sem reajuste per cliente (for Carteira)
@@ -286,7 +288,7 @@ router.get('/dashboard', async (req, res) => {
         npsEvolucao: npsEvolucao.rows,
       },
       nps, csat, ces,
-      analistas: analistasList.rows.map(r => r.analista),
+      analistas: analistasList.rows.map(r => r.procurado),
     });
   } catch (err) {
     console.error('Dashboard error:', err);
