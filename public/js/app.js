@@ -426,6 +426,7 @@ const App = (() => {
       Dashboard.renderChart('c-ins-empresa','bar',      c.insEmpresa, 'Empresa',     {indexAxis:'y'});
 
       // ── PESQUISAS NPS ────────────────────────────────────────────────────────
+      Dashboard.renderChartNpsEvolucao(c.npsEvolucao || []);
       const npsEl = document.getElementById('nps-row');
       if (npsEl) npsEl.innerHTML = [
         { label:'NPS Médio',  value: d.nps,  sub:'Net Promoter Score (0–10)',    color:'#f5c518' },
@@ -463,6 +464,45 @@ const App = (() => {
             x: isHBar ? { beginAtZero:true, ticks:{stepSize:1,font:{size:10}}, grid:{color:'rgba(0,0,0,.05)'} } : { ticks:{font:{size:10},maxRotation:35}, grid:{display:false} },
             y: isHBar ? { ticks:{font:{size:10}}, grid:{display:false} } : { beginAtZero:true, ticks:{stepSize:1,font:{size:10}}, grid:{color:'rgba(0,0,0,.05)'} },
           } : {},
+        },
+      });
+    },
+
+    /**
+     * Gráfico "Evolução mensal — NPS / CSAT / CES" (linha, 3 séries). O
+     * canvas c-nps-evolucao existia no HTML e o backend já manda os dados
+     * (charts.npsEvolucao — ver /api/data/dashboard), mas nada desenhava
+     * nele: os cards de média (nps-row) usam os totais gerais, e esse
+     * gráfico usa a evolução mês a mês — são coisas diferentes.
+     * `linhas` = [{ mes:'07/2026', nps, csat, ces }, ...] (mais antigo primeiro).
+     */
+    renderChartNpsEvolucao(linhas) {
+      const id = 'c-nps-evolucao';
+      if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
+      const ctx = document.getElementById(id);
+      if (!ctx) return;
+      if (!linhas || !linhas.length) {
+        ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados no período</p>';
+        return;
+      }
+      const labels = linhas.map(r => r.mes);
+      _charts[id] = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label: 'NPS (0–10)',  data: linhas.map(r => r.nps  != null ? Number(r.nps)  : null), borderColor: '#f5c518', backgroundColor: '#f5c518', tension: 0.3, spanGaps: true },
+            { label: 'CSAT (0–5)',  data: linhas.map(r => r.csat != null ? Number(r.csat) : null), borderColor: '#68d391', backgroundColor: '#68d391', tension: 0.3, spanGaps: true },
+            { label: 'CES (0–5)',   data: linhas.map(r => r.ces  != null ? Number(r.ces)  : null), borderColor: '#76e4f7', backgroundColor: '#76e4f7', tension: 0.3, spanGaps: true },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 }, padding: 12 } } },
+          scales: {
+            x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+            y: { beginAtZero: true, max: 10, ticks: { stepSize: 2, font: { size: 10 } }, grid: { color: 'rgba(0,0,0,.05)' } },
+          },
         },
       });
     },
