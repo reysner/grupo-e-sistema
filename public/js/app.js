@@ -5521,13 +5521,13 @@ window.Tickets = Tickets;
     async carregarChurnConversas() {
       const tbody = document.getElementById('churn-conversas-tbody');
       if (!tbody) return;
-      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--gray-400)">Carregando...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Carregando...</td></tr>';
       try {
         const res = await fetch('/api/cs/churn?dias=180', { headers: authHeaders() });
         if (!res.ok) throw new Error('Falha ao buscar.');
         const { data } = await res.json();
         if (!data || !data.length) {
-          tbody.innerHTML = '<tr><td colspan="4" style="color:var(--gray-400)">Nenhum sinal de churn encontrado nas conversas dos últimos 180 dias.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Nenhum sinal de churn encontrado nas conversas dos últimos 180 dias.</td></tr>';
           return;
         }
         tbody.innerHTML = data.map(c => {
@@ -5537,13 +5537,37 @@ window.Tickets = Tickets;
             : `${esc(c.empresa)} <span style="color:var(--gray-400);font-size:11px">(não vinculado)</span>`;
           return `<tr>
             <td style="font-weight:600">${nomeVinculo}</td>
+            <td style="font-size:12px;color:var(--gray-500)">${c.zappy_id ? '#' + esc(c.zappy_id) : '—'}</td>
             <td style="font-size:12px;color:var(--gray-500)">${dt}</td>
             <td>${c.ocorrencias}</td>
             <td style="font-size:12px;color:var(--gray-600)"><em>"${esc(c.frase_detectada)}"</em> — ${esc((c.trecho||'').slice(0,140))}${(c.trecho||'').length>140?'...':''}</td>
+            <td><button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.tratarChurn('${c.ticket_id}')">✔ Tratar</button></td>
           </tr>`;
         }).join('');
       } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--danger)">Não foi possível analisar as conversas agora.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--danger)">Não foi possível analisar as conversas agora.</td></tr>';
+      }
+    },
+
+    /**
+     * Marca o ticket como falso alarme (não é churn de verdade) — some da
+     * lista a partir de agora, mesmo que a mensagem continue batendo com
+     * alguma frase da lista em varreduras futuras.
+     */
+    async tratarChurn(ticketId) {
+      const motivo = window.prompt('Por que isso não é um risco de cancelamento? (opcional — pode deixar em branco)');
+      if (motivo === null) return; // cancelou o prompt
+      try {
+        const res = await fetch('/api/cs/churn/' + encodeURIComponent(ticketId) + '/tratar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ motivo }),
+        });
+        if (!res.ok) throw new Error('Falha ao tratar.');
+        if (window.App && App.Toast) App.Toast.ok('Marcado como tratado — não vai aparecer mais nessa lista.');
+        AnaliseInteligente.carregarChurnConversas();
+      } catch (e) {
+        if (window.App && App.Toast) App.Toast.err('Não foi possível marcar como tratado.');
       }
     },
 
