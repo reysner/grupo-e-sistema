@@ -52,13 +52,51 @@ function primeiraHoraPorTipo(eventos, tipo) {
 }
 
 /**
+ * Detecta a TRANSFERÊNCIA por diferença entre coletas — a API pública do
+ * Zappy não manda um histórico de troca de fila/responsável, só o dono
+ * atual (ver nota em tradutorZappy.js). Então, a cada execução periódica
+ * (a cada 5 min), comparamos o analista resolvido AGORA com o que estava
+ * salvo na última vez que vimos esse ticket:
+ *   - Se mudou de um analista JÁ definido pra outro analista -> é uma
+ *     transferência de verdade (ex.: Elma aceitou e passou pra Maria
+ *     Eduarda) -> marca `agora` como o instante aproximado (precisão
+ *     limitada ao intervalo entre execuções).
+ *   - Se já tinha uma transferência detectada antes, mantém a mesma hora
+ *     (não fica "andando" a cada nova execução).
+ *   - Se é a primeira vez que vemos o ticket, ou se o analista só saiu de
+ *     "ninguém" pra alguém (isso é ACEITE, não transferência), não marca nada.
+ * Limitação: só funciona pra transferências que aconteçam DEPOIS que esse
+ * código foi ligado — não há como reconstruir isso pro passado.
+ */
+async function resolverHoraTransferencia(pool, zappyId, analistaNovo, agora) {
+  const { rows } = await pool.query(
+    `SELECT analista, transferencia FROM cs_tickets WHERE zappy_id = $1`,
+    [zappyId]
+  );
+  if (!rows.length) return null;
+  const existente = rows[0];
+  if (existente.transferencia) return existente.transferencia;
+  if (existente.analista && analistaNovo && analistaNovo !== existente.analista) {
+    return agora.toISOString();
+  }
+  return null;
+}
+
+/**
  * Monta a linha pronta para UPSERT em cs_tickets a partir do ticket
  * traduzido + resultado do motor de SLA + vínculo resolvido.
  * Função PURA (sem I/O) — fácil de testar isolada.
  * `trocas` (opcional) = calcularTrocas(generico.mensagens) — tempo de
  * resposta em CADA turno do cliente, não só o primeiro (ver slaEngine.js).
+ * `trocasPosTransferencia` (opcional) = a MESMA coisa, mas só contando
+ * mensagens depois da transferência — é o que separa o trabalho de quem
+ * aceita/transfere (ex.: recepção do Sucesso do Cliente) do trabalho de
+ * quem recebe o ticket transferido (o analista de fato responsável pelo
+ * atendimento dali em diante). Sem isso, um ticket aceito pela recepção e
+ * depois transferido pra um analista jogaria o tempo de resposta da
+ * recepção na conta do analista.
  */
-function montarLinhaTicket(generico, sla, vinculo, trocas = null) {
+function montarLinhaTicket(generico, sla, vinculo, trocas = null, trocasPosTransferencia = null) {
   return {
     zappy_id: generico.zappy_id,
     telefone: generico.telefone,
@@ -72,7 +110,12 @@ function montarLinhaTicket(generico, sla, vinculo, trocas = null) {
     transferencia: primeiraHoraPorTipo(generico.eventos, 'transferencia'),
     encerramento: primeiraHoraPorTipo(generico.eventos, 'encerramento'),
     nota_avaliacao: generico.nota_avaliacao,
-    sla: JSON.stringify({ relogios: sla.relogios, radar: sla.radar, trocas: trocas || [] }),
+    sla: JSON.stringify({
+      relogios: sla.relogios,
+      radar: sla.radar,
+      trocas: trocas || [],
+      trocasPosTransferencia: trocasPosTransferencia || [],
+    }),
     em_risco: !!(sla.radar && sla.radar.status && sla.radar.status !== 'verde'),
     pior_status: sla.radar ? sla.radar.status : null,
   };
@@ -221,8 +264,17 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
 
       const mensagensZappy = await zappyClient.obterMensagens(ticketZappy.id);
       const generico = traduzirTicket(ticketZappy, mensagensZappy, contexto);
+
+      // Transferência detectada por diferença entre coletas (ver resolverHoraTransferencia acima).
+      const horaTransferencia = await resolverHoraTransferencia(pool, generico.zappy_id, generico.analista, agora);
+      if (horaTransferencia) generico.eventos.push({ tipo: 'transferencia', hora: horaTransferencia });
+
       const sla = calcularSLA(generico, agora);
       const trocas = calcularTrocas(generico.mensagens, agora);
+      const mensagensPosTransferencia = horaTransferencia
+        ? generico.mensagens.filter(m => new Date(m.hora) > new Date(horaTransferencia))
+        : [];
+      const trocasPosTransferencia = calcularTrocas(mensagensPosTransferencia, agora);
 
       const vinculo = await garantirVinculo(pool, {
         nome: contato ? contato.name : null,
@@ -230,7 +282,7 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
         tags: contato ? contato.tags : null,
       });
 
-      const linha = montarLinhaTicket(generico, sla, vinculo, trocas);
+      const linha = montarLinhaTicket(generico, sla, vinculo, trocas, trocasPosTransferencia);
       await persistirTicket(pool, linha, generico.mensagens);
       processados++;
     } catch (e) {
@@ -256,12 +308,13 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
 }
 
 /**
- * Preenche o campo `trocas` (ver slaEngine.calcularTrocas) em tickets que
- * já foram ingeridos mas ainda não têm essa métrica — normal logo após o
- * deploy desta funcionalidade, já que ela não existia antes. Usa só dados
- * JÁ salvos (cs_mensagens), sem depender do Zappy, então é rápido e seguro
- * de rodar a cada execução periódica. Processa em lotes pequenos
- * (`limite`) pra não pesar a execução normal.
+ * Preenche os campos `trocas` e `trocasPosTransferencia` (ver
+ * slaEngine.calcularTrocas) em tickets que já foram ingeridos mas ainda não
+ * têm essas métricas — normal logo após o deploy de cada uma dessas
+ * funcionalidades, já que não existiam antes. Usa só dados JÁ salvos
+ * (cs_mensagens + a coluna `transferencia` do próprio ticket), sem depender
+ * do Zappy, então é rápido e seguro de rodar a cada execução periódica.
+ * Processa em lotes pequenos (`limite`) pra não pesar a execução normal.
  *
  * @param {object} pool
  * @param {object} [opts]
@@ -271,7 +324,7 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
  */
 async function preencherTrocasPendentes(pool, { agora = new Date(), limite = 50 } = {}) {
   const { rows: pendentes } = await pool.query(
-    `SELECT id, sla FROM cs_tickets WHERE sla->'trocas' IS NULL ORDER BY abertura DESC NULLS LAST LIMIT $1`,
+    `SELECT id, sla, transferencia FROM cs_tickets WHERE sla->'trocas' IS NULL OR sla->'trocasPosTransferencia' IS NULL ORDER BY abertura DESC NULLS LAST LIMIT $1`,
     [limite]
   );
   let atualizados = 0;
@@ -280,9 +333,16 @@ async function preencherTrocasPendentes(pool, { agora = new Date(), limite = 50 
       `SELECT remetente, hora FROM cs_mensagens WHERE ticket_id = $1 ORDER BY hora ASC`,
       [ticket.id]
     );
-    const trocas = calcularTrocas(mensagens, agora);
     const slaAtual = typeof ticket.sla === 'string' ? JSON.parse(ticket.sla || '{}') : (ticket.sla || {});
-    const novoSla = JSON.stringify({ ...slaAtual, trocas });
+    const trocas = slaAtual.trocas != null ? slaAtual.trocas : calcularTrocas(mensagens, agora);
+    let trocasPosTransferencia = slaAtual.trocasPosTransferencia;
+    if (trocasPosTransferencia == null) {
+      const mensagensPosTransferencia = ticket.transferencia
+        ? mensagens.filter(m => new Date(m.hora) > new Date(ticket.transferencia))
+        : [];
+      trocasPosTransferencia = calcularTrocas(mensagensPosTransferencia, agora);
+    }
+    const novoSla = JSON.stringify({ ...slaAtual, trocas, trocasPosTransferencia });
     await pool.query(`UPDATE cs_tickets SET sla = $1, updated_at = NOW() WHERE id = $2`, [novoSla, ticket.id]);
     atualizados++;
   }
@@ -346,4 +406,5 @@ module.exports = {
   obterDataInicio,
   obterUltimaExecucao,
   preencherTrocasPendentes,
+  resolverHoraTransferencia,
 };
