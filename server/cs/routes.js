@@ -440,6 +440,13 @@ router.get('/churn', requireAuth, requireAdmin, async (req, res) => {
     const pool = obterPool();
     const dias = Math.max(1, Math.min(365, parseInt(req.query.dias, 10) || 180));
 
+    await pool.query(`CREATE TABLE IF NOT EXISTS cs_churn_tratamentos (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      ticket_id UUID NOT NULL REFERENCES cs_tickets(id) ON DELETE CASCADE,
+      motivo TEXT, tratado_por TEXT, tratado_em TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (ticket_id)
+    )`).catch(() => {});
+
     const { rows } = await pool.query(`
       SELECT cm.texto, cm.hora, ct.id AS ticket_id, ct.zappy_id, ct.empresa_texto,
              ct.telefone, ct.analista, ct.departamento,
@@ -447,16 +454,19 @@ router.get('/churn', requireAuth, requireAdmin, async (req, res) => {
         FROM cs_mensagens cm
         JOIN cs_tickets ct ON ct.id = cm.ticket_id
         LEFT JOIN cs_vinculos cv ON cv.id = ct.vinculo_id
+        LEFT JOIN cs_churn_tratamentos tr ON tr.ticket_id = ct.id
        WHERE cm.remetente = 'cliente'
          AND cm.hora >= NOW() - ($1 || ' days')::interval
          AND cm.texto IS NOT NULL AND cm.texto <> ''
+         AND tr.id IS NULL
        ORDER BY cm.hora DESC
        LIMIT 5000
     `, [dias]);
 
     // Agrupa por empresa (vínculo confirmado > nome do contato > telefone),
     // guardando só a ocorrência mais recente + contagem, pra não repetir
-    // a mesma empresa várias vezes na lista.
+    // a mesma empresa várias vezes na lista. O ticket_id/zappy_id guardados
+    // são os da ocorrência mais recente — é nela que o botão "Tratar" age.
     const porEmpresa = new Map();
     for (const row of rows) {
       const frase = detectarSinalChurn(row.texto);
@@ -473,6 +483,7 @@ router.get('/churn', requireAuth, requireAdmin, async (req, res) => {
           ultima_hora: row.hora,
           frase_detectada: frase,
           trecho: row.texto,
+          ticket_id: row.ticket_id,
           zappy_id: row.zappy_id,
           analista: row.analista,
           departamento: row.departamento,
@@ -486,6 +497,38 @@ router.get('/churn', requireAuth, requireAdmin, async (req, res) => {
   } catch (e) {
     console.error('[cs] GET /churn falhou:', e);
     res.status(500).json({ error: 'Falha ao analisar possíveis churns: ' + e.message });
+  }
+});
+
+/**
+ * POST /api/cs/churn/:ticketId/tratar — marca o ticket como revisado (falso
+ * alarme / não é churn de verdade). A partir daí ele para de aparecer no
+ * GET /churn, mesmo que a mensagem continue batendo com alguma frase da
+ * lista. `motivo` é opcional, só pra registrar por que não é churn.
+ */
+router.post('/churn/:ticketId/tratar', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const { motivo } = req.body || {};
+    const tratadoPor = (req.user && (req.user.name || req.user.email || req.user.id)) || 'desconhecido';
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS cs_churn_tratamentos (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      ticket_id UUID NOT NULL REFERENCES cs_tickets(id) ON DELETE CASCADE,
+      motivo TEXT, tratado_por TEXT, tratado_em TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (ticket_id)
+    )`).catch(() => {});
+
+    await pool.query(
+      `INSERT INTO cs_churn_tratamentos (ticket_id, motivo, tratado_por)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (ticket_id) DO UPDATE SET motivo = EXCLUDED.motivo, tratado_por = EXCLUDED.tratado_por, tratado_em = NOW()`,
+      [req.params.ticketId, motivo || null, tratadoPor]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[cs] POST /churn/:ticketId/tratar falhou:', e);
+    res.status(500).json({ error: 'Falha ao marcar como tratado: ' + e.message });
   }
 });
 
