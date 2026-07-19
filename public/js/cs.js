@@ -1,100 +1,163 @@
 /**
  * Módulo Sucesso do Cliente — Frontend da aba "Agora"
  * ------------------------------------------------------------------
- * Segue a convenção descrita na Continuidade (seção 9 do CONTEXTO):
- * IIFE atribuída a window.App.<Modulo>. Vanilla JS, sem build.
+ * Convenção real confirmada no app.js (não a que eu tinha suposto antes):
+ * cada módulo é um IIFE atribuído a `window.NomeDoModulo` (ex.: window.Tickets,
+ * window.Carteira, window.Sensiveis) — NÃO window.App.<Modulo>. O objeto
+ * `App` (App.Toast, App.Modal, App.Util, App.Auth) é só o núcleo compartilhado.
  *
- * COMO INTEGRAR (não tenho acesso a public/js/app.js nem public/index.html
- * neste pacote — ver CONTEXTO seção 10 — então a integração final é manual):
+ * IMPORTANTE: o prefixo "cs-" já é usado pelo módulo "Clientes Sensíveis"
+ * (cs-pagination, cs-grid, cs-tbody...). Pra não colidir nem confundir,
+ * este arquivo usa o prefixo "radar-" nos ids/classes (o nome que a própria
+ * Continuidade já usa pra essa tela: "o radar de tickets fora do SLA").
  *
- * 1. Subir este arquivo em: public/js/cs.js
- * 2. Subir cs.css em: public/css/cs.css
- * 3. No index.html, dentro da área do SPA (onde ficam as outras telas/abas),
- *    adicionar um item de navegação para "Sucesso do Cliente" e o container:
+ * Nome do módulo: window.SucessoCliente (chave de página: "sucesso-cliente").
  *
- *      <div id="cs-agora-container" class="cs-agora"></div>
- *      <button class="btn" onclick="App.CS.ingerirAgora()">Atualizar agora</button>
+ * INTEGRAÇÃO (já ajustada para os arquivos reais que a Thais subiu):
  *
- *    e, perto dos outros <script src="js/..."> no fim do <body>:
+ * 1. public/index.html — nav item (perto do de Tickets, dentro da <nav class="sidebar-nav">):
+ *      <a class="nav-item admin-only" data-page="sucesso-cliente" href="#">
+ *        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+ *          <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+ *        </svg>Sucesso do Cliente
+ *      </a>
  *
+ * 2. public/index.html — seção da página (perto de <section id="page-tickets">):
+ *      <section id="page-sucesso-cliente" class="page admin-only" hidden>
+ *        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+ *          <div id="radar-resumo" style="color:var(--gray-500);font-size:13px"></div>
+ *          <div style="display:flex;gap:8px">
+ *            <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.testarConexao()">🔧 Testar conexão com Zappy</button>
+ *            <button class="btn btn-sm" onclick="SucessoCliente.ingerirAgora()">🔄 Atualizar agora</button>
+ *          </div>
+ *        </div>
+ *        <div id="radar-diagnostico"></div>
+ *        <div id="radar-container"></div>
+ *      </section>
+ *
+ * 3. public/index.html — no fim do <body>, perto dos outros <script src="js/...">:
  *      <link rel="stylesheet" href="css/cs.css">
  *      <script src="js/cs.js"></script>
  *
- * 4. Ao abrir a aba (no código que já troca de tela no app.js), chamar:
+ * 4. public/js/app.js — PAGE_TITLES (perto do topo, junto dos outros):
+ *      'sucesso-cliente':'Sucesso do Cliente',
  *
- *      App.CS.init('cs-agora-container');
- *
- *    E ao sair da aba (se o app tiver esse hook), chamar App.CS.destruir()
- *    para parar o auto-refresh.
- *
- * 5. Ajustar CS._authHeaders() abaixo para o jeito real que o app.js guarda
- *    o token JWT (procurar por "Authorization" ou "token" no app.js real).
+ * 5. public/js/app.js — dentro de Nav.go(page), junto das outras linhas "if (page === ...)":
+ *      if (page === 'sucesso-cliente') window.SucessoCliente?.load();
  */
 (function () {
   'use strict';
-  const App = window.App || (window.App = {});
 
-  const CS = {
-    _containerId: null,
+  const SucessoCliente = {
     _timer: null,
     _intervaloMs: 60000, // 1 min — ~600 tickets/mês é volume baixo, não precisa ser mais agressivo
 
-    /** Chamar ao abrir a aba "Agora". */
-    async init(containerId) {
-      this._containerId = containerId || 'cs-agora-container';
+    /** Chamado pelo Nav.go('sucesso-cliente') ao abrir a aba. */
+    async load() {
       await this.carregar();
       if (this._timer) clearInterval(this._timer);
       this._timer = setInterval(() => this.carregar(), this._intervaloMs);
     },
 
-    /** Chamar ao sair da aba, se o app tiver esse hook (evita polling em segundo plano). */
+    /** Opcional: parar o auto-refresh se algum dia o app tiver hook de "saiu da aba". */
     destruir() {
       if (this._timer) clearInterval(this._timer);
       this._timer = null;
     },
 
     async carregar() {
-      const container = document.getElementById(this._containerId);
+      const container = document.getElementById('radar-container');
+      const resumo = document.getElementById('radar-resumo');
       if (!container) return;
       try {
-        const resp = await fetch('/api/cs/agora', { headers: CS._authHeaders() });
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        const { tickets } = await resp.json();
-        CS._render(container, tickets || []);
+        const resp = await fetch('/api/cs/agora', { headers: SucessoCliente._authHeaders() });
+        const texto = await resp.text();
+        let data;
+        try { data = texto ? JSON.parse(texto) : {}; } catch (e) { data = null; }
+        if (!resp.ok || !data) {
+          const detalhe = data && data.error ? data.error : (texto || '').slice(0, 200);
+          throw new Error('HTTP ' + resp.status + (detalhe ? ' — ' + detalhe : ''));
+        }
+        const { tickets } = data;
+        SucessoCliente._render(container, tickets || []);
+        if (resumo) {
+          resumo.textContent = (tickets || []).length
+            ? `${tickets.length} ticket${tickets.length !== 1 ? 's' : ''} fora do SLA agora`
+            : 'Tudo dentro do SLA';
+        }
       } catch (e) {
-        container.innerHTML = '<p class="cs-erro">Não foi possível carregar o radar agora.</p>';
-        console.error('[CS.Agora] carregar()', e);
+        container.innerHTML =
+          '<p class="radar-erro">Não foi possível carregar o radar agora.</p>' +
+          '<p style="font-family:monospace;font-size:12px;color:var(--gray-500)">' + SucessoCliente._esc(e.message) + '</p>';
+        console.error('[SucessoCliente] carregar()', e);
       }
     },
 
     async ingerirAgora() {
       try {
-        const resp = await fetch('/api/cs/ingerir', { method: 'POST', headers: CS._authHeaders() });
+        const resp = await fetch('/api/cs/ingerir', { method: 'POST', headers: SucessoCliente._authHeaders() });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
-        if (App.Toast && App.Toast.ok) App.Toast.ok(`Ingestão concluída: ${data.processados} tickets atualizados.`);
-        await CS.carregar();
+        const extra = data.ignoradosPreDataInicio ? ` (${data.ignoradosPreDataInicio} ignorados por serem anteriores à data de início da coleta)` : '';
+        if (window.App && App.Toast) App.Toast.ok(`Ingestão concluída: ${data.processados} tickets atualizados${extra}.`);
+        await SucessoCliente.carregar();
       } catch (e) {
-        if (App.Toast && App.Toast.err) App.Toast.err('Falha ao atualizar tickets.');
-        console.error('[CS.Agora] ingerirAgora()', e);
+        if (window.App && App.Toast) App.Toast.err('Falha ao atualizar tickets.');
+        console.error('[SucessoCliente] ingerirAgora()', e);
       }
     },
 
+    /**
+     * Botão "Testar conexão com Zappy" — usa SÓ o endpoint que já sabemos
+     * que existe (GET /tickets/:id), sem depender do palpite do endpoint
+     * de listagem em lote. Pede um número de ticket real e mostra o
+     * resultado (ou o erro, já explicado) direto na tela — sem precisar
+     * abrir o Console do navegador.
+     */
+    async testarConexao() {
+      const div = document.getElementById('radar-diagnostico');
+      if (!div) return;
+      const ticketId = window.prompt('Número de um ticket REAL do Zappy pra testar (ex.: 46072):', '46072');
+      if (!ticketId) return;
+      div.innerHTML = '<p style="color:var(--gray-500)">Testando...</p>';
+      try {
+        const resp = await fetch('/api/cs/diagnostico?ticketId=' + encodeURIComponent(ticketId), {
+          headers: SucessoCliente._authHeaders(),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          div.innerHTML =
+            '<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:12px;margin-bottom:16px">' +
+            '<strong>✅ Conexão funcionando!</strong><br>' +
+            'Ticket #' + SucessoCliente._esc(data.ticket.id) + ' — status: ' + SucessoCliente._esc(data.ticket.status) +
+            (data.ticket.contact ? ' — contato: ' + SucessoCliente._esc(data.ticket.contact.name || '') : '') +
+            '</div>';
+        } else {
+          div.innerHTML =
+            '<div style="background:#fdecec;border:1px solid #f5b5b5;border-radius:8px;padding:12px;margin-bottom:16px">' +
+            '<strong>❌ Erro na conexão</strong><br>' +
+            '<span style="font-family:monospace;font-size:12px">' + SucessoCliente._esc(data.error) + '</span>' +
+            '</div>';
+        }
+      } catch (e) {
+        div.innerHTML = '<div style="background:#fdecec;border-radius:8px;padding:12px">❌ Falha ao testar: ' + SucessoCliente._esc(e.message) + '</div>';
+      }
+    },
+
+    // Mesmo padrão usado nos outros módulos do app.js (ex.: linha "const _tk = () => localStorage.getItem('ge_token') || '';")
     _authHeaders() {
-      // TODO: ajustar para o padrão real do app.js. Tentativa: token JWT em
-      // localStorage (comum neste tipo de app) — confirmar chave exata.
-      const token = localStorage.getItem('token') || localStorage.getItem('accessToken');
+      const token = localStorage.getItem('ge_token') || '';
       return token ? { Authorization: 'Bearer ' + token } : {};
     },
 
     _render(container, tickets) {
       if (!tickets.length) {
-        container.innerHTML = '<p class="cs-ok">✅ Nenhum ticket fora do SLA agora.</p>';
+        container.innerHTML = '<p class="radar-ok">✅ Nenhum ticket fora do SLA agora.</p>';
         return;
       }
-      const linhas = tickets.map(CS._linha).join('');
+      const linhas = tickets.map(SucessoCliente._linha).join('');
       container.innerHTML =
-        '<table class="cs-tabela">' +
+        '<table class="radar-tabela">' +
         '<thead><tr><th></th><th>Empresa</th><th>Departamento</th><th>Analista</th><th>Relógio</th><th>Tempo</th></tr></thead>' +
         '<tbody>' + linhas + '</tbody>' +
         '</table>';
@@ -109,13 +172,13 @@
       const relogio = radar ? radar.rotulo : '—';
       const tempo = radar ? (radar.minutos_uteis + ' min (limite ' + (radar.limite ?? '—') + ')') : '—';
       return (
-        '<tr class="cs-linha cs-' + (t.pior_status || '') + '">' +
+        '<tr class="radar-linha radar-' + (t.pior_status || '') + '">' +
         '<td>' + cor + '</td>' +
-        '<td>' + CS._esc(empresa) + '</td>' +
-        '<td>' + CS._esc(t.departamento || '—') + '</td>' +
-        '<td>' + CS._esc(t.analista || '—') + '</td>' +
-        '<td>' + CS._esc(relogio) + '</td>' +
-        '<td>' + CS._esc(tempo) + '</td>' +
+        '<td>' + SucessoCliente._esc(empresa) + '</td>' +
+        '<td>' + SucessoCliente._esc(t.departamento || '—') + '</td>' +
+        '<td>' + SucessoCliente._esc(t.analista || '—') + '</td>' +
+        '<td>' + SucessoCliente._esc(relogio) + '</td>' +
+        '<td>' + SucessoCliente._esc(tempo) + '</td>' +
         '</tr>'
       );
     },
@@ -126,5 +189,5 @@
     },
   };
 
-  App.CS = CS;
+  window.SucessoCliente = SucessoCliente;
 })();
