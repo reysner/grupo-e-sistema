@@ -473,6 +473,7 @@ const App = (() => {
           const dE = await resEtapas.json();
           Dashboard.renderChartEtapas(dE.porEtapa || []);
           Dashboard.renderChartAnalistaDepartamento(dE.porAnalistaDepartamento || []);
+          Dashboard.renderChartAnalistaRespostaContinua(dE.porAnalistaRespostaContinua || []);
         }
       } catch (e) {
         console.error('[Dashboard] carregarSucessoCliente()', e);
@@ -548,6 +549,50 @@ const App = (() => {
     },
 
     /**
+     * Ranking "resposta contínua" por analista — tempo de resposta em CADA
+     * turno do cliente ao longo da conversa (não só a 1ª vez), atribuído ao
+     * analista responsável final do ticket (a API do Zappy não guarda quem
+     * mandou cada mensagem individualmente). Pior primeiro.
+     */
+    renderChartAnalistaRespostaContinua(linhas) {
+      const id = 'cs-dash-analista-resposta';
+      if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
+      const ctx = document.getElementById(id);
+      if (!ctx) return;
+      if (!linhas || !linhas.length) {
+        ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados suficientes ainda (precisa de pelo menos 3 tickets com troca de mensagens por analista)</p>';
+        return;
+      }
+      const labels = linhas.map(r => r.label || 'Não informado');
+      const pctVals = linhas.map(r => r.pct ?? 0);
+      const mediaVals = linhas.map(r => r.media_minutos ?? 0);
+      const cores = pctVals.map(p => (p < 50 ? '#e53e3e' : p < 80 ? '#f5c518' : '#38a169'));
+      _charts[id] = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: '% dentro do SLA (toda a conversa)', data: pctVals, backgroundColor: cores, borderRadius: 4 }] },
+        options: {
+          indexAxis: 'y',
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { afterLabel: (item) => `Tempo médio: ${mediaVals[item.dataIndex]} min` } },
+          },
+          scales: {
+            x: { min: 0, max: 100, ticks: { font: { size: 10 }, callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
+            y: { ticks: { font: { size: 10 } }, grid: { display: false } },
+          },
+          onClick: async (evt, elementos) => {
+            if (!elementos.length) return;
+            const analista = labels[elementos[0].index];
+            Nav.go('sucesso-cliente');
+            await window.SucessoCliente?.load();
+            window.SucessoCliente?.filtrarPorAnalista(analista);
+          },
+        },
+      });
+    },
+
+    /**
      * "% dentro do SLA por etapa" — usa /api/cs/dashboard/etapas. Cada etapa
      * (aceite/transferência/departamento/promessa) já vem calculada e salva
      * por ticket (cs_tickets.sla) — aqui só resume tempo médio e % dentro
@@ -562,8 +607,8 @@ const App = (() => {
         ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados no período</p>';
         return;
       }
-      const ROTULOS = { aceite: 'Aceite', transferencia: 'Transferência', departamento: 'Analista (pós-transferência)', promessa: 'Promessa' };
-      const ORDEM = ['aceite', 'transferencia', 'departamento', 'promessa'];
+      const ROTULOS = { aceite: 'Aceite', transferencia: 'Transferência', departamento: 'Analista (pós-transferência)', promessa: 'Promessa', resposta_continua: 'Resposta contínua (toda a conversa)' };
+      const ORDEM = ['aceite', 'transferencia', 'departamento', 'promessa', 'resposta_continua'];
       const porChave = Object.fromEntries(linhas.map(r => [r.etapa, r]));
       const presentes = ORDEM.filter(k => porChave[k]);
       const labels = presentes.map(k => ROTULOS[k]);
