@@ -11,6 +11,7 @@
  *
  * Endpoints:
  *   GET  /api/cs/dashboard                 -> totais/gráficos (status SLA, departamento, analista)
+ *   GET  /api/cs/dashboard/etapas           -> quebra do SLA por etapa (aceite/transferência/departamento)
  *   GET  /api/cs/agora                    -> radar de tickets em risco (só vínculos tipo='cliente')
  *   GET  /api/cs/historico                 -> lista de tickets p/ tela de relatórios (filtros: departamento/analista/status)
  *   GET  /api/cs/filtros                   -> opções de departamento/analista já vistas, p/ popular os selects
@@ -256,6 +257,98 @@ router.get('/dashboard', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('[cs] GET /dashboard falhou:', e);
     res.status(500).json({ error: 'Falha ao carregar dashboard: ' + e.message });
+  }
+});
+
+/**
+ * GET /api/cs/dashboard/etapas — quebra do SLA POR ETAPA, usando os relógios
+ * que o motor de SLA já calcula e guarda por ticket (cs_tickets.sla, JSONB):
+ *   aceite         -> quanto tempo a equipe leva pra aceitar/responder o 1º contato
+ *   transferencia  -> quanto tempo leva do aceite até encaminhar pro departamento certo
+ *   departamento   -> quanto tempo o analista leva pra responder DEPOIS de receber
+ *                     o ticket transferido (é o que responde "o analista após a
+ *                     transferência" e "a bola foi devolvida e demorou")
+ *   promessa       -> quando respondem antes de transferir e demoram a encaminhar
+ * Só entra relógio já CONCLUÍDO (em_curso=false) — os que ainda estão correndo
+ * agora distorceriam a média (isso é papel do radar "Agora", não daqui).
+ * `vez_cliente` não tem limite de SLA (ver tempoUtil.LIMITES) e sai como
+ * status='neutro', então já fica fora automaticamente.
+ *
+ * Mesmos filtros do /dashboard: ?period=todos|hoje|semana|mes OU ?ano=&mes=,
+ * e opcionalmente ?analista=Nome.
+ *
+ * Limitação conhecida: essas etapas medem a PRIMEIRA resposta de cada trecho
+ * (aceite, e 1ª resposta após a transferência) — não existe hoje uma métrica
+ * de "tempo de resposta a cada troca de mensagem" ao longo da conversa toda.
+ */
+router.get('/dashboard/etapas', requireAuth, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const condicoes = [];
+    const params = [];
+
+    if (req.query.period) {
+      const intervalo = intervaloPorPeriod(req.query.period);
+      if (intervalo) {
+        params.push(intervalo[0].toISOString(), intervalo[1].toISOString());
+        condicoes.push(`t.abertura >= $${params.length - 1}`, `t.abertura <= $${params.length}`);
+      }
+    } else {
+      const ano = req.query.ano ? parseInt(req.query.ano, 10) : null;
+      const mes = req.query.mes ? parseInt(req.query.mes, 10) : null;
+      if (ano) { params.push(ano); condicoes.push(`EXTRACT(YEAR FROM t.abertura) = $${params.length}::int`); }
+      if (mes) { params.push(mes); condicoes.push(`EXTRACT(MONTH FROM t.abertura) = $${params.length}::int`); }
+    }
+    if (req.query.analista) { params.push(req.query.analista); condicoes.push(`t.analista = $${params.length}`); }
+    condicoes.unshift('TRUE');
+    const cond = 'WHERE ' + condicoes.join(' AND ');
+
+    const [porEtapa, porAnalistaDepto] = await Promise.all([
+      // Visão geral: tempo médio e % dentro do SLA de cada etapa.
+      pool.query(`
+        SELECT r->>'tipo' AS etapa,
+               COUNT(*)::int AS total,
+               ROUND(AVG((r->>'minutos_uteis')::numeric))::int AS media_minutos,
+               COUNT(*) FILTER (WHERE r->>'status' = 'verde')::int AS verdes,
+               COUNT(*) FILTER (WHERE r->>'status' = 'amarelo')::int AS amarelos,
+               COUNT(*) FILTER (WHERE r->>'status' = 'vermelho')::int AS vermelhos
+          FROM cs_tickets t,
+               LATERAL jsonb_array_elements(COALESCE(t.sla->'relogios', '[]'::jsonb)) AS r
+          ${cond} AND r->>'status' <> 'neutro' AND r->>'em_curso' = 'false'
+         GROUP BY r->>'tipo'
+      `, params),
+      // Ranking por analista SÓ na etapa "departamento" (resposta pós-transferência) —
+      // pior primeiro, exige pelo menos 3 tickets no período (mesmo critério do /dashboard).
+      pool.query(`
+        SELECT t.analista AS label,
+               COUNT(*)::int AS total,
+               ROUND(AVG((r->>'minutos_uteis')::numeric))::int AS media_minutos,
+               COUNT(*) FILTER (WHERE r->>'status' = 'verde')::int AS verdes,
+               COUNT(*) FILTER (WHERE r->>'status' = 'amarelo')::int AS amarelos,
+               COUNT(*) FILTER (WHERE r->>'status' = 'vermelho')::int AS vermelhos
+          FROM cs_tickets t,
+               LATERAL jsonb_array_elements(COALESCE(t.sla->'relogios', '[]'::jsonb)) AS r
+          ${cond} AND r->>'tipo' = 'departamento' AND t.analista IS NOT NULL AND r->>'em_curso' = 'false'
+         GROUP BY t.analista
+        HAVING COUNT(*) >= 3
+         ORDER BY (COUNT(*) FILTER (WHERE r->>'status' = 'verde')::float / COUNT(*)) ASC
+         LIMIT 15
+      `, params),
+    ]);
+
+    res.json({
+      porEtapa: porEtapa.rows.map(r => ({
+        ...r,
+        pct: r.total ? Math.round((r.verdes / r.total) * 100) : null,
+      })),
+      porAnalistaDepartamento: porAnalistaDepto.rows.map(r => ({
+        ...r,
+        pct: r.total ? Math.round((r.verdes / r.total) * 100) : null,
+      })),
+    });
+  } catch (e) {
+    console.error('[cs] GET /dashboard/etapas falhou:', e);
+    res.status(500).json({ error: 'Falha ao carregar quebra por etapa: ' + e.message });
   }
 });
 
