@@ -368,6 +368,15 @@ const App = (() => {
   const CHART_COLORS = ['#1a4233','#f5c518','#3182ce','#e53e3e','#38a169','#d69e2e','#9b2c2c','#2c7a7b'];
   let _charts = {};
 
+  /** Converte minutos (número) em "Xh Ymin" (ou só "Ymin" se < 1h) — pra tooltip de gráfico. */
+  function formatarMinutos(min) {
+    const n = Math.round(Number(min) || 0);
+    if (n < 60) return `${n} min`;
+    const h = Math.floor(n / 60);
+    const m = n % 60;
+    return m ? `${h}h ${m}min` : `${h}h`;
+  }
+
   const Dashboard = {
     async load() {
       const period   = document.getElementById('dash-period').value;
@@ -575,7 +584,7 @@ const App = (() => {
           responsive: true, maintainAspectRatio: false,
           plugins: {
             legend: { display: false },
-            tooltip: { callbacks: { afterLabel: (item) => `Tempo médio: ${mediaVals[item.dataIndex]} min` } },
+            tooltip: { callbacks: { afterLabel: (item) => `Tempo médio: ${formatarMinutos(mediaVals[item.dataIndex])}` } },
           },
           scales: {
             x: { min: 0, max: 100, ticks: { font: { size: 10 }, callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
@@ -622,7 +631,7 @@ const App = (() => {
           responsive: true, maintainAspectRatio: false,
           plugins: {
             legend: { display: false },
-            tooltip: { callbacks: { afterLabel: (item) => `Tempo médio: ${mediaVals[item.dataIndex]} min` } },
+            tooltip: { callbacks: { afterLabel: (item) => `Tempo médio: ${formatarMinutos(mediaVals[item.dataIndex])}` } },
           },
           scales: {
             y: { min: 0, max: 100, ticks: { font: { size: 10 }, callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
@@ -659,7 +668,7 @@ const App = (() => {
           responsive: true, maintainAspectRatio: false,
           plugins: {
             legend: { display: false },
-            tooltip: { callbacks: { afterLabel: (item) => `Tempo médio: ${mediaVals[item.dataIndex]} min` } },
+            tooltip: { callbacks: { afterLabel: (item) => `Tempo médio: ${formatarMinutos(mediaVals[item.dataIndex])}` } },
           },
           scales: {
             x: { min: 0, max: 100, ticks: { font: { size: 10 }, callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
