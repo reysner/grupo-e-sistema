@@ -3204,7 +3204,137 @@ const Gestao = (() => {
   }
 
   function goPage(p) { _page = p; const f = _filterData(_allData); const pg = App.Util.paginate(f, p); _renderGrid(pg.items); App.Util.renderPagination('gc-pagination', pg.page, pg.pages, pg.total, 'Gestao.goPage'); }
-  return { loadGrid, exportCSV, exportPDF, limpar, excluir, goPage };
+
+  // ── Importação em massa (planilha .xlsx/.csv) ───────────────────────────────
+  // Nunca pergunta sobre abrir ticket — isso é só do fluxo manual (ver Forms.gestao()).
+  function _semAcentos(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+  function _chaveNormalizada(s) { return _semAcentos(s).toLowerCase().trim().replace(/\s+/g, ' ').replace(/\s*\*\s*$/, ''); }
+
+  // Cada campo aceita algumas variações de cabeçalho (maiúsculas/acentos não importam).
+  const _CABECALHOS = {
+    analista: ['analista responsavel', 'analista', 'analista responsável'],
+    solicitacao: ['solicitacao', 'solicitação'],
+    cnpj: ['cnpj'],
+    empresa: ['empresa'],
+    codigo: ['codigo do cliente', 'codigo', 'código do cliente', 'código'],
+    data_sol: ['data da solicitacao', 'data solicitacao', 'data da solicitação'],
+    competencia: ['fim da competencia', 'competencia', 'fim da competência', 'competência'],
+    canal: ['canal da solicitacao', 'canal', 'canal da solicitação'],
+    regime_tributario: ['regime tributario', 'regime', 'regime tributário'],
+    motivo: ['motivo'],
+    data_entrada: ['data de entrada do cliente', 'data de entrada', 'data entrada'],
+    honorario_inicial: ['honorario inicial (r$)', 'honorario inicial', 'honorário inicial (r$)', 'honorário inicial'],
+    origem: ['origem do cliente', 'origem'],
+    data_saida: ['data de encerramento', 'data de saida', 'data encerramento', 'data de saída'],
+  };
+
+  function _valorPorCampo(linhaBruta, campo) {
+    const variantes = _CABECALHOS[campo];
+    for (const chaveOriginal of Object.keys(linhaBruta)) {
+      if (variantes.includes(_chaveNormalizada(chaveOriginal))) return linhaBruta[chaveOriginal];
+    }
+    return '';
+  }
+
+  /** Converte Date/serial/"dd/mm/aaaa"/"aaaa-mm-dd" em "aaaa-mm-dd". Vazio se não reconhecer. */
+  function _normalizarData(v) {
+    if (v == null || v === '') return '';
+    if (v instanceof Date) {
+      const y = v.getUTCFullYear(), m = String(v.getUTCMonth() + 1).padStart(2, '0'), d = String(v.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    const s = String(v).trim();
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    return '';
+  }
+
+  /** Converte Date/serial/"mm/aaaa"/"aaaa-mm" em "aaaa-mm". Vazio se não reconhecer. */
+  function _normalizarCompetencia(v) {
+    if (v == null || v === '') return '';
+    if (v instanceof Date) {
+      return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, '0')}`;
+    }
+    const s = String(v).trim();
+    let m = s.match(/^(\d{4})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2]}`;
+    m = s.match(/^(\d{1,2})\/(\d{4})$/);
+    if (m) return `${m[2]}-${m[1].padStart(2, '0')}`;
+    return '';
+  }
+
+  function _linhaPlanilhaParaLinhaImportacao(bruta) {
+    return {
+      analista: String(_valorPorCampo(bruta, 'analista') || '').trim(),
+      solicitacao: String(_valorPorCampo(bruta, 'solicitacao') || '').trim(),
+      cnpj: String(_valorPorCampo(bruta, 'cnpj') || '').trim(),
+      empresa: String(_valorPorCampo(bruta, 'empresa') || '').trim(),
+      codigo: String(_valorPorCampo(bruta, 'codigo') || '').trim() || null,
+      data_sol: _normalizarData(_valorPorCampo(bruta, 'data_sol')),
+      competencia: _normalizarCompetencia(_valorPorCampo(bruta, 'competencia')),
+      canal: String(_valorPorCampo(bruta, 'canal') || '').trim(),
+      regime_tributario: String(_valorPorCampo(bruta, 'regime_tributario') || '').trim(),
+      motivo: String(_valorPorCampo(bruta, 'motivo') || '').trim() || null,
+      data_entrada: _normalizarData(_valorPorCampo(bruta, 'data_entrada')),
+      honorario_inicial: parseFloat(String(_valorPorCampo(bruta, 'honorario_inicial') || '').replace(',', '.')) || null,
+      origem: String(_valorPorCampo(bruta, 'origem') || '').trim() || null,
+      data_saida: _normalizarData(_valorPorCampo(bruta, 'data_saida')),
+    };
+  }
+
+  function _resultadoImportacaoHTML(r) {
+    const listaErros = (r.erros || []).map(e => `<li><strong>Linha ${e.linha}</strong> (${_esc(e.empresa)}): ${_esc(e.motivo)}</li>`).join('');
+    const listaAvisos = (r.avisos || []).map(a => `<li><strong>Linha ${a.linha}</strong> (${_esc(a.empresa)}): ${_esc(a.motivo)}</li>`).join('');
+    return `<div style="padding:6px 0">
+      <p style="font-size:28px;font-weight:800;color:#38a169;margin:0 0 4px">${r.processados}</p>
+      <p style="color:var(--gray-500);font-size:13px;margin-bottom:16px">registro${r.processados !== 1 ? 's' : ''} importado${r.processados !== 1 ? 's' : ''} com sucesso</p>
+      ${listaAvisos ? `<div style="margin-bottom:14px"><p style="font-weight:700;color:#d69e2e;font-size:13px;margin-bottom:6px">⚠️ Avisos (${r.avisos.length})</p><ul style="font-size:12px;color:var(--gray-600);padding-left:18px;max-height:160px;overflow:auto">${listaAvisos}</ul></div>` : ''}
+      ${listaErros ? `<div><p style="font-weight:700;color:#e53e3e;font-size:13px;margin-bottom:6px">❌ Linhas com erro — não foram importadas (${r.erros.length})</p><ul style="font-size:12px;color:var(--gray-600);padding-left:18px;max-height:160px;overflow:auto">${listaErros}</ul></div>` : ''}
+      <div style="text-align:right;margin-top:16px"><button class="btn btn-primary" onclick="App.Modal.close()">Entendi</button></div>
+    </div>`;
+  }
+  function _esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+
+  async function importarPlanilha(file) {
+    const input = document.getElementById('gc-import-file');
+    if (!file) return;
+    if (!App.Auth.isAdmin()) { App.Toast.err('Importação restrita a administradores.'); if (input) input.value = ''; return; }
+    if (typeof XLSX === 'undefined') { App.Toast.err('Biblioteca de planilha não carregou — recarregue a página e tente de novo.'); if (input) input.value = ''; return; }
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const brutas = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      const linhas = brutas
+        .map(_linhaPlanilhaParaLinhaImportacao)
+        .filter(l => l.analista || l.empresa || l.cnpj); // ignora linhas totalmente vazias no fim da planilha
+      if (!linhas.length) { App.Toast.err('Não encontrei nenhuma linha com dados na planilha.'); if (input) input.value = ''; return; }
+
+      App.Toast.ok(`Importando ${linhas.length} linha(s)...`);
+      const res = await fetch('/api/data/gestao/importar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_token()}` },
+        body: JSON.stringify({ linhas }),
+      });
+      if (!res || !res.ok) {
+        const err = await res?.json().catch(() => ({}));
+        App.Toast.err(err?.error || 'Erro ao importar planilha.');
+        return;
+      }
+      const resultado = await res.json();
+      App.Modal.open('📤 Resultado da importação', _resultadoImportacaoHTML(resultado), () => {}, { noFooter: true });
+      loadGrid();
+    } catch (e) {
+      console.error('[Gestao] importarPlanilha', e);
+      App.Toast.err('Não consegui ler essa planilha. Confirme se é um .xlsx, .xls ou .csv válido.');
+    } finally {
+      if (input) input.value = '';
+    }
+  }
+
+  return { loadGrid, exportCSV, exportPDF, limpar, excluir, goPage, importarPlanilha };
 })();
 
 window.Gestao = Gestao;
