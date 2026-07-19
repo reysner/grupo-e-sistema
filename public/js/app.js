@@ -165,15 +165,17 @@ const App = (() => {
       const name     = Util.val('reg-name');
       const email    = Util.val('reg-email');
       const password = Util.val('reg-pass');
-      const role     = document.getElementById('reg-role').value;
 
       if (!name || !email || !password) { Auth.showAlert('Preencha todos os campos.'); return; }
       if (password.length < 6) { Auth.showAlert('Senha deve ter ao menos 6 caracteres.'); return; }
 
+      // Cadastro público sempre cria como "usuário" — o backend ignora
+      // qualquer perfil enviado aqui. Virar administrador/contábil só é
+      // feito depois, manualmente, por um admin (Administração → Usuários).
       const res  = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password, role }),
+        body: JSON.stringify({ name, email, password }),
       });
       const data = await res.json();
       if (!res.ok) { Auth.showAlert(data.error); return; }
@@ -2036,14 +2038,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Dashboard
   document.getElementById('dash-period')?.addEventListener('change', () => App.Dashboard.load());
-  document.getElementById('btn-clear-dash')?.addEventListener('click', () => App.Dashboard.clear());
 
   // Forms
   document.getElementById('btn-at-save')?.addEventListener('click', () => App.Forms.atendimento());
   document.getElementById('btn-gc-save')?.addEventListener('click', () => App.Forms.gestao());
   document.getElementById('btn-in-save')?.addEventListener('click', () => App.Forms.insatisfacao());
   document.getElementById('btn-cs-save')?.addEventListener('click', () => App.Forms.sensiveis());
-  document.getElementById('btn-ps-save')?.addEventListener('click', () => App.Forms.pesquisas());
   document.getElementById('btn-rc-save')?.addEventListener('click', () => App.Forms.recuperacao());
 
   // CNPJ masks
@@ -4941,76 +4941,6 @@ window.Tickets = Tickets;
       } catch (e) {
         if (window.App && App.Toast) App.Toast.err('Falha ao iniciar carga retroativa: ' + e.message);
         console.error('[SucessoCliente] iniciarBackfill()', e);
-      }
-    },
-
-    /** Botão "📊 Dashboard" — mostra/esconde o painel e carrega na primeira vez que abre. */
-    async toggleDashboard() {
-      const painel = document.getElementById('cs-dashboard');
-      if (!painel) return;
-      painel.hidden = !painel.hidden;
-      if (!painel.hidden) await SucessoCliente.carregarDashboard();
-    },
-
-    /**
-     * Busca os totais (GET /api/cs/dashboard) e desenha os 3 gráficos +
-     * cartões de KPI. Usa Chart.js, que já é carregado globalmente pelo
-     * Dashboard principal do app (window.Chart) — não precisa de outro <script>.
-     */
-    async carregarDashboard() {
-      const painel = document.getElementById('cs-dashboard');
-      if (!painel) return;
-      const selAno = document.getElementById('cs-dash-ano');
-      const selMes = document.getElementById('cs-dash-mes');
-      const ano = (selAno || {}).value || '';
-      const mes = (selMes || {}).value || '';
-      try {
-        const qs = new URLSearchParams();
-        if (ano) qs.set('ano', ano);
-        if (mes) qs.set('mes', mes);
-        const resp = await fetch('/api/cs/dashboard?' + qs.toString(), { headers: SucessoCliente._authHeaders() });
-        const texto = await resp.text();
-        let data;
-        try { data = texto ? JSON.parse(texto) : {}; } catch (e) { data = null; }
-        if (!resp.ok || !data) {
-          const detalhe = data && data.error ? data.error : (texto || '').slice(0, 200);
-          throw new Error('HTTP ' + resp.status + (detalhe ? ' — ' + detalhe : ''));
-        }
-
-        // Popula o select de anos uma vez (sem apagar o que o usuário já escolheu).
-        if (selAno && !selAno.dataset.preenchido) {
-          const atual = selAno.value;
-          (data.anos || []).forEach(a => {
-            const opt = document.createElement('option');
-            opt.value = String(a);
-            opt.textContent = String(a);
-            selAno.appendChild(opt);
-          });
-          selAno.value = atual;
-          selAno.dataset.preenchido = '1';
-        }
-
-        const total = data.totalTickets || 0;
-        const risco = data.emRiscoAgora || 0;
-        const verde = (data.porStatus || []).filter(r => r.label === 'verde').reduce((s, r) => s + r.n, 0);
-        const pct = total ? Math.round((verde / total) * 100) : null;
-
-        const kpiTotal = document.getElementById('cs-kpi-total');
-        const kpiRisco = document.getElementById('cs-kpi-risco');
-        const kpiPct = document.getElementById('cs-kpi-pct');
-        if (kpiTotal) kpiTotal.textContent = total;
-        if (kpiRisco) kpiRisco.textContent = risco;
-        if (kpiPct) kpiPct.textContent = pct != null ? pct + '%' : '—';
-
-        SucessoCliente._renderChartStatus('cs-chart-status', data.porStatus || []);
-        SucessoCliente._renderChart('cs-chart-departamento', 'bar', data.porDepartamento || [], 'Departamento');
-        SucessoCliente._renderChart('cs-chart-analista', 'bar', data.porAnalista || [], 'Analista', { indexAxis: 'y' });
-        SucessoCliente._renderChartDesempenho(data.desempenhoAnalistas || []);
-      } catch (e) {
-        painel.innerHTML =
-          '<p class="radar-erro">Não foi possível carregar o dashboard.</p>' +
-          '<p style="font-family:monospace;font-size:12px;color:var(--gray-500)">' + SucessoCliente._esc(e.message) + '</p>';
-        console.error('[SucessoCliente] carregarDashboard()', e);
       }
     },
 
