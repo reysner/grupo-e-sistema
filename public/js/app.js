@@ -682,6 +682,16 @@ const App = (() => {
             y: { min: 0, max: 100, ticks: { font: { size: 10 }, callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
             x: { ticks: { font: { size: 10 } }, grid: { display: false } },
           },
+          // Clicar numa barra (ex.: "Promessa de transferência") leva pro
+          // Histórico já filtrado pelos tickets vermelhos DAQUELA etapa —
+          // são os que justificam o % baixo mostrado na barra.
+          onClick: async (evt, elementos) => {
+            if (!elementos.length) return;
+            const etapaChave = presentes[elementos[0].index];
+            Nav.go('sucesso-cliente');
+            await window.SucessoCliente?.load();
+            window.SucessoCliente?.filtrarPorEtapa(etapaChave);
+          },
         },
       });
     },
@@ -5085,6 +5095,26 @@ window.Tickets = Tickets;
     },
 
     /**
+     * Ao clicar numa barra do gráfico "% dentro do SLA por etapa": filtra o
+     * Histórico pelos tickets vermelhos NAQUELA etapa específica (não pelo
+     * status geral do ticket) — são exatamente os tickets que justificam
+     * o número baixo mostrado na barra.
+     */
+    filtrarPorEtapa(etapaChave) {
+      const selEtapa = document.getElementById('hist-etapa');
+      const selStatus = document.getElementById('hist-status');
+      const selAna = document.getElementById('hist-analista');
+      const selDepto = document.getElementById('hist-departamento');
+      if (selEtapa) selEtapa.value = etapaChave;
+      if (selStatus) selStatus.value = 'vermelho';
+      if (selAna) selAna.value = '';
+      if (selDepto) selDepto.value = '';
+      SucessoCliente.filtrarHistorico();
+      const container = document.getElementById('hist-container');
+      if (container) container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+
+    /**
      * Doughnut "Status do SLA" — cor FIXA por significado (verde/amarelo/
      * vermelho), nunca por posição na lista. O `_renderChart` genérico
      * (usado nos outros gráficos) pinta pela ordem em que o banco devolveu
@@ -5230,12 +5260,14 @@ window.Tickets = Tickets;
       const departamento = (document.getElementById('hist-departamento') || {}).value || '';
       const analista = (document.getElementById('hist-analista') || {}).value || '';
       const status = (document.getElementById('hist-status') || {}).value || '';
+      const etapa = (document.getElementById('hist-etapa') || {}).value || '';
       container.innerHTML = '<p style="color:var(--gray-500)">Carregando...</p>';
       try {
         const qs = new URLSearchParams();
         if (departamento) qs.set('departamento', departamento);
         if (analista) qs.set('analista', analista);
         if (status) qs.set('status', status);
+        if (etapa) qs.set('etapa', etapa);
         const resp = await fetch('/api/cs/historico?' + qs.toString(), { headers: SucessoCliente._authHeaders() });
         const texto = await resp.text();
         let data;
