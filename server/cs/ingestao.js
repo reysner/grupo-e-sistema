@@ -14,7 +14,7 @@
  * banco real (ver testes_ingestao.js).
  */
 const { traduzirTicket } = require('./tradutorZappy');
-const { calcularSLA } = require('./slaEngine');
+const { calcularSLA, calcularTrocas } = require('./slaEngine');
 const { garantirVinculo } = require('./vinculos');
 
 const CHAVE_DATA_INICIO = 'ingestao_data_inicio';
@@ -55,8 +55,10 @@ function primeiraHoraPorTipo(eventos, tipo) {
  * Monta a linha pronta para UPSERT em cs_tickets a partir do ticket
  * traduzido + resultado do motor de SLA + vínculo resolvido.
  * Função PURA (sem I/O) — fácil de testar isolada.
+ * `trocas` (opcional) = calcularTrocas(generico.mensagens) — tempo de
+ * resposta em CADA turno do cliente, não só o primeiro (ver slaEngine.js).
  */
-function montarLinhaTicket(generico, sla, vinculo) {
+function montarLinhaTicket(generico, sla, vinculo, trocas = null) {
   return {
     zappy_id: generico.zappy_id,
     telefone: generico.telefone,
@@ -70,7 +72,7 @@ function montarLinhaTicket(generico, sla, vinculo) {
     transferencia: primeiraHoraPorTipo(generico.eventos, 'transferencia'),
     encerramento: primeiraHoraPorTipo(generico.eventos, 'encerramento'),
     nota_avaliacao: generico.nota_avaliacao,
-    sla: JSON.stringify({ relogios: sla.relogios, radar: sla.radar }),
+    sla: JSON.stringify({ relogios: sla.relogios, radar: sla.radar, trocas: trocas || [] }),
     em_risco: !!(sla.radar && sla.radar.status && sla.radar.status !== 'verde'),
     pior_status: sla.radar ? sla.radar.status : null,
   };
@@ -220,6 +222,7 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
       const mensagensZappy = await zappyClient.obterMensagens(ticketZappy.id);
       const generico = traduzirTicket(ticketZappy, mensagensZappy, contexto);
       const sla = calcularSLA(generico, agora);
+      const trocas = calcularTrocas(generico.mensagens, agora);
 
       const vinculo = await garantirVinculo(pool, {
         nome: contato ? contato.name : null,
@@ -227,7 +230,7 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
         tags: contato ? contato.tags : null,
       });
 
-      const linha = montarLinhaTicket(generico, sla, vinculo);
+      const linha = montarLinhaTicket(generico, sla, vinculo, trocas);
       await persistirTicket(pool, linha, generico.mensagens);
       processados++;
     } catch (e) {
@@ -236,7 +239,54 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
   }
 
   await marcarUltimaExecucao(pool, agora);
-  return { processados, ignoradosPreDataInicio, erros, ticketsComAtividade: ticketIds.length };
+
+  // Preenche "trocas" (resposta em toda a conversa) em tickets antigos que
+  // ainda não têm esse campo — SEM chamar o Zappy de novo, só reprocessando
+  // mensagens já salvas em cs_mensagens. Roda um pouquinho a cada execução
+  // (a cada 5 min) até alcançar todo o histórico. Falha aqui não deve
+  // derrubar o resultado da ingestão normal.
+  let trocasPreenchidas = 0;
+  try {
+    trocasPreenchidas = await preencherTrocasPendentes(pool, { agora });
+  } catch (e) {
+    console.error('[CS] preencherTrocasPendentes falhou (ingestão normal seguiu OK):', e.message);
+  }
+
+  return { processados, ignoradosPreDataInicio, erros, ticketsComAtividade: ticketIds.length, trocasPreenchidas };
+}
+
+/**
+ * Preenche o campo `trocas` (ver slaEngine.calcularTrocas) em tickets que
+ * já foram ingeridos mas ainda não têm essa métrica — normal logo após o
+ * deploy desta funcionalidade, já que ela não existia antes. Usa só dados
+ * JÁ salvos (cs_mensagens), sem depender do Zappy, então é rápido e seguro
+ * de rodar a cada execução periódica. Processa em lotes pequenos
+ * (`limite`) pra não pesar a execução normal.
+ *
+ * @param {object} pool
+ * @param {object} [opts]
+ * @param {Date}   [opts.agora]
+ * @param {number} [opts.limite]  quantos tickets tenta por execução (default 50)
+ * @returns {number} quantos tickets foram atualizados nesta chamada
+ */
+async function preencherTrocasPendentes(pool, { agora = new Date(), limite = 50 } = {}) {
+  const { rows: pendentes } = await pool.query(
+    `SELECT id, sla FROM cs_tickets WHERE sla->'trocas' IS NULL ORDER BY abertura DESC NULLS LAST LIMIT $1`,
+    [limite]
+  );
+  let atualizados = 0;
+  for (const ticket of pendentes) {
+    const { rows: mensagens } = await pool.query(
+      `SELECT remetente, hora FROM cs_mensagens WHERE ticket_id = $1 ORDER BY hora ASC`,
+      [ticket.id]
+    );
+    const trocas = calcularTrocas(mensagens, agora);
+    const slaAtual = typeof ticket.sla === 'string' ? JSON.parse(ticket.sla || '{}') : (ticket.sla || {});
+    const novoSla = JSON.stringify({ ...slaAtual, trocas });
+    await pool.query(`UPDATE cs_tickets SET sla = $1, updated_at = NOW() WHERE id = $2`, [novoSla, ticket.id]);
+    atualizados++;
+  }
+  return atualizados;
 }
 
 /**
@@ -295,4 +345,5 @@ module.exports = {
   primeiraHoraPorTipo,
   obterDataInicio,
   obterUltimaExecucao,
+  preencherTrocasPendentes,
 };
