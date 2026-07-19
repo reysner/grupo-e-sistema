@@ -277,9 +277,10 @@ router.get('/dashboard', requireAuth, async (req, res) => {
  * Mesmos filtros do /dashboard: ?period=todos|hoje|semana|mes OU ?ano=&mes=,
  * e opcionalmente ?analista=Nome.
  *
- * Limitação conhecida: essas etapas medem a PRIMEIRA resposta de cada trecho
- * (aceite, e 1ª resposta após a transferência) — não existe hoje uma métrica
- * de "tempo de resposta a cada troca de mensagem" ao longo da conversa toda.
+ * Também inclui "resposta_continua" (dentro de porEtapa) e
+ * porAnalistaRespostaContinua: tempo de resposta em CADA turno do cliente
+ * ao longo da conversa inteira (não só a 1ª resposta), vindo de
+ * sla->'trocas' — ver slaEngine.calcularTrocas / ingestao.js.
  */
 router.get('/dashboard/etapas', requireAuth, async (req, res) => {
   try {
@@ -303,8 +304,8 @@ router.get('/dashboard/etapas', requireAuth, async (req, res) => {
     condicoes.unshift('TRUE');
     const cond = 'WHERE ' + condicoes.join(' AND ');
 
-    const [porEtapa, porAnalistaDepto] = await Promise.all([
-      // Visão geral: tempo médio e % dentro do SLA de cada etapa.
+    const [porEtapa, porAnalistaDepto, respostaContinua, porAnalistaResposta] = await Promise.all([
+      // Visão geral: tempo médio e % dentro do SLA de cada etapa (1ª resposta de cada trecho).
       pool.query(`
         SELECT r->>'tipo' AS etapa,
                COUNT(*)::int AS total,
@@ -334,17 +335,51 @@ router.get('/dashboard/etapas', requireAuth, async (req, res) => {
          ORDER BY (COUNT(*) FILTER (WHERE r->>'status' = 'verde')::float / COUNT(*)) ASC
          LIMIT 15
       `, params),
+      // "Resposta contínua": tempo médio e % dentro do SLA em CADA turno do
+      // cliente ao longo da conversa inteira (não só a 1ª resposta) —
+      // vem de sla->'trocas' (ver slaEngine.calcularTrocas / ingestao.js).
+      pool.query(`
+        SELECT COUNT(*)::int AS total,
+               ROUND(AVG((r->>'minutos_uteis')::numeric))::int AS media_minutos,
+               COUNT(*) FILTER (WHERE r->>'status' = 'verde')::int AS verdes,
+               COUNT(*) FILTER (WHERE r->>'status' = 'amarelo')::int AS amarelos,
+               COUNT(*) FILTER (WHERE r->>'status' = 'vermelho')::int AS vermelhos
+          FROM cs_tickets t,
+               LATERAL jsonb_array_elements(COALESCE(t.sla->'trocas', '[]'::jsonb)) AS r
+          ${cond} AND r->>'em_curso' = 'false'
+      `, params),
+      // Mesmo "resposta contínua", mas por analista (pior primeiro) — usa o
+      // analista FINAL do ticket como atribuição (a API do Zappy não guarda
+      // quem mandou cada mensagem individualmente, só quem é o responsável
+      // pelo ticket como um todo).
+      pool.query(`
+        SELECT t.analista AS label,
+               COUNT(*)::int AS total,
+               ROUND(AVG((r->>'minutos_uteis')::numeric))::int AS media_minutos,
+               COUNT(*) FILTER (WHERE r->>'status' = 'verde')::int AS verdes,
+               COUNT(*) FILTER (WHERE r->>'status' = 'amarelo')::int AS amarelos,
+               COUNT(*) FILTER (WHERE r->>'status' = 'vermelho')::int AS vermelhos
+          FROM cs_tickets t,
+               LATERAL jsonb_array_elements(COALESCE(t.sla->'trocas', '[]'::jsonb)) AS r
+          ${cond} AND t.analista IS NOT NULL AND r->>'em_curso' = 'false'
+         GROUP BY t.analista
+        HAVING COUNT(*) >= 3
+         ORDER BY (COUNT(*) FILTER (WHERE r->>'status' = 'verde')::float / COUNT(*)) ASC
+         LIMIT 15
+      `, params),
     ]);
 
+    const comPct = (rows) => rows.map(r => ({ ...r, pct: r.total ? Math.round((r.verdes / r.total) * 100) : null }));
+    const linhasEtapa = comPct(porEtapa.rows);
+    // "Resposta contínua" entra como mais uma etapa na mesma lista (só se tiver dado).
+    if (respostaContinua.rows[0] && respostaContinua.rows[0].total > 0) {
+      linhasEtapa.push({ etapa: 'resposta_continua', ...comPct(respostaContinua.rows)[0] });
+    }
+
     res.json({
-      porEtapa: porEtapa.rows.map(r => ({
-        ...r,
-        pct: r.total ? Math.round((r.verdes / r.total) * 100) : null,
-      })),
-      porAnalistaDepartamento: porAnalistaDepto.rows.map(r => ({
-        ...r,
-        pct: r.total ? Math.round((r.verdes / r.total) * 100) : null,
-      })),
+      porEtapa: linhasEtapa,
+      porAnalistaDepartamento: comPct(porAnalistaDepto.rows),
+      porAnalistaRespostaContinua: comPct(porAnalistaResposta.rows),
     });
   } catch (e) {
     console.error('[cs] GET /dashboard/etapas falhou:', e);
