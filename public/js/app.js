@@ -617,8 +617,8 @@ const App = (() => {
         ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados no período</p>';
         return;
       }
-      const ROTULOS = { aceite: 'Aceite', transferencia: 'Transferência', departamento: 'Analista (pós-transferência)', promessa: 'Promessa', resposta_continua: 'Resposta contínua (pós-transferência)' };
-      const ORDEM = ['aceite', 'transferencia', 'departamento', 'promessa', 'resposta_continua'];
+      const ROTULOS = { aceite: 'Aceite', transferencia: 'Transferência', departamento: 'Analista (pós-transferência)', promessa: 'Promessa de transferência', promessa_resolucao: 'Resolvendo direto (sem transferir)', resposta_continua: 'Resposta contínua (pós-transferência)' };
+      const ORDEM = ['aceite', 'transferencia', 'departamento', 'promessa', 'promessa_resolucao', 'resposta_continua'];
       const porChave = Object.fromEntries(linhas.map(r => [r.etapa, r]));
       const presentes = ORDEM.filter(k => porChave[k]);
       const labels = presentes.map(k => ROTULOS[k]);
