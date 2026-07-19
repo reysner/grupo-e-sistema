@@ -31,6 +31,7 @@ const { obterPool } = require('./pool');
 const { ingerirTickets, executarCargaRetroativa } = require('./ingestao');
 const { criarClienteZappy } = require('./zappyClient');
 const { listarPendentes, confirmarVinculo } = require('./vinculos');
+const { detectarSinalChurn } = require('./slaEngine');
 
 // Trava simples pra não deixar disparar 2 backfills ao mesmo tempo (ex.: duplo clique).
 let backfillEmAndamento = false;
@@ -422,6 +423,69 @@ router.get('/diagnostico', requireAuth, requireAdmin, async (req, res) => {
   } catch (e) {
     console.error('[cs] GET /diagnostico falhou:', e);
     res.status(500).json({ ok: false, error: e.message, status: e.status, body: e.body });
+  }
+});
+
+/**
+ * GET /api/cs/churn?dias=180 — varre as mensagens do CLIENTE (Zappy) dos
+ * últimos N dias procurando frases que sinalizam risco de cancelamento
+ * (ver FRASES_CHURN em slaEngine.js — "vou procurar outra contabilidade",
+ * "erram demais", etc.). Zero IA paga: é o mesmo tipo de casamento de
+ * frase já usado pra detectar "vou transferir". Agrupa por empresa (usa o
+ * vínculo confirmado se existir; senão cai no nome/telefone do contato do
+ * Zappy) e devolve a ocorrência mais recente de cada uma, pior primeiro.
+ */
+router.get('/churn', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const dias = Math.max(1, Math.min(365, parseInt(req.query.dias, 10) || 180));
+
+    const { rows } = await pool.query(`
+      SELECT cm.texto, cm.hora, ct.id AS ticket_id, ct.zappy_id, ct.empresa_texto,
+             ct.telefone, ct.analista, ct.departamento,
+             cv.empresa_nome, cv.cnpj, cv.tipo AS vinculo_tipo
+        FROM cs_mensagens cm
+        JOIN cs_tickets ct ON ct.id = cm.ticket_id
+        LEFT JOIN cs_vinculos cv ON cv.id = ct.vinculo_id
+       WHERE cm.remetente = 'cliente'
+         AND cm.hora >= NOW() - ($1 || ' days')::interval
+         AND cm.texto IS NOT NULL AND cm.texto <> ''
+       ORDER BY cm.hora DESC
+       LIMIT 5000
+    `, [dias]);
+
+    // Agrupa por empresa (vínculo confirmado > nome do contato > telefone),
+    // guardando só a ocorrência mais recente + contagem, pra não repetir
+    // a mesma empresa várias vezes na lista.
+    const porEmpresa = new Map();
+    for (const row of rows) {
+      const frase = detectarSinalChurn(row.texto);
+      if (!frase) continue;
+
+      const chave = row.empresa_nome || row.empresa_texto || row.telefone || row.ticket_id;
+      if (!porEmpresa.has(chave)) {
+        porEmpresa.set(chave, {
+          empresa: row.empresa_nome || row.empresa_texto || '(sem nome identificado)',
+          cnpj: row.cnpj || null,
+          telefone: row.telefone || null,
+          vinculado: row.vinculo_tipo === 'cliente',
+          ocorrencias: 0,
+          ultima_hora: row.hora,
+          frase_detectada: frase,
+          trecho: row.texto,
+          zappy_id: row.zappy_id,
+          analista: row.analista,
+          departamento: row.departamento,
+        });
+      }
+      porEmpresa.get(chave).ocorrencias++;
+    }
+
+    const data = [...porEmpresa.values()].sort((a, b) => new Date(b.ultima_hora) - new Date(a.ultima_hora));
+    res.json({ data, dias, mensagensAnalisadas: rows.length });
+  } catch (e) {
+    console.error('[cs] GET /churn falhou:', e);
+    res.status(500).json({ error: 'Falha ao analisar possíveis churns: ' + e.message });
   }
 });
 
