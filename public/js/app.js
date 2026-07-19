@@ -4280,6 +4280,7 @@ const Tickets = (() => {
 })();
 
 window.Tickets = Tickets;
+
 /**
  * Módulo Sucesso do Cliente — Frontend da aba "Agora"
  * ------------------------------------------------------------------
@@ -4311,10 +4312,38 @@ window.Tickets = Tickets;
  *          <div style="display:flex;gap:8px">
  *            <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.testarConexao()">🔧 Testar conexão com Zappy</button>
  *            <button class="btn btn-sm" onclick="SucessoCliente.ingerirAgora()">🔄 Atualizar agora</button>
+ *            <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.iniciarBackfill()">📥 Carregar últimos 90 dias</button>
  *          </div>
  *        </div>
  *        <div id="radar-diagnostico"></div>
  *        <div id="radar-container"></div>
+ *
+ *        <hr style="margin:32px 0;border:none;border-top:1px solid var(--gray-200)">
+ *
+ *        <h3 style="margin-bottom:12px">Histórico de Atendimentos</h3>
+ *        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+ *          <select id="hist-departamento" class="radar-select"><option value="">Todos os departamentos</option></select>
+ *          <select id="hist-analista" class="radar-select"><option value="">Todos os analistas</option></select>
+ *          <select id="hist-status" class="radar-select">
+ *            <option value="">Todos os status</option>
+ *            <option value="vermelho">🔴 Vermelho</option>
+ *            <option value="amarelo">🟡 Amarelo</option>
+ *            <option value="verde">🟢 Verde</option>
+ *          </select>
+ *          <button class="btn btn-sm" onclick="SucessoCliente.filtrarHistorico()">Filtrar</button>
+ *          <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.exportHistoricoCSV()">⬇ Exportar CSV</button>
+ *          <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.exportHistoricoPDF()">🖶 Exportar PDF</button>
+ *        </div>
+ *        <div id="hist-container"></div>
+ *
+ *        <hr style="margin:32px 0;border:none;border-top:1px solid var(--gray-200)">
+ *
+ *        <h3 style="margin-bottom:12px">Vínculos Pendentes de Confirmação</h3>
+ *        <p style="color:var(--gray-500);font-size:13px;margin-bottom:12px">
+ *          Números de telefone que apareceram em tickets e ainda não foram confirmados
+ *          como cliente, fornecedor, interno ou software.
+ *        </p>
+ *        <div id="vinc-container"></div>
  *      </section>
  *
  * 3. public/index.html — no fim do <body>, perto dos outros <script src="js/...">:
@@ -4337,6 +4366,9 @@ window.Tickets = Tickets;
     /** Chamado pelo Nav.go('sucesso-cliente') ao abrir a aba. */
     async load() {
       await this.carregar();
+      await this.carregarFiltros();
+      await this.filtrarHistorico();
+      await this.carregarVinculosPendentes();
       if (this._timer) clearInterval(this._timer);
       this._timer = setInterval(() => this.carregar(), this._intervaloMs);
     },
@@ -4353,8 +4385,14 @@ window.Tickets = Tickets;
       if (!container) return;
       try {
         const resp = await fetch('/api/cs/agora', { headers: SucessoCliente._authHeaders() });
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        const { tickets } = await resp.json();
+        const texto = await resp.text();
+        let data;
+        try { data = texto ? JSON.parse(texto) : {}; } catch (e) { data = null; }
+        if (!resp.ok || !data) {
+          const detalhe = data && data.error ? data.error : (texto || '').slice(0, 200);
+          throw new Error('HTTP ' + resp.status + (detalhe ? ' — ' + detalhe : ''));
+        }
+        const { tickets } = data;
         SucessoCliente._render(container, tickets || []);
         if (resumo) {
           resumo.textContent = (tickets || []).length
@@ -4362,7 +4400,9 @@ window.Tickets = Tickets;
             : 'Tudo dentro do SLA';
         }
       } catch (e) {
-        container.innerHTML = '<p class="radar-erro">Não foi possível carregar o radar agora.</p>';
+        container.innerHTML =
+          '<p class="radar-erro">Não foi possível carregar o radar agora.</p>' +
+          '<p style="font-family:monospace;font-size:12px;color:var(--gray-500)">' + SucessoCliente._esc(e.message) + '</p>';
         console.error('[SucessoCliente] carregar()', e);
       }
     },
@@ -4372,11 +4412,35 @@ window.Tickets = Tickets;
         const resp = await fetch('/api/cs/ingerir', { method: 'POST', headers: SucessoCliente._authHeaders() });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
-        if (window.App && App.Toast) App.Toast.ok(`Ingestão concluída: ${data.processados} tickets atualizados.`);
+        const extra = data.ignoradosPreDataInicio ? ` (${data.ignoradosPreDataInicio} ignorados por serem anteriores à data de início da coleta)` : '';
+        if (window.App && App.Toast) App.Toast.ok(`Ingestão concluída: ${data.processados} tickets atualizados${extra}.`);
         await SucessoCliente.carregar();
       } catch (e) {
         if (window.App && App.Toast) App.Toast.err('Falha ao atualizar tickets.');
         console.error('[SucessoCliente] ingerirAgora()', e);
+      }
+    },
+
+    /**
+     * Botão "Carregar últimos 90 dias" — carga retroativa ÚNICA (não é o que
+     * roda automaticamente a cada 5 min). Pede confirmação porque pode levar
+     * alguns minutos; a chamada volta na hora (roda em segundo plano no
+     * servidor) e os tickets vão aparecendo no Histórico conforme processados.
+     */
+    async iniciarBackfill() {
+      const ok = window.confirm(
+        'Isso vai buscar os tickets dos últimos 90 dias (carga única, não afeta a coleta automática).\n\n' +
+        'Pode levar alguns minutos rodando em segundo plano. Continuar?'
+      );
+      if (!ok) return;
+      try {
+        const resp = await fetch('/api/cs/backfill?dias=90', { method: 'POST', headers: SucessoCliente._authHeaders() });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        if (window.App && App.Toast) App.Toast.ok(data.mensagem || 'Carga retroativa iniciada.');
+      } catch (e) {
+        if (window.App && App.Toast) App.Toast.err('Falha ao iniciar carga retroativa: ' + e.message);
+        console.error('[SucessoCliente] iniciarBackfill()', e);
       }
     },
 
@@ -4417,6 +4481,262 @@ window.Tickets = Tickets;
       }
     },
 
+    /**
+     * Popula os <select> de departamento/analista da tela de Histórico com
+     * os valores já vistos nos tickets gravados (GET /api/cs/filtros).
+     * Chamado uma vez ao abrir a aba (load()).
+     */
+    async carregarFiltros() {
+      const selDep = document.getElementById('hist-departamento');
+      const selAna = document.getElementById('hist-analista');
+      if (!selDep || !selAna) return; // seção de histórico ainda não colada no HTML
+      try {
+        const resp = await fetch('/api/cs/filtros', { headers: SucessoCliente._authHeaders() });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const { departamentos, analistas } = await resp.json();
+        const preencher = (select, valores) => {
+          const atual = select.value;
+          select.querySelectorAll('option[data-dinamico]').forEach(o => o.remove());
+          (valores || []).forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = v;
+            opt.setAttribute('data-dinamico', '1');
+            select.appendChild(opt);
+          });
+          select.value = atual;
+        };
+        preencher(selDep, departamentos);
+        preencher(selAna, analistas);
+      } catch (e) {
+        console.error('[SucessoCliente] carregarFiltros()', e);
+      }
+    },
+
+    /**
+     * Busca o histórico de tickets (GET /api/cs/historico) já aplicando os
+     * filtros selecionados nos <select> da tela, e renderiza a tabela.
+     * Chamado pelo botão "Filtrar" e uma vez ao abrir a aba.
+     */
+    async filtrarHistorico() {
+      const container = document.getElementById('hist-container');
+      if (!container) return; // seção de histórico ainda não colada no HTML
+      const departamento = (document.getElementById('hist-departamento') || {}).value || '';
+      const analista = (document.getElementById('hist-analista') || {}).value || '';
+      const status = (document.getElementById('hist-status') || {}).value || '';
+      container.innerHTML = '<p style="color:var(--gray-500)">Carregando...</p>';
+      try {
+        const qs = new URLSearchParams();
+        if (departamento) qs.set('departamento', departamento);
+        if (analista) qs.set('analista', analista);
+        if (status) qs.set('status', status);
+        const resp = await fetch('/api/cs/historico?' + qs.toString(), { headers: SucessoCliente._authHeaders() });
+        const texto = await resp.text();
+        let data;
+        try { data = texto ? JSON.parse(texto) : {}; } catch (e) { data = null; }
+        if (!resp.ok || !data) {
+          const detalhe = data && data.error ? data.error : (texto || '').slice(0, 200);
+          throw new Error('HTTP ' + resp.status + (detalhe ? ' — ' + detalhe : ''));
+        }
+        SucessoCliente._ultimoHistorico = data.tickets || []; // guardado p/ exportCSV/exportPDF sem refazer a chamada
+        SucessoCliente._renderHistorico(container, SucessoCliente._ultimoHistorico);
+      } catch (e) {
+        SucessoCliente._ultimoHistorico = [];
+        container.innerHTML =
+          '<p class="radar-erro">Não foi possível carregar o histórico.</p>' +
+          '<p style="font-family:monospace;font-size:12px;color:var(--gray-500)">' + SucessoCliente._esc(e.message) + '</p>';
+        console.error('[SucessoCliente] filtrarHistorico()', e);
+      }
+    },
+
+    // Colunas/labels compartilhadas pelos dois exports (mesmo padrão usado em
+    // app.js — ver Atendimento.exportCSV/exportPDF: separador ";", BOM no CSV,
+    // popup + window.print() no PDF).
+    _colunasHistorico: ['abertura', 'encerramento', 'empresa', 'departamento', 'analista', 'pior_status'],
+    _labelsHistorico: {
+      abertura: 'Abertura', encerramento: 'Encerramento', empresa: 'Empresa',
+      departamento: 'Departamento', analista: 'Analista', pior_status: 'Status SLA',
+    },
+    _valorHistorico(r, c) {
+      if (c === 'empresa') return r.empresa_nome || r.empresa_texto || '—';
+      if (c === 'abertura' || c === 'encerramento') return r[c] ? new Date(r[c]).toLocaleString('pt-BR') : '—';
+      if (c === 'pior_status') {
+        return r.pior_status === 'vermelho' ? 'Vermelho' : r.pior_status === 'amarelo' ? 'Amarelo' : r.pior_status === 'verde' ? 'Verde' : '—';
+      }
+      return r[c] ?? '—';
+    },
+
+    /** Botão "Exportar CSV" — usa os dados já carregados na tela (filtro atual aplicado). */
+    exportHistoricoCSV() {
+      const data = SucessoCliente._ultimoHistorico || [];
+      if (!data.length) { if (window.App && App.Toast) App.Toast.err('Nenhum dado para exportar.'); return; }
+      const cols = SucessoCliente._colunasHistorico;
+      const labels = SucessoCliente._labelsHistorico;
+      const header = cols.map(c => labels[c]).join(';');
+      const rows = data.map(r => cols.map(c => `"${String(SucessoCliente._valorHistorico(r, c)).replace(/"/g, '""')}"`).join(';'));
+      const csv = [header, ...rows].join('\n');
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sucesso_cliente_historico_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      if (window.App && App.Toast) App.Toast.ok('CSV exportado!');
+    },
+
+    /** Botão "Exportar PDF" — mesmo padrão dos outros módulos: popup + Ctrl+P / Salvar como PDF. */
+    exportHistoricoPDF() {
+      const data = SucessoCliente._ultimoHistorico || [];
+      if (!data.length) { if (window.App && App.Toast) App.Toast.err('Nenhum dado para exportar.'); return; }
+      const cols = SucessoCliente._colunasHistorico;
+      const labels = SucessoCliente._labelsHistorico;
+      const rows = data.map(r =>
+        '<tr>' + cols.map(c => '<td>' + SucessoCliente._esc(String(SucessoCliente._valorHistorico(r, c))) + '</td>').join('') + '</tr>'
+      ).join('');
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Histórico — Sucesso do Cliente</title>
+      <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
+      h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
+      table{width:100%;border-collapse:collapse;font-size:10px}
+      th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
+      td{padding:5px 8px;border-bottom:1px solid #eee}tr:nth-child(even) td{background:#f8f8f8}
+      @media print{body{margin:10px}}</style></head><body>
+      <h1>Grupo-E — Histórico de Atendimentos (Sucesso do Cliente)</h1>
+      <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${data.length} registros</p>
+      <table><thead><tr>${cols.map(c => '<th>' + labels[c] + '</th>').join('')}</tr></thead>
+      <tbody>${rows}</tbody></table>
+      <script>window.onload=()=>{window.print();}<\/script></body></html>`;
+      const win = window.open('', '_blank');
+      if (!win) { if (window.App && App.Toast) App.Toast.err('Permita popups para exportar PDF.'); return; }
+      win.document.write(html);
+      win.document.close();
+      if (window.App && App.Toast) App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
+    },
+
+    _renderHistorico(container, tickets) {
+      if (!tickets.length) {
+        container.innerHTML = '<p style="color:var(--gray-500)">Nenhum ticket encontrado com esses filtros.</p>';
+        return;
+      }
+      const linhas = tickets.map(SucessoCliente._linhaHistorico).join('');
+      container.innerHTML =
+        '<table class="radar-tabela">' +
+        '<thead><tr><th></th><th>Empresa</th><th>Departamento</th><th>Analista</th><th>Abertura</th><th>Encerramento</th></tr></thead>' +
+        '<tbody>' + linhas + '</tbody>' +
+        '</table>';
+    },
+
+    _linhaHistorico(t) {
+      const cor = t.pior_status === 'vermelho' ? '🔴' : (t.pior_status === 'amarelo' ? '🟡' : '🟢');
+      const empresa = t.empresa_nome || t.empresa_texto || '(sem vínculo)';
+      const fmt = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+      return (
+        '<tr class="radar-linha radar-' + (t.pior_status || '') + '">' +
+        '<td>' + cor + '</td>' +
+        '<td>' + SucessoCliente._esc(empresa) + '</td>' +
+        '<td>' + SucessoCliente._esc(t.departamento || '—') + '</td>' +
+        '<td>' + SucessoCliente._esc(t.analista || '—') + '</td>' +
+        '<td>' + fmt(t.abertura) + '</td>' +
+        '<td>' + fmt(t.encerramento) + '</td>' +
+        '</tr>'
+      );
+    },
+
+    /**
+     * Busca a fila de vínculos pendentes (GET /api/cs/vinculos/pendentes) e
+     * renderiza a lista com o campo editável + botão confirmar de cada um.
+     * Chamado ao abrir a aba e de novo depois de cada confirmação.
+     */
+    async carregarVinculosPendentes() {
+      const container = document.getElementById('vinc-container');
+      if (!container) return; // seção ainda não colada no HTML
+      container.innerHTML = '<p style="color:var(--gray-500)">Carregando...</p>';
+      try {
+        const resp = await fetch('/api/cs/vinculos/pendentes', { headers: SucessoCliente._authHeaders() });
+        const texto = await resp.text();
+        let data;
+        try { data = texto ? JSON.parse(texto) : {}; } catch (e) { data = null; }
+        if (!resp.ok || !data) {
+          const detalhe = data && data.error ? data.error : (texto || '').slice(0, 200);
+          throw new Error('HTTP ' + resp.status + (detalhe ? ' — ' + detalhe : ''));
+        }
+        SucessoCliente._ultimosVinculos = data.vinculos || [];
+        SucessoCliente._renderVinculos(container, SucessoCliente._ultimosVinculos);
+      } catch (e) {
+        container.innerHTML =
+          '<p class="radar-erro">Não foi possível carregar os vínculos pendentes.</p>' +
+          '<p style="font-family:monospace;font-size:12px;color:var(--gray-500)">' + SucessoCliente._esc(e.message) + '</p>';
+        console.error('[SucessoCliente] carregarVinculosPendentes()', e);
+      }
+    },
+
+    _renderVinculos(container, vinculos) {
+      if (!vinculos.length) {
+        container.innerHTML = '<p class="radar-ok">✅ Nenhum vínculo pendente — tudo confirmado.</p>';
+        return;
+      }
+      const linhas = vinculos.map(SucessoCliente._linhaVinculo).join('');
+      container.innerHTML =
+        '<table class="radar-tabela">' +
+        '<thead><tr><th>Telefone</th><th>Empresa (sugestão)</th><th>Tipo</th><th></th></tr></thead>' +
+        '<tbody>' + linhas + '</tbody>' +
+        '</table>';
+    },
+
+    _linhaVinculo(v) {
+      const conf = v.confianca != null ? ` (${v.confianca}% de confiança)` : '';
+      const empresaId = 'vinc-empresa-' + v.id;
+      const tipoId = 'vinc-tipo-' + v.id;
+      return (
+        '<tr>' +
+        '<td>' + SucessoCliente._esc(v.telefone) + '</td>' +
+        '<td><input type="text" id="' + empresaId + '" value="' + SucessoCliente._esc(v.empresa_nome || '') + '" ' +
+          'placeholder="Nome da empresa" style="width:220px;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px">' +
+          '<div style="color:var(--gray-500);font-size:11px">' + SucessoCliente._esc(conf.trim()) + '</div></td>' +
+        '<td><select id="' + tipoId + '" class="radar-select">' +
+          '<option value="cliente"' + (v.cliente_id ? ' selected' : '') + '>Cliente</option>' +
+          '<option value="fornecedor">Fornecedor</option>' +
+          '<option value="interno">Interno</option>' +
+          '<option value="software">Software</option>' +
+          '</select></td>' +
+        '<td><button class="btn btn-sm" onclick="SucessoCliente.confirmarVinculoLinha(\'' + v.id + '\')">✅ Confirmar</button></td>' +
+        '</tr>'
+      );
+    },
+
+    /** Botão "Confirmar" de uma linha da fila de vínculos pendentes. */
+    async confirmarVinculoLinha(id) {
+      const empresaInput = document.getElementById('vinc-empresa-' + id);
+      const tipoSelect = document.getElementById('vinc-tipo-' + id);
+      if (!empresaInput || !tipoSelect) return;
+      const original = (SucessoCliente._ultimosVinculos || []).find(v => String(v.id) === String(id));
+      const tipo = tipoSelect.value;
+      const empresaNome = empresaInput.value.trim();
+      if (tipo === 'cliente' && !empresaNome) {
+        if (window.App && App.Toast) App.Toast.err('Preencha o nome da empresa antes de confirmar como cliente.');
+        return;
+      }
+      try {
+        const resp = await fetch('/api/cs/vinculos/' + encodeURIComponent(id) + '/confirmar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...SucessoCliente._authHeaders() },
+          body: JSON.stringify({
+            clienteId: original ? original.cliente_id : null,
+            empresaNome,
+            cnpj: original ? original.cnpj : null,
+            tipo,
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        if (window.App && App.Toast) App.Toast.ok('Vínculo confirmado!');
+        await SucessoCliente.carregarVinculosPendentes();
+      } catch (e) {
+        if (window.App && App.Toast) App.Toast.err('Falha ao confirmar vínculo: ' + e.message);
+        console.error('[SucessoCliente] confirmarVinculoLinha()', e);
+      }
+    },
+
     // Mesmo padrão usado nos outros módulos do app.js (ex.: linha "const _tk = () => localStorage.getItem('ge_token') || '';")
     _authHeaders() {
       const token = localStorage.getItem('ge_token') || '';
@@ -4440,7 +4760,7 @@ window.Tickets = Tickets;
       let sla = {};
       try { sla = typeof t.sla === 'string' ? JSON.parse(t.sla) : (t.sla || {}); } catch (e) { sla = {}; }
       const radar = sla.radar || null;
-      const cor = t.pior_status === 'vermelho' ? '🔴' : (t.pior_status === 'amarelo' ? '🟡' : '⚪');
+      const cor = t.pior_status === 'vermelho' ? '🔴' : (t.pior_status === 'amarelo' ? '🟡' : '🟢');
       const empresa = t.empresa_nome || t.empresa_texto || '(sem vínculo)';
       const relogio = radar ? radar.rotulo : '—';
       const tempo = radar ? (radar.minutos_uteis + ' min (limite ' + (radar.limite ?? '—') + ')') : '—';
