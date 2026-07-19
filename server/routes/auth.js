@@ -16,7 +16,7 @@ const loginLimiter = rateLimit({
 // POST /api/auth/register
 router.post('/register', loginLimiter, async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password } = req.body;
     if (!name || !email || !password)
       return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios.' });
     if (password.length < 6)
@@ -27,7 +27,11 @@ router.post('/register', loginLimiter, async (req, res) => {
 
     const hashedPw = await auth.hashPassword(password);
     const id = uuidv4();
-    const userRole = ['usuario','administrador'].includes(role) ? role : 'usuario';
+    // SEGURANÇA: o cadastro público NUNCA aceita o perfil vindo do cliente — sempre
+    // cria como 'usuario', ignorando qualquer valor de "role" que venha no corpo da
+    // requisição. Virar administrador ou contábil só é possível depois, manualmente,
+    // por um administrador já autenticado (tela de Administração → Usuários).
+    const userRole = 'usuario';
     await pool.query(
       `INSERT INTO users (id, name, email, password, role) VALUES ($1, $2, $3, $4, $5)`,
       [id, name.trim(), email.toLowerCase().trim(), hashedPw, userRole]
