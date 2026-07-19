@@ -1106,62 +1106,67 @@ router.delete('/log-atividades', requireAdmin, async (req, res) => {
 });
 
 // ── BACKUP DOS DADOS ──────────────────────────────────────────────────────────
+
+// Junta os dados de todas as tabelas num único objeto — usado tanto pelo
+// backup manual (botão "Baixar backup") quanto pelo backup automático diário.
+async function gerarBackupCompleto() {
+  const [
+    atendimentos, gestao, insatisfacoes, sensiveis,
+    pesquisas, recuperacoes, clientes, honorarios,
+    eventos, investimentos, notificacoes, log
+  ] = await Promise.all([
+    pool.query('SELECT * FROM atendimentos ORDER BY created_at').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM gestao_clientes ORDER BY created_at').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM insatisfacoes ORDER BY created_at').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM clientes_sensiveis ORDER BY created_at').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM pesquisas ORDER BY created_at').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM recuperacoes ORDER BY created_at').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM clientes ORDER BY created_at').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM honorarios ORDER BY created_at').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM eventos_clientes ORDER BY created_at').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM investimentos ORDER BY created_at').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM notificacoes ORDER BY created_at').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM log_atividades ORDER BY created_at DESC LIMIT 1000').catch(()=>({rows:[]})),
+  ]);
+
+  return {
+    meta: {
+      sistema: 'Grupo-E',
+      gerado_em: new Date().toISOString(),
+      versao: '1.0',
+      totais: {
+        atendimentos: atendimentos.rows.length,
+        gestao: gestao.rows.length,
+        insatisfacoes: insatisfacoes.rows.length,
+        sensiveis: sensiveis.rows.length,
+        pesquisas: pesquisas.rows.length,
+        recuperacoes: recuperacoes.rows.length,
+        clientes: clientes.rows.length,
+        honorarios: honorarios.rows.length,
+        investimentos: investimentos.rows.length,
+      }
+    },
+    dados: {
+      atendimentos: atendimentos.rows,
+      gestao_clientes: gestao.rows,
+      insatisfacoes: insatisfacoes.rows,
+      clientes_sensiveis: sensiveis.rows,
+      pesquisas: pesquisas.rows,
+      recuperacoes: recuperacoes.rows,
+      clientes: clientes.rows,
+      honorarios: honorarios.rows,
+      eventos_clientes: eventos.rows,
+      investimentos: investimentos.rows,
+      notificacoes: notificacoes.rows,
+      log_atividades: log.rows,
+    }
+  };
+}
+
 router.get('/backup', requireAdmin, async (req, res) => {
   try {
     const timestamp = new Date().toISOString().slice(0,19).replace('T','_').replace(/:/g,'-');
-
-    // Buscar todos os dados de todas as tabelas
-    const [
-      atendimentos, gestao, insatisfacoes, sensiveis,
-      pesquisas, recuperacoes, clientes, honorarios,
-      eventos, investimentos, notificacoes, log
-    ] = await Promise.all([
-      pool.query('SELECT * FROM atendimentos ORDER BY created_at').catch(()=>({rows:[]})),
-      pool.query('SELECT * FROM gestao_clientes ORDER BY created_at').catch(()=>({rows:[]})),
-      pool.query('SELECT * FROM insatisfacoes ORDER BY created_at').catch(()=>({rows:[]})),
-      pool.query('SELECT * FROM clientes_sensiveis ORDER BY created_at').catch(()=>({rows:[]})),
-      pool.query('SELECT * FROM pesquisas ORDER BY created_at').catch(()=>({rows:[]})),
-      pool.query('SELECT * FROM recuperacoes ORDER BY created_at').catch(()=>({rows:[]})),
-      pool.query('SELECT * FROM clientes ORDER BY created_at').catch(()=>({rows:[]})),
-      pool.query('SELECT * FROM honorarios ORDER BY created_at').catch(()=>({rows:[]})),
-      pool.query('SELECT * FROM eventos_clientes ORDER BY created_at').catch(()=>({rows:[]})),
-      pool.query('SELECT * FROM investimentos ORDER BY created_at').catch(()=>({rows:[]})),
-      pool.query('SELECT * FROM notificacoes ORDER BY created_at').catch(()=>({rows:[]})),
-      pool.query('SELECT * FROM log_atividades ORDER BY created_at DESC LIMIT 1000').catch(()=>({rows:[]})),
-    ]);
-
-    const backup = {
-      meta: {
-        sistema: 'Grupo-E',
-        gerado_em: new Date().toISOString(),
-        versao: '1.0',
-        totais: {
-          atendimentos: atendimentos.rows.length,
-          gestao: gestao.rows.length,
-          insatisfacoes: insatisfacoes.rows.length,
-          sensiveis: sensiveis.rows.length,
-          pesquisas: pesquisas.rows.length,
-          recuperacoes: recuperacoes.rows.length,
-          clientes: clientes.rows.length,
-          honorarios: honorarios.rows.length,
-          investimentos: investimentos.rows.length,
-        }
-      },
-      dados: {
-        atendimentos: atendimentos.rows,
-        gestao_clientes: gestao.rows,
-        insatisfacoes: insatisfacoes.rows,
-        clientes_sensiveis: sensiveis.rows,
-        pesquisas: pesquisas.rows,
-        recuperacoes: recuperacoes.rows,
-        clientes: clientes.rows,
-        honorarios: honorarios.rows,
-        eventos_clientes: eventos.rows,
-        investimentos: investimentos.rows,
-        notificacoes: notificacoes.rows,
-        log_atividades: log.rows,
-      }
-    };
+    const backup = await gerarBackupCompleto();
 
     // Registrar no log
     await registrarLog(req.user.id, req.user.name, 'criar', 'admin', 'Backup manual realizado', req);
@@ -1172,6 +1177,95 @@ router.get('/backup', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('Backup error:', err);
     res.status(500).json({ error: 'Erro ao gerar backup.' });
+  }
+});
+
+// ── BACKUP AUTOMÁTICO (diário, sem precisar clicar em nada) ────────────────────
+// Guarda o backup dentro do próprio banco (tabela backups_automaticos), porque
+// o disco do Render é temporário — some a cada deploy/reinício. Roda 1x por
+// dia, de madrugada (horário de Brasília), e mantém só os últimos 30 pra não
+// crescer sem limite. O setInterval só é criado uma vez, porque o Node só
+// carrega este arquivo uma vez (cache de require), mesmo que outros arquivos
+// façam require('./data') várias vezes.
+
+async function garantirTabelaBackupsAutomaticos() {
+  await pool.query(`CREATE TABLE IF NOT EXISTS backups_automaticos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    gerado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    dados JSONB NOT NULL,
+    totais JSONB
+  )`).catch(()=>{});
+}
+
+async function rodarBackupAutomaticoSeNecessario() {
+  try {
+    await garantirTabelaBackupsAutomaticos();
+
+    // Já existe um backup automático de hoje (horário de Brasília)? Se sim, não faz de novo.
+    const jaExiste = await pool.query(
+      `SELECT id FROM backups_automaticos
+       WHERE (gerado_em AT TIME ZONE 'America/Sao_Paulo')::date = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+       LIMIT 1`
+    );
+    if (jaExiste.rows.length) return;
+
+    // Só dispara de madrugada (entre 3h e 4h, horário de Brasília) pra não pesar em horário de uso.
+    const horaBrasilia = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getHours();
+    if (horaBrasilia !== 3) return;
+
+    const backup = await gerarBackupCompleto();
+    await pool.query(
+      `INSERT INTO backups_automaticos (dados, totais) VALUES ($1, $2)`,
+      [JSON.stringify(backup.dados), JSON.stringify(backup.meta.totais)]
+    );
+
+    // Mantém só os 30 backups automáticos mais recentes.
+    await pool.query(`
+      DELETE FROM backups_automaticos
+      WHERE id NOT IN (SELECT id FROM backups_automaticos ORDER BY gerado_em DESC LIMIT 30)
+    `);
+
+    console.log('[backup automático] Backup diário gerado com sucesso.');
+  } catch (err) {
+    console.error('[backup automático] Falhou:', err.message);
+  }
+}
+
+// Confere a cada 10 minutos se está na hora de rodar (e se ainda não rodou hoje).
+garantirTabelaBackupsAutomaticos().then(() => {
+  rodarBackupAutomaticoSeNecessario();
+  setInterval(rodarBackupAutomaticoSeNecessario, 10 * 60 * 1000);
+});
+
+// GET /api/data/backups-automaticos — lista os backups automáticos guardados (resumo, sem os dados)
+router.get('/backups-automaticos', requireAdmin, async (req, res) => {
+  try {
+    await garantirTabelaBackupsAutomaticos();
+    const { rows } = await pool.query(
+      `SELECT id, gerado_em, totais FROM backups_automaticos ORDER BY gerado_em DESC`
+    );
+    res.json({ data: rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao listar backups automáticos.' });
+  }
+});
+
+// GET /api/data/backups-automaticos/:id/download — baixa um backup automático específico
+router.get('/backups-automaticos/:id/download', requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT * FROM backups_automaticos WHERE id = $1`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Backup não encontrado.' });
+    const row = rows[0];
+    const timestamp = new Date(row.gerado_em).toISOString().slice(0,19).replace('T','_').replace(/:/g,'-');
+    const backup = {
+      meta: { sistema: 'Grupo-E', gerado_em: row.gerado_em, versao: '1.0', totais: row.totais, tipo: 'automatico' },
+      dados: row.dados,
+    };
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="backup-automatico-grupo-e-${timestamp}.json"`);
+    res.json(backup);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao baixar backup automático.' });
   }
 });
 
