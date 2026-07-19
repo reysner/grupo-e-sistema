@@ -218,7 +218,7 @@
     <div class="chart-card"><p class="chart-title">Por departamento</p><div class="chart-wrap"><canvas id="cs-dash-departamento"></canvas></div></div>
     <div class="chart-card"><p class="chart-title">Por analista (volume)</p><div class="chart-wrap"><canvas id="cs-dash-analista"></canvas></div></div>
     <div class="chart-card" style="grid-column:1/-1"><p class="chart-title">% dentro do SLA por analista (pior primeiro) — clique numa barra pra ver os tickets vermelhos</p><div class="chart-wrap"><canvas id="cs-dash-desempenho"></canvas></div></div>
-    <div class="chart-card" style="grid-column:1/-1"><p class="chart-title">% dentro do SLA por etapa (aceite, transferência, resposta do analista após transferência, promessa de transferência, resolvendo direto)</p><div class="chart-wrap"><canvas id="cs-dash-etapas"></canvas></div></div>
+    <div class="chart-card" style="grid-column:1/-1"><p class="chart-title">% dentro do SLA por etapa (aceite, transferência, resposta do analista após transferência, promessa de transferência, resolvendo direto) — clique numa barra pra ver os tickets vermelhos</p><div class="chart-wrap"><canvas id="cs-dash-etapas"></canvas></div></div>
     <div class="chart-card" style="grid-column:1/-1"><p class="chart-title">Resposta do analista após a transferência — por analista (pior primeiro) — clique numa barra pra ver os tickets vermelhos</p><div class="chart-wrap"><canvas id="cs-dash-analista-departamento"></canvas></div></div>
     <div class="chart-card" style="grid-column:1/-1"><p class="chart-title">Resposta contínua depois da transferência (não só a 1ª vez) — por analista (pior primeiro) — clique numa barra pra ver os tickets vermelhos</p><div class="chart-wrap"><canvas id="cs-dash-analista-resposta"></canvas></div></div>
   </div>
@@ -942,6 +942,15 @@
   <option value="vermelho">🔴 Vermelho</option>
   <option value="amarelo">🟡 Amarelo</option>
   <option value="verde">🟢 Verde</option>
+</select>
+<select id="hist-etapa" class="radar-select" onchange="SucessoCliente.filtrarHistorico()">
+  <option value="">Todas as etapas</option>
+  <option value="aceite">Aceite</option>
+  <option value="transferencia">Transferência</option>
+  <option value="departamento">Analista (pós-transferência)</option>
+  <option value="promessa">Promessa de transferência</option>
+  <option value="promessa_resolucao">Resolvendo direto (sem transferir)</option>
+  <option value="resposta_continua">Resposta contínua (pós-transferência)</option>
 </select>
   <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.exportHistoricoCSV()">⬇ Exportar CSV</button>
 <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.exportHistoricoPDF()">🖶 Exportar PDF</button>
