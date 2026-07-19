@@ -159,15 +159,17 @@ async function descobrirTicketsComAtividade(zappyClient, dateFrom, maxPaginas) {
  * @param {object} deps.pool         pool pg (ou compatível com .query())
  * @param {Date}   [deps.agora]      instante de referência p/ SLA (default: now)
  * @param {number} [deps.maxPaginas] trava de segurança de paginação (default 100)
+ * @param {string} [deps.dateFromForcado] AAAA-MM-DD — ignora o cursor normal (ultimaExecucao/dataInicio)
+ *   e busca atividade a partir dessa data. Usado só pela carga retroativa (ver executarCargaRetroativa).
  * @returns {{processados: number, ignoradosPreDataInicio: number, erros: Array, ticketsComAtividade: number}}
  */
-async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPaginas = 100 }) {
+async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPaginas = 100, dateFromForcado = null }) {
   const dataInicio = await obterDataInicio(pool);
   const ultimaExecucao = await obterUltimaExecucao(pool);
   // Um dia de folga pra trás, pra não perder mensagem que chegou perto da virada do dia
   // (a API só filtra por dia, não por hora).
   const cursor = ultimaExecucao && ultimaExecucao > dataInicio ? ultimaExecucao : dataInicio;
-  const dateFrom = paraDataAPI(cursor);
+  const dateFrom = dateFromForcado || paraDataAPI(cursor);
 
   // Fila/usuário não vêm no ticket (a API pública só dá o ID) — busca uma
   // vez por execução e monta um mapa id->nome. Baixo volume (poucas
@@ -237,6 +239,39 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
   return { processados, ignoradosPreDataInicio, erros, ticketsComAtividade: ticketIds.length };
 }
 
+/**
+ * Carga retroativa ÚNICA: reabre a "data de início da coleta" pra trás (nunca
+ * pra frente — nunca esconde ticket já coletado) e roda a ingestão buscando
+ * atividade desde essa nova data, em vez de só a partir da última execução.
+ *
+ * Uso pontual (ex.: botão admin "Carregar últimos 90 dias"), não roda
+ * automaticamente. Como pode envolver bem mais tickets que a rodagem normal
+ * de 5 em 5 min, quem chama isso deve considerar rodar em segundo plano
+ * (ver server/cs/routes.js POST /backfill) em vez de esperar a resposta.
+ *
+ * @param {object} deps
+ * @param {object} deps.zappyClient
+ * @param {object} deps.pool
+ * @param {number} [deps.dias]        quantos dias pra trás (default 90)
+ * @param {Date}   [deps.agora]
+ * @param {number} [deps.maxPaginas]  trava de paginação — maior que o default
+ *   normal porque 90 dias tem bem mais mensagens que os ~5 min de uma rodagem comum.
+ */
+async function executarCargaRetroativa({ zappyClient, pool, dias = 90, agora = new Date(), maxPaginas = 500 }) {
+  const dataInicioAtual = await obterDataInicio(pool);
+  const novaDataInicio = new Date(agora.getTime() - dias * 24 * 60 * 60 * 1000);
+
+  if (novaDataInicio < dataInicioAtual) {
+    await pool.query(
+      `UPDATE cs_config SET valor = $1, updated_at = NOW() WHERE chave = $2`,
+      [novaDataInicio.toISOString(), CHAVE_DATA_INICIO]
+    );
+  }
+
+  const dataEfetiva = novaDataInicio < dataInicioAtual ? novaDataInicio : dataInicioAtual;
+  return ingerirTickets({ zappyClient, pool, agora, maxPaginas, dateFromForcado: paraDataAPI(dataEfetiva) });
+}
+
 // ── Execução direta: `node server/cs/ingestao.js` ───────────────────────────
 if (require.main === module) {
   (async () => {
@@ -255,6 +290,7 @@ if (require.main === module) {
 
 module.exports = {
   ingerirTickets,
+  executarCargaRetroativa,
   montarLinhaTicket,
   primeiraHoraPorTipo,
   obterDataInicio,
