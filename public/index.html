@@ -915,15 +915,14 @@
 
 <h3 style="margin-bottom:12px">Histórico de Atendimentos</h3>
 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-  <select id="hist-departamento" class="radar-select"><option value="">Todos os departamentos</option></select>
-  <select id="hist-analista" class="radar-select"><option value="">Todos os analistas</option></select>
-  <select id="hist-status" class="radar-select">
-    <option value="">Todos os status</option>
-    <option value="vermelho">🔴 Vermelho</option>
-    <option value="amarelo">🟡 Amarelo</option>
-    <option value="verde">🟢 Verde</option>
-  </select>
-  <button class="btn btn-sm" onclick="SucessoCliente.filtrarHistorico()">Filtrar</button>
+<select id="hist-departamento" class="radar-select" onchange="SucessoCliente.filtrarHistorico()"><option value="">Todos os departamentos</option></select>
+<select id="hist-analista" class="radar-select" onchange="SucessoCliente.filtrarHistorico()"><option value="">Todos os analistas</option></select>
+<select id="hist-status" class="radar-select" onchange="SucessoCliente.filtrarHistorico()">
+  <option value="">Todos os status</option>
+  <option value="vermelho">🔴 Vermelho</option>
+  <option value="amarelo">🟡 Amarelo</option>
+  <option value="verde">🟢 Verde</option>
+</select>
   <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.exportHistoricoCSV()">⬇ Exportar CSV</button>
 <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.exportHistoricoPDF()">🖶 Exportar PDF</button>
 </div>
