@@ -1037,6 +1037,23 @@
               </table>
             </div>
           </div>
+
+          <div class="form-card" style="margin-top:16px">
+            <h2 class="form-title" style="margin:0 0 4px">Possíveis Churns — Conversas do Zappy</h2>
+            <div class="form-accent"></div>
+            <p style="color:var(--gray-500);font-size:13px;margin:0 0 12px">
+              Varre as mensagens que o CLIENTE escreveu nas conversas do Zappy (últimos 180 dias) procurando frases como "vou procurar outra contabilidade" ou "erram demais". Por palavras-chave, sem IA paga — mesmo método do motor de SLA. Empresas ainda sem vínculo confirmado aparecem marcadas como "não vinculado"; confirme o vínculo na fila de Vínculos Pendentes do Sucesso do Cliente pra esse dado entrar corretamente na Carteira.
+            </p>
+            <div style="display:flex;gap:8px;margin-bottom:12px">
+              <button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.carregarChurnConversas()">🔄 Atualizar</button>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Empresa</th><th>Última menção</th><th>Ocorrências</th><th>Trecho</th></tr></thead>
+                <tbody id="churn-conversas-tbody"><tr><td colspan="4" style="color:var(--gray-400)">Carregando...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
         </section>
 
       </main>
