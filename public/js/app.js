@@ -5475,6 +5475,36 @@ window.Tickets = Tickets;
     async load() {
       AnaliseInteligente.carregarChurn();
       AnaliseInteligente.carregarSentimento();
+      AnaliseInteligente.carregarChurnConversas();
+    },
+
+    async carregarChurnConversas() {
+      const tbody = document.getElementById('churn-conversas-tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--gray-400)">Carregando...</td></tr>';
+      try {
+        const res = await fetch('/api/cs/churn?dias=180', { headers: authHeaders() });
+        if (!res.ok) throw new Error('Falha ao buscar.');
+        const { data } = await res.json();
+        if (!data || !data.length) {
+          tbody.innerHTML = '<tr><td colspan="4" style="color:var(--gray-400)">Nenhum sinal de churn encontrado nas conversas dos últimos 180 dias.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data.map(c => {
+          const dt = new Date(c.ultima_hora).toLocaleString('pt-BR');
+          const nomeVinculo = c.vinculado
+            ? esc(c.empresa)
+            : `${esc(c.empresa)} <span style="color:var(--gray-400);font-size:11px">(não vinculado)</span>`;
+          return `<tr>
+            <td style="font-weight:600">${nomeVinculo}</td>
+            <td style="font-size:12px;color:var(--gray-500)">${dt}</td>
+            <td>${c.ocorrencias}</td>
+            <td style="font-size:12px;color:var(--gray-600)"><em>"${esc(c.frase_detectada)}"</em> — ${esc((c.trecho||'').slice(0,140))}${(c.trecho||'').length>140?'...':''}</td>
+          </tr>`;
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--danger)">Não foi possível analisar as conversas agora.</td></tr>';
+      }
     },
 
     async carregarChurn() {
