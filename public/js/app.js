@@ -378,10 +378,6 @@ const App = (() => {
       const d = await res.json();
       Dashboard._lastData = d;
       const c = d.charts;
-      // Dropdown de analista usa a lista CANÔNICA (/api/analistas), não mais os
-      // nomes soltos digitados historicamente no Atendimento — assim o nome
-      // selecionado bate certinho com o Zappy e filtra também os gráficos
-      // do Sucesso do Cliente lá embaixo.
       const anaListaSel = document.getElementById('dash-analista');
       if (anaListaSel) {
         try {
@@ -465,15 +461,46 @@ const App = (() => {
         const res = await API.get(`/api/cs/dashboard?${qs.toString()}`);
         if (!res || !res.ok) return;
         const d = await res.json();
-        const labelStatus = { verde: '🟢 Verde', amarelo: '🟡 Amarelo', vermelho: '🔴 Vermelho' };
-        Dashboard.renderChart('cs-dash-status', 'doughnut',
-          (d.porStatus || []).map(r => ({ label: labelStatus[r.label] || r.label, n: r.n })), 'Status SLA');
+        Dashboard.renderChartStatusCS(d.porStatus || []);
         Dashboard.renderChart('cs-dash-departamento', 'bar', d.porDepartamento || [], 'Departamento');
         Dashboard.renderChart('cs-dash-analista', 'bar', d.porAnalista || [], 'Analista', { indexAxis: 'y' });
         Dashboard.renderChartDesempenhoCS(d.desempenhoAnalistas || []);
       } catch (e) {
         console.error('[Dashboard] carregarSucessoCliente()', e);
       }
+    },
+
+    /**
+     * Doughnut "Status do SLA" — cor FIXA por significado (verde/amarelo/
+     * vermelho), nunca pela ordem em que o banco devolveu as linhas (GROUP BY
+     * não garante ordem — o renderChart genérico pinta por posição, o que
+     * podia fazer o vermelho "ganhar" a cor amarela por acaso).
+     */
+    renderChartStatusCS(linhas) {
+      const id = 'cs-dash-status';
+      if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
+      const ctx = document.getElementById(id);
+      if (!ctx) return;
+      if (!linhas || !linhas.length) {
+        ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados ainda</p>';
+        return;
+      }
+      const CORES = { verde: '#38a169', amarelo: '#f5c518', vermelho: '#e53e3e' };
+      const LABELS = { verde: '🟢 Verde', amarelo: '🟡 Amarelo', vermelho: '🔴 Vermelho' };
+      const ordem = ['verde', 'amarelo', 'vermelho'];
+      const porChave = Object.fromEntries(linhas.map(r => [r.label, r.n]));
+      const presentes = ordem.filter(k => porChave[k] != null);
+      const labels = presentes.map(k => LABELS[k]);
+      const dataVals = presentes.map(k => porChave[k]);
+      const bg = presentes.map(k => CORES[k]);
+      _charts[id] = new Chart(ctx, {
+        type: 'doughnut',
+        data: { labels, datasets: [{ label: 'Status SLA', data: dataVals, backgroundColor: bg, borderColor: '#fff', borderWidth: 2 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 }, padding: 12 } } },
+        },
+      });
     },
 
     renderChartDesempenhoCS(linhas) {
@@ -4697,9 +4724,7 @@ window.Tickets = Tickets;
         if (kpiRisco) kpiRisco.textContent = risco;
         if (kpiPct) kpiPct.textContent = pct != null ? pct + '%' : '—';
 
-        const labelStatus = { verde: '🟢 Verde', amarelo: '🟡 Amarelo', vermelho: '🔴 Vermelho' };
-        SucessoCliente._renderChart('cs-chart-status', 'doughnut',
-          (data.porStatus || []).map(r => ({ label: labelStatus[r.label] || r.label, n: r.n })), 'Status SLA');
+        SucessoCliente._renderChartStatus('cs-chart-status', data.porStatus || []);
         SucessoCliente._renderChart('cs-chart-departamento', 'bar', data.porDepartamento || [], 'Departamento');
         SucessoCliente._renderChart('cs-chart-analista', 'bar', data.porAnalista || [], 'Analista', { indexAxis: 'y' });
         SucessoCliente._renderChartDesempenho(data.desempenhoAnalistas || []);
@@ -4761,6 +4786,41 @@ window.Tickets = Tickets;
       SucessoCliente.filtrarHistorico();
       const container = document.getElementById('hist-container');
       if (container) container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+
+    /**
+     * Doughnut "Status do SLA" — cor FIXA por significado (verde/amarelo/
+     * vermelho), nunca por posição na lista. O `_renderChart` genérico
+     * (usado nos outros gráficos) pinta pela ordem em que o banco devolveu
+     * as linhas — como GROUP BY não garante ordem, o vermelho podia
+     * "ganhar" a cor amarela por acaso. Aqui não: a cor vem de um mapa fixo.
+     */
+    _renderChartStatus(id, linhas) {
+      if (typeof Chart === 'undefined') return;
+      if (_csCharts[id]) { _csCharts[id].destroy(); delete _csCharts[id]; }
+      const ctx = document.getElementById(id);
+      if (!ctx) return;
+      if (!linhas || !linhas.length) {
+        ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados ainda</p>';
+        return;
+      }
+      const CORES = { verde: '#38a169', amarelo: '#f5c518', vermelho: '#e53e3e' };
+      const LABELS = { verde: '🟢 Verde', amarelo: '🟡 Amarelo', vermelho: '🔴 Vermelho' };
+      const ordem = ['verde', 'amarelo', 'vermelho']; // ordem fixa de exibição, também não depende do banco
+      const porChave = Object.fromEntries(linhas.map(r => [r.label, r.n]));
+      const presentes = ordem.filter(k => porChave[k] != null);
+      const labels = presentes.map(k => LABELS[k]);
+      const dataVals = presentes.map(k => porChave[k]);
+      const bg = presentes.map(k => CORES[k]);
+      _csCharts[id] = new Chart(ctx, {
+        type: 'doughnut',
+        data: { labels, datasets: [{ label: 'Status SLA', data: dataVals, backgroundColor: bg, borderColor: '#fff', borderWidth: 2 }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 }, padding: 12 } } },
+        },
+      });
     },
 
     /** Mesmo padrão de renderChart usado no Dashboard principal do app.js, só que isolado aqui dentro. */
