@@ -4310,11 +4310,26 @@ window.Tickets = Tickets;
  *        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
  *          <div id="radar-resumo" style="color:var(--gray-500);font-size:13px"></div>
  *          <div style="display:flex;gap:8px">
+ *            <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.toggleDashboard()">📊 Dashboard</button>
  *            <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.testarConexao()">🔧 Testar conexão com Zappy</button>
  *            <button class="btn btn-sm" onclick="SucessoCliente.ingerirAgora()">🔄 Atualizar agora</button>
  *            <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.iniciarBackfill()">📥 Carregar últimos 90 dias</button>
  *          </div>
  *        </div>
+ *
+ *        <div id="cs-dashboard" hidden style="margin-bottom:24px">
+ *          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+ *            <div class="nps-card"><div class="nps-label">Total de tickets</div><div class="nps-value" id="cs-kpi-total" style="color:#1a4233">—</div></div>
+ *            <div class="nps-card"><div class="nps-label">Fora do SLA agora</div><div class="nps-value" id="cs-kpi-risco" style="color:#e53e3e">—</div></div>
+ *            <div class="nps-card"><div class="nps-label">% dentro do SLA</div><div class="nps-value" id="cs-kpi-pct" style="color:#38a169">—</div></div>
+ *          </div>
+ *          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+ *            <div style="height:260px"><canvas id="cs-chart-status"></canvas></div>
+ *            <div style="height:260px"><canvas id="cs-chart-departamento"></canvas></div>
+ *            <div style="height:260px;grid-column:1 / -1"><canvas id="cs-chart-analista"></canvas></div>
+ *          </div>
+ *        </div>
+ *
  *        <div id="radar-diagnostico"></div>
  *        <div id="radar-container"></div>
  *
@@ -4357,6 +4372,12 @@ window.Tickets = Tickets;
  */
 (function () {
   'use strict';
+
+  // Cores próprias (não reaproveita o CHART_COLORS/_charts do Dashboard geral
+  // de propósito — módulo isolado, não deve depender de estado interno de
+  // outro módulo). Paleta consistente com o resto do Grupo-E.
+  const CS_CHART_COLORS = ['#1a4233', '#e53e3e', '#f5c518', '#3182ce', '#38a169', '#9b2c2c', '#2c7a7b', '#d69e2e'];
+  const _csCharts = {};
 
   const SucessoCliente = {
     _timer: null,
@@ -4441,6 +4462,88 @@ window.Tickets = Tickets;
         if (window.App && App.Toast) App.Toast.err('Falha ao iniciar carga retroativa: ' + e.message);
         console.error('[SucessoCliente] iniciarBackfill()', e);
       }
+    },
+
+    /** Botão "📊 Dashboard" — mostra/esconde o painel e carrega na primeira vez que abre. */
+    async toggleDashboard() {
+      const painel = document.getElementById('cs-dashboard');
+      if (!painel) return;
+      painel.hidden = !painel.hidden;
+      if (!painel.hidden) await SucessoCliente.carregarDashboard();
+    },
+
+    /**
+     * Busca os totais (GET /api/cs/dashboard) e desenha os 3 gráficos +
+     * cartões de KPI. Usa Chart.js, que já é carregado globalmente pelo
+     * Dashboard principal do app (window.Chart) — não precisa de outro <script>.
+     */
+    async carregarDashboard() {
+      const painel = document.getElementById('cs-dashboard');
+      if (!painel) return;
+      try {
+        const resp = await fetch('/api/cs/dashboard', { headers: SucessoCliente._authHeaders() });
+        const texto = await resp.text();
+        let data;
+        try { data = texto ? JSON.parse(texto) : {}; } catch (e) { data = null; }
+        if (!resp.ok || !data) {
+          const detalhe = data && data.error ? data.error : (texto || '').slice(0, 200);
+          throw new Error('HTTP ' + resp.status + (detalhe ? ' — ' + detalhe : ''));
+        }
+
+        const total = data.totalTickets || 0;
+        const risco = data.emRiscoAgora || 0;
+        const verde = (data.porStatus || []).filter(r => r.label === 'verde').reduce((s, r) => s + r.n, 0);
+        const pct = total ? Math.round((verde / total) * 100) : null;
+
+        const kpiTotal = document.getElementById('cs-kpi-total');
+        const kpiRisco = document.getElementById('cs-kpi-risco');
+        const kpiPct = document.getElementById('cs-kpi-pct');
+        if (kpiTotal) kpiTotal.textContent = total;
+        if (kpiRisco) kpiRisco.textContent = risco;
+        if (kpiPct) kpiPct.textContent = pct != null ? pct + '%' : '—';
+
+        const labelStatus = { verde: '🟢 Verde', amarelo: '🟡 Amarelo', vermelho: '🔴 Vermelho' };
+        SucessoCliente._renderChart('cs-chart-status', 'doughnut',
+          (data.porStatus || []).map(r => ({ label: labelStatus[r.label] || r.label, n: r.n })), 'Status SLA');
+        SucessoCliente._renderChart('cs-chart-departamento', 'bar', data.porDepartamento || [], 'Departamento');
+        SucessoCliente._renderChart('cs-chart-analista', 'bar', data.porAnalista || [], 'Analista', { indexAxis: 'y' });
+      } catch (e) {
+        painel.innerHTML =
+          '<p class="radar-erro">Não foi possível carregar o dashboard.</p>' +
+          '<p style="font-family:monospace;font-size:12px;color:var(--gray-500)">' + SucessoCliente._esc(e.message) + '</p>';
+        console.error('[SucessoCliente] carregarDashboard()', e);
+      }
+    },
+
+    /** Mesmo padrão de renderChart usado no Dashboard principal do app.js, só que isolado aqui dentro. */
+    _renderChart(id, type, rows, labelKey, extra = {}) {
+      if (typeof Chart === 'undefined') return; // biblioteca ainda não carregou — evita erro
+      if (_csCharts[id]) { _csCharts[id].destroy(); delete _csCharts[id]; }
+      const ctx = document.getElementById(id);
+      if (!ctx) return;
+      if (!rows || !rows.length) {
+        ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados ainda</p>';
+        return;
+      }
+      const isHBar = extra.indexAxis === 'y';
+      const labels = rows.map(r => r.label || 'Não informado');
+      const dataVals = rows.map(r => Number(r.n));
+      const isBar = type === 'bar';
+      const bg = labels.map((_, i) => CS_CHART_COLORS[i % CS_CHART_COLORS.length]);
+      _csCharts[id] = new Chart(ctx, {
+        type,
+        data: { labels, datasets: [{ label: labelKey, data: dataVals, backgroundColor: bg, borderColor: '#fff', borderWidth: isBar ? 0 : 2, borderRadius: isBar ? 4 : 0 }] },
+        options: {
+          indexAxis: extra.indexAxis || 'x',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: !isBar, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 }, padding: 12 } } },
+          scales: isBar ? {
+            x: isHBar ? { beginAtZero: true, ticks: { stepSize: 1, font: { size: 10 } }, grid: { color: 'rgba(0,0,0,.05)' } } : { ticks: { font: { size: 10 }, maxRotation: 35 }, grid: { display: false } },
+            y: isHBar ? { ticks: { font: { size: 10 } }, grid: { display: false } } : { beginAtZero: true, ticks: { stepSize: 1, font: { size: 10 } }, grid: { color: 'rgba(0,0,0,.05)' } },
+          } : {},
+        },
+      });
     },
 
     /**
