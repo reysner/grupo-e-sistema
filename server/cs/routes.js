@@ -10,6 +10,7 @@
  *     app.use('/api/cs', require('./cs/routes'));
  *
  * Endpoints:
+ *   GET  /api/cs/dashboard                 -> totais/gráficos (status SLA, departamento, analista)
  *   GET  /api/cs/agora                    -> radar de tickets em risco (só vínculos tipo='cliente')
  *   GET  /api/cs/historico                 -> lista de tickets p/ tela de relatórios (filtros: departamento/analista/status)
  *   GET  /api/cs/filtros                   -> opções de departamento/analista já vistas, p/ popular os selects
@@ -146,6 +147,44 @@ router.post('/backfill', requireAuth, requireAdmin, async (req, res) => {
     console.error('[CS] Backfill falhou:', e);
   } finally {
     backfillEmAndamento = false;
+  }
+});
+
+/**
+ * GET /api/cs/dashboard — visão geral do que já foi coletado: totais, quebra
+ * por status de SLA (verde/amarelo/vermelho), por departamento e por
+ * analista. Alimenta os gráficos da aba "Dashboard" dentro de Sucesso do
+ * Cliente. Não recebe filtros — é sempre a "foto" de tudo que está em
+ * cs_tickets (respeitando, como sempre, a política de sem carga retroativa).
+ */
+router.get('/dashboard', requireAuth, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const [total, emRisco, porStatus, porDepartamento, porAnalista] = await Promise.all([
+      pool.query(`SELECT COUNT(*)::int AS n FROM cs_tickets`),
+      pool.query(`SELECT COUNT(*)::int AS n FROM cs_tickets WHERE em_risco = TRUE`),
+      pool.query(`
+        SELECT COALESCE(pior_status, 'verde') AS label, COUNT(*)::int AS n
+          FROM cs_tickets GROUP BY COALESCE(pior_status, 'verde')`),
+      pool.query(`
+        SELECT departamento AS label, COUNT(*)::int AS n
+          FROM cs_tickets WHERE departamento IS NOT NULL
+         GROUP BY departamento ORDER BY n DESC LIMIT 15`),
+      pool.query(`
+        SELECT analista AS label, COUNT(*)::int AS n
+          FROM cs_tickets WHERE analista IS NOT NULL
+         GROUP BY analista ORDER BY n DESC LIMIT 15`),
+    ]);
+    res.json({
+      totalTickets: total.rows[0].n,
+      emRiscoAgora: emRisco.rows[0].n,
+      porStatus: porStatus.rows,
+      porDepartamento: porDepartamento.rows,
+      porAnalista: porAnalista.rows,
+    });
+  } catch (e) {
+    console.error('[cs] GET /dashboard falhou:', e);
+    res.status(500).json({ error: 'Falha ao carregar dashboard: ' + e.message });
   }
 });
 
