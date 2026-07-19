@@ -51,6 +51,15 @@
  *          <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.exportHistoricoPDF()">🖶 Exportar PDF</button>
  *        </div>
  *        <div id="hist-container"></div>
+ *
+ *        <hr style="margin:32px 0;border:none;border-top:1px solid var(--gray-200)">
+ *
+ *        <h3 style="margin-bottom:12px">Vínculos Pendentes de Confirmação</h3>
+ *        <p style="color:var(--gray-500);font-size:13px;margin-bottom:12px">
+ *          Números de telefone que apareceram em tickets e ainda não foram confirmados
+ *          como cliente, fornecedor, interno ou software.
+ *        </p>
+ *        <div id="vinc-container"></div>
  *      </section>
  *
  * 3. public/index.html — no fim do <body>, perto dos outros <script src="js/...">:
@@ -75,6 +84,7 @@
       await this.carregar();
       await this.carregarFiltros();
       await this.filtrarHistorico();
+      await this.carregarVinculosPendentes();
       if (this._timer) clearInterval(this._timer);
       this._timer = setInterval(() => this.carregar(), this._intervaloMs);
     },
@@ -323,6 +333,101 @@
         '<td>' + fmt(t.encerramento) + '</td>' +
         '</tr>'
       );
+    },
+
+    /**
+     * Busca a fila de vínculos pendentes (GET /api/cs/vinculos/pendentes) e
+     * renderiza a lista com o campo editável + botão confirmar de cada um.
+     * Chamado ao abrir a aba e de novo depois de cada confirmação.
+     */
+    async carregarVinculosPendentes() {
+      const container = document.getElementById('vinc-container');
+      if (!container) return; // seção ainda não colada no HTML
+      container.innerHTML = '<p style="color:var(--gray-500)">Carregando...</p>';
+      try {
+        const resp = await fetch('/api/cs/vinculos/pendentes', { headers: SucessoCliente._authHeaders() });
+        const texto = await resp.text();
+        let data;
+        try { data = texto ? JSON.parse(texto) : {}; } catch (e) { data = null; }
+        if (!resp.ok || !data) {
+          const detalhe = data && data.error ? data.error : (texto || '').slice(0, 200);
+          throw new Error('HTTP ' + resp.status + (detalhe ? ' — ' + detalhe : ''));
+        }
+        SucessoCliente._ultimosVinculos = data.vinculos || [];
+        SucessoCliente._renderVinculos(container, SucessoCliente._ultimosVinculos);
+      } catch (e) {
+        container.innerHTML =
+          '<p class="radar-erro">Não foi possível carregar os vínculos pendentes.</p>' +
+          '<p style="font-family:monospace;font-size:12px;color:var(--gray-500)">' + SucessoCliente._esc(e.message) + '</p>';
+        console.error('[SucessoCliente] carregarVinculosPendentes()', e);
+      }
+    },
+
+    _renderVinculos(container, vinculos) {
+      if (!vinculos.length) {
+        container.innerHTML = '<p class="radar-ok">✅ Nenhum vínculo pendente — tudo confirmado.</p>';
+        return;
+      }
+      const linhas = vinculos.map(SucessoCliente._linhaVinculo).join('');
+      container.innerHTML =
+        '<table class="radar-tabela">' +
+        '<thead><tr><th>Telefone</th><th>Empresa (sugestão)</th><th>Tipo</th><th></th></tr></thead>' +
+        '<tbody>' + linhas + '</tbody>' +
+        '</table>';
+    },
+
+    _linhaVinculo(v) {
+      const conf = v.confianca != null ? ` (${v.confianca}% de confiança)` : '';
+      const empresaId = 'vinc-empresa-' + v.id;
+      const tipoId = 'vinc-tipo-' + v.id;
+      return (
+        '<tr>' +
+        '<td>' + SucessoCliente._esc(v.telefone) + '</td>' +
+        '<td><input type="text" id="' + empresaId + '" value="' + SucessoCliente._esc(v.empresa_nome || '') + '" ' +
+          'placeholder="Nome da empresa" style="width:220px;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px">' +
+          '<div style="color:var(--gray-500);font-size:11px">' + SucessoCliente._esc(conf.trim()) + '</div></td>' +
+        '<td><select id="' + tipoId + '" class="radar-select">' +
+          '<option value="cliente"' + (v.cliente_id ? ' selected' : '') + '>Cliente</option>' +
+          '<option value="fornecedor">Fornecedor</option>' +
+          '<option value="interno">Interno</option>' +
+          '<option value="software">Software</option>' +
+          '</select></td>' +
+        '<td><button class="btn btn-sm" onclick="SucessoCliente.confirmarVinculoLinha(\'' + v.id + '\')">✅ Confirmar</button></td>' +
+        '</tr>'
+      );
+    },
+
+    /** Botão "Confirmar" de uma linha da fila de vínculos pendentes. */
+    async confirmarVinculoLinha(id) {
+      const empresaInput = document.getElementById('vinc-empresa-' + id);
+      const tipoSelect = document.getElementById('vinc-tipo-' + id);
+      if (!empresaInput || !tipoSelect) return;
+      const original = (SucessoCliente._ultimosVinculos || []).find(v => String(v.id) === String(id));
+      const tipo = tipoSelect.value;
+      const empresaNome = empresaInput.value.trim();
+      if (tipo === 'cliente' && !empresaNome) {
+        if (window.App && App.Toast) App.Toast.err('Preencha o nome da empresa antes de confirmar como cliente.');
+        return;
+      }
+      try {
+        const resp = await fetch('/api/cs/vinculos/' + encodeURIComponent(id) + '/confirmar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...SucessoCliente._authHeaders() },
+          body: JSON.stringify({
+            clienteId: original ? original.cliente_id : null,
+            empresaNome,
+            cnpj: original ? original.cnpj : null,
+            tipo,
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        if (window.App && App.Toast) App.Toast.ok('Vínculo confirmado!');
+        await SucessoCliente.carregarVinculosPendentes();
+      } catch (e) {
+        if (window.App && App.Toast) App.Toast.err('Falha ao confirmar vínculo: ' + e.message);
+        console.error('[SucessoCliente] confirmarVinculoLinha()', e);
+      }
     },
 
     // Mesmo padrão usado nos outros módulos do app.js (ex.: linha "const _tk = () => localStorage.getItem('ge_token') || '';")
