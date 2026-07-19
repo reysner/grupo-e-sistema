@@ -44,9 +44,11 @@
  *            <option value="">Todos os status</option>
  *            <option value="vermelho">🔴 Vermelho</option>
  *            <option value="amarelo">🟡 Amarelo</option>
- *            <option value="verde">⚪ Verde</option>
+ *            <option value="verde">🟢 Verde</option>
  *          </select>
  *          <button class="btn btn-sm" onclick="SucessoCliente.filtrarHistorico()">Filtrar</button>
+ *          <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.exportHistoricoCSV()">⬇ Exportar CSV</button>
+ *          <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.exportHistoricoPDF()">🖶 Exportar PDF</button>
  *        </div>
  *        <div id="hist-container"></div>
  *      </section>
@@ -219,13 +221,79 @@
           const detalhe = data && data.error ? data.error : (texto || '').slice(0, 200);
           throw new Error('HTTP ' + resp.status + (detalhe ? ' — ' + detalhe : ''));
         }
-        SucessoCliente._renderHistorico(container, data.tickets || []);
+        SucessoCliente._ultimoHistorico = data.tickets || []; // guardado p/ exportCSV/exportPDF sem refazer a chamada
+        SucessoCliente._renderHistorico(container, SucessoCliente._ultimoHistorico);
       } catch (e) {
+        SucessoCliente._ultimoHistorico = [];
         container.innerHTML =
           '<p class="radar-erro">Não foi possível carregar o histórico.</p>' +
           '<p style="font-family:monospace;font-size:12px;color:var(--gray-500)">' + SucessoCliente._esc(e.message) + '</p>';
         console.error('[SucessoCliente] filtrarHistorico()', e);
       }
+    },
+
+    // Colunas/labels compartilhadas pelos dois exports (mesmo padrão usado em
+    // app.js — ver Atendimento.exportCSV/exportPDF: separador ";", BOM no CSV,
+    // popup + window.print() no PDF).
+    _colunasHistorico: ['abertura', 'encerramento', 'empresa', 'departamento', 'analista', 'pior_status'],
+    _labelsHistorico: {
+      abertura: 'Abertura', encerramento: 'Encerramento', empresa: 'Empresa',
+      departamento: 'Departamento', analista: 'Analista', pior_status: 'Status SLA',
+    },
+    _valorHistorico(r, c) {
+      if (c === 'empresa') return r.empresa_nome || r.empresa_texto || '—';
+      if (c === 'abertura' || c === 'encerramento') return r[c] ? new Date(r[c]).toLocaleString('pt-BR') : '—';
+      if (c === 'pior_status') {
+        return r.pior_status === 'vermelho' ? 'Vermelho' : r.pior_status === 'amarelo' ? 'Amarelo' : r.pior_status === 'verde' ? 'Verde' : '—';
+      }
+      return r[c] ?? '—';
+    },
+
+    /** Botão "Exportar CSV" — usa os dados já carregados na tela (filtro atual aplicado). */
+    exportHistoricoCSV() {
+      const data = SucessoCliente._ultimoHistorico || [];
+      if (!data.length) { if (window.App && App.Toast) App.Toast.err('Nenhum dado para exportar.'); return; }
+      const cols = SucessoCliente._colunasHistorico;
+      const labels = SucessoCliente._labelsHistorico;
+      const header = cols.map(c => labels[c]).join(';');
+      const rows = data.map(r => cols.map(c => `"${String(SucessoCliente._valorHistorico(r, c)).replace(/"/g, '""')}"`).join(';'));
+      const csv = [header, ...rows].join('\n');
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sucesso_cliente_historico_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      if (window.App && App.Toast) App.Toast.ok('CSV exportado!');
+    },
+
+    /** Botão "Exportar PDF" — mesmo padrão dos outros módulos: popup + Ctrl+P / Salvar como PDF. */
+    exportHistoricoPDF() {
+      const data = SucessoCliente._ultimoHistorico || [];
+      if (!data.length) { if (window.App && App.Toast) App.Toast.err('Nenhum dado para exportar.'); return; }
+      const cols = SucessoCliente._colunasHistorico;
+      const labels = SucessoCliente._labelsHistorico;
+      const rows = data.map(r =>
+        '<tr>' + cols.map(c => '<td>' + SucessoCliente._esc(String(SucessoCliente._valorHistorico(r, c))) + '</td>').join('') + '</tr>'
+      ).join('');
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Histórico — Sucesso do Cliente</title>
+      <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
+      h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
+      table{width:100%;border-collapse:collapse;font-size:10px}
+      th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
+      td{padding:5px 8px;border-bottom:1px solid #eee}tr:nth-child(even) td{background:#f8f8f8}
+      @media print{body{margin:10px}}</style></head><body>
+      <h1>Grupo-E — Histórico de Atendimentos (Sucesso do Cliente)</h1>
+      <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${data.length} registros</p>
+      <table><thead><tr>${cols.map(c => '<th>' + labels[c] + '</th>').join('')}</tr></thead>
+      <tbody>${rows}</tbody></table>
+      <script>window.onload=()=>{window.print();}<\/script></body></html>`;
+      const win = window.open('', '_blank');
+      if (!win) { if (window.App && App.Toast) App.Toast.err('Permita popups para exportar PDF.'); return; }
+      win.document.write(html);
+      win.document.close();
+      if (window.App && App.Toast) App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
     },
 
     _renderHistorico(container, tickets) {
@@ -242,7 +310,7 @@
     },
 
     _linhaHistorico(t) {
-      const cor = t.pior_status === 'vermelho' ? '🔴' : (t.pior_status === 'amarelo' ? '🟡' : '⚪');
+      const cor = t.pior_status === 'vermelho' ? '🔴' : (t.pior_status === 'amarelo' ? '🟡' : '🟢');
       const empresa = t.empresa_nome || t.empresa_texto || '(sem vínculo)';
       const fmt = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
       return (
@@ -280,7 +348,7 @@
       let sla = {};
       try { sla = typeof t.sla === 'string' ? JSON.parse(t.sla) : (t.sla || {}); } catch (e) { sla = {}; }
       const radar = sla.radar || null;
-      const cor = t.pior_status === 'vermelho' ? '🔴' : (t.pior_status === 'amarelo' ? '🟡' : '⚪');
+      const cor = t.pior_status === 'vermelho' ? '🔴' : (t.pior_status === 'amarelo' ? '🟡' : '🟢');
       const empresa = t.empresa_nome || t.empresa_texto || '(sem vínculo)';
       const relogio = radar ? radar.rotulo : '—';
       const tempo = radar ? (radar.minutos_uteis + ' min (limite ' + (radar.limite ?? '—') + ')') : '—';
