@@ -151,29 +151,56 @@ router.post('/backfill', requireAuth, requireAdmin, async (req, res) => {
 });
 
 /**
- * GET /api/cs/dashboard — visão geral do que já foi coletado: totais, quebra
- * por status de SLA (verde/amarelo/vermelho), por departamento e por
- * analista. Alimenta os gráficos da aba "Dashboard" dentro de Sucesso do
- * Cliente. Não recebe filtros — é sempre a "foto" de tudo que está em
- * cs_tickets (respeitando, como sempre, a política de sem carga retroativa).
+ * GET /api/cs/dashboard?ano=2026&mes=7 — visão geral do que já foi coletado:
+ * totais, quebra por status de SLA (verde/amarelo/vermelho), por
+ * departamento e por analista. Alimenta os gráficos da aba "Dashboard"
+ * dentro de Sucesso do Cliente. `ano`/`mes` são opcionais (sem eles, mostra
+ * tudo) e filtram pela data de ABERTURA do ticket. Também devolve `anos`
+ * (lista de anos com dados) pra popular o <select> sem outra chamada.
  */
 router.get('/dashboard', requireAuth, async (req, res) => {
   try {
     const pool = obterPool();
-    const [total, emRisco, porStatus, porDepartamento, porAnalista] = await Promise.all([
-      pool.query(`SELECT COUNT(*)::int AS n FROM cs_tickets`),
-      pool.query(`SELECT COUNT(*)::int AS n FROM cs_tickets WHERE em_risco = TRUE`),
+    const ano = req.query.ano ? parseInt(req.query.ano, 10) : null;
+    const mes = req.query.mes ? parseInt(req.query.mes, 10) : null;
+    // WHERE compartilhado por todas as consultas — $1/$2 sempre ano/mes
+    // (null = "sem filtro", tratado pelo próprio SQL abaixo).
+    const cond = `WHERE ($1::int IS NULL OR EXTRACT(YEAR FROM t.abertura) = $1::int)
+                    AND ($2::int IS NULL OR EXTRACT(MONTH FROM t.abertura) = $2::int)`;
+    const params = [ano, mes];
+
+    const [total, emRisco, porStatus, porDepartamento, porAnalista, desempenho, anos] = await Promise.all([
+      pool.query(`SELECT COUNT(*)::int AS n FROM cs_tickets t ${cond}`, params),
+      pool.query(`SELECT COUNT(*)::int AS n FROM cs_tickets t ${cond} AND t.em_risco = TRUE`, params),
       pool.query(`
-        SELECT COALESCE(pior_status, 'verde') AS label, COUNT(*)::int AS n
-          FROM cs_tickets GROUP BY COALESCE(pior_status, 'verde')`),
+        SELECT COALESCE(t.pior_status, 'verde') AS label, COUNT(*)::int AS n
+          FROM cs_tickets t ${cond} GROUP BY COALESCE(t.pior_status, 'verde')`, params),
       pool.query(`
-        SELECT departamento AS label, COUNT(*)::int AS n
-          FROM cs_tickets WHERE departamento IS NOT NULL
-         GROUP BY departamento ORDER BY n DESC LIMIT 15`),
+        SELECT t.departamento AS label, COUNT(*)::int AS n
+          FROM cs_tickets t ${cond} AND t.departamento IS NOT NULL
+         GROUP BY t.departamento ORDER BY n DESC LIMIT 15`, params),
       pool.query(`
-        SELECT analista AS label, COUNT(*)::int AS n
-          FROM cs_tickets WHERE analista IS NOT NULL
-         GROUP BY analista ORDER BY n DESC LIMIT 15`),
+        SELECT t.analista AS label, COUNT(*)::int AS n
+          FROM cs_tickets t ${cond} AND t.analista IS NOT NULL
+         GROUP BY t.analista ORDER BY n DESC LIMIT 15`, params),
+      // Desempenho por analista: % dentro do SLA (verde/total), pior primeiro —
+      // é o que permite enxergar "quem está deixando mais cliente esperando".
+      // Exige pelo menos 3 tickets no período pra não colocar alguém no topo
+      // do ranking (bom ou ruim) por causa de 1 caso isolado.
+      pool.query(`
+        SELECT t.analista AS label,
+               COUNT(*)::int AS total,
+               COUNT(*) FILTER (WHERE t.pior_status = 'verde')::int AS verdes,
+               COUNT(*) FILTER (WHERE t.pior_status = 'amarelo')::int AS amarelos,
+               COUNT(*) FILTER (WHERE t.pior_status = 'vermelho')::int AS vermelhos
+          FROM cs_tickets t ${cond} AND t.analista IS NOT NULL
+         GROUP BY t.analista
+        HAVING COUNT(*) >= 3
+         ORDER BY (COUNT(*) FILTER (WHERE t.pior_status = 'verde')::float / COUNT(*)) ASC
+         LIMIT 15`, params),
+      pool.query(`
+        SELECT DISTINCT EXTRACT(YEAR FROM abertura)::int AS ano
+          FROM cs_tickets WHERE abertura IS NOT NULL ORDER BY ano DESC`),
     ]);
     res.json({
       totalTickets: total.rows[0].n,
@@ -181,6 +208,11 @@ router.get('/dashboard', requireAuth, async (req, res) => {
       porStatus: porStatus.rows,
       porDepartamento: porDepartamento.rows,
       porAnalista: porAnalista.rows,
+      desempenhoAnalistas: desempenho.rows.map(r => ({
+        ...r,
+        pct: r.total ? Math.round((r.verdes / r.total) * 100) : null,
+      })),
+      anos: anos.rows.map(r => r.ano),
     });
   } catch (e) {
     console.error('[cs] GET /dashboard falhou:', e);
