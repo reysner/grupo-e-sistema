@@ -335,6 +335,7 @@ const App = (() => {
     pesquisas:'Pesquisas de Satisfação', recuperacao:'Recuperação de Clientes',
     admin:'Administração de Usuários',
     'sucesso-cliente':'Sucesso do Cliente',
+    'analise-inteligente':'Análise Inteligente',
   };
 
   const Nav = {
@@ -362,6 +363,7 @@ const App = (() => {
       if (page === 'sensiveis')   window.Sensiveis?.loadGrid();
       if (page === 'admin')        (window.Admin || Admin)?.load();
       if (page === 'sucesso-cliente') window.SucessoCliente?.load();
+      if (page === 'analise-inteligente') window.AnaliseInteligente?.load();
       return false;
     },
   };
@@ -5449,4 +5451,112 @@ window.Tickets = Tickets;
   };
 
   window.SucessoCliente = SucessoCliente;
+})();
+
+
+// ── Análise Inteligente — churn (risco de cancelamento) e sentimento ──────────
+// Módulo isolado (não mexe em nenhum outro módulo): só lê /api/data/churn e
+// /api/data/sentimento, que também são novos e não alteram nenhuma tabela
+// existente. Sem custo, sem IA paga — tudo por regras e palavras-chave.
+(function () {
+  'use strict';
+
+  function authHeaders() {
+    const tk = localStorage.getItem('ge_token') || '';
+    return { Authorization: 'Bearer ' + tk };
+  }
+
+  function esc(s) {
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => map[c]);
+  }
+
+  const AnaliseInteligente = {
+    async load() {
+      AnaliseInteligente.carregarChurn();
+      AnaliseInteligente.carregarSentimento();
+    },
+
+    async carregarChurn() {
+      const tbody = document.getElementById('churn-tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--gray-400)">Carregando...</td></tr>';
+      try {
+        const res = await fetch('/api/data/churn', { headers: authHeaders() });
+        if (!res.ok) throw new Error('Falha ao buscar.');
+        const { data } = await res.json();
+        if (!data || !data.length) {
+          tbody.innerHTML = '<tr><td colspan="4" style="color:var(--gray-400)">Nenhum cliente ativo cadastrado na Carteira ainda.</td></tr>';
+          return;
+        }
+        const cores = {
+          vermelho: { bg: '#fff5f5', fg: '#e53e3e', label: 'Alto risco' },
+          amarelo:  { bg: '#fffbeb', fg: '#d69e2e', label: 'Atenção' },
+          verde:    { bg: '#f0fff4', fg: '#38a169', label: 'Baixo risco' },
+        };
+        tbody.innerHTML = data.map(c => {
+          const cor = cores[c.nivel] || cores.verde;
+          const motivos = (c.motivos || []).length ? c.motivos.join('; ') : 'Nenhum sinal de risco identificado.';
+          return `<tr>
+            <td style="font-weight:600">${esc(c.empresa)}</td>
+            <td style="font-size:12px;color:var(--gray-500)">${esc(c.cnpj)}</td>
+            <td><span style="background:${cor.bg};color:${cor.fg};padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700">${cor.label} (${c.score})</span></td>
+            <td style="font-size:12px;color:var(--gray-600)">${esc(motivos)}</td>
+          </tr>`;
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--danger)">Não foi possível calcular o risco de cancelamento agora.</td></tr>';
+      }
+    },
+
+    async carregarSentimento() {
+      const resumoEl = document.getElementById('sentimento-resumo');
+      const tbody = document.getElementById('sentimento-tbody');
+      if (!resumoEl || !tbody) return;
+      tbody.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400)">Carregando...</td></tr>';
+      try {
+        const res = await fetch('/api/data/sentimento', { headers: authHeaders() });
+        if (!res.ok) throw new Error('Falha ao buscar.');
+        const { resumo, comentarios } = await res.json();
+
+        const cartoes = [
+          { key: 'positivo', label: '😊 Positivos', cor: '#38a169' },
+          { key: 'neutro', label: '😐 Neutros', cor: '#94a3b8' },
+          { key: 'negativo', label: '😞 Negativos', cor: '#e53e3e' },
+        ];
+        resumoEl.innerHTML = cartoes.map(c => `
+          <div style="background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:12px 20px;text-align:center;min-width:100px">
+            <div style="font-size:24px;font-weight:800;color:${c.cor}">${(resumo && resumo[c.key]) || 0}</div>
+            <div style="font-size:11px;color:var(--gray-500);font-weight:600">${c.label}</div>
+          </div>
+        `).join('');
+
+        if (!comentarios || !comentarios.length) {
+          tbody.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400)">Nenhum comentário registrado ainda.</td></tr>';
+          return;
+        }
+        const rotulos = {
+          positivo: { cor: '#38a169', label: 'Positivo' },
+          neutro: { cor: '#94a3b8', label: 'Neutro' },
+          negativo: { cor: '#e53e3e', label: 'Negativo' },
+          sem_comentario: { cor: '#cbd5e0', label: '—' },
+        };
+        tbody.innerHTML = comentarios.map(c => {
+          const r = rotulos[c.sentimento] || rotulos.neutro;
+          const dt = new Date(c.created_at).toLocaleDateString('pt-BR');
+          return `<tr>
+            <td style="font-size:12px;color:var(--gray-500)">${dt}</td>
+            <td>${esc(c.cliente || '—')}</td>
+            <td>${esc(c.empresa || '—')}</td>
+            <td style="font-size:13px">${esc(c.pontos || '—')}</td>
+            <td><span style="color:${r.cor};font-weight:700;font-size:12px">${r.label}</span></td>
+          </tr>`;
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="5" style="color:var(--danger)">Não foi possível carregar o sentimento agora.</td></tr>';
+      }
+    },
+  };
+
+  window.AnaliseInteligente = AnaliseInteligente;
 })();
