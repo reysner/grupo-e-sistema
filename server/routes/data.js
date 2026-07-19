@@ -85,6 +85,124 @@ router.post('/gestao', async (req, res) => {
   } catch (err) { console.error('Gestao POST error:', err); res.status(500).json({ error: 'Erro ao salvar gestão.' }); }
 });
 
+const SOLICITACOES_ENTRADA = ['Constituição de empresa', 'Cliente vindo de outro contador', 'Transformação de empresa'];
+const SOLICITACOES_SAIDA = ['Saída de empresa', 'Baixa de empresa'];
+
+/**
+ * POST /api/data/gestao/importar — importação em massa de registros de
+ * Gestão de Clientes (usada pela planilha .xlsx/.csv que o frontend lê e
+ * envia já convertida em JSON). Replica EXATAMENTE o que o formulário manual
+ * faz linha a linha (ver Forms.gestao() em app.js):
+ *   - sempre grava o registro em gestao_clientes;
+ *   - se a Solicitação for de ENTRADA (Constituição/Cliente vindo de outro
+ *     contador/Transformação), também cria o cliente na Carteira (com CAC
+ *     calculado do jeito que o formulário calcula) — honorário e data de
+ *     entrada são obrigatórios nesse caso;
+ *   - se for de SAÍDA (Saída/Baixa de empresa), encerra o cliente na
+ *     Carteira pelo CNPJ (se não achar um cliente ativo com esse CNPJ, só
+ *     avisa — não impede o registro de Gestão de entrar);
+ *   - NUNCA pergunta sobre abrir ticket (isso é só do fluxo manual/admin).
+ * Linha com campo obrigatório faltando é pulada (vai pra `erros`), sem
+ * travar o restante da importação.
+ */
+router.post('/gestao/importar', requireAdmin, async (req, res) => {
+  const linhas = Array.isArray(req.body?.linhas) ? req.body.linhas : [];
+  if (!linhas.length) return res.status(400).json({ error: 'Nenhuma linha pra importar.' });
+
+  await pool.query(`ALTER TABLE gestao_clientes ADD COLUMN IF NOT EXISTS codigo TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE gestao_clientes ADD COLUMN IF NOT EXISTS regime_tributario TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS codigo TEXT`).catch(() => {});
+
+  let processados = 0;
+  const erros = [];
+  const avisos = [];
+
+  for (let i = 0; i < linhas.length; i++) {
+    const n = i + 2; // linha 1 = cabeçalho na planilha, então dado começa na 2
+    const linha = linhas[i] || {};
+    const { analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario,
+            data_entrada, honorario_inicial, origem, data_saida } = linha;
+
+    if (!analista || !solicitacao || !cnpj || !empresa || !data_sol || !competencia || !canal || !regime_tributario) {
+      erros.push({ linha: n, empresa: empresa || '(sem empresa)', motivo: 'Campo obrigatório faltando (Analista, Solicitação, CNPJ, Empresa, Data, Competência, Canal ou Regime Tributário).' });
+      continue;
+    }
+
+    const isEntrada = SOLICITACOES_ENTRADA.includes(solicitacao);
+    const isSaida = SOLICITACOES_SAIDA.includes(solicitacao);
+
+    if (isEntrada && (!honorario_inicial || !data_entrada)) {
+      erros.push({ linha: n, empresa, motivo: `Solicitação "${solicitacao}" exige Honorário Inicial e Data de Entrada do Cliente preenchidos.` });
+      continue;
+    }
+
+    try {
+      const gestaoId = uuidv4();
+      await pool.query(
+        `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [gestaoId, req.user.id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo || null, codigo || null, regime_tributario]
+      );
+
+      if (isEntrada) {
+        const mesEntrada = String(data_entrada).slice(0, 7);
+        let cacCalculado = 0;
+        try {
+          const invResult = await pool.query(`SELECT COALESCE(SUM(valor),0) AS total FROM investimentos WHERE mes = $1`, [mesEntrada]);
+          const cliResult = await pool.query(`SELECT COUNT(*) AS n FROM clientes WHERE TO_CHAR(data_entrada,'YYYY-MM') = $1`, [mesEntrada]);
+          const totalInv = parseFloat(invResult.rows[0]?.total || 0);
+          const totalCli = parseInt(cliResult.rows[0]?.n || 0, 10);
+          cacCalculado = totalCli > 0 ? totalInv / totalCli : 0;
+        } catch (e) { /* CAC fica 0 se der erro — não impede o cadastro */ }
+
+        const clienteId = uuidv4();
+        await pool.query(
+          `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada, honorario_inicial, origem, cac, codigo)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [clienteId, req.user.id, cnpj, empresa, regime_tributario, data_entrada, parseFloat(honorario_inicial) || 0, origem || null, cacCalculado, codigo || null]
+        );
+        await pool.query(
+          `INSERT INTO honorarios (cliente_id, valor, data_vigencia, obs) VALUES ($1,$2,$3,'Honorário inicial')`,
+          [clienteId, parseFloat(honorario_inicial) || 0, data_entrada]
+        );
+        await pool.query(
+          `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, valor_novo, data_evento) VALUES ($1,'entrada',$2,$3,$4)`,
+          [clienteId, `Entrada — ${empresa}`, parseFloat(honorario_inicial) || 0, data_entrada]
+        );
+      }
+
+      if (isSaida) {
+        const dataSaidaEfetiva = data_saida || data_sol;
+        const motivoSaida = motivo || solicitacao;
+        const { rows: clientesAtivos } = await pool.query(
+          `SELECT id FROM clientes WHERE cnpj = $1 AND status = 'ativo' LIMIT 1`, [cnpj]
+        );
+        if (clientesAtivos.length) {
+          const clienteId = clientesAtivos[0].id;
+          await pool.query(
+            `UPDATE clientes SET status='encerrado', data_saida=$1, motivo_saida=$2 WHERE id=$3`,
+            [dataSaidaEfetiva, motivoSaida, clienteId]
+          );
+          await pool.query(
+            `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, data_evento) VALUES ($1,'saida',$2,$3)`,
+            [clienteId, motivoSaida, dataSaidaEfetiva]
+          );
+        } else {
+          avisos.push({ linha: n, empresa, motivo: 'Registro de Gestão salvo, mas não achei esse CNPJ como cliente ativo na Carteira pra encerrar.' });
+        }
+      }
+
+      processados++;
+    } catch (e) {
+      console.error('Gestao importar — linha', n, e);
+      erros.push({ linha: n, empresa, motivo: 'Erro ao salvar: ' + e.message });
+    }
+  }
+
+  await registrarLog(req.user.id, req.user.name, 'importar', 'gestao', `Importação de planilha: ${processados} registro(s)`, req);
+  res.json({ processados, avisos, erros });
+});
+
 // ── INSATISFAÇÕES ─────────────────────────────────────────────────────────────
 router.get('/insatisfacoes', async (req, res) => {
   try {
