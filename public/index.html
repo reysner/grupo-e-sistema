@@ -334,6 +334,7 @@
             </select>
             <div style="margin-left:auto;display:flex;gap:8px">
               <input type="file" id="gc-import-file" accept=".xlsx,.xls,.csv" hidden onchange="Gestao.importarPlanilha(this.files[0])" />
+              <a class="btn btn-ghost btn-sm admin-only" href="/modelos/modelo_importacao_gestao_clientes.xlsx" download="modelo_importacao_gestao_clientes.xlsx">📥 Baixar Modelo</a>
               <button class="btn btn-ghost btn-sm admin-only" onclick="document.getElementById('gc-import-file').click()">📤 Importar Planilha</button>
               <button class="btn btn-ghost btn-sm" onclick="Gestao.exportCSV()">⬇ Exportar CSV</button>
               <button class="btn btn-ghost btn-sm" onclick="Gestao.exportPDF()">🖨 Exportar PDF</button>
