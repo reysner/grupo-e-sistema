@@ -90,12 +90,25 @@ router.get('/historico', requireAuth, async (req, res) => {
     // ticket — um ticket pode estar vermelho por causa de OUTRA etapa e não
     // deve aparecer aqui se a etapa clicada estiver verde nele. Sem `etapa`,
     // continua igual a antes: `status` filtra o pior_status geral.
+    //
+    // `selectEtapaStatus` monta uma coluna extra `etapa_status` com o status
+    // DAQUELA etapa (não o pior_status geral) — sem isso, a bolinha colorida
+    // do Histórico mostrava o status GERAL do ticket (muitas vezes verde,
+    // porque o ticket já foi encerrado e não tem mais nada "em curso"), o
+    // que parecia contradizer o filtro "vermelho" que a Thais tinha acabado
+    // de escolher. Reaproveita o MESMO placeholder ($N) já usado no WHERE.
+    let selectEtapaStatus = 'NULL AS etapa_status';
     if (etapa === 'resposta_continua') {
       valores.push(status || null);
       condicoes.push(`EXISTS (
         SELECT 1 FROM jsonb_array_elements(COALESCE(t.sla->'trocasPosTransferencia', '[]'::jsonb)) r
          WHERE r->>'em_curso' = 'false' AND ($${valores.length}::text IS NULL OR r->>'status' = $${valores.length}::text)
       )`);
+      selectEtapaStatus = `(
+        SELECT r->>'status' FROM jsonb_array_elements(COALESCE(t.sla->'trocasPosTransferencia', '[]'::jsonb)) r
+         WHERE r->>'em_curso' = 'false'
+         ORDER BY (r->>'minutos_uteis')::numeric DESC LIMIT 1
+      ) AS etapa_status`;
     } else if (etapa) {
       valores.push(etapa);
       const idxEtapa = valores.length;
@@ -104,6 +117,10 @@ router.get('/historico', requireAuth, async (req, res) => {
         SELECT 1 FROM jsonb_array_elements(COALESCE(t.sla->'relogios', '[]'::jsonb)) r
          WHERE r->>'tipo' = $${idxEtapa} AND r->>'em_curso' = 'false' AND ($${valores.length}::text IS NULL OR r->>'status' = $${valores.length}::text)
       )`);
+      selectEtapaStatus = `(
+        SELECT r->>'status' FROM jsonb_array_elements(COALESCE(t.sla->'relogios', '[]'::jsonb)) r
+         WHERE r->>'tipo' = $${idxEtapa} AND r->>'em_curso' = 'false' LIMIT 1
+      ) AS etapa_status`;
     } else if (status) {
       valores.push(status); condicoes.push(`t.pior_status = $${valores.length}`);
     }
@@ -111,7 +128,8 @@ router.get('/historico', requireAuth, async (req, res) => {
     const where = condicoes.length ? 'WHERE ' + condicoes.join(' AND ') : '';
     const { rows } = await pool.query(`
       SELECT t.id, t.zappy_id, t.empresa_texto, v.empresa_nome, t.departamento,
-             t.analista, t.status, t.pior_status, t.sla, t.abertura, t.encerramento, t.updated_at
+             t.analista, t.status, t.pior_status, t.sla, t.abertura, t.encerramento, t.updated_at,
+             ${selectEtapaStatus}
         FROM cs_tickets t
         LEFT JOIN cs_vinculos v ON v.id = t.vinculo_id
         ${where}
