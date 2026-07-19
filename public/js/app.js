@@ -1083,6 +1083,52 @@ const App = (() => {
       const { users } = await res.json();
       Admin._users = users;
       Admin.filtrar();
+      Admin.carregarBackupsAutomaticos();
+    },
+
+    async carregarBackupsAutomaticos() {
+      const tbody = document.getElementById('backups-auto-tbody');
+      if (!tbody) return;
+      try {
+        const tk = localStorage.getItem('ge_token') || '';
+        const res = await fetch('/api/data/backups-automaticos', { headers: { Authorization: 'Bearer ' + tk } });
+        if (!res || !res.ok) throw new Error('Falha ao buscar.');
+        const { data } = await res.json();
+        if (!data || !data.length) {
+          tbody.innerHTML = '<tr><td colspan="3" style="color:var(--gray-400)">Nenhum backup automático ainda (o primeiro roda na próxima madrugada).</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data.map(b => {
+          const dt = new Date(b.gerado_em).toLocaleString('pt-BR');
+          const totais = b.totais || {};
+          const resumo = Object.entries(totais).map(([k, v]) => `${k}: ${v}`).join(' | ');
+          return `<tr>
+            <td>${dt}</td>
+            <td style="font-size:12px;color:var(--gray-500)">${resumo || '—'}</td>
+            <td><button class="btn btn-ghost btn-sm" onclick="App.Admin.baixarBackupAutomatico('${b.id}')">⬇ Baixar</button></td>
+          </tr>`;
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="3" style="color:var(--danger)">Não foi possível carregar os backups automáticos.</td></tr>';
+      }
+    },
+
+    async baixarBackupAutomatico(id) {
+      try {
+        const tk = localStorage.getItem('ge_token') || '';
+        const res = await fetch('/api/data/backups-automaticos/' + id + '/download', { headers: { Authorization: 'Bearer ' + tk } });
+        if (!res || !res.ok) { App.Toast.err('Erro ao baixar backup.'); return; }
+        const data = await res.json();
+        const json = JSON.stringify(data, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url  = URL.createObjectURL(blob);
+        const ts   = new Date(data.meta?.gerado_em || Date.now()).toISOString().slice(0,10);
+        const a    = document.createElement('a');
+        a.href = url; a.download = 'backup-automatico-grupo-e-' + ts + '.json';
+        a.click(); URL.revokeObjectURL(url);
+      } catch (e) {
+        App.Toast.err('Erro ao baixar backup.');
+      }
     },
 
     filtrar() {
