@@ -116,6 +116,23 @@ function criarClienteZappy(opts = {}) {
     return chamar(`/api/contacts/${id}`);
   }
 
+  /**
+   * GET /api/messages?dateFrom=&page=&pageSize= — SEM filtro de ticketId,
+   * lista mensagens de TODOS os tickets a partir de uma data. Usado pra
+   * descobrir rapidamente quais tickets tiveram atividade recente, em vez
+   * de paginar a lista inteira de tickets (que no Grupo-E já passa de
+   * 10.000 — listar tudo a cada execução seria lento e desnecessário).
+   * `dateFrom` é só data (AAAA-MM-DD), a API não aceita hora.
+   */
+  async function listarMensagensRecentes({ dateFrom, page = 1, pageSize = 100 } = {}) {
+    const qs = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (dateFrom) qs.set('dateFrom', dateFrom);
+    const resp = await chamar(`/api/messages?${qs.toString()}`);
+    const messages = resp.messages || [];
+    const count = resp.count ?? messages.length;
+    return { messages, count, hasMore: page * pageSize < count };
+  }
+
   /** GET /api/queues?page=&pageSize= — usado pra montar o mapa id->nome do setor. */
   async function listarFilas() {
     const resp = await chamar(`/api/queues?page=1&pageSize=100`);
@@ -128,7 +145,10 @@ function criarClienteZappy(opts = {}) {
     return resp.users || [];
   }
 
-  return { obterTicket, obterMensagens, listarTickets, obterContato, listarFilas, listarUsuarios };
+  return {
+    obterTicket, obterMensagens, listarTickets, obterContato, listarFilas, listarUsuarios,
+    listarMensagensRecentes,
+  };
 }
 
 module.exports = { criarClienteZappy };
