@@ -1,18 +1,21 @@
 /* Módulo Sucesso do Cliente — estilos da aba "Agora"
-   Classes prefixadas com "cs-" para não colidir com o CSS existente.
-   Ajustar cores/fontes para bater com o resto do app quando integrar. */
+   Classes prefixadas com "radar-" (NÃO "cs-" — esse prefixo já é usado
+   pelo módulo "Clientes Sensíveis": cs-pagination, cs-grid, cs-tbody...). */
 
-.cs-agora { margin: 12px 0; }
-
-.cs-tabela { width: 100%; border-collapse: collapse; font-size: 14px; }
-.cs-tabela th {
+.radar-tabela { width: 100%; border-collapse: collapse; font-size: 14px; }
+.radar-tabela th {
   text-align: left; padding: 8px 10px; border-bottom: 2px solid #ddd;
   font-weight: 600; color: #333;
 }
-.cs-tabela td { padding: 8px 10px; border-bottom: 1px solid #eee; }
+.radar-tabela td { padding: 8px 10px; border-bottom: 1px solid #eee; }
 
-.cs-linha.cs-vermelho { background: #fdecec; }
-.cs-linha.cs-amarelo  { background: #fff8e1; }
+.radar-linha.radar-vermelho { background: #fdecec; }
+.radar-linha.radar-amarelo  { background: #fff8e1; }
 
-.cs-ok { color: #2e7d32; font-weight: 600; padding: 12px 0; }
-.cs-erro { color: #c62828; font-weight: 600; padding: 12px 0; }
+.radar-ok { color: #2e7d32; font-weight: 600; padding: 12px 0; }
+.radar-erro { color: #c62828; font-weight: 600; padding: 12px 0; }
+
+.radar-select {
+  padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px;
+  font-size: 13px; background: #fff; color: #333;
+}
