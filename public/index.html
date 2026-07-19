@@ -983,6 +983,23 @@
               </table>
             </div>
           </div>
+
+          <div class="form-card" style="margin-top:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px">
+              <h2 class="form-title" style="margin:0">Backups automáticos</h2>
+              <button class="btn btn-ghost btn-sm" onclick="App.Admin.carregarBackupsAutomaticos()" title="Atualizar lista">🔄 Atualizar</button>
+            </div>
+            <div class="form-accent"></div>
+            <p style="color:var(--gray-500);font-size:13px;margin:0 0 12px">
+              O sistema gera um backup completo sozinho, todo dia de madrugada, e guarda os últimos 30. Não precisa clicar em nada — use esta lista só se quiser baixar uma cópia de um dia específico.
+            </p>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Data/Hora</th><th>Registros</th><th>Ações</th></tr></thead>
+                <tbody id="backups-auto-tbody"><tr><td colspan="3" style="color:var(--gray-400)">Carregando...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
         </section>
 
       </main>
