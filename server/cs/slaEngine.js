@@ -160,4 +160,50 @@ function piorRelogio(lista) {
   })[0];
 }
 
-module.exports = { calcularSLA, ROTULOS };
+/**
+ * "Trocas" — tempo de resposta do escritório em CADA turno do cliente ao
+ * longo da conversa inteira, não só na primeira vez. Complementa os 5
+ * relógios (que só olham a PRIMEIRA resposta de cada trecho — aceite e
+ * departamento) com uma visão de "toda vez que a bola volta pro escritório,
+ * quanto demora pra responder de novo".
+ *
+ * Regras:
+ *  - Ignora mensagens 'sistema' (bot) — não contam como turno nem como resposta.
+ *  - Um "turno do cliente" é o INÍCIO de uma sequência de 1+ mensagens dele
+ *    (se manda 2 mensagens seguidas, conta só 1 turno, não 2).
+ *  - Mede do início do turno até a próxima mensagem 'escritorio'. Se não
+ *    respondeu ainda, em_curso=true e mede até `agora`.
+ *  - Mesmo limite do relógio "departamento" (30 min úteis) — é o mesmo tipo
+ *    de expectativa (analista responder), só que repetido a cada troca.
+ * @param {Array} mensagens  [{ hora, remetente: 'cliente'|'escritorio'|'sistema' }]
+ * @param {Date}  agora
+ * @returns {Array} [{ inicio, fim, minutos_uteis, status, em_curso }]
+ */
+const LIMITE_TROCA = 30;
+
+function calcularTrocas(mensagens, agora = new Date()) {
+  const ordenadas = ordenarPorHora((mensagens || []).filter(m => m.remetente !== 'sistema'));
+  const trocas = [];
+  for (let i = 0; i < ordenadas.length; i++) {
+    const m = ordenadas[i];
+    if (m.remetente !== 'cliente') continue;
+    if (i > 0 && ordenadas[i - 1].remetente === 'cliente') continue; // não é início de turno
+
+    const prox = ordenadas.slice(i + 1).find(x => x.remetente === 'escritorio');
+    const inicio = new Date(m.hora);
+    const emCurso = !prox;
+    const fim = prox ? new Date(prox.hora) : agora;
+    const minutos = T.minutosUteis(inicio, fim);
+    const status = T.statusSLA(minutos, LIMITE_TROCA);
+    trocas.push({
+      inicio: inicio.toISOString(),
+      fim: fim.toISOString(),
+      minutos_uteis: minutos,
+      status,
+      em_curso: emCurso,
+    });
+  }
+  return trocas;
+}
+
+module.exports = { calcularSLA, calcularTrocas, ROTULOS, LIMITE_TROCA };
