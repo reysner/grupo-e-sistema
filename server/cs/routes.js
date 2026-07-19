@@ -79,12 +79,35 @@ router.get('/agora', requireAuth, async (req, res) => {
 router.get('/historico', requireAuth, async (req, res) => {
   try {
     const pool = obterPool();
-    const { departamento, analista, status } = req.query;
+    const { departamento, analista, status, etapa } = req.query;
     const condicoes = [];
     const valores = [];
     if (departamento) { valores.push(departamento); condicoes.push(`t.departamento = $${valores.length}`); }
     if (analista) { valores.push(analista); condicoes.push(`t.analista = $${valores.length}`); }
-    if (status) { valores.push(status); condicoes.push(`t.pior_status = $${valores.length}`); }
+
+    // `etapa` (vindo do clique no gráfico "% dentro do SLA por etapa") filtra
+    // pelo status DAQUELA etapa específica, não pelo pior_status geral do
+    // ticket — um ticket pode estar vermelho por causa de OUTRA etapa e não
+    // deve aparecer aqui se a etapa clicada estiver verde nele. Sem `etapa`,
+    // continua igual a antes: `status` filtra o pior_status geral.
+    if (etapa === 'resposta_continua') {
+      valores.push(status || null);
+      condicoes.push(`EXISTS (
+        SELECT 1 FROM jsonb_array_elements(COALESCE(t.sla->'trocasPosTransferencia', '[]'::jsonb)) r
+         WHERE r->>'em_curso' = 'false' AND ($${valores.length}::text IS NULL OR r->>'status' = $${valores.length}::text)
+      )`);
+    } else if (etapa) {
+      valores.push(etapa);
+      const idxEtapa = valores.length;
+      valores.push(status || null);
+      condicoes.push(`EXISTS (
+        SELECT 1 FROM jsonb_array_elements(COALESCE(t.sla->'relogios', '[]'::jsonb)) r
+         WHERE r->>'tipo' = $${idxEtapa} AND r->>'em_curso' = 'false' AND ($${valores.length}::text IS NULL OR r->>'status' = $${valores.length}::text)
+      )`);
+    } else if (status) {
+      valores.push(status); condicoes.push(`t.pior_status = $${valores.length}`);
+    }
+
     const where = condicoes.length ? 'WHERE ' + condicoes.join(' AND ') : '';
     const { rows } = await pool.query(`
       SELECT t.id, t.zappy_id, t.empresa_texto, v.empresa_nome, t.departamento,
