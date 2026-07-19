@@ -14,6 +14,7 @@
  *   GET  /api/cs/historico                 -> lista de tickets p/ tela de relatórios (filtros: departamento/analista/status)
  *   GET  /api/cs/filtros                   -> opções de departamento/analista já vistas, p/ popular os selects
  *   POST /api/cs/ingerir                   -> dispara a ingestão manualmente (admin)
+ *   POST /api/cs/backfill?dias=90          -> carga retroativa única, roda em segundo plano (admin)
  *   GET  /api/cs/vinculos/pendentes        -> fila de de-para aguardando confirmação humana
  *   POST /api/cs/vinculos/:id/confirmar    -> confirma um vínculo (empresa/tipo)
  *
@@ -25,9 +26,12 @@
 const express = require('express');
 const router = express.Router();
 const { obterPool } = require('./pool');
-const { ingerirTickets } = require('./ingestao');
+const { ingerirTickets, executarCargaRetroativa } = require('./ingestao');
 const { criarClienteZappy } = require('./zappyClient');
 const { listarPendentes, confirmarVinculo } = require('./vinculos');
+
+// Trava simples pra não deixar disparar 2 backfills ao mesmo tempo (ex.: duplo clique).
+let backfillEmAndamento = false;
 
 let requireAuth, requireAdmin;
 try {
@@ -114,6 +118,34 @@ router.get('/filtros', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('[cs] GET /filtros falhou:', e);
     res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * POST /api/cs/backfill?dias=90 — carga retroativa ÚNICA. Reabre a "data de
+ * início da coleta" pra trás (nunca esconde ticket já coletado) e roda a
+ * ingestão em SEGUNDO PLANO (não espera terminar pra responder) — com 90
+ * dias de histórico isso pode levar vários minutos, tempo demais pra uma
+ * requisição HTTP normal aguentar. Acompanhar pelos logs do Render
+ * (procurar por "[CS] Backfill concluído") ou recarregando a aba Histórico.
+ */
+router.post('/backfill', requireAuth, requireAdmin, async (req, res) => {
+  if (backfillEmAndamento) {
+    return res.status(409).json({ error: 'Já existe uma carga retroativa em andamento. Aguarde terminar.' });
+  }
+  const dias = Math.max(1, Math.min(365, parseInt(req.query.dias, 10) || 90));
+  backfillEmAndamento = true;
+  res.json({ ok: true, dias, mensagem: `Carga retroativa de ${dias} dias iniciada em segundo plano. Pode levar alguns minutos — acompanhe pelos logs do Render ou recarregue a tela daqui a pouco.` });
+
+  try {
+    const pool = obterPool();
+    const zappyClient = criarClienteZappy();
+    const resultado = await executarCargaRetroativa({ zappyClient, pool, dias });
+    console.log('[CS] Backfill concluído:', resultado);
+  } catch (e) {
+    console.error('[CS] Backfill falhou:', e);
+  } finally {
+    backfillEmAndamento = false;
   }
 });
 
