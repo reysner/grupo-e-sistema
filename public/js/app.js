@@ -393,8 +393,6 @@ const App = (() => {
       Dashboard.renderChart('c-demanda',    'doughnut', c.atDemanda,  'Demanda');
 
       // ── SUCESSO DO CLIENTE ──────────────────────────────────────────────────
-      // Dados vêm de um endpoint separado (/api/cs/*, tabelas cs_*) — módulo
-      // isolado por trás, só a exibição é que mora aqui dentro do Dashboard geral.
       await Dashboard.carregarSucessoCliente(period, analista);
 
       // ── GESTÃO ───────────────────────────────────────────────────────────────
@@ -449,12 +447,6 @@ const App = (() => {
       });
     },
 
-    /**
-     * Busca os dados do módulo Sucesso do Cliente (GET /api/cs/dashboard) e
-     * desenha os gráficos que ficam entre "Atendimento" e "Gestão de
-     * Clientes". Reaproveita o mesmo `period` (todos/hoje/semana/mes) e
-     * `analista` já selecionados no topo do Dashboard geral.
-     */
     async carregarSucessoCliente(period, analista) {
       try {
         const qs = new URLSearchParams({ period: period || 'todos' });
@@ -473,12 +465,6 @@ const App = (() => {
       }
     },
 
-    /**
-     * Gráfico "% dentro do SLA por analista" (pior primeiro), cor por faixa
-     * (vermelho <50%, amarelo 50–79%, verde ≥80%) em vez de uma cor por
-     * analista. Clicar numa barra leva pra aba Sucesso do Cliente já com o
-     * Histórico filtrado por esse analista + só os tickets vermelhos.
-     */
     renderChartDesempenhoCS(linhas) {
       const id = 'cs-dash-desempenho';
       if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
@@ -2673,6 +2659,103 @@ const Atendimento = (() => {
     const _paged = App.Util.paginate(_filtered, _page);
     _renderGrid(_paged.items);
     App.Util.renderPagination('at-pagination', _paged.page, _paged.pages, _paged.total, 'Atendimento.goPage');
+    _carregarAnalistasSelect();
+  }
+
+  /** Popula o <select id="at-procurado"> com a lista canônica (GET /api/analistas?ativo=true). */
+  async function _carregarAnalistasSelect() {
+    const sel = document.getElementById('at-procurado');
+    if (!sel) return;
+    try {
+      const res = await fetch('/api/analistas?ativo=true', { headers: { Authorization: `Bearer ${_token()}` } });
+      if (!res || !res.ok) return;
+      const { analistas } = await res.json();
+      const atual = sel.value;
+      sel.innerHTML = '<option value="">Selecione</option>' +
+        (analistas || []).map(a => `<option value="${a.nome}">${a.nome}</option>`).join('');
+      sel.value = atual;
+    } catch (e) {
+      console.error('[Atendimento] _carregarAnalistasSelect()', e);
+    }
+  }
+
+  /** Botão "(gerenciar lista)" — abre modal com a lista completa (ativos e inativos), permite criar/ativar/desativar/excluir. */
+  async function gerenciarAnalistas() {
+    try {
+      const res = await fetch('/api/analistas', { headers: { Authorization: `Bearer ${_token()}` } });
+      if (!res || !res.ok) { App.Toast.err('Erro ao carregar analistas.'); return; }
+      const { analistas } = await res.json();
+      _renderAnalistasModal(analistas || []);
+    } catch (e) {
+      App.Toast.err('Erro ao carregar analistas.');
+    }
+  }
+
+  function _renderAnalistasModal(lista) {
+    const linhas = lista.map(a => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-100)">
+        <span style="${a.ativo ? '' : 'color:var(--gray-400);text-decoration:line-through'}">${a.nome}</span>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="Atendimento._toggleAnalista('${a.id}', ${!a.ativo})">${a.ativo ? 'Desativar' : 'Reativar'}</button>
+          <button class="btn btn-sm" style="background:none;border:none;color:#e53e3e;cursor:pointer" onclick="Atendimento._excluirAnalista('${a.id}')" title="Excluir de vez">🗑</button>
+        </div>
+      </div>`).join('') || '<p style="color:var(--gray-400);font-size:13px;padding:12px 0">Nenhum analista cadastrado ainda.</p>';
+
+    App.Modal.open('⚙️ Gerenciar Analistas',
+      `<div style="display:flex;gap:8px;margin-bottom:16px">
+        <input id="analista-novo-nome" type="text" placeholder="Nome do novo analista" style="flex:1;padding:8px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px">
+        <button class="btn btn-sm" onclick="Atendimento._criarAnalista()">+ Adicionar</button>
+      </div>
+      <div style="max-height:320px;overflow-y:auto">${linhas}</div>`,
+      () => App.Modal.close(), { noFooter: true });
+  }
+
+  async function _criarAnalista() {
+    const input = document.getElementById('analista-novo-nome');
+    const nome = (input?.value || '').trim();
+    if (!nome) { App.Toast.err('Digite um nome.'); return; }
+    try {
+      const res = await fetch('/api/analistas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${_token()}` },
+        body: JSON.stringify({ nome }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao criar.');
+      App.Toast.ok('Analista adicionado!');
+      await gerenciarAnalistas();
+      await _carregarAnalistasSelect();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
+  }
+
+  async function _toggleAnalista(id, ativo) {
+    try {
+      const res = await fetch(`/api/analistas/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${_token()}` },
+        body: JSON.stringify({ ativo }),
+      });
+      if (!res.ok) throw new Error('Erro ao atualizar.');
+      await gerenciarAnalistas();
+      await _carregarAnalistasSelect();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
+  }
+
+  async function _excluirAnalista(id) {
+    if (!confirm('Excluir esse analista de vez? Atendimentos antigos continuam mostrando o nome, só não aparece mais na lista.')) return;
+    try {
+      const res = await fetch(`/api/analistas/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${_token()}` } });
+      if (!res.ok) throw new Error('Erro ao excluir.');
+      App.Toast.ok('Analista excluído.');
+      await gerenciarAnalistas();
+      await _carregarAnalistasSelect();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
   }
 
   function exportCSV() {
@@ -2765,7 +2848,7 @@ const Atendimento = (() => {
   }
 
   function goPage(p) { _page = p; const f = _filterData(_allData); const pg = App.Util.paginate(f, p); _renderGrid(pg.items); App.Util.renderPagination('at-pagination', pg.page, pg.pages, pg.total, 'Atendimento.goPage'); }
-  return { loadGrid, exportCSV, exportPDF, limpar, excluir, goPage };
+  return { loadGrid, exportCSV, exportPDF, limpar, excluir, goPage, gerenciarAnalistas, _criarAnalista, _toggleAnalista, _excluirAnalista };
 })();
 
 window.Atendimento = Atendimento;
