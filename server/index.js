@@ -60,6 +60,7 @@ app.use('/api/auth',   resetRoutes);               // recuperação de senha (fo
 app.use('/api/auth',   authRoutes);
 app.use('/api/data',   dataRoutes);
 app.use('/api/users',  usersRoutes);
+app.use('/api/cs',     require('./cs/routes'));    // Sucesso do Cliente — radar de SLA
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
