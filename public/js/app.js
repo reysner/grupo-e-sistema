@@ -392,6 +392,11 @@ const App = (() => {
       Dashboard.renderChart('c-analista',   'bar',      c.atAnalista, 'Analista',    {indexAxis:'y'});
       Dashboard.renderChart('c-demanda',    'doughnut', c.atDemanda,  'Demanda');
 
+      // ── SUCESSO DO CLIENTE ──────────────────────────────────────────────────
+      // Dados vêm de um endpoint separado (/api/cs/*, tabelas cs_*) — módulo
+      // isolado por trás, só a exibição é que mora aqui dentro do Dashboard geral.
+      await Dashboard.carregarSucessoCliente(period, analista);
+
       // ── GESTÃO ───────────────────────────────────────────────────────────────
       Dashboard.renderChart('c-gestao', 'doughnut', c.gcTipo,  'Solicitação');
       Dashboard.renderChart('c-canal',  'pie',      c.gcCanal, 'Canal');
@@ -440,6 +445,71 @@ const App = (() => {
             x: isHBar ? { beginAtZero:true, ticks:{stepSize:1,font:{size:10}}, grid:{color:'rgba(0,0,0,.05)'} } : { ticks:{font:{size:10},maxRotation:35}, grid:{display:false} },
             y: isHBar ? { ticks:{font:{size:10}}, grid:{display:false} } : { beginAtZero:true, ticks:{stepSize:1,font:{size:10}}, grid:{color:'rgba(0,0,0,.05)'} },
           } : {},
+        },
+      });
+    },
+
+    /**
+     * Busca os dados do módulo Sucesso do Cliente (GET /api/cs/dashboard) e
+     * desenha os gráficos que ficam entre "Atendimento" e "Gestão de
+     * Clientes". Reaproveita o mesmo `period` (todos/hoje/semana/mes) e
+     * `analista` já selecionados no topo do Dashboard geral.
+     */
+    async carregarSucessoCliente(period, analista) {
+      try {
+        const qs = new URLSearchParams({ period: period || 'todos' });
+        if (analista) qs.set('analista', analista);
+        const res = await API.get(`/api/cs/dashboard?${qs.toString()}`);
+        if (!res || !res.ok) return;
+        const d = await res.json();
+        const labelStatus = { verde: '🟢 Verde', amarelo: '🟡 Amarelo', vermelho: '🔴 Vermelho' };
+        Dashboard.renderChart('cs-dash-status', 'doughnut',
+          (d.porStatus || []).map(r => ({ label: labelStatus[r.label] || r.label, n: r.n })), 'Status SLA');
+        Dashboard.renderChart('cs-dash-departamento', 'bar', d.porDepartamento || [], 'Departamento');
+        Dashboard.renderChart('cs-dash-analista', 'bar', d.porAnalista || [], 'Analista', { indexAxis: 'y' });
+        Dashboard.renderChartDesempenhoCS(d.desempenhoAnalistas || []);
+      } catch (e) {
+        console.error('[Dashboard] carregarSucessoCliente()', e);
+      }
+    },
+
+    /**
+     * Gráfico "% dentro do SLA por analista" (pior primeiro), cor por faixa
+     * (vermelho <50%, amarelo 50–79%, verde ≥80%) em vez de uma cor por
+     * analista. Clicar numa barra leva pra aba Sucesso do Cliente já com o
+     * Histórico filtrado por esse analista + só os tickets vermelhos.
+     */
+    renderChartDesempenhoCS(linhas) {
+      const id = 'cs-dash-desempenho';
+      if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
+      const ctx = document.getElementById(id);
+      if (!ctx) return;
+      if (!linhas.length) {
+        ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados suficientes ainda (precisa de pelo menos 3 tickets por analista)</p>';
+        return;
+      }
+      const labels = linhas.map(r => r.label || 'Não informado');
+      const dataVals = linhas.map(r => r.pct ?? 0);
+      const cores = dataVals.map(p => (p < 50 ? '#e53e3e' : p < 80 ? '#f5c518' : '#38a169'));
+      _charts[id] = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: '% dentro do SLA', data: dataVals, backgroundColor: cores, borderRadius: 4 }] },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { min: 0, max: 100, ticks: { font: { size: 10 }, callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
+            y: { ticks: { font: { size: 10 } }, grid: { display: false } },
+          },
+          onClick: async (evt, elementos) => {
+            if (!elementos.length) return;
+            const analista = labels[elementos[0].index];
+            Nav.go('sucesso-cliente');
+            await window.SucessoCliente?.load();
+            window.SucessoCliente?.filtrarPorAnalista(analista);
+          },
         },
       });
     },
