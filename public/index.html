@@ -207,6 +207,19 @@
             </div>
           </div>
 
+          <!-- SUCESSO DO CLIENTE -->
+<div style="margin-bottom:28px">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+    <div style="width:4px;height:20px;background:var(--g500);border-radius:2px"></div>
+    <h3 style="font-size:15px;font-weight:700;color:var(--g800);margin:0">Sucesso do Cliente</h3>
+  </div>
+  <div class="charts-grid">
+    <div class="chart-card"><p class="chart-title">Status do SLA</p><div class="chart-wrap"><canvas id="cs-dash-status"></canvas></div></div>
+    <div class="chart-card"><p class="chart-title">Por departamento</p><div class="chart-wrap"><canvas id="cs-dash-departamento"></canvas></div></div>
+    <div class="chart-card"><p class="chart-title">Por analista (volume)</p><div class="chart-wrap"><canvas id="cs-dash-analista"></canvas></div></div>
+    <div class="chart-card" style="grid-column:1/-1"><p class="chart-title">% dentro do SLA por analista (pior primeiro) — clique numa barra pra ver os tickets vermelhos</p><div class="chart-wrap"><canvas id="cs-dash-desempenho"></canvas></div></div>
+  </div>
+</div>
           <!-- GESTÃO DE CLIENTES -->
           <div style="margin-bottom:28px">
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
