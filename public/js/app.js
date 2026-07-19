@@ -378,12 +378,23 @@ const App = (() => {
       const d = await res.json();
       Dashboard._lastData = d;
       const c = d.charts;
-      // Populate analista dropdown
+      // Dropdown de analista usa a lista CANÔNICA (/api/analistas), não mais os
+      // nomes soltos digitados historicamente no Atendimento — assim o nome
+      // selecionado bate certinho com o Zappy e filtra também os gráficos
+      // do Sucesso do Cliente lá embaixo.
       const anaListaSel = document.getElementById('dash-analista');
-      if (anaListaSel && d.analistas) {
-        const cur = anaListaSel.value;
-        anaListaSel.innerHTML = '<option value="">Todos os analistas</option>' +
-          d.analistas.map(a => `<option value="${a}" ${a===cur?'selected':''}>${a}</option>`).join('');
+      if (anaListaSel) {
+        try {
+          const resAn = await API.get('/api/analistas?ativo=true');
+          if (resAn && resAn.ok) {
+            const { analistas: listaAnalistas } = await resAn.json();
+            const cur = anaListaSel.value;
+            anaListaSel.innerHTML = '<option value="">Todos os analistas</option>' +
+              (listaAnalistas || []).map(a => `<option value="${a.nome}" ${a.nome === cur ? 'selected' : ''}>${a.nome}</option>`).join('');
+          }
+        } catch (e) {
+          console.error('[Dashboard] popular dash-analista', e);
+        }
       }
 
       // ── ATENDIMENTO ──────────────────────────────────────────────────────────
@@ -2662,7 +2673,6 @@ const Atendimento = (() => {
     _carregarAnalistasSelect();
   }
 
-  /** Popula o <select id="at-procurado"> com a lista canônica (GET /api/analistas?ativo=true). */
   async function _carregarAnalistasSelect() {
     const sel = document.getElementById('at-procurado');
     if (!sel) return;
@@ -2679,7 +2689,6 @@ const Atendimento = (() => {
     }
   }
 
-  /** Botão "(gerenciar lista)" — abre modal com a lista completa (ativos e inativos), permite criar/ativar/desativar/excluir. */
   async function gerenciarAnalistas() {
     try {
       const res = await fetch('/api/analistas', { headers: { Authorization: `Bearer ${_token()}` } });
