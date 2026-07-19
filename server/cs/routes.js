@@ -151,23 +151,62 @@ router.post('/backfill', requireAuth, requireAdmin, async (req, res) => {
 });
 
 /**
- * GET /api/cs/dashboard?ano=2026&mes=7 — visão geral do que já foi coletado:
- * totais, quebra por status de SLA (verde/amarelo/vermelho), por
- * departamento e por analista. Alimenta os gráficos da aba "Dashboard"
- * dentro de Sucesso do Cliente. `ano`/`mes` são opcionais (sem eles, mostra
- * tudo) e filtram pela data de ABERTURA do ticket. Também devolve `anos`
- * (lista de anos com dados) pra popular o <select> sem outra chamada.
+ * Calcula [de, até] a partir do `period` usado no Dashboard geral do app
+ * (mesmos valores do <select id="dash-period">: todos/hoje/semana/mes).
+ * Retorna null se for "todos" ou algo não reconhecido (= sem filtro).
+ */
+function intervaloPorPeriod(period) {
+  const agora = new Date();
+  if (period === 'hoje') {
+    const de = new Date(agora); de.setHours(0, 0, 0, 0);
+    return [de, agora];
+  }
+  if (period === 'semana') {
+    return [new Date(agora.getTime() - 7 * 24 * 60 * 60 * 1000), agora];
+  }
+  if (period === 'mes') {
+    return [new Date(agora.getFullYear(), agora.getMonth(), 1), agora];
+  }
+  return null;
+}
+
+/**
+ * GET /api/cs/dashboard — visão geral do que já foi coletado: totais, quebra
+ * por status de SLA (verde/amarelo/vermelho), por departamento e por
+ * analista. Alimenta tanto o painel dentro de "Sucesso do Cliente" quanto a
+ * seção embutida no Dashboard geral (entre Atendimento e Gestão de Clientes).
+ *
+ * Dois jeitos de filtrar por data (o que vier, manda):
+ *   ?period=todos|hoje|semana|mes  — mesmo padrão do Dashboard geral
+ *   ?ano=2026&mes=7                — usado pelo painel dentro do próprio módulo
+ * Mais opcionalmente ?analista=Nome (filtra só por esse analista).
+ * Sempre filtra pela data de ABERTURA do ticket. Devolve `anos` (lista de
+ * anos com dados) pra popular o <select> sem outra chamada.
  */
 router.get('/dashboard', requireAuth, async (req, res) => {
   try {
     const pool = obterPool();
-    const ano = req.query.ano ? parseInt(req.query.ano, 10) : null;
-    const mes = req.query.mes ? parseInt(req.query.mes, 10) : null;
-    // WHERE compartilhado por todas as consultas — $1/$2 sempre ano/mes
-    // (null = "sem filtro", tratado pelo próprio SQL abaixo).
-    const cond = `WHERE ($1::int IS NULL OR EXTRACT(YEAR FROM t.abertura) = $1::int)
-                    AND ($2::int IS NULL OR EXTRACT(MONTH FROM t.abertura) = $2::int)`;
-    const params = [ano, mes];
+    const condicoes = [];
+    const params = [];
+
+    if (req.query.period) {
+      const intervalo = intervaloPorPeriod(req.query.period);
+      if (intervalo) {
+        params.push(intervalo[0].toISOString(), intervalo[1].toISOString());
+        condicoes.push(`t.abertura >= $${params.length - 1}`, `t.abertura <= $${params.length}`);
+      }
+    } else {
+      const ano = req.query.ano ? parseInt(req.query.ano, 10) : null;
+      const mes = req.query.mes ? parseInt(req.query.mes, 10) : null;
+      if (ano) { params.push(ano); condicoes.push(`EXTRACT(YEAR FROM t.abertura) = $${params.length}::int`); }
+      if (mes) { params.push(mes); condicoes.push(`EXTRACT(MONTH FROM t.abertura) = $${params.length}::int`); }
+    }
+    if (req.query.analista) { params.push(req.query.analista); condicoes.push(`t.analista = $${params.length}`); }
+
+    // "TRUE" sempre presente: garante que `cond` nunca fica vazio, então dá
+    // pra sempre colar "${cond} AND ..." nas consultas abaixo sem checar caso a caso.
+    condicoes.unshift('TRUE');
+    const cond = 'WHERE ' + condicoes.join(' AND ');
 
     const [total, emRisco, porStatus, porDepartamento, porAnalista, desempenho, anos] = await Promise.all([
       pool.query(`SELECT COUNT(*)::int AS n FROM cs_tickets t ${cond}`, params),
