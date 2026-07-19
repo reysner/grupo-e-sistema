@@ -1893,6 +1893,143 @@ router.get('/tickets-usuarios', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro ao listar usuários.' }); }
 });
 
+// ── ANÁLISE INTELIGENTE (sem custo — por palavras-chave, não usa IA paga) ──────
+// Mesma lógica já usada no motor de SLA pra detectar "vou transferir": lista
+// de palavras normalizada (sem acento, minúsculo) e contagem de ocorrências.
+// Não manda nenhum dado pra fora do sistema.
+
+function normalizarTexto(txt) {
+  return (txt || '')
+    .toString()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+const PALAVRAS_POSITIVAS = [
+  'otimo', 'excelente', 'muito bom', 'adorei', 'satisfeito', 'satisfeita', 'recomendo',
+  'rapido', 'rapida', 'eficiente', 'atencioso', 'atenciosa', 'prestativo', 'prestativa',
+  'parabens', 'maravilhoso', 'maravilhosa', 'confio', 'confianca', 'resolveu', 'resolvido',
+  'agil', 'competente', 'educado', 'educada', 'gentil', 'superou', 'impecavel', 'nota 10',
+];
+const PALAVRAS_NEGATIVAS = [
+  'ruim', 'pessimo', 'pessima', 'demorou', 'demora', 'lento', 'lenta', 'insatisfeito',
+  'insatisfeita', 'nao resolveu', 'sem retorno', 'sem resposta', 'descaso',
+  'falta de atencao', 'desorganizado', 'desorganizada', 'erro', 'nao resolvido',
+  'frustrado', 'frustrada', 'decepcionado', 'decepcionada', 'cancelar', 'trocar de contador',
+  'despreparado', 'despreparada', 'grosseiro', 'grosseira', 'mal atendido', 'mal atendida',
+  'nunca mais', 'absurdo', 'inaceitavel', 'pior atendimento',
+];
+
+function analisarSentimento(texto) {
+  const t = normalizarTexto(texto);
+  if (!t) return 'sem_comentario';
+  let pos = 0, neg = 0;
+  PALAVRAS_POSITIVAS.forEach(p => { if (t.includes(p)) pos++; });
+  PALAVRAS_NEGATIVAS.forEach(p => { if (t.includes(p)) neg++; });
+  if (pos === 0 && neg === 0) return 'neutro';
+  return pos > neg ? 'positivo' : (neg > pos ? 'negativo' : 'neutro');
+}
+
+// GET /api/data/sentimento — classifica os comentários das pesquisas (sem custo, sem IA paga)
+router.get('/sentimento', requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, cliente, empresa, nps, csat, ces, pontos, created_at
+       FROM pesquisas WHERE pontos IS NOT NULL AND pontos != ''
+       ORDER BY created_at DESC LIMIT 500`
+    );
+    const comentarios = rows.map(r => ({ ...r, sentimento: analisarSentimento(r.pontos) }));
+    const resumo = { positivo: 0, neutro: 0, negativo: 0, sem_comentario: 0 };
+    comentarios.forEach(c => { resumo[c.sentimento] = (resumo[c.sentimento] || 0) + 1; });
+    res.json({ resumo, comentarios: comentarios.slice(0, 100) });
+  } catch (err) {
+    console.error('Sentimento error:', err);
+    res.status(500).json({ error: 'Erro ao analisar sentimento.' });
+  }
+});
+
+// GET /api/data/churn — risco de cancelamento por cliente ativo, com base em
+// dados que já existem no sistema (sem IA paga, sem dado saindo do sistema).
+router.get('/churn', requireAdmin, async (req, res) => {
+  try {
+    const [clientesR, honorariosR, pesquisasR, insatisfacoesR, sensiveisR, recuperacoesR] = await Promise.all([
+      pool.query(`SELECT id, cnpj, nome_empresa FROM clientes WHERE status = 'ativo'`),
+      pool.query(`SELECT cliente_id, MAX(data_vigencia) as ultimo FROM honorarios GROUP BY cliente_id`),
+      pool.query(`SELECT cnpj, nps, csat, ces, pontos, created_at FROM pesquisas ORDER BY created_at DESC`),
+      pool.query(`SELECT cnpj, gravidade, created_at FROM insatisfacoes WHERE created_at >= NOW() - INTERVAL '90 days'`),
+      pool.query(`SELECT cnpj, created_at FROM clientes_sensiveis WHERE created_at >= NOW() - INTERVAL '90 days'`),
+      pool.query(`SELECT cnpj, created_at FROM recuperacoes WHERE created_at >= NOW() - INTERVAL '180 days'`),
+    ]);
+
+    const honPorCliente = new Map(honorariosR.rows.map(h => [h.cliente_id, h.ultimo]));
+
+    const pesqPorCnpj = new Map();
+    pesquisasR.rows.forEach(p => {
+      if (!pesqPorCnpj.has(p.cnpj)) pesqPorCnpj.set(p.cnpj, []);
+      const arr = pesqPorCnpj.get(p.cnpj);
+      if (arr.length < 3) arr.push(p);
+    });
+
+    const insPorCnpj = new Map();
+    insatisfacoesR.rows.forEach(i => {
+      if (!insPorCnpj.has(i.cnpj)) insPorCnpj.set(i.cnpj, []);
+      insPorCnpj.get(i.cnpj).push(i);
+    });
+
+    const sensPorCnpj = new Map();
+    sensiveisR.rows.forEach(s => sensPorCnpj.set(s.cnpj, (sensPorCnpj.get(s.cnpj) || 0) + 1));
+
+    const recPorCnpj = new Map();
+    recuperacoesR.rows.forEach(r => recPorCnpj.set(r.cnpj, (recPorCnpj.get(r.cnpj) || 0) + 1));
+
+    const hoje = new Date();
+    const resultado = clientesR.rows.map(c => {
+      let score = 0;
+      const motivos = [];
+
+      const pesq = pesqPorCnpj.get(c.cnpj) || [];
+      if (pesq.length) {
+        const ultima = pesq[0];
+        if (ultima.nps != null) {
+          if (ultima.nps <= 6) { score += 30; motivos.push('NPS baixo (detrator) na última pesquisa'); }
+          else if (ultima.nps <= 8) { score += 10; motivos.push('NPS neutro na última pesquisa'); }
+        }
+        if (ultima.csat != null && ultima.csat <= 2) { score += 15; motivos.push('CSAT baixo na última pesquisa'); }
+        const sentimentos = pesq.map(p => analisarSentimento(p.pontos));
+        const neg = sentimentos.filter(s => s === 'negativo').length;
+        const pos = sentimentos.filter(s => s === 'positivo').length;
+        if (neg > pos && neg > 0) { score += 15; motivos.push('Comentários recentes de tom negativo'); }
+      }
+
+      const ins = insPorCnpj.get(c.cnpj) || [];
+      if (ins.length) {
+        const alta = ins.some(i => (i.gravidade || '').toLowerCase().includes('alta'));
+        score += alta ? 25 : 15;
+        motivos.push(`${ins.length} insatisfação(ões) nos últimos 90 dias${alta ? ' (gravidade alta)' : ''}`);
+      }
+
+      if (sensPorCnpj.get(c.cnpj)) { score += 20; motivos.push('Sinalizado como cliente sensível recentemente'); }
+      if (recPorCnpj.get(c.cnpj)) { score += 15; motivos.push('Já passou por ação de recuperação recente'); }
+
+      const ultimoReajuste = honPorCliente.get(c.id);
+      if (ultimoReajuste) {
+        const meses = (hoje - new Date(ultimoReajuste)) / (1000 * 60 * 60 * 24 * 30);
+        if (meses >= 24) { score += 10; motivos.push('Sem reajuste de honorário há 24+ meses'); }
+      }
+
+      score = Math.min(score, 100);
+      const nivel = score >= 60 ? 'vermelho' : score >= 30 ? 'amarelo' : 'verde';
+      return { id: c.id, cnpj: c.cnpj, empresa: c.nome_empresa, score, nivel, motivos };
+    });
+
+    resultado.sort((a, b) => b.score - a.score);
+    res.json({ data: resultado });
+  } catch (err) {
+    console.error('Churn error:', err);
+    res.status(500).json({ error: 'Erro ao calcular risco de churn.' });
+  }
+});
+
 module.exports = router;
 
 
