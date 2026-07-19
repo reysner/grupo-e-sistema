@@ -559,9 +559,10 @@ const App = (() => {
 
     /**
      * Ranking "resposta contínua" por analista — tempo de resposta em CADA
-     * turno do cliente ao longo da conversa (não só a 1ª vez), atribuído ao
-     * analista responsável final do ticket (a API do Zappy não guarda quem
-     * mandou cada mensagem individualmente). Pior primeiro.
+     * turno do cliente DEPOIS da transferência (não só a 1ª vez), atribuído
+     * ao analista responsável final do ticket. Isola o que é de quem recebeu
+     * o ticket transferido do que foi de quem aceitou/transferiu antes (ex.:
+     * recepção do Sucesso do Cliente). Pior primeiro.
      */
     renderChartAnalistaRespostaContinua(linhas) {
       const id = 'cs-dash-analista-resposta';
@@ -569,7 +570,7 @@ const App = (() => {
       const ctx = document.getElementById(id);
       if (!ctx) return;
       if (!linhas || !linhas.length) {
-        ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados suficientes ainda (precisa de pelo menos 3 tickets com troca de mensagens por analista)</p>';
+        ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados suficientes ainda (precisa de pelo menos 3 tickets transferidos, com troca de mensagens depois, por analista)</p>';
         return;
       }
       const labels = linhas.map(r => r.label || 'Não informado');
@@ -578,7 +579,7 @@ const App = (() => {
       const cores = pctVals.map(p => (p < 50 ? '#e53e3e' : p < 80 ? '#f5c518' : '#38a169'));
       _charts[id] = new Chart(ctx, {
         type: 'bar',
-        data: { labels, datasets: [{ label: '% dentro do SLA (toda a conversa)', data: pctVals, backgroundColor: cores, borderRadius: 4 }] },
+        data: { labels, datasets: [{ label: '% dentro do SLA (pós-transferência)', data: pctVals, backgroundColor: cores, borderRadius: 4 }] },
         options: {
           indexAxis: 'y',
           responsive: true, maintainAspectRatio: false,
@@ -616,7 +617,7 @@ const App = (() => {
         ctx.parentElement.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:12px;padding:40px 0">Sem dados no período</p>';
         return;
       }
-      const ROTULOS = { aceite: 'Aceite', transferencia: 'Transferência', departamento: 'Analista (pós-transferência)', promessa: 'Promessa', resposta_continua: 'Resposta contínua (toda a conversa)' };
+      const ROTULOS = { aceite: 'Aceite', transferencia: 'Transferência', departamento: 'Analista (pós-transferência)', promessa: 'Promessa', resposta_continua: 'Resposta contínua (pós-transferência)' };
       const ORDEM = ['aceite', 'transferencia', 'departamento', 'promessa', 'resposta_continua'];
       const porChave = Object.fromEntries(linhas.map(r => [r.etapa, r]));
       const presentes = ORDEM.filter(k => porChave[k]);
