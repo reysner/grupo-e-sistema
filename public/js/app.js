@@ -5277,6 +5277,32 @@ window.Tickets = Tickets;
      * filtros selecionados nos <select> da tela, e renderiza a tabela.
      * Chamado pelo botão "Filtrar" e uma vez ao abrir a aba.
      */
+    /**
+     * Texto simples explicando o que cada etapa do SLA mede — mostrado
+     * acima da lista do Histórico sempre que um filtro de etapa está ativo
+     * (seja por clique num gráfico ou escolhendo no seletor "Etapa"), pra
+     * não precisar perguntar de novo o que cada relógio significa.
+     */
+    _EXPLICACAO_ETAPA: {
+      aceite: 'Tempo entre a 1ª mensagem do cliente e alguém da equipe aceitar o atendimento. Prazo: 15 min úteis.',
+      transferencia: 'Tempo entre o aceite do ticket e a transferência efetiva para o departamento certo. Prazo: 15 min úteis.',
+      departamento: 'Tempo excedido (30 min úteis) para o analista dar a 1ª resposta depois que o ticket chegou transferido para ele. Não conta o que acontece depois disso na conversa (ex.: se o analista já respondeu e está esperando o cliente, isso é outro relógio — "vez do cliente").',
+      promessa: 'Alguém avisou que VAI transferir (ex.: "vou te direcionar...") mas ainda não transferiu de fato. Mede quanto tempo demora até a transferência acontecer. Prazo: 15 min úteis.',
+      promessa_resolucao: 'Alguém avisou que vai RESOLVER direto, sem transferir. Prazo mais largo pro silêncio (2h), mas qualquer demora de resposta a uma mensagem específica do cliente maior que 30 min já conta vermelho, mesmo dentro das 2h.',
+      resposta_continua: 'Tempo de resposta em CADA mensagem do cliente depois da transferência (não só a primeira) — mostra se o ritmo de atendimento se mantém do início ao fim da conversa. Prazo: 30 min úteis por troca.',
+    },
+
+    _mostrarExplicacaoEtapa(etapaChave) {
+      const el = document.getElementById('hist-explicacao-etapa');
+      if (!el) return;
+      const texto = SucessoCliente._EXPLICACAO_ETAPA[etapaChave];
+      if (!texto) { el.innerHTML = ''; return; }
+      el.innerHTML =
+        '<div style="background:#f0f9f4;border:1px solid #c6f6d5;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--gray-700,#374151)">' +
+        '<strong>Sobre este filtro:</strong> ' + SucessoCliente._esc(texto) +
+        '</div>';
+    },
+
     async filtrarHistorico() {
       const container = document.getElementById('hist-container');
       if (!container) return; // seção de histórico ainda não colada no HTML
@@ -5284,6 +5310,7 @@ window.Tickets = Tickets;
       const analista = (document.getElementById('hist-analista') || {}).value || '';
       const status = (document.getElementById('hist-status') || {}).value || '';
       const etapa = (document.getElementById('hist-etapa') || {}).value || '';
+      SucessoCliente._mostrarExplicacaoEtapa(etapa);
       container.innerHTML = '<p style="color:var(--gray-500)">Carregando...</p>';
       try {
         const qs = new URLSearchParams();
