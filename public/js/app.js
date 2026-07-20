@@ -640,7 +640,7 @@ const App = (() => {
             const analista = labels[elementos[0].index];
             Nav.go('sucesso-cliente');
             await window.SucessoCliente?.load();
-            window.SucessoCliente?.filtrarPorAnalista(analista);
+            window.SucessoCliente?.filtrarPorAnalistaEtapa(analista, 'resposta_continua');
           },
         },
       });
@@ -734,7 +734,7 @@ const App = (() => {
             const analista = labels[elementos[0].index];
             Nav.go('sucesso-cliente');
             await window.SucessoCliente?.load();
-            window.SucessoCliente?.filtrarPorAnalista(analista);
+            window.SucessoCliente?.filtrarPorAnalistaEtapa(analista, 'departamento');
           },
         },
       });
@@ -5108,6 +5108,29 @@ window.Tickets = Tickets;
       if (selEtapa) selEtapa.value = etapaChave;
       if (selStatus) selStatus.value = 'vermelho';
       if (selAna) selAna.value = '';
+      if (selDepto) selDepto.value = '';
+      SucessoCliente.filtrarHistorico();
+      const container = document.getElementById('hist-container');
+      if (container) container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+
+    /**
+     * Ao clicar numa barra dos rankings "por analista" que são ESPECÍFICOS
+     * de uma etapa (departamento = 1ª resposta pós-transferência; ou
+     * resposta_continua = toda resposta pós-transferência): filtra o
+     * Histórico por esse analista + essa etapa + vermelho, ao mesmo tempo.
+     * Sem isso, o clique caía no filtro genérico (status geral do ticket),
+     * que podia estar verde mesmo quando aquela etapa específica foi
+     * vermelha — mostrando "nenhum ticket encontrado" de forma enganosa.
+     */
+    filtrarPorAnalistaEtapa(nomeAnalista, etapaChave) {
+      const selAna = document.getElementById('hist-analista');
+      const selEtapa = document.getElementById('hist-etapa');
+      const selStatus = document.getElementById('hist-status');
+      const selDepto = document.getElementById('hist-departamento');
+      if (selAna) selAna.value = nomeAnalista;
+      if (selEtapa) selEtapa.value = etapaChave;
+      if (selStatus) selStatus.value = 'vermelho';
       if (selDepto) selDepto.value = '';
       SucessoCliente.filtrarHistorico();
       const container = document.getElementById('hist-container');
