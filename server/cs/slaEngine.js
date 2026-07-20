@@ -77,8 +77,9 @@ function pareceIntencaoTransferir(texto) {
  * de propósito: mensagem de chat do dia a dia é muito mais barulhenta que
  * comentário de pesquisa (ex.: "deu erro no boleto" é rotina, não é
  * sinal de churn) — casar só frase composta reduz falso positivo.
- * Calibrada com exemplo real da Thais: "já não aguento tanto erros, vou
- * procurar outra contabilidade, vocês erram demais".
+ * Calibrada com exemplos reais da Thais: "já não aguento tanto erros, vou
+ * procurar outra contabilidade, vocês erram demais" e "Estou cansado dos
+ * erros de vocês" (testado direto numa conversa real do Zappy).
  */
 const FRASES_CHURN = [
   // Intenção explícita de trocar/cancelar
@@ -113,6 +114,14 @@ const FRASES_CHURN = [
   'cansei de erro',
   'cansado de tanto erro',
   'cansada de tanto erro',
+  'cansado dos erros',
+  'cansada dos erros',
+  'cansado com os erros',
+  'cansada com os erros',
+  'cansado de tantos erros',
+  'cansada de tantos erros',
+  'estou cansado de voces',
+  'estou cansada de voces',
   'sempre um problema',
   'toda hora um erro',
   'descaso total',
