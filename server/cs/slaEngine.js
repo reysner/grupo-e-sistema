@@ -71,42 +71,72 @@ function pareceIntencaoTransferir(texto) {
 
 /**
  * Frases (normalizadas, sem acento) que indicam que o CLIENTE está
- * sinalizando risco de cancelamento — intenção explícita de trocar de
- * contabilidade, ou reclamação forte de padrão de erro/atendimento. São
- * frases de várias palavras (não palavras soltas tipo "erro" ou "ruim")
- * de propósito: mensagem de chat do dia a dia é muito mais barulhenta que
+ * sinalizando risco de cancelamento OU má experiência forte — intenção
+ * explícita de trocar de contabilidade, frustração crônica ("sempre a
+ * mesma coisa"), ameaça de reclamar em outro lugar, etc. São frases de
+ * várias palavras (não palavras soltas tipo "erro" ou "ruim") de
+ * propósito: mensagem de chat do dia a dia é muito mais barulhenta que
  * comentário de pesquisa (ex.: "deu erro no boleto" é rotina, não é
- * sinal de churn) — casar só frase composta reduz falso positivo.
- * Calibrada com exemplos reais da Thais: "já não aguento tanto erros, vou
- * procurar outra contabilidade, vocês erram demais" e "Estou cansado dos
- * erros de vocês" (testado direto numa conversa real do Zappy).
+ * sinal de churn) — casar só frase composta reduz falso positivo. Lista
+ * grande de propósito (mais variações = menos chance de passar batido),
+ * e o botão "Tratar" no painel cobre os falsos positivos que passarem.
+ * Calibrada com exemplos reais da Thais testados em conversas do Zappy:
+ * "já não aguento tanto erros, vou procurar outra contabilidade, vocês
+ * erram demais", "Estou cansado dos erros de vocês" e "Todo mês tenho
+ * que pedir a mesma coisa".
  */
 const FRASES_CHURN = [
-  // Intenção explícita de trocar/cancelar
+  // ── Intenção explícita de trocar/cancelar/sair ──────────────────────────
   'vou procurar outra contabilidade',
   'vou procurar outro contador',
   'vou procurar outra empresa de contabilidade',
   'vou procurar outro escritorio',
   'procurar outra contabilidade',
   'procurar outro contador',
+  'procurando outro contador',
+  'procurando outra contabilidade',
+  'pesquisando outras contabilidades',
+  'pesquisando outros contadores',
   'vou trocar de contabilidade',
   'vou trocar de contador',
   'quero trocar de contador',
   'quero trocar de contabilidade',
+  'pensando em trocar de contador',
+  'pensando em trocar de contabilidade',
+  'avaliando trocar de contador',
+  'avaliando trocar de contabilidade',
   'trocar de contabilidade',
   'trocar de contador',
   'quero cancelar',
   'vou cancelar',
   'quero encerrar o contrato',
+  'vou encerrar o contrato',
   'quero encerrar a parceria',
+  'vou encerrar a parceria',
+  'quero finalizar o contrato',
+  'vou finalizar o contrato',
   'quero rescindir',
   'vou rescindir',
+  'quero me desligar',
+  'quero desligar',
+  'quero sair dessa contabilidade',
+  'vou sair dessa contabilidade',
+  'quero sair da contabilidade de voces',
   'nao quero mais ser cliente',
   'nao quero mais continuar com voces',
   'nao quero mais trabalhar com voces',
-  // Frustração repetida / padrão de erros (frase composta, não palavra solta)
+  'nao vou continuar com voces',
+  'nao pretendo renovar',
+  'nao vou renovar o contrato',
+  'nao vou renovar com voces',
+  'outro contador vai fazer melhor',
+  'outra contabilidade faz melhor',
+  'outros escritorios fazem melhor',
+  'outras contabilidades sao melhores',
+  // ── Frustração crônica / "sempre a mesma coisa" (padrão repetitivo) ─────
   'nao aguento mais',
   'ja nao aguento',
+  'ja nao aguento mais isso',
   'erram demais',
   'erram muito',
   'tanto erro',
@@ -122,12 +152,57 @@ const FRASES_CHURN = [
   'cansada de tantos erros',
   'estou cansado de voces',
   'estou cansada de voces',
+  'cansei disso',
+  'cansada disso',
+  'cansado disso',
+  'cansei de pedir',
+  'cansada de pedir',
+  'cansado de pedir',
+  'cansei de cobrar',
+  'cansada de cobrar',
+  'cansado de cobrar',
+  'de saco cheio',
+  'chega de erro',
+  'chega desses erros',
+  'basta de erro',
   'sempre um problema',
+  'sempre o mesmo problema',
+  'sempre a mesma coisa',
+  'sempre a mesma reclamacao',
   'toda hora um erro',
+  'toda hora um problema',
+  'todo mes a mesma coisa',
+  'todo mes tenho que pedir',
+  'toda vez tenho que pedir',
+  'sempre tenho que pedir',
+  'sempre tenho que cobrar',
+  'toda vez tenho que cobrar',
+  'toda vez preciso cobrar',
+  'sempre preciso cobrar',
+  'todo mes e a mesma coisa',
+  'todo mes da problema',
+  'toda vez da problema',
+  'de novo a mesma coisa',
+  'de novo essa mesma coisa',
+  'outra vez a mesma coisa',
+  'mais uma vez a mesma coisa',
+  'nunca esta pronto',
+  'nunca fica pronto',
+  'nunca resolvem',
+  'nunca vem certo',
+  'sempre vem errado',
+  'sempre sai errado',
+  'vira e mexe da erro',
+  'vira e mexe tem problema',
+  'isso se repete toda hora',
+  'isso se repete sempre',
   'descaso total',
   'descaso completo',
-  // Insatisfação forte / recomendação negativa
+  'falta de profissionalismo',
+  'pouco profissionalismo',
+  // ── Insatisfação forte / recomendação negativa ──────────────────────────
   'pessimo atendimento',
+  'atendimento pessimo',
   'nunca mais indico',
   'nao recomendo',
   'nao indico',
@@ -137,6 +212,28 @@ const FRASES_CHURN = [
   'extremamente insatisfeita',
   'isso e um absurdo',
   'um absurdo isso',
+  'e inaceitavel isso',
+  'isso e inadmissivel',
+  'estou decepcionado com voces',
+  'estou decepcionada com voces',
+  'me decepcionei com voces',
+  'perdi a confianca',
+  'nao confio mais',
+  'nao tenho mais confianca',
+  'perdi a paciencia',
+  'estou perdendo a paciencia',
+  // ── Ameaça de escalar / reclamar em outro lugar ─────────────────────────
+  'vou reclamar no reclame aqui',
+  'vou fazer uma reclamacao no procon',
+  'vou no procon',
+  'vou ao procon',
+  'vou registrar uma reclamacao',
+  'vou abrir uma reclamacao',
+  'quero falar com o responsavel',
+  'quero falar com o dono',
+  'quero falar com o proprietario',
+  'preciso falar com um superior',
+  'vai parar no procon',
 ];
 
 /**
