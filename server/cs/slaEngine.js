@@ -58,6 +58,29 @@ const FRASES_TRANSFERENCIA = [
   'setor responsavel',
 ];
 
+/**
+ * Frases (normalizadas) que indicam que o escritório pediu algo AO CLIENTE
+ * (documento, comprovante, confirmação, pagamento) e agora depende da
+ * resposta/ação dele pra seguir — diferente de "vou analisar e te retorno",
+ * onde quem deve a próxima ação ainda é o próprio analista. Essa distinção
+ * importa pro relógio 'promessa_resolucao': ticket #46223 (Thais) mostrou
+ * que contar o tempo de espera pelo cliente contra o prazo do analista é
+ * injusto — ele não tem como resolver sem o cliente se posicionar.
+ */
+const FRASES_AGUARDANDO_CLIENTE = [
+  'me encaminhe', 'me envie', 'me mande', 'nos envie', 'nos encaminhe', 'nos mande',
+  'poderia enviar', 'poderia me enviar', 'poderia nos enviar', 'poderia encaminhar',
+  'peco que', 'pedimos que', 'solicito que', 'solicitamos que',
+  'poderia confirmar', 'poderia me confirmar', 'pode me confirmar', 'pode confirmar',
+  'aguardo o comprovante', 'aguardo seu retorno', 'aguardo retorno',
+  'aguardamos o retorno', 'aguardamos seu retorno', 'aguardamos a confirmacao',
+  'fico no aguardo', 'ficamos no aguardo', 'ficamos no aguardo do',
+  'apos o pagamento', 'apos o envio', 'apos a confirmacao',
+  'precisamos que voce', 'preciso que voce', 'necessario que envie',
+  'por gentileza, envie', 'por gentileza envie', 'favor enviar', 'favor confirmar', 'favor encaminhar',
+  'assim que possivel, envie', 'assim que efetuar o pagamento',
+];
+
 function normalizarTexto(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
@@ -67,6 +90,13 @@ function pareceIntencaoTransferir(texto) {
   const t = normalizarTexto(texto);
   if (!t) return false;
   return FRASES_TRANSFERENCIA.some(frase => t.includes(frase));
+}
+
+/** true se o texto parece estar pedindo algo do CLIENTE (documento/pagamento/confirmação). */
+function pareceAguardandoCliente(texto) {
+  const t = normalizarTexto(texto);
+  if (!t) return false;
+  return FRASES_AGUARDANDO_CLIENTE.some(frase => t.includes(frase));
 }
 
 /**
@@ -350,8 +380,25 @@ function calcularSLA(ticket, agora = new Date()) {
       const mensagensDepoisDaResposta = mensagens.filter(m => new Date(m.hora) >= respAposAceite);
       const trocasNaJanela = calcularTrocas(mensagensDepoisDaResposta, agora);
       const teveTrocaLenta = trocasNaJanela.some(t => t.status !== 'verde');
-      const status = (min > T.LIMITES.promessa_resolucao || teveTrocaLenta) ? 'vermelho' : 'verde';
-      relogios.push(montar('promessa_resolucao', respAposAceite, fim, min, emCurso, status));
+
+      // "Silêncio geral" (>120min desde a promessa) só é culpa do ANALISTA se a bola
+      // estiver com ele. Se a ÚLTIMA mensagem é do escritório E o texto dela pede
+      // algo do cliente (comprovante, confirmação, pagamento...), o analista já fez
+      // a parte dele e está travado esperando o cliente se posicionar — não tem como
+      // "resolver" nesse meio tempo (caso real: ticket #46223, Bruno pediu comprovante
+      // de pagamento). Já se a última msg for algo como "vou analisar e te retorno"
+      // (sem pedir nada ao cliente), a responsabilidade continua com o analista e o
+      // silêncio deve seguir contando normalmente. `calcularTrocas` já exclui o trecho
+      // de espera-pelo-cliente de teveTrocaLenta (só conta turnos que COMEÇAM com
+      // mensagem do cliente), então aqui só falta não deixar o limite geral (min > 120)
+      // estourar sozinho nesse cenário específico.
+      const ultimaMsg = mensagens.length ? ordenarPorHora(mensagens)[mensagens.length - 1] : null;
+      const aguardandoCliente = !tEncerramento && !!ultimaMsg && ultimaMsg.remetente === 'escritorio'
+        && pareceAguardandoCliente(ultimaMsg.texto);
+
+      const estourouSilencio = !aguardandoCliente && min > T.LIMITES.promessa_resolucao;
+      const status = (estourouSilencio || teveTrocaLenta) ? 'vermelho' : 'verde';
+      relogios.push(montar('promessa_resolucao', respAposAceite, fim, min, emCurso, status, aguardandoCliente));
     }
   }
 
@@ -380,7 +427,7 @@ function calcularSLA(ticket, agora = new Date()) {
   };
 }
 
-function montar(tipo, inicio, fim, minutos, emCurso, statusForcado = null) {
+function montar(tipo, inicio, fim, minutos, emCurso, statusForcado = null, aguardandoCliente = false) {
   const limite = T.LIMITES[tipo] || null;
   const status = statusForcado || (limite ? T.statusSLA(minutos, limite) : 'neutro');
   return {
@@ -392,6 +439,7 @@ function montar(tipo, inicio, fim, minutos, emCurso, statusForcado = null) {
     limite,
     status,      // verde | amarelo | vermelho | neutro
     em_curso: !!emCurso,
+    aguardando_cliente: !!aguardandoCliente, // true = escritório já respondeu, esperando o cliente se posicionar
   };
 }
 
@@ -452,4 +500,9 @@ function calcularTrocas(mensagens, agora = new Date()) {
   return trocas;
 }
 
-module.exports = { calcularSLA, calcularTrocas, ROTULOS, LIMITE_TROCA, pareceIntencaoTransferir, FRASES_TRANSFERENCIA, detectarSinalChurn, FRASES_CHURN };
+module.exports = {
+  calcularSLA, calcularTrocas, ROTULOS, LIMITE_TROCA,
+  pareceIntencaoTransferir, FRASES_TRANSFERENCIA,
+  pareceAguardandoCliente, FRASES_AGUARDANDO_CLIENTE,
+  detectarSinalChurn, FRASES_CHURN,
+};
