@@ -5288,7 +5288,7 @@ window.Tickets = Tickets;
       transferencia: 'Tempo entre o aceite do ticket e a transferência efetiva para o departamento certo. Prazo: 15 min úteis.',
       departamento: 'Tempo excedido (30 min úteis) para o analista dar a 1ª resposta depois que o ticket chegou transferido para ele. Não conta o que acontece depois disso na conversa (ex.: se o analista já respondeu e está esperando o cliente, isso é outro relógio — "vez do cliente").',
       promessa: 'Alguém avisou que VAI transferir (ex.: "vou te direcionar...") mas ainda não transferiu de fato. Mede quanto tempo demora até a transferência acontecer. Prazo: 15 min úteis.',
-      promessa_resolucao: 'Alguém avisou que vai RESOLVER direto, sem transferir. Prazo mais largo pro silêncio (2h), mas qualquer demora de resposta a uma mensagem específica do cliente maior que 30 min já conta vermelho, mesmo dentro das 2h.',
+      promessa_resolucao: 'Alguém avisou que vai RESOLVER direto, sem transferir. Prazo pro silêncio: 2h. Mas se o analista já respondeu e está esperando o cliente se posicionar (ex.: aguardando comprovante, confirmação), esse tempo de espera NÃO conta contra o prazo — só conta se o analista demorar mais de 30 min pra responder algo específico que o cliente perguntou.',
       resposta_continua: 'Tempo de resposta em CADA mensagem do cliente depois da transferência (não só a primeira) — mostra se o ritmo de atendimento se mantém do início ao fim da conversa. Prazo: 30 min úteis por troca.',
     },
 
