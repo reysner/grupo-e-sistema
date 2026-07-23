@@ -988,6 +988,8 @@ const App = (() => {
             honorario_inicial: parseFloat(Util.val('gc-honorario')) || 0,
             origem: Util.val('gc-origem') || null,
             cac: cacCalculado,
+            grupo_empresas: Util.val('gc-grupo') || null,
+            tipo_entrada: gcSol,
           })
         });
       }
@@ -1033,7 +1035,7 @@ const App = (() => {
         canal: gcCanal,
         regime_tributario: Util.val('gc-regime') || null,
         codigo: Util.val('gc-codigo') || null,
-      }, ['gc-analista','gc-cnpj','gc-empresa','gc-data','gc-competencia','gc-motivo'], 'Gestão salva!');
+      }, ['gc-analista','gc-cnpj','gc-empresa','gc-data','gc-competencia','gc-motivo','gc-grupo'], 'Gestão salva!');
       // Oferece abrir ticket para Baixa ou Saída de empresa
       if ((_gcSol === 'Baixa de empresa' || _gcSol === 'Saída de empresa') && App.Auth.isAdmin()) {
         setTimeout(() => window.Tickets?.perguntarAbrirTicket(_gcSol, _gcReg, _gcEmp, _gcCnpj, _gcDados, _gestaoId), 400);
@@ -3150,13 +3152,34 @@ const Gestao = (() => {
       anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>${a}</option>`).join('');
   }
 
+  const _FAIXA_LABEL = { acima: 'Acima da média', na_media: 'Na média', abaixo: 'Abaixo da média' };
+  const _FAIXA_COR = { acima: '#38a169', na_media: '#2b6cb0', abaixo: '#e53e3e' };
+
+  function _populateGrupoFilter(data) {
+    const sel = document.getElementById('gc-grupo-filter');
+    const datalist = document.getElementById('gc-grupo-datalist');
+    const grupos = [...new Set(data.map(r => r.grupo_empresas).filter(Boolean))].sort();
+    if (sel) {
+      const cur = sel.value;
+      sel.innerHTML = '<option value="todos">Todos os grupos</option>' +
+        grupos.map(g => `<option value="${g}" ${g===cur?'selected':''}>${g}</option>`).join('');
+    }
+    if (datalist) datalist.innerHTML = grupos.map(g => `<option value="${g}"></option>`).join('');
+  }
+
   function _filterData(data) {
     const ano = document.getElementById('gc-ano-filter')?.value || 'todos';
     const mes = document.getElementById('gc-mes-filter')?.value || 'todos';
+    const grupo = document.getElementById('gc-grupo-filter')?.value || 'todos';
+    const faixa = document.getElementById('gc-faixa-filter')?.value || 'todos';
+    const soInadimplente = document.getElementById('gc-inadimplente-filter')?.checked || false;
     return data.filter(r => {
       const d = new Date(r.created_at);
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
       if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
+      if (grupo !== 'todos' && r.grupo_empresas !== grupo) return false;
+      if (faixa !== 'todos' && r.faixa !== faixa) return false;
+      if (soInadimplente && !r.inadimplente_cronico) return false;
 
       return true;
     });
@@ -3166,18 +3189,20 @@ const Gestao = (() => {
     const tbody = document.getElementById('gc-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(r => {
       const d = new Date(r.created_at).toLocaleString('pt-BR');
       const lixeira = App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Gestao.excluir('${r.id}')" title="Excluir">🗑</button>` : '';
+      const faixaTag = r.faixa ? `<span style="font-size:11px;font-weight:700;color:${_FAIXA_COR[r.faixa]}">${_FAIXA_LABEL[r.faixa]}</span>` : '<span style="color:var(--gray-400)">—</span>';
+      const inadimplenteTag = r.inadimplente_cronico ? ' 🔴' : '';
       return `<tr>
         <td style="font-size:12px;color:var(--gray-500)">${d}</td>
         <td>${r.analista}</td>
         <td style="font-size:11px;color:var(--gray-400);font-weight:600">${r.codigo||'—'}</td>
         <td style="font-size:12px">${r.cnpj||'—'}</td>
-        <td style="font-weight:600">${r.empresa}</td>
+        <td style="font-weight:600">${r.empresa}${inadimplenteTag}</td>
         <td>${r.solicitacao}</td>
         <td>${r.canal||'—'}</td>
         <td style="font-size:12px;color:var(--gray-500)">${r.data_sol ? new Date(r.data_sol).toLocaleDateString('pt-BR') : '—'}</td>
@@ -3189,6 +3214,9 @@ const Gestao = (() => {
           const d = new Date(c);
           return isNaN(d.getTime()) ? String(c) : d.toLocaleDateString('pt-BR');
         })()}</td>
+        <td style="font-size:12px">${r.grupo_empresas || '—'}</td>
+        <td style="font-size:12px">${r.honorario_atual != null ? 'R$ ' + Number(r.honorario_atual).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—'}</td>
+        <td>${faixaTag}</td>
         <td>${lixeira}</td></tr>`;
     }).join('');
   }
@@ -3196,17 +3224,20 @@ const Gestao = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('gc-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
     const res = await fetch('/api/data/gestao?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
       return;
     }
-    const { data } = await res.json();
+    const { data, ticketMedio } = await res.json();
     _allData = data || [];
     _populateYearFilter(_allData);
+    _populateGrupoFilter(_allData);
+    const valorEl = document.getElementById('gc-ticket-medio-valor');
+    if (valorEl) valorEl.textContent = ticketMedio ? 'R$ ' + Number(ticketMedio).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—';
     const _filtered = _filterData(_allData);
     const _paged = App.Util.paginate(_filtered, _page);
     _renderGrid(_paged.items);
@@ -3216,12 +3247,14 @@ const Gestao = (() => {
   function exportCSV() {
     const data = _filterData(_allData);
     if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const cols = ['created_at', 'analista', 'cnpj', 'empresa', 'solicitacao', 'canal', 'motivo'];
-    const labels = {'created_at':'Data','analista':'Analista','cnpj':'CNPJ','empresa':'Empresa','solicitacao':'Solicitação','canal':'Canal','motivo':'Motivo'};
+    const cols = ['created_at', 'analista', 'cnpj', 'empresa', 'solicitacao', 'canal', 'motivo', 'grupo_empresas', 'honorario_atual', 'faixa', 'inadimplente_cronico'];
+    const labels = {'created_at':'Data','analista':'Analista','cnpj':'CNPJ','empresa':'Empresa','solicitacao':'Solicitação','canal':'Canal','motivo':'Motivo','grupo_empresas':'Grupo de Empresas','honorario_atual':'Honorário Atual','faixa':'Faixa','inadimplente_cronico':'Inadimplente Crônico'};
     const header = cols.map(c=>labels[c]||c).join(';');
     const rows = data.map(r => cols.map(c => {
       let v = r[c] ?? '';
       if (c==='created_at') v = new Date(v).toLocaleString('pt-BR');
+      if (c==='faixa') v = _FAIXA_LABEL[v] || '';
+      if (c==='inadimplente_cronico') v = v ? 'Sim' : 'Não';
       return `"${String(v).replace(/"/g,'""')}"`;
     }).join(';'));
     const csv = [header,...rows].join('\n');
@@ -3238,12 +3271,18 @@ const Gestao = (() => {
   function exportPDF() {
     const data = _filterData(_allData);
     if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const cols = ['created_at', 'analista', 'cnpj', 'empresa', 'solicitacao', 'canal', 'motivo'];
-    const labels = {'created_at':'Data','analista':'Analista','cnpj':'CNPJ','empresa':'Empresa','solicitacao':'Solicitação','canal':'Canal','motivo':'Motivo'};
+    const cols = ['created_at', 'analista', 'cnpj', 'empresa', 'solicitacao', 'canal', 'motivo', 'grupo_empresas', 'honorario_atual', 'faixa', 'inadimplente_cronico'];
+    const labels = {'created_at':'Data','analista':'Analista','cnpj':'CNPJ','empresa':'Empresa','solicitacao':'Solicitação','canal':'Canal','motivo':'Motivo','grupo_empresas':'Grupo de Empresas','honorario_atual':'Honorário Atual','faixa':'Faixa','inadimplente_cronico':'Inadimplente Crônico'};
     const ano = document.getElementById('gc-ano-filter')?.value||'todos';
     const mes = document.getElementById('gc-mes-filter')?.value||'todos';
     const titulo = `Gestão de Clientes — ${ano==='todos'?'Todos os anos':ano} / ${mes==='todos'?'Todos os meses':mes}`;
-    const rows = data.map(r=>`<tr>${cols.map(c=>{let v=r[c]??'—';if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');return`<td>${v}</td>`;})}</tr>`).join('');
+    const rows = data.map(r=>`<tr>${cols.map(c=>{
+      let v=r[c]??'—';
+      if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');
+      if(c==='faixa')v=_FAIXA_LABEL[v]||'—';
+      if(c==='inadimplente_cronico')v=v?'Sim':'Não';
+      if(c==='honorario_atual'&&v!=='—')v='R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2});
+      return`<td>${v}</td>`;}).join('')}</tr>`).join('');
     const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
     <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
     h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
@@ -3325,6 +3364,8 @@ const Gestao = (() => {
     honorario_inicial: ['honorario inicial (r$)', 'honorario inicial', 'honorário inicial (r$)', 'honorário inicial'],
     origem: ['origem do cliente', 'origem'],
     data_saida: ['data de encerramento', 'data de saida', 'data encerramento', 'data de saída'],
+    grupo_empresas: ['grupo de empresas', 'grupo empresas', 'grupo'],
+    inadimplente_cronico: ['inadimplente cronico (sim/nao)', 'inadimplente cronico', 'inadimplente crônico (sim/não)', 'inadimplente crônico'],
   };
 
   function _valorPorCampo(linhaBruta, campo) {
@@ -3380,6 +3421,8 @@ const Gestao = (() => {
       honorario_inicial: parseFloat(String(_valorPorCampo(bruta, 'honorario_inicial') || '').replace(',', '.')) || null,
       origem: String(_valorPorCampo(bruta, 'origem') || '').trim() || null,
       data_saida: _normalizarData(_valorPorCampo(bruta, 'data_saida')),
+      grupo_empresas: String(_valorPorCampo(bruta, 'grupo_empresas') || '').trim() || null,
+      inadimplente_cronico: _semAcentos(String(_valorPorCampo(bruta, 'inadimplente_cronico') || '')).trim().toLowerCase() === 'sim',
     };
   }
 
