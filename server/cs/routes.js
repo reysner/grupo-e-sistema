@@ -269,16 +269,23 @@ router.get('/dashboard', requireAuth, async (req, res) => {
       // é o que permite enxergar "quem está deixando mais cliente esperando".
       // Exige pelo menos 3 tickets no período pra não colocar alguém no topo
       // do ranking (bom ou ruim) por causa de 1 caso isolado.
+      // NOTA: pior_status é o status do RADAR (o que está em curso agora) — um
+      // ticket ENCERRADO normalmente fica com pior_status NULL, porque nenhum
+      // relógio está mais em_curso. Sem o COALESCE abaixo, ticket fechado não
+      // contava nem como verde nem como amarelo/vermelho (só entrava no total),
+      // derrubando o % de todo mundo pra perto de 0 — mesmo bug de fundo do
+      // etapa_status vs pior_status já corrigido no Histórico, aqui nesse
+      // ranking. Mesma convenção do porStatus acima: sem problema em curso = verde.
       pool.query(`
         SELECT t.analista AS label,
                COUNT(*)::int AS total,
-               COUNT(*) FILTER (WHERE t.pior_status = 'verde')::int AS verdes,
-               COUNT(*) FILTER (WHERE t.pior_status = 'amarelo')::int AS amarelos,
-               COUNT(*) FILTER (WHERE t.pior_status = 'vermelho')::int AS vermelhos
+               COUNT(*) FILTER (WHERE COALESCE(t.pior_status, 'verde') = 'verde')::int AS verdes,
+               COUNT(*) FILTER (WHERE COALESCE(t.pior_status, 'verde') = 'amarelo')::int AS amarelos,
+               COUNT(*) FILTER (WHERE COALESCE(t.pior_status, 'verde') = 'vermelho')::int AS vermelhos
           FROM cs_tickets t ${cond} AND t.analista IS NOT NULL
          GROUP BY t.analista
         HAVING COUNT(*) >= 3
-         ORDER BY (COUNT(*) FILTER (WHERE t.pior_status = 'verde')::float / COUNT(*)) ASC
+         ORDER BY (COUNT(*) FILTER (WHERE COALESCE(t.pior_status, 'verde') = 'verde')::float / COUNT(*)) ASC
          LIMIT 15`, params),
       pool.query(`
         SELECT DISTINCT EXTRACT(YEAR FROM abertura)::int AS ano
