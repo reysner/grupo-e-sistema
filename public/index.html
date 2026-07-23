@@ -332,6 +332,22 @@
               <option value="todos">Todos os meses</option>
               <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option><option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option><option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option><option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
             </select>
+            <select id="gc-grupo-filter" onchange="Gestao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os grupos</option>
+            </select>
+            <select id="gc-faixa-filter" onchange="Gestao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todas as faixas</option>
+              <option value="acima">Acima da média</option>
+              <option value="na_media">Na média</option>
+              <option value="abaixo">Abaixo da média</option>
+            </select>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--gray-600);cursor:pointer">
+              <input type="checkbox" id="gc-inadimplente-filter" onchange="Gestao.loadGrid()" />
+              Só inadimplentes crônicos
+            </label>
+            <div id="gc-ticket-medio" style="margin-left:8px;padding:6px 14px;border-radius:6px;background:#f0f9f4;border:1px solid #c6f6d5;font-size:13px;color:var(--g800,#1a4233)">
+              <strong>Ticket Médio:</strong> <span id="gc-ticket-medio-valor">—</span>
+            </div>
             <div style="margin-left:auto;display:flex;gap:8px">
               <input type="file" id="gc-import-file" accept=".xlsx,.xls,.csv" hidden onchange="Gestao.importarPlanilha(this.files[0])" />
               <a class="btn btn-ghost btn-sm admin-only" href="/modelos/modelo_importacao_gestao_clientes.xlsx" download="modelo_importacao_gestao_clientes.xlsx">📥 Baixar Modelo</a>
@@ -363,6 +379,10 @@
               <div class="field"><label>CNPJ <span class="req">*</span></label><input id="gc-cnpj" type="text" placeholder="00.000.000/0000-00" maxlength="18" /></div>
               <div class="field"><label>Empresa <span class="req">*</span></label><input id="gc-empresa" type="text" placeholder="Digite a empresa" /></div>
               <div class="field"><label>Código do cliente <small class="opt">(opcional)</small></label><input id="gc-codigo" type="text" placeholder="Ex: CLI-001" style="text-transform:uppercase" /></div>
+              <div class="field"><label>Grupo de Empresas <small class="opt">(opcional)</small></label>
+                <input id="gc-grupo" type="text" list="gc-grupo-datalist" placeholder="Ex: Grupo Capanema" />
+                <datalist id="gc-grupo-datalist"></datalist>
+              </div>
               <div class="field"><label>Data da Solicitação <span class="req">*</span></label><input id="gc-data" type="date" /></div>
               <div class="field"><label>Fim da Competência <span class="req">*</span></label><input id="gc-competencia" type="month" /></div>
               <div class="field"><label>Canal da Solicitação <span class="req">*</span></label>
@@ -402,9 +422,10 @@
               <table class="data-table" id="gc-grid">
                 <thead><tr>
                   <th>Data</th><th>Analista</th><th>Cód.</th><th>CNPJ</th><th>Empresa</th>
-                  <th>Solicitação</th><th>Canal</th><th>Data Sol.</th><th>Competência</th><th></th>
+                  <th>Solicitação</th><th>Canal</th><th>Data Sol.</th><th>Competência</th>
+                  <th>Grupo</th><th>Honorário</th><th>Faixa</th><th></th>
                 </tr></thead>
-                <tbody id="gc-tbody"><tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
+                <tbody id="gc-tbody"><tr><td colspan="13" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
               <div id="gc-pagination"></div>
             </div>
