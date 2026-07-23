@@ -59,12 +59,58 @@ router.post('/atendimentos', async (req, res) => {
 });
 
 // ── GESTÃO ────────────────────────────────────────────────────────────────────
+
+// Faixa de ticket relativa à média: mesma banda de ±15% usada em Carteira.
+const FAIXA_BANDA = 0.15;
+function classificarFaixa(valor, media) {
+  if (valor == null || !media) return null;
+  if (valor > media * (1 + FAIXA_BANDA)) return 'acima';
+  if (valor < media * (1 - FAIXA_BANDA)) return 'abaixo';
+  return 'na_media';
+}
+
 router.get('/gestao', async (req, res) => {
   try {
     const pf = periodFilter(req.query.period);
-    const result = await pool.query(`SELECT * FROM gestao_clientes WHERE 1=1 ${pf} ORDER BY created_at DESC`);
-    res.json({ data: result.rows });
-  } catch (err) { res.status(500).json({ error: 'Erro.' }); }
+    await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS grupo_empresas TEXT`).catch(()=>{});
+    await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS tipo_entrada TEXT`).catch(()=>{});
+    await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS inadimplente_cronico BOOLEAN DEFAULT FALSE`).catch(()=>{});
+
+    const result = await pool.query(`
+      SELECT g.*,
+        c.id AS cliente_id, c.grupo_empresas, c.inadimplente_cronico,
+        (SELECT valor FROM honorarios h WHERE h.cliente_id = c.id ORDER BY data_vigencia DESC LIMIT 1) AS honorario_atual
+      FROM gestao_clientes g
+      LEFT JOIN clientes c ON c.cnpj = g.cnpj AND c.status = 'ativo'
+      WHERE 1=1 ${pf}
+      ORDER BY g.created_at DESC`);
+
+    // Ticket médio (ativos, honorário vigente) — mesma base do dashboard de Carteira.
+    const ticketQ = await pool.query(`
+      SELECT COALESCE(AVG(h.valor), 0) AS ticket
+      FROM clientes c
+      JOIN LATERAL (
+        SELECT valor FROM honorarios h2 WHERE h2.cliente_id = c.id ORDER BY data_vigencia DESC LIMIT 1
+      ) h ON true
+      WHERE c.status = 'ativo'`);
+    const ticketMedio = parseFloat(ticketQ.rows[0].ticket) || 0;
+
+    const gruposQ = await pool.query(`
+      SELECT DISTINCT grupo_empresas FROM clientes
+      WHERE grupo_empresas IS NOT NULL AND grupo_empresas <> '' ORDER BY grupo_empresas`);
+
+    const data = result.rows.map(r => ({
+      ...r,
+      honorario_atual: r.honorario_atual != null ? parseFloat(r.honorario_atual) : null,
+      faixa: classificarFaixa(r.honorario_atual != null ? parseFloat(r.honorario_atual) : null, ticketMedio),
+    }));
+
+    res.json({
+      data,
+      ticketMedio,
+      grupos: gruposQ.rows.map(r => r.grupo_empresas),
+    });
+  } catch (err) { console.error('Gestao GET error:', err); res.status(500).json({ error: 'Erro.' }); }
 });
 
 router.post('/gestao', async (req, res) => {
@@ -112,6 +158,9 @@ router.post('/gestao/importar', requireAdmin, async (req, res) => {
   await pool.query(`ALTER TABLE gestao_clientes ADD COLUMN IF NOT EXISTS codigo TEXT`).catch(() => {});
   await pool.query(`ALTER TABLE gestao_clientes ADD COLUMN IF NOT EXISTS regime_tributario TEXT`).catch(() => {});
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS codigo TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS grupo_empresas TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS tipo_entrada TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS inadimplente_cronico BOOLEAN DEFAULT FALSE`).catch(() => {});
 
   let processados = 0;
   const erros = [];
@@ -121,7 +170,7 @@ router.post('/gestao/importar', requireAdmin, async (req, res) => {
     const n = i + 2; // linha 1 = cabeçalho na planilha, então dado começa na 2
     const linha = linhas[i] || {};
     const { analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario,
-            data_entrada, honorario_inicial, origem, data_saida } = linha;
+            data_entrada, honorario_inicial, origem, data_saida, grupo_empresas, inadimplente_cronico } = linha;
 
     if (!analista || !solicitacao || !cnpj || !empresa || !data_sol || !competencia || !canal || !regime_tributario) {
       erros.push({ linha: n, empresa: empresa || '(sem empresa)', motivo: 'Campo obrigatório faltando (Analista, Solicitação, CNPJ, Empresa, Data, Competência, Canal ou Regime Tributário).' });
@@ -145,30 +194,70 @@ router.post('/gestao/importar', requireAdmin, async (req, res) => {
       );
 
       if (isEntrada) {
-        const mesEntrada = String(data_entrada).slice(0, 7);
-        let cacCalculado = 0;
-        try {
-          const invResult = await pool.query(`SELECT COALESCE(SUM(valor),0) AS total FROM investimentos WHERE mes = $1`, [mesEntrada]);
-          const cliResult = await pool.query(`SELECT COUNT(*) AS n FROM clientes WHERE TO_CHAR(data_entrada,'YYYY-MM') = $1`, [mesEntrada]);
-          const totalInv = parseFloat(invResult.rows[0]?.total || 0);
-          const totalCli = parseInt(cliResult.rows[0]?.n || 0, 10);
-          cacCalculado = totalCli > 0 ? totalInv / totalCli : 0;
-        } catch (e) { /* CAC fica 0 se der erro — não impede o cadastro */ }
+        const honorarioNum = parseFloat(String(honorario_inicial).replace(',', '.')) || 0;
+        const grupoVal = grupo_empresas || null;
+        const inadimplenteVal = inadimplente_cronico === true || inadimplente_cronico === 'true';
 
-        const clienteId = uuidv4();
-        await pool.query(
-          `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada, honorario_inicial, origem, cac, codigo)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-          [clienteId, req.user.id, cnpj, empresa, regime_tributario, data_entrada, parseFloat(honorario_inicial) || 0, origem || null, cacCalculado, codigo || null]
+        // Já existe cliente ATIVO com esse CNPJ na Carteira? Evita duplicar registro —
+        // atualiza grupo/tipo/inadimplência e, se o honorário mudou, registra um novo
+        // honorário no histórico (mesma lógica de "Atualizar honorário" da Carteira).
+        const { rows: existentes } = await pool.query(
+          `SELECT id FROM clientes WHERE cnpj = $1 AND status = 'ativo' LIMIT 1`, [cnpj]
         );
-        await pool.query(
-          `INSERT INTO honorarios (cliente_id, valor, data_vigencia, obs) VALUES ($1,$2,$3,'Honorário inicial')`,
-          [clienteId, parseFloat(honorario_inicial) || 0, data_entrada]
-        );
-        await pool.query(
-          `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, valor_novo, data_evento) VALUES ($1,'entrada',$2,$3,$4)`,
-          [clienteId, `Entrada — ${empresa}`, parseFloat(honorario_inicial) || 0, data_entrada]
-        );
+
+        if (existentes.length) {
+          const clienteId = existentes[0].id;
+          await pool.query(
+            `UPDATE clientes SET grupo_empresas = COALESCE($1, grupo_empresas),
+               tipo_entrada = COALESCE(tipo_entrada, $2),
+               inadimplente_cronico = $3
+             WHERE id = $4`,
+            [grupoVal, solicitacao, inadimplenteVal, clienteId]
+          );
+          const ant = await pool.query(
+            `SELECT valor FROM honorarios WHERE cliente_id=$1 ORDER BY data_vigencia DESC LIMIT 1`, [clienteId]
+          );
+          const honorarioAnterior = parseFloat(ant.rows[0]?.valor || 0);
+          if (honorarioNum && honorarioNum !== honorarioAnterior) {
+            await pool.query(
+              `INSERT INTO honorarios (cliente_id, valor, data_vigencia, obs) VALUES ($1,$2,$3,'Atualizado via importação de planilha')`,
+              [clienteId, honorarioNum, data_entrada]
+            );
+            await pool.query(
+              `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, valor_anterior, valor_novo, data_evento)
+               VALUES ($1,'reajuste','Atualização via importação de planilha',$2,$3,$4)`,
+              [clienteId, honorarioAnterior, honorarioNum, data_entrada]
+            );
+          }
+          avisos.push({ linha: n, empresa, motivo: 'Já existia como cliente ativo na Carteira (mesmo CNPJ) — atualizei grupo/honorário em vez de duplicar.' });
+        } else {
+          let cacCalculado = 0;
+          const mesEntrada = String(data_entrada).slice(0, 7);
+          try {
+            const invResult = await pool.query(`SELECT COALESCE(SUM(valor),0) AS total FROM investimentos WHERE mes = $1`, [mesEntrada]);
+            const cliResult = await pool.query(`SELECT COUNT(*) AS n FROM clientes WHERE TO_CHAR(data_entrada,'YYYY-MM') = $1`, [mesEntrada]);
+            const totalInv = parseFloat(invResult.rows[0]?.total || 0);
+            const totalCli = parseInt(cliResult.rows[0]?.n || 0, 10);
+            cacCalculado = totalCli > 0 ? totalInv / totalCli : 0;
+          } catch (e) { /* CAC fica 0 se der erro — não impede o cadastro */ }
+
+          const clienteId = uuidv4();
+          await pool.query(
+            `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada,
+              honorario_inicial, origem, cac, codigo, grupo_empresas, tipo_entrada, inadimplente_cronico)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+            [clienteId, req.user.id, cnpj, empresa, regime_tributario, data_entrada, honorarioNum,
+             origem || null, cacCalculado, codigo || null, grupoVal, solicitacao, inadimplenteVal]
+          );
+          await pool.query(
+            `INSERT INTO honorarios (cliente_id, valor, data_vigencia, obs) VALUES ($1,$2,$3,'Honorário inicial')`,
+            [clienteId, honorarioNum, data_entrada]
+          );
+          await pool.query(
+            `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, valor_novo, data_evento) VALUES ($1,'entrada',$2,$3,$4)`,
+            [clienteId, `Entrada — ${empresa}`, honorarioNum, data_entrada]
+          );
+        }
       }
 
       if (isSaida) {
@@ -542,20 +631,24 @@ router.get('/clientes', requireAuth, async (req, res) => {
 router.post('/clientes', requireAuth, async (req, res) => {
   try {
     const { cnpj, nome_empresa, regime_tributario, data_entrada, honorario_inicial,
-            origem, cac, obs } = req.body;
+            origem, cac, obs, grupo_empresas, tipo_entrada, inadimplente_cronico } = req.body;
     if (!cnpj || !nome_empresa || !data_entrada || !honorario_inicial)
       return res.status(400).json({ error: 'Campos obrigatórios faltando.' });
     const { v4: uuidv4 } = require('uuid');
     const clienteId = uuidv4();
-    // Auto-add codigo column if not exists
+    // Auto-add colunas novas se não existirem
     await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS codigo TEXT`).catch(()=>{});
+    await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS grupo_empresas TEXT`).catch(()=>{});
+    await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS tipo_entrada TEXT`).catch(()=>{});
+    await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS inadimplente_cronico BOOLEAN DEFAULT FALSE`).catch(()=>{});
     const { codigo } = req.body;
     await pool.query(
       `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada,
-        honorario_inicial, origem, cac, obs, codigo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        honorario_inicial, origem, cac, obs, codigo, grupo_empresas, tipo_entrada, inadimplente_cronico)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [clienteId, req.user.id, cnpj, nome_empresa, regime_tributario || null,
-       data_entrada, honorario_inicial, origem || null, cac || 0, obs || null, codigo || null]
+       data_entrada, honorario_inicial, origem || null, cac || 0, obs || null, codigo || null,
+       grupo_empresas || null, tipo_entrada || null, inadimplente_cronico === true || inadimplente_cronico === 'true']
     );
     // Registrar honorário inicial no histórico
     await pool.query(
