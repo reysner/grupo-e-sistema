@@ -3155,16 +3155,115 @@ const Gestao = (() => {
   const _FAIXA_LABEL = { acima: 'Acima da média', na_media: 'Na média', abaixo: 'Abaixo da média' };
   const _FAIXA_COR = { acima: '#38a169', na_media: '#2b6cb0', abaixo: '#e53e3e' };
 
-  function _populateGrupoFilter(data) {
-    const sel = document.getElementById('gc-grupo-filter');
-    const datalist = document.getElementById('gc-grupo-datalist');
-    const grupos = [...new Set(data.map(r => r.grupo_empresas).filter(Boolean))].sort();
-    if (sel) {
-      const cur = sel.value;
-      sel.innerHTML = '<option value="todos">Todos os grupos</option>' +
-        grupos.map(g => `<option value="${g}" ${g===cur?'selected':''}>${g}</option>`).join('');
+  /**
+   * Grupo de Empresas — mesmo padrão da lista canônica de Analistas
+   * (ver Atendimento._carregarAnalistasSelect/gerenciarAnalistas): dropdown
+   * gerenciável em vez de texto livre, pra não gerar duplicidade tipo
+   * "Grupo Capanema" x "Grupo capanema". Alimenta tanto o <select> do
+   * formulário (gc-grupo) quanto o filtro da grade (gc-grupo-filter).
+   */
+  async function _carregarGruposSelect() {
+    const selForm = document.getElementById('gc-grupo');
+    const selFiltro = document.getElementById('gc-grupo-filter');
+    if (!selForm && !selFiltro) return;
+    try {
+      const res = await fetch('/api/grupos-empresas?ativo=true', { headers: { Authorization: `Bearer ${_token()}` } });
+      if (!res || !res.ok) return;
+      const { grupos } = await res.json();
+      const lista = grupos || [];
+      if (selForm) {
+        const atual = selForm.value;
+        selForm.innerHTML = '<option value="">Selecione (opcional)</option>' +
+          lista.map(g => `<option value="${g.nome}">${g.nome}</option>`).join('');
+        selForm.value = atual;
+      }
+      if (selFiltro) {
+        const atual = selFiltro.value;
+        selFiltro.innerHTML = '<option value="todos">Todos os grupos</option>' +
+          lista.map(g => `<option value="${g.nome}">${g.nome}</option>`).join('');
+        selFiltro.value = atual || 'todos';
+      }
+    } catch (e) {
+      console.error('[Gestao] _carregarGruposSelect()', e);
     }
-    if (datalist) datalist.innerHTML = grupos.map(g => `<option value="${g}"></option>`).join('');
+  }
+
+  async function gerenciarGrupos() {
+    try {
+      const res = await fetch('/api/grupos-empresas', { headers: { Authorization: `Bearer ${_token()}` } });
+      if (!res || !res.ok) { App.Toast.err('Erro ao carregar grupos.'); return; }
+      const { grupos } = await res.json();
+      _renderGruposModal(grupos || []);
+    } catch (e) {
+      App.Toast.err('Erro ao carregar grupos.');
+    }
+  }
+
+  function _renderGruposModal(lista) {
+    const linhas = lista.map(g => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-100)">
+        <span style="${g.ativo ? '' : 'color:var(--gray-400);text-decoration:line-through'}">${g.nome}</span>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="Gestao._toggleGrupo('${g.id}', ${!g.ativo})">${g.ativo ? 'Desativar' : 'Reativar'}</button>
+          <button class="btn btn-sm" style="background:none;border:none;color:#e53e3e;cursor:pointer" onclick="Gestao._excluirGrupo('${g.id}')" title="Excluir de vez">🗑</button>
+        </div>
+      </div>`).join('') || '<p style="color:var(--gray-400);font-size:13px;padding:12px 0">Nenhum grupo cadastrado ainda.</p>';
+
+    App.Modal.open('⚙️ Gerenciar Grupos de Empresas',
+      `<div style="display:flex;gap:8px;margin-bottom:16px">
+        <input id="grupo-novo-nome" type="text" placeholder="Nome do novo grupo (ex: Grupo Capanema)" style="flex:1;padding:8px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px">
+        <button class="btn btn-sm" onclick="Gestao._criarGrupo()">+ Adicionar</button>
+      </div>
+      <div style="max-height:320px;overflow-y:auto">${linhas}</div>`,
+      () => App.Modal.close(), { noFooter: true });
+  }
+
+  async function _criarGrupo() {
+    const input = document.getElementById('grupo-novo-nome');
+    const nome = (input?.value || '').trim();
+    if (!nome) { App.Toast.err('Digite um nome.'); return; }
+    try {
+      const res = await fetch('/api/grupos-empresas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${_token()}` },
+        body: JSON.stringify({ nome }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao criar.');
+      App.Toast.ok('Grupo adicionado!');
+      await gerenciarGrupos();
+      await _carregarGruposSelect();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
+  }
+
+  async function _toggleGrupo(id, ativo) {
+    try {
+      const res = await fetch(`/api/grupos-empresas/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${_token()}` },
+        body: JSON.stringify({ ativo }),
+      });
+      if (!res.ok) throw new Error('Erro ao atualizar.');
+      await gerenciarGrupos();
+      await _carregarGruposSelect();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
+  }
+
+  async function _excluirGrupo(id) {
+    if (!confirm('Excluir esse grupo de vez? Registros antigos continuam mostrando o nome, só não aparece mais na lista.')) return;
+    try {
+      const res = await fetch(`/api/grupos-empresas/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${_token()}` } });
+      if (!res.ok) throw new Error('Erro ao excluir.');
+      App.Toast.ok('Grupo excluído.');
+      await gerenciarGrupos();
+      await _carregarGruposSelect();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
   }
 
   function _filterData(data) {
@@ -3235,7 +3334,7 @@ const Gestao = (() => {
     const { data, ticketMedio } = await res.json();
     _allData = data || [];
     _populateYearFilter(_allData);
-    _populateGrupoFilter(_allData);
+    await _carregarGruposSelect();
     const valorEl = document.getElementById('gc-ticket-medio-valor');
     if (valorEl) valorEl.textContent = ticketMedio ? 'R$ ' + Number(ticketMedio).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—';
     const _filtered = _filterData(_allData);
@@ -3476,7 +3575,10 @@ const Gestao = (() => {
     }
   }
 
-  return { loadGrid, exportCSV, exportPDF, limpar, excluir, goPage, importarPlanilha };
+  return {
+    loadGrid, exportCSV, exportPDF, limpar, excluir, goPage, importarPlanilha,
+    gerenciarGrupos, _criarGrupo, _toggleGrupo, _excluirGrupo,
+  };
 })();
 
 window.Gestao = Gestao;
