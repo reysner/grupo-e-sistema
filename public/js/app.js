@@ -989,6 +989,7 @@ const App = (() => {
             origem: Util.val('gc-origem') || null,
             cac: cacCalculado,
             grupo_empresas: Util.val('gc-grupo') || null,
+            unidade: Util.val('gc-unidade') || null,
             tipo_entrada: gcSol,
           })
         });
@@ -1035,7 +1036,7 @@ const App = (() => {
         canal: gcCanal,
         regime_tributario: Util.val('gc-regime') || null,
         codigo: Util.val('gc-codigo') || null,
-      }, ['gc-analista','gc-cnpj','gc-empresa','gc-data','gc-competencia','gc-motivo','gc-grupo'], 'Gestão salva!');
+      }, ['gc-analista','gc-cnpj','gc-empresa','gc-data','gc-competencia','gc-motivo','gc-grupo','gc-unidade'], 'Gestão salva!');
       // Oferece abrir ticket para Baixa ou Saída de empresa
       if ((_gcSol === 'Baixa de empresa' || _gcSol === 'Saída de empresa') && App.Auth.isAdmin()) {
         setTimeout(() => window.Tickets?.perguntarAbrirTicket(_gcSol, _gcReg, _gcEmp, _gcCnpj, _gcDados, _gestaoId), 400);
@@ -3266,10 +3267,121 @@ const Gestao = (() => {
     }
   }
 
+  /**
+   * Unidade (ex.: "Escritorial Contadores", "Escritorial Soluções") — mesmo
+   * padrão de lista canônica de Grupo de Empresas/Analistas: dropdown
+   * gerenciável em vez de texto livre. Alimenta tanto o <select> do
+   * formulário (gc-unidade) quanto o filtro da grade (gc-unidade-filter).
+   */
+  async function _carregarUnidadesSelect() {
+    const selForm = document.getElementById('gc-unidade');
+    const selFiltro = document.getElementById('gc-unidade-filter');
+    if (!selForm && !selFiltro) return;
+    try {
+      const res = await fetch('/api/unidades?ativo=true', { headers: { Authorization: `Bearer ${_token()}` } });
+      if (!res || !res.ok) return;
+      const { unidades } = await res.json();
+      const lista = unidades || [];
+      if (selForm) {
+        const atual = selForm.value;
+        selForm.innerHTML = '<option value="">Selecione (opcional)</option>' +
+          lista.map(u => `<option value="${u.nome}">${u.nome}</option>`).join('');
+        selForm.value = atual;
+      }
+      if (selFiltro) {
+        const atual = selFiltro.value;
+        selFiltro.innerHTML = '<option value="todos">Todas as unidades</option>' +
+          lista.map(u => `<option value="${u.nome}">${u.nome}</option>`).join('');
+        selFiltro.value = atual || 'todos';
+      }
+    } catch (e) {
+      console.error('[Gestao] _carregarUnidadesSelect()', e);
+    }
+  }
+
+  async function gerenciarUnidades() {
+    try {
+      const res = await fetch('/api/unidades', { headers: { Authorization: `Bearer ${_token()}` } });
+      if (!res || !res.ok) { App.Toast.err('Erro ao carregar unidades.'); return; }
+      const { unidades } = await res.json();
+      _renderUnidadesModal(unidades || []);
+    } catch (e) {
+      App.Toast.err('Erro ao carregar unidades.');
+    }
+  }
+
+  function _renderUnidadesModal(lista) {
+    const linhas = lista.map(u => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-100)">
+        <span style="${u.ativo ? '' : 'color:var(--gray-400);text-decoration:line-through'}">${u.nome}</span>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="Gestao._toggleUnidade('${u.id}', ${!u.ativo})">${u.ativo ? 'Desativar' : 'Reativar'}</button>
+          <button class="btn btn-sm" style="background:none;border:none;color:#e53e3e;cursor:pointer" onclick="Gestao._excluirUnidade('${u.id}')" title="Excluir de vez">🗑</button>
+        </div>
+      </div>`).join('') || '<p style="color:var(--gray-400);font-size:13px;padding:12px 0">Nenhuma unidade cadastrada ainda.</p>';
+
+    App.Modal.open('⚙️ Gerenciar Unidades',
+      `<div style="display:flex;gap:8px;margin-bottom:16px">
+        <input id="unidade-novo-nome" type="text" placeholder="Nome da unidade (ex: Escritorial Contadores)" style="flex:1;padding:8px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px">
+        <button class="btn btn-sm" onclick="Gestao._criarUnidade()">+ Adicionar</button>
+      </div>
+      <div style="max-height:320px;overflow-y:auto">${linhas}</div>`,
+      () => App.Modal.close(), { noFooter: true });
+  }
+
+  async function _criarUnidade() {
+    const input = document.getElementById('unidade-novo-nome');
+    const nome = (input?.value || '').trim();
+    if (!nome) { App.Toast.err('Digite um nome.'); return; }
+    try {
+      const res = await fetch('/api/unidades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${_token()}` },
+        body: JSON.stringify({ nome }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao criar.');
+      App.Toast.ok('Unidade adicionada!');
+      await gerenciarUnidades();
+      await _carregarUnidadesSelect();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
+  }
+
+  async function _toggleUnidade(id, ativo) {
+    try {
+      const res = await fetch(`/api/unidades/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${_token()}` },
+        body: JSON.stringify({ ativo }),
+      });
+      if (!res.ok) throw new Error('Erro ao atualizar.');
+      await gerenciarUnidades();
+      await _carregarUnidadesSelect();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
+  }
+
+  async function _excluirUnidade(id) {
+    if (!confirm('Excluir essa unidade de vez? Registros antigos continuam mostrando o nome, só não aparece mais na lista.')) return;
+    try {
+      const res = await fetch(`/api/unidades/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${_token()}` } });
+      if (!res.ok) throw new Error('Erro ao excluir.');
+      App.Toast.ok('Unidade excluída.');
+      await gerenciarUnidades();
+      await _carregarUnidadesSelect();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
+  }
+
   function _filterData(data) {
     const ano = document.getElementById('gc-ano-filter')?.value || 'todos';
     const mes = document.getElementById('gc-mes-filter')?.value || 'todos';
     const grupo = document.getElementById('gc-grupo-filter')?.value || 'todos';
+    const unidade = document.getElementById('gc-unidade-filter')?.value || 'todos';
     const faixa = document.getElementById('gc-faixa-filter')?.value || 'todos';
     const soInadimplente = document.getElementById('gc-inadimplente-filter')?.checked || false;
     return data.filter(r => {
@@ -3277,6 +3389,7 @@ const Gestao = (() => {
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
       if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
       if (grupo !== 'todos' && r.grupo_empresas !== grupo) return false;
+      if (unidade !== 'todos' && r.unidade !== unidade) return false;
       if (faixa !== 'todos' && r.faixa !== faixa) return false;
       if (soInadimplente && !r.inadimplente_cronico) return false;
 
@@ -3288,7 +3401,7 @@ const Gestao = (() => {
     const tbody = document.getElementById('gc-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(r => {
@@ -3314,6 +3427,7 @@ const Gestao = (() => {
           return isNaN(d.getTime()) ? String(c) : d.toLocaleDateString('pt-BR');
         })()}</td>
         <td style="font-size:12px">${r.grupo_empresas || '—'}</td>
+        <td style="font-size:12px">${r.unidade || '—'}</td>
         <td style="font-size:12px">${r.honorario_atual != null ? 'R$ ' + Number(r.honorario_atual).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—'}</td>
         <td>${faixaTag}</td>
         <td>${lixeira}</td></tr>`;
@@ -3323,20 +3437,34 @@ const Gestao = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('gc-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
     const res = await fetch('/api/data/gestao?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
       return;
     }
-    const { data, ticketMedio } = await res.json();
+    const { data, ticketMedio, ticketMedioPorUnidade } = await res.json();
     _allData = data || [];
     _populateYearFilter(_allData);
     await _carregarGruposSelect();
+    await _carregarUnidadesSelect();
+    // Se um filtro de Unidade estiver selecionado, mostra o ticket médio
+    // daquela unidade específica (ex.: só as ~100 empresas da Escritorial
+    // Soluções); senão mostra a média geral da Carteira.
+    const unidadeFiltro = document.getElementById('gc-unidade-filter')?.value || 'todos';
     const valorEl = document.getElementById('gc-ticket-medio-valor');
-    if (valorEl) valorEl.textContent = ticketMedio ? 'R$ ' + Number(ticketMedio).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—';
+    if (valorEl) {
+      if (unidadeFiltro !== 'todos' && Array.isArray(ticketMedioPorUnidade)) {
+        const doUnidade = ticketMedioPorUnidade.find(u => u.unidade === unidadeFiltro);
+        valorEl.textContent = doUnidade
+          ? `R$ ${Number(doUnidade.ticket).toLocaleString('pt-BR',{minimumFractionDigits:2})} (${doUnidade.quantidade} empresa${doUnidade.quantidade!==1?'s':''})`
+          : '—';
+      } else {
+        valorEl.textContent = ticketMedio ? 'R$ ' + Number(ticketMedio).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—';
+      }
+    }
     const _filtered = _filterData(_allData);
     const _paged = App.Util.paginate(_filtered, _page);
     _renderGrid(_paged.items);
@@ -3346,8 +3474,8 @@ const Gestao = (() => {
   function exportCSV() {
     const data = _filterData(_allData);
     if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const cols = ['created_at', 'analista', 'cnpj', 'empresa', 'solicitacao', 'canal', 'motivo', 'grupo_empresas', 'honorario_atual', 'faixa', 'inadimplente_cronico'];
-    const labels = {'created_at':'Data','analista':'Analista','cnpj':'CNPJ','empresa':'Empresa','solicitacao':'Solicitação','canal':'Canal','motivo':'Motivo','grupo_empresas':'Grupo de Empresas','honorario_atual':'Honorário Atual','faixa':'Faixa','inadimplente_cronico':'Inadimplente Crônico'};
+    const cols = ['created_at', 'analista', 'cnpj', 'empresa', 'solicitacao', 'canal', 'motivo', 'grupo_empresas', 'unidade', 'honorario_atual', 'faixa', 'inadimplente_cronico'];
+    const labels = {'created_at':'Data','analista':'Analista','cnpj':'CNPJ','empresa':'Empresa','solicitacao':'Solicitação','canal':'Canal','motivo':'Motivo','grupo_empresas':'Grupo de Empresas','unidade':'Unidade','honorario_atual':'Honorário Atual','faixa':'Faixa','inadimplente_cronico':'Inadimplente Crônico'};
     const header = cols.map(c=>labels[c]||c).join(';');
     const rows = data.map(r => cols.map(c => {
       let v = r[c] ?? '';
@@ -3370,8 +3498,8 @@ const Gestao = (() => {
   function exportPDF() {
     const data = _filterData(_allData);
     if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const cols = ['created_at', 'analista', 'cnpj', 'empresa', 'solicitacao', 'canal', 'motivo', 'grupo_empresas', 'honorario_atual', 'faixa', 'inadimplente_cronico'];
-    const labels = {'created_at':'Data','analista':'Analista','cnpj':'CNPJ','empresa':'Empresa','solicitacao':'Solicitação','canal':'Canal','motivo':'Motivo','grupo_empresas':'Grupo de Empresas','honorario_atual':'Honorário Atual','faixa':'Faixa','inadimplente_cronico':'Inadimplente Crônico'};
+    const cols = ['created_at', 'analista', 'cnpj', 'empresa', 'solicitacao', 'canal', 'motivo', 'grupo_empresas', 'unidade', 'honorario_atual', 'faixa', 'inadimplente_cronico'];
+    const labels = {'created_at':'Data','analista':'Analista','cnpj':'CNPJ','empresa':'Empresa','solicitacao':'Solicitação','canal':'Canal','motivo':'Motivo','grupo_empresas':'Grupo de Empresas','unidade':'Unidade','honorario_atual':'Honorário Atual','faixa':'Faixa','inadimplente_cronico':'Inadimplente Crônico'};
     const ano = document.getElementById('gc-ano-filter')?.value||'todos';
     const mes = document.getElementById('gc-mes-filter')?.value||'todos';
     const titulo = `Gestão de Clientes — ${ano==='todos'?'Todos os anos':ano} / ${mes==='todos'?'Todos os meses':mes}`;
@@ -3464,6 +3592,7 @@ const Gestao = (() => {
     origem: ['origem do cliente', 'origem'],
     data_saida: ['data de encerramento', 'data de saida', 'data encerramento', 'data de saída'],
     grupo_empresas: ['grupo de empresas', 'grupo empresas', 'grupo'],
+    unidade: ['unidade', 'unidade (escritorial contadores/solucoes)', 'unidade (escritorial contadores/soluções)'],
     inadimplente_cronico: ['inadimplente cronico (sim/nao)', 'inadimplente cronico', 'inadimplente crônico (sim/não)', 'inadimplente crônico'],
   };
 
@@ -3521,6 +3650,7 @@ const Gestao = (() => {
       origem: String(_valorPorCampo(bruta, 'origem') || '').trim() || null,
       data_saida: _normalizarData(_valorPorCampo(bruta, 'data_saida')),
       grupo_empresas: String(_valorPorCampo(bruta, 'grupo_empresas') || '').trim() || null,
+      unidade: String(_valorPorCampo(bruta, 'unidade') || '').trim() || null,
       inadimplente_cronico: _semAcentos(String(_valorPorCampo(bruta, 'inadimplente_cronico') || '')).trim().toLowerCase() === 'sim',
     };
   }
@@ -3578,6 +3708,7 @@ const Gestao = (() => {
   return {
     loadGrid, exportCSV, exportPDF, limpar, excluir, goPage, importarPlanilha,
     gerenciarGrupos, _criarGrupo, _toggleGrupo, _excluirGrupo,
+    gerenciarUnidades, _criarUnidade, _toggleUnidade, _excluirUnidade,
   };
 })();
 
