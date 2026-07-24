@@ -335,6 +335,9 @@
             <select id="gc-grupo-filter" onchange="Gestao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
               <option value="todos">Todos os grupos</option>
             </select>
+            <select id="gc-unidade-filter" onchange="Gestao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todas as unidades</option>
+            </select>
             <select id="gc-faixa-filter" onchange="Gestao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
               <option value="todos">Todas as faixas</option>
               <option value="acima">Acima da média</option>
@@ -382,6 +385,9 @@
               <div class="field"><label>Grupo de Empresas <small class="opt">(opcional)</small> <a href="#" onclick="Gestao.gerenciarGrupos();return false" style="font-size:11px;font-weight:400;color:var(--g500)">(gerenciar lista)</a></label>
                 <select id="gc-grupo"><option value="">Selecione (opcional)</option></select>
               </div>
+              <div class="field"><label>Unidade <small class="opt">(opcional)</small> <a href="#" onclick="Gestao.gerenciarUnidades();return false" style="font-size:11px;font-weight:400;color:var(--g500)">(gerenciar lista)</a></label>
+                <select id="gc-unidade"><option value="">Selecione (opcional)</option></select>
+              </div>
               <div class="field"><label>Data da Solicitação <span class="req">*</span></label><input id="gc-data" type="date" /></div>
               <div class="field"><label>Fim da Competência <span class="req">*</span></label><input id="gc-competencia" type="month" /></div>
               <div class="field"><label>Canal da Solicitação <span class="req">*</span></label>
@@ -422,9 +428,9 @@
                 <thead><tr>
                   <th>Data</th><th>Analista</th><th>Cód.</th><th>CNPJ</th><th>Empresa</th>
                   <th>Solicitação</th><th>Canal</th><th>Data Sol.</th><th>Competência</th>
-                  <th>Grupo</th><th>Honorário</th><th>Faixa</th><th></th>
+                  <th>Grupo</th><th>Unidade</th><th>Honorário</th><th>Faixa</th><th></th>
                 </tr></thead>
-                <tbody id="gc-tbody"><tr><td colspan="13" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
+                <tbody id="gc-tbody"><tr><td colspan="14" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
               <div id="gc-pagination"></div>
             </div>
