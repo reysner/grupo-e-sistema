@@ -366,9 +366,21 @@ function calcularSLA(ticket, agora = new Date()) {
   // primeiro. Se o escritório é quem abriu a conversa (contato proativo), não
   // existe cliente esperando aceite — pula esse relógio pro ticket inteiro.
   if (inicio && !iniciadoPeloEscritorio) {
-    const fim = tAceite || agora;
+    // Nem todo ticket do Zappy tem um evento formal de 'aceite' registrado
+    // (ex.: tickets #46251 e #45963, reportados pela Thais — encerrados há
+    // dias, sem nenhum evento de aceite, mas o "fim" caía em `agora`, ou
+    // seja, na hora real em que o Dashboard é calculado. Resultado: um
+    // ticket fechado há uma semana continuava parecendo uma violação enorme
+    // e CRESCENDO a cada dia que passava, só porque ninguém nunca clicou
+    // formalmente em "aceitar" no Zappy). Sem o evento formal, usa como
+    // "aceite implícito" a primeira resposta do escritório (responder já é,
+    // na prática, ter pego o ticket) ou, se nunca respondeu, o encerramento
+    // do ticket. Só cai em `agora` (e fica em_curso=true) se o ticket
+    // realmente ainda está aberto e ninguém nunca respondeu nada.
+    const fim = tAceite || primeiraMsgEscritorio || tEncerramento || agora;
+    const aindaSemResposta = !tAceite && !primeiraMsgEscritorio && !tEncerramento;
     const min = T.minutosUteis(inicio, fim);
-    relogios.push(montar('aceite', inicio, fim, min, !tAceite));
+    relogios.push(montar('aceite', inicio, fim, min, aindaSemResposta));
   }
 
   // ── Relógio 2 — TRANSFERÊNCIA ───────────────────────────────────────────────
