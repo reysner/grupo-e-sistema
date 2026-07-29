@@ -5893,20 +5893,25 @@ window.Tickets = Tickets;
         const res = await fetch('/api/cs/churn?dias=180', { headers: authHeaders() });
         if (!res.ok) throw new Error('Falha ao buscar.');
         const { data } = await res.json();
+        AnaliseInteligente._churnData = data || [];
         if (!data || !data.length) {
           tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Nenhum sinal de churn encontrado nas conversas dos últimos 180 dias.</td></tr>';
           return;
         }
-        tbody.innerHTML = data.map(c => {
+        tbody.innerHTML = data.map((c, idx) => {
           const dt = new Date(c.ultima_hora).toLocaleString('pt-BR');
           const nomeVinculo = c.vinculado
             ? esc(c.empresa)
             : `${esc(c.empresa)} <span style="color:var(--gray-400);font-size:11px">(não vinculado)</span>`;
-          return `<tr>
+          const temMais = (c.detalhes && c.detalhes.length > 1);
+          const ocorrenciasCell = temMais
+            ? `<a href="#" onclick="AnaliseInteligente.toggleChurnDetalhe(${idx});return false" style="cursor:pointer;text-decoration:underline;font-weight:600" title="Ver as ${c.ocorrencias} mensagens que bateram">${c.ocorrencias} <span id="churn-seta-${idx}">▾</span></a>`
+            : c.ocorrencias;
+          return `<tr id="churn-row-${idx}">
             <td style="font-weight:600">${nomeVinculo}</td>
             <td style="font-size:12px;color:var(--gray-500)">${c.zappy_id ? '#' + esc(c.zappy_id) : '—'}</td>
             <td style="font-size:12px;color:var(--gray-500)">${dt}</td>
-            <td>${c.ocorrencias}</td>
+            <td>${ocorrenciasCell}</td>
             <td style="font-size:12px;color:var(--gray-600)"><em>"${esc(c.frase_detectada)}"</em> — ${esc((c.trecho||'').slice(0,140))}${(c.trecho||'').length>140?'...':''}</td>
             <td><button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.tratarChurn('${c.ticket_id}')">✔ Tratar</button></td>
           </tr>`;
@@ -5914,6 +5919,39 @@ window.Tickets = Tickets;
       } catch (e) {
         tbody.innerHTML = '<tr><td colspan="6" style="color:var(--danger)">Não foi possível analisar as conversas agora.</td></tr>';
       }
+    },
+
+    /**
+     * Expande/recolhe uma linha extra logo abaixo da empresa clicada,
+     * listando TODAS as mensagens que bateram com alguma frase de churn
+     * (não só a mais recente) — pedido da Thais depois de ver "3
+     * ocorrências" no ticket #46449 sem conseguir ver quais eram as 3.
+     */
+    toggleChurnDetalhe(idx) {
+      const row = document.getElementById(`churn-row-${idx}`);
+      if (!row) return;
+      const existente = document.getElementById(`churn-detalhe-${idx}`);
+      const seta = document.getElementById(`churn-seta-${idx}`);
+      if (existente) {
+        existente.remove();
+        if (seta) seta.textContent = '▾';
+        return;
+      }
+      if (seta) seta.textContent = '▴';
+      const item = (AnaliseInteligente._churnData || [])[idx];
+      const detalhes = (item && item.detalhes) || [];
+      const linhas = detalhes.map(d => {
+        const dt = new Date(d.hora).toLocaleString('pt-BR');
+        return `<div style="padding:8px 0;border-bottom:1px solid var(--gray-100)">
+          <div style="font-size:12px;color:var(--gray-500)">${dt} — Ticket ${d.zappy_id ? '#' + esc(d.zappy_id) : '—'}</div>
+          <div style="font-size:13px;color:var(--gray-700)"><em>"${esc(d.frase)}"</em> — ${esc(d.trecho || '')}</div>
+        </div>`;
+      }).join('') || '<p style="color:var(--gray-400);font-size:13px">Sem detalhes disponíveis.</p>';
+      const html = `<tr id="churn-detalhe-${idx}"><td colspan="6" style="background:var(--gray-50);padding:10px 16px">
+        <div style="font-size:12px;font-weight:600;color:var(--gray-600);margin-bottom:6px">Todas as mensagens que bateram (${detalhes.length}):</div>
+        ${linhas}
+      </td></tr>`;
+      row.insertAdjacentHTML('afterend', html);
     },
 
     /**
