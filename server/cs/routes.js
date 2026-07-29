@@ -511,10 +511,13 @@ router.get('/churn', requireAuth, requireAdmin, async (req, res) => {
        LIMIT 5000
     `, [dias]);
 
-    // Agrupa por empresa (vínculo confirmado > nome do contato > telefone),
-    // guardando só a ocorrência mais recente + contagem, pra não repetir
-    // a mesma empresa várias vezes na lista. O ticket_id/zappy_id guardados
-    // são os da ocorrência mais recente — é nela que o botão "Tratar" age.
+    // Agrupa por empresa (vínculo confirmado > nome do contato > telefone).
+    // Guarda a ocorrência mais recente nos campos de topo (compatibilidade
+    // com quem só olha frase_detectada/trecho) E TAMBÉM a lista completa de
+    // ocorrências em `detalhes` (até MAX_DETALHES por empresa), pra dar pra
+    // ver TODAS as mensagens que bateram, não só a última — pedido da Thais
+    // depois de ver "3 ocorrências" sem conseguir abrir quais eram.
+    const MAX_DETALHES = 20;
     const porEmpresa = new Map();
     for (const row of rows) {
       const frase = detectarSinalChurn(row.texto);
@@ -535,9 +538,20 @@ router.get('/churn', requireAuth, requireAdmin, async (req, res) => {
           zappy_id: row.zappy_id,
           analista: row.analista,
           departamento: row.departamento,
+          detalhes: [],
         });
       }
-      porEmpresa.get(chave).ocorrencias++;
+      const item = porEmpresa.get(chave);
+      item.ocorrencias++;
+      if (item.detalhes.length < MAX_DETALHES) {
+        item.detalhes.push({
+          hora: row.hora,
+          ticket_id: row.ticket_id,
+          zappy_id: row.zappy_id,
+          frase,
+          trecho: row.texto,
+        });
+      }
     }
 
     const data = [...porEmpresa.values()].sort((a, b) => new Date(b.ultima_hora) - new Date(a.ultima_hora));
