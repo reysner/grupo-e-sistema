@@ -124,6 +124,44 @@ checa('Texto vazio = NÃO é aguardando cliente', pareceAguardandoCliente(''), f
   checa('aguardando_cliente = true', porTipo.promessa_resolucao.aguardando_cliente, true);
 }
 
+{
+  // Ticket #46296 real (Diessica): o Bruno chamou a cliente primeiro (cobrança
+  // de pendência financeira), ela nunca respondeu. Sem esse ajuste, o relógio
+  // de Aceite contava da abertura até "agora" (sem tAceite) e virava um
+  // vermelho gigante numa etapa que nem existe pra esse ticket.
+  const ticket = {
+    id: 46296, empresa_texto: 'Diessica - Uai Ceva E NR Bebidas',
+    eventos: [{ tipo: 'abertura', hora: H(D, '08:41') }],
+    mensagens: [
+      {
+        hora: H(D, '08:41'), remetente: 'escritorio',
+        texto: 'Bom dia, Diessica! Estou entrando em contato para verificarmos a possibilidade de ' +
+               'regularizar as pendências financeiras junto ao escritório.',
+      },
+    ],
+  };
+  const sla = calcularSLA(ticket, T.instante(D, '20:00')); // horas depois, cliente nunca respondeu
+  const porTipo = Object.fromEntries(sla.relogios.map(r => [r.tipo, r]));
+  checa('Ticket #46296 real: escritório chamou primeiro -> SEM relógio de Aceite', porTipo.aceite, undefined);
+  checa('Não entra no radar "Agora" por causa do Aceite', !!(sla.radar && sla.radar.tipo === 'aceite'), false);
+}
+
+{
+  // Confere que o caso normal (cliente chama primeiro) continua funcionando
+  // do jeito de sempre — não pode ter quebrado nada com o ajuste acima.
+  const ticket = {
+    id: 999, empresa_texto: 'Cliente Normal',
+    eventos: [{ tipo: 'abertura', hora: H(D, '09:00') }, { tipo: 'aceite', hora: H(D, '09:40') }],
+    mensagens: [
+      { hora: H(D, '09:00'), remetente: 'cliente', texto: 'Oi, preciso de ajuda' },
+    ],
+  };
+  const sla = calcularSLA(ticket, T.instante(D, '09:45'));
+  const porTipo = Object.fromEntries(sla.relogios.map(r => [r.tipo, r]));
+  checa('Cliente chamou primeiro -> continua tendo relógio de Aceite', !!porTipo.aceite, true);
+  checa('40min > 2x15min de limite -> vermelho', porTipo.aceite.status, 'vermelho');
+}
+
 console.log('\n===================================================================');
 console.log(` RESULTADO: ${ok} passaram - ${falhou} falharam`);
 console.log('===================================================================\n');
