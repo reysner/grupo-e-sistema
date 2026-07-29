@@ -344,13 +344,28 @@ function calcularSLA(ticket, agora = new Date()) {
   const tEncerramento  = primeiroEvento(eventos, 'encerramento');
 
   const primeiraMsgCliente = primeiraMsg(mensagens, 'cliente');
+  const primeiraMsgEscritorio = primeiraMsg(mensagens, 'escritorio');
+  // Ticket ABERTO PELO ESCRITÓRIO (contato proativo, ex.: cobrança de pendência
+  // financeira) quando a primeira mensagem da conversa é do escritório e não
+  // existe nenhuma mensagem do cliente antes dela (ou não existe nenhuma
+  // mensagem do cliente). Ticket #46296 (Diessica) mostrou o problema: o
+  // Bruno chamou a cliente primeiro, ela nunca "esperou ser aceita" — mas o
+  // relógio de Aceite tava contando desde a abertura do ticket até agora
+  // (sem tAceite, o "fim" cai em `agora` e o tempo só cresce), gerando um
+  // falso vermelho gigante numa etapa que nem se aplica a esse caso.
+  const iniciadoPeloEscritorio = !!primeiraMsgEscritorio &&
+    (!primeiraMsgCliente || primeiraMsgEscritorio < primeiraMsgCliente);
+
   // marco inicial: a 1ª mensagem do cliente, ou a abertura se não houver mensagem
   const inicio = primeiraMsgCliente || tAbertura;
 
   const relogios = [];
 
   // ── Relógio 1 — ACEITE ──────────────────────────────────────────────────────
-  if (inicio) {
+  // Só faz sentido medir "tempo até aceitar" quando foi o CLIENTE quem chamou
+  // primeiro. Se o escritório é quem abriu a conversa (contato proativo), não
+  // existe cliente esperando aceite — pula esse relógio pro ticket inteiro.
+  if (inicio && !iniciadoPeloEscritorio) {
     const fim = tAceite || agora;
     const min = T.minutosUteis(inicio, fim);
     relogios.push(montar('aceite', inicio, fim, min, !tAceite));
