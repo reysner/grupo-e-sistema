@@ -162,6 +162,57 @@ checa('Texto vazio = NÃO é aguardando cliente', pareceAguardandoCliente(''), f
   checa('40min > 2x15min de limite -> vermelho', porTipo.aceite.status, 'vermelho');
 }
 
+{
+  // Ticket #46251 real (Thalita Lara - Hands): cliente chamou, Douglas
+  // respondeu 37min depois, ticket foi encerrado no mesmo dia — mas o Zappy
+  // nunca registrou o evento formal de 'aceite'. Sem o ajuste, o "fim"
+  // caía em `agora` (dias depois, na hora em que o Dashboard é aberto),
+  // fazendo o ticket parecer uma violação enorme e crescente pra sempre,
+  // mesmo já tendo sido respondido e fechado rapidinho.
+  const ticket = {
+    id: 46251, empresa_texto: 'Thalita Lara - Hands',
+    eventos: [
+      { tipo: 'abertura', hora: H(D, '10:00') },
+      { tipo: 'encerramento', hora: H(D, '17:45') },
+    ],
+    mensagens: [
+      { hora: H(D, '10:00'), remetente: 'cliente', texto: 'Bom dia, preciso de uma informação' },
+      { hora: H(D, '10:37'), remetente: 'escritorio', texto: 'Passei novo e-mail, Pamella ciente.' },
+    ],
+  };
+  // "agora" aqui é dias depois, simulando o Dashboard sendo aberto muito
+  // depois do ticket já ter sido respondido e fechado.
+  const sla = calcularSLA(ticket, T.instante('2026-07-29', '09:00'));
+  const porTipo = Object.fromEntries(sla.relogios.map(r => [r.tipo, r]));
+  checa('Ticket #46251 real: sem evento de aceite -> usa a 1ª resposta do escritório como fim (não "agora")', porTipo.aceite.fim, H(D, '10:37'));
+  checa('37min > 2x15min de limite -> vermelho (mas não fica crescendo mais)', porTipo.aceite.status, 'vermelho');
+  checa('Não fica em_curso (já foi respondido)', porTipo.aceite.em_curso, false);
+}
+
+{
+  // Ticket #45963 real (Lucas Vinicius Mouco): cliente abriu, ninguém do
+  // escritório respondeu (só a pesquisa automática/encerramento por falta
+  // de atividade), ticket ficou aberto 5 dias sem evento de aceite. Nesse
+  // caso, sem resposta do escritório, usa o encerramento como fim (ainda
+  // assim não deixa crescer pra sempre depois de já ter fechado).
+  const ticket = {
+    id: 45963, empresa_texto: 'Lucas Vinicius Mouco',
+    eventos: [
+      { tipo: 'abertura', hora: H('2026-07-15', '16:25') },
+      { tipo: 'encerramento', hora: H('2026-07-20', '17:19') },
+    ],
+    mensagens: [
+      { hora: H('2026-07-15', '16:25'), remetente: 'cliente', texto: 'Oi, tudo bem?' },
+      { hora: H('2026-07-15', '16:49'), remetente: 'sistema', texto: 'Por favor, informe uma nota entre 1 a 5...' },
+      { hora: H('2026-07-20', '17:19'), remetente: 'sistema', texto: 'Esse atendimento foi finalizado por falta de atividade' },
+    ],
+  };
+  const sla = calcularSLA(ticket, T.instante('2026-07-29', '09:00'));
+  const porTipo = Object.fromEntries(sla.relogios.map(r => [r.tipo, r]));
+  checa('Ticket #45963 real: sem resposta do escritório -> usa o encerramento como fim (não "agora")', porTipo.aceite.fim, H('2026-07-20', '17:19'));
+  checa('Não fica em_curso (já está encerrado)', porTipo.aceite.em_curso, false);
+}
+
 console.log('\n===================================================================');
 console.log(` RESULTADO: ${ok} passaram - ${falhou} falharam`);
 console.log('===================================================================\n');
