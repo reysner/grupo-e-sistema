@@ -112,8 +112,11 @@ function pareceAguardandoCliente(texto) {
  * e o botão "Tratar" no painel cobre os falsos positivos que passarem.
  * Calibrada com exemplos reais da Thais testados em conversas do Zappy:
  * "já não aguento tanto erros, vou procurar outra contabilidade, vocês
- * erram demais", "Estou cansado dos erros de vocês" e "Todo mês tenho
- * que pedir a mesma coisa".
+ * erram demais", "Estou cansado dos erros de vocês", "Todo mês tenho
+ * que pedir a mesma coisa", "Como sempre vocês errando denovo" (ticket
+ * onde o Reysner reclamou de erro recorrente) e "Isso são erros de
+ * vocês, quem vão pagar essas multas?" (ticket #46449 — cliente culpando
+ * o escritório por multa em guia de competência anterior).
  */
 const FRASES_CHURN = [
   // ── Intenção explícita de trocar/cancelar/sair ──────────────────────────
@@ -230,6 +233,27 @@ const FRASES_CHURN = [
   'descaso completo',
   'falta de profissionalismo',
   'pouco profissionalismo',
+  // ── "Sempre... errando" / culpar a contabilidade pelo erro (ticket #46449 e
+  // conversa "Como sempre vocês errando denovo") ──────────────────────────
+  'sempre voces errando',
+  'voces sempre errando',
+  'sempre vcs errando',
+  'vcs sempre errando',
+  'errando de novo',
+  'errando denovo',
+  'errando dinovo',
+  'erram de novo',
+  'voces erram sempre',
+  'isso sao erros de voces',
+  'isso e erro de voces',
+  'erro de voces',
+  'erros de voces',
+  'a culpa e de voces',
+  'culpa de voces',
+  'quem vai pagar essa multa',
+  'quem vai pagar essas multas',
+  'quem vao pagar essa multa',
+  'quem vao pagar essas multas',
   // ── Insatisfação forte / recomendação negativa ──────────────────────────
   'pessimo atendimento',
   'atendimento pessimo',
