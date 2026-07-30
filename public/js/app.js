@@ -5319,6 +5319,34 @@ window.Tickets = Tickets;
     },
 
     /**
+     * Botão "Recalcular SLA" — reprocessa os relógios de TODOS os tickets já
+     * salvos com a fórmula ATUAL do motor (server/cs/slaEngine.js), sem
+     * chamar o Zappy de novo. Necessário porque o Dashboard só LÊ o que já
+     * está calculado e guardado no banco — corrigir o código não atualiza
+     * sozinho os tickets antigos (foi o caso dos tickets #46296/#46251/
+     * #45963 continuarem vermelhos mesmo depois do ajuste no slaEngine).
+     * Roda em segundo plano — com milhares de tickets pode levar alguns
+     * minutos.
+     */
+    async recalcularSLA() {
+      const ok = window.confirm(
+        'Isso vai reprocessar o SLA de TODOS os tickets já salvos, usando a fórmula mais recente ' +
+        '(sem buscar nada novo no Zappy). Útil depois de qualquer ajuste no motor de SLA.\n\n' +
+        'Pode levar alguns minutos rodando em segundo plano. Continuar?'
+      );
+      if (!ok) return;
+      try {
+        const resp = await fetch('/api/cs/recalcular-sla', { method: 'POST', headers: SucessoCliente._authHeaders() });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        if (window.App && App.Toast) App.Toast.ok(data.mensagem || 'Recálculo de SLA iniciado.');
+      } catch (e) {
+        if (window.App && App.Toast) App.Toast.err('Falha ao iniciar recálculo de SLA: ' + e.message);
+        console.error('[SucessoCliente] recalcularSLA()', e);
+      }
+    },
+
+    /**
      * Gráfico "% dentro do SLA por analista" — ordenado do pior pro melhor
      * (o backend já manda nessa ordem), cor por faixa (vermelho <50%,
      * amarelo 50–79%, verde ≥80%) em vez de uma cor por analista. Clicar
