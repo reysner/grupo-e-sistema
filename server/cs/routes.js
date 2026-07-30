@@ -17,6 +17,7 @@
  *   GET  /api/cs/filtros                   -> opções de departamento/analista já vistas, p/ popular os selects
  *   POST /api/cs/ingerir                   -> dispara a ingestão manualmente (admin)
  *   POST /api/cs/backfill?dias=90          -> carga retroativa única, roda em segundo plano (admin)
+ *   POST /api/cs/recalcular-sla            -> reprocessa o SLA de tudo que já está salvo, sem chamar o Zappy (admin)
  *   GET  /api/cs/vinculos/pendentes        -> fila de de-para aguardando confirmação humana
  *   POST /api/cs/vinculos/:id/confirmar    -> confirma um vínculo (empresa/tipo)
  *
@@ -28,13 +29,15 @@
 const express = require('express');
 const router = express.Router();
 const { obterPool } = require('./pool');
-const { ingerirTickets, executarCargaRetroativa } = require('./ingestao');
+const { ingerirTickets, executarCargaRetroativa, recalcularSlaTodos } = require('./ingestao');
 const { criarClienteZappy } = require('./zappyClient');
 const { listarPendentes, confirmarVinculo } = require('./vinculos');
 const { detectarSinalChurn } = require('./slaEngine');
 
 // Trava simples pra não deixar disparar 2 backfills ao mesmo tempo (ex.: duplo clique).
 let backfillEmAndamento = false;
+// Idem, mas pro recálculo de SLA (ver POST /recalcular-sla abaixo).
+let recalculoSlaEmAndamento = false;
 
 let requireAuth, requireAdmin;
 try {
@@ -190,6 +193,35 @@ router.post('/backfill', requireAuth, requireAdmin, async (req, res) => {
     console.error('[CS] Backfill falhou:', e);
   } finally {
     backfillEmAndamento = false;
+  }
+});
+
+/**
+ * POST /api/cs/recalcular-sla — reprocessa os relógios de SLA de TODOS os
+ * tickets já salvos, usando as regras ATUAIS do motor (slaEngine.js) — SEM
+ * chamar o Zappy de novo. Necessário depois de qualquer ajuste na fórmula
+ * de SLA (ex.: tickets #46296/#46251/#45963, reportados pela Thais):
+ * corrigir o código não atualiza sozinho os tickets que já foram
+ * calculados e salvos com a fórmula antiga — o Dashboard só LÊ o que já
+ * está em cs_tickets.sla, não recalcula na hora que a página abre.
+ * Roda em segundo plano (como o /backfill) — com milhares de tickets pode
+ * levar alguns minutos.
+ */
+router.post('/recalcular-sla', requireAuth, requireAdmin, async (req, res) => {
+  if (recalculoSlaEmAndamento) {
+    return res.status(409).json({ error: 'Já existe um recálculo de SLA em andamento. Aguarde terminar.' });
+  }
+  recalculoSlaEmAndamento = true;
+  res.json({ ok: true, mensagem: 'Recálculo de SLA iniciado em segundo plano. Pode levar alguns minutos — acompanhe pelos logs do Render ou recarregue a tela daqui a pouco.' });
+
+  try {
+    const pool = obterPool();
+    const total = await recalcularSlaTodos(pool);
+    console.log('[CS] Recálculo de SLA concluído:', total, 'tickets');
+  } catch (e) {
+    console.error('[CS] Recálculo de SLA falhou:', e);
+  } finally {
+    recalculoSlaEmAndamento = false;
   }
 });
 
