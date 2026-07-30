@@ -350,6 +350,84 @@ async function preencherTrocasPendentes(pool, { agora = new Date(), limite = 50 
 }
 
 /**
+ * Recalcula os relógios de SLA de TODOS os tickets já salvos, usando o
+ * calcularSLA() ATUAL (não a versão do motor que estava rodando quando cada
+ * ticket foi ingerido pela primeira vez). Necessário sempre que a fórmula de
+ * SLA muda (ex.: ajuste pros tickets #46296/#46251/#45963 — Aceite não
+ * distinguia ticket aberto pelo escritório, e o "fim" caía em `agora`
+ * quando faltava o evento formal de aceite). Sem isso, os tickets antigos
+ * continuam com o valor calculado pela fórmula VELHA guardado pra sempre em
+ * cs_tickets.sla — o Dashboard só LÊ o que já está salvo, não recalcula na
+ * hora que a página é aberta.
+ *
+ * NÃO chama o Zappy — usa só o que já está salvo em cs_tickets/cs_mensagens,
+ * então é rápido e seguro de rodar quantas vezes precisar. Pagina por id
+ * (keyset, não OFFSET) pra aguentar milhares de tickets sem degradar.
+ *
+ * @param {object} pool
+ * @param {object} [opts]
+ * @param {Date}   [opts.agora]
+ * @param {number} [opts.loteSize]  quantos tickets por lote (default 300)
+ * @returns {number} total de tickets recalculados
+ */
+async function recalcularSlaTodos(pool, { agora = new Date(), loteSize = 300 } = {}) {
+  let totalRecalculados = 0;
+  let ultimoId = '00000000-0000-0000-0000-000000000000';
+
+  for (;;) {
+    const { rows: lote } = await pool.query(
+      `SELECT id, zappy_id, empresa_texto, abertura, aceite, transferencia, encerramento
+         FROM cs_tickets
+        WHERE id > $1
+        ORDER BY id ASC
+        LIMIT $2`,
+      [ultimoId, loteSize]
+    );
+    if (!lote.length) break;
+
+    for (const ticket of lote) {
+      const eventos = [];
+      if (ticket.abertura) eventos.push({ tipo: 'abertura', hora: ticket.abertura });
+      if (ticket.aceite) eventos.push({ tipo: 'aceite', hora: ticket.aceite });
+      if (ticket.transferencia) eventos.push({ tipo: 'transferencia', hora: ticket.transferencia });
+      if (ticket.encerramento) eventos.push({ tipo: 'encerramento', hora: ticket.encerramento });
+
+      const { rows: mensagens } = await pool.query(
+        `SELECT remetente, hora, texto FROM cs_mensagens WHERE ticket_id = $1 ORDER BY hora ASC`,
+        [ticket.id]
+      );
+
+      const generico = { id: ticket.zappy_id, empresa_texto: ticket.empresa_texto, eventos, mensagens };
+      const sla = calcularSLA(generico, agora);
+      const trocas = calcularTrocas(mensagens, agora);
+      const mensagensPosTransferencia = ticket.transferencia
+        ? mensagens.filter(m => new Date(m.hora) > new Date(ticket.transferencia))
+        : [];
+      const trocasPosTransferencia = calcularTrocas(mensagensPosTransferencia, agora);
+
+      const novoSla = JSON.stringify({
+        relogios: sla.relogios,
+        radar: sla.radar,
+        trocas,
+        trocasPosTransferencia,
+      });
+      const emRisco = !!(sla.radar && sla.radar.status && sla.radar.status !== 'verde');
+      const piorStatus = sla.radar ? sla.radar.status : null;
+
+      await pool.query(
+        `UPDATE cs_tickets SET sla = $1, em_risco = $2, pior_status = $3, calculado_em = NOW(), updated_at = NOW() WHERE id = $4`,
+        [novoSla, emRisco, piorStatus, ticket.id]
+      );
+      totalRecalculados++;
+    }
+
+    ultimoId = lote[lote.length - 1].id;
+  }
+
+  return totalRecalculados;
+}
+
+/**
  * Carga retroativa ÚNICA: reabre a "data de início da coleta" pra trás (nunca
  * pra frente — nunca esconde ticket já coletado) e roda a ingestão buscando
  * atividade desde essa nova data, em vez de só a partir da última execução.
@@ -407,4 +485,5 @@ module.exports = {
   obterUltimaExecucao,
   preencherTrocasPendentes,
   resolverHoraTransferencia,
+  recalcularSlaTodos,
 };
