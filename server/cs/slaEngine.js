@@ -309,6 +309,57 @@ function detectarSinalChurn(texto) {
   return FRASES_CHURN.find(frase => t.includes(frase)) || null;
 }
 
+/**
+ * Palavras/expressões que sinalizam INSATISFAÇÃO, desespero, desrespeito,
+ * reclamação de erro ou de juros/multa causados por erro do escritório —
+ * mais ABRANGENTE de propósito que FRASES_CHURN. FRASES_CHURN é calibrada
+ * pra pegar só quem sinaliza risco real de CANCELAMENTO (por isso usa
+ * frases compostas, pra evitar alarme falso); aqui o objetivo é bem
+ * diferente — pegar QUALQUER mensagem que cheire a cliente descontente,
+ * mesmo sem intenção nenhuma de sair, pra alguém do time revisar (pedido da
+ * Thais: "toda e qualquer mensagem de insatisfação, desespero, desrespeito,
+ * erros, juros por multa, e similares acusem nele"). Por isso aceita
+ * palavras soltas também, não só frases de várias palavras.
+ */
+const PALAVRAS_INSATISFACAO = [
+  // ── Insatisfação / decepção genérica ────────────────────────────────────
+  'insatisfeito', 'insatisfeita', 'descontente', 'desagradado', 'desagradada',
+  'decepcionado', 'decepcionada', 'frustrado', 'frustrada', 'revoltado', 'revoltada',
+  'indignado', 'indignada', 'irritado', 'irritada', 'chateado', 'chateada',
+  'magoado', 'magoada', 'incomodado', 'incomodada',
+  // ── Desespero ────────────────────────────────────────────────────────────
+  'desesperado', 'desesperada', 'desespero', 'em panico', 'desesperador',
+  'nao aguento', 'socorro', 'situacao critica', 'desesperante',
+  // ── Desrespeito / maus-tratos ────────────────────────────────────────────
+  'desrespeito', 'desrespeitado', 'desrespeitada', 'falta de respeito',
+  'mal educado', 'mal educada', 'grosseiro', 'grosseira', 'humilhado', 'humilhada',
+  'me tratou mal', 'fui mal tratado', 'fui mal tratada', 'sem educacao',
+  // ── Erros (reclamação, não frase composta) ──────────────────────────────
+  'erro grave', 'erro gravissimo', 'muitos erros', 'cheio de erros', 'errado de novo',
+  'errado outra vez', 'errado mais uma vez', 'sempre errado', 'calculado errado',
+  'guias erradas', 'guia errada', 'calculo errado', 'valor errado',
+  // ── Juros / multa (prejuízo financeiro por erro do escritório) ─────────
+  'juros e multa', 'juros por causa', 'multa por causa', 'multa por erro',
+  'juros por erro', 'paguei multa', 'tive que pagar multa', 'gerou multa',
+  'gerou juros', 'me cobraram multa', 'quem vai pagar', 'quem vai arcar',
+  'vou ter que pagar', 'prejuizo financeiro', 'tive prejuizo', 'multa indevida',
+  // ── Absurdo / inaceitável / descaso ─────────────────────────────────────
+  'absurdo', 'inaceitavel', 'inadmissivel', 'descaso', 'incompetencia', 'incompetente',
+  'vergonha', 'lamentavel', 'decepcao total',
+];
+
+/**
+ * Se o texto tiver alguma palavra/expressão de insatisfação, devolve a que
+ * bateu; senão, devolve null. Casamento por substring (palavra solta conta),
+ * de propósito mais permissivo que detectarSinalChurn (ver comentário da
+ * lista PALAVRAS_INSATISFACAO acima).
+ */
+function detectarInsatisfacao(texto) {
+  const t = normalizarTexto(texto);
+  if (!t) return null;
+  return PALAVRAS_INSATISFACAO.find(p => t.includes(p)) || null;
+}
+
 /** Ordena por hora (ascendente), tolerando Date ou ISO string */
 function ordenarPorHora(arr) {
   return [...arr].sort((a, b) => new Date(a.hora) - new Date(b.hora));
@@ -564,4 +615,5 @@ module.exports = {
   pareceIntencaoTransferir, FRASES_TRANSFERENCIA,
   pareceAguardandoCliente, FRASES_AGUARDANDO_CLIENTE,
   detectarSinalChurn, FRASES_CHURN,
+  detectarInsatisfacao, PALAVRAS_INSATISFACAO,
 };
