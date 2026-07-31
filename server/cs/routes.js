@@ -736,10 +736,24 @@ router.post('/insatisfacao-conversas/:mensagemId/tratar', requireAuth, requireAd
  * NENHUM histórico de conversa registrado vêm marcados à parte
  * (`sem_historico: true`) — pode ser cliente antigo de antes do Zappy
  * rastrear, não necessariamente afastamento real.
+ *
+ * Clientes "tratados" (ver POST /afastamento/:clienteId/tratar) somem da
+ * lista por até 30 dias OU até o cliente voltar a mandar mensagem — o que
+ * vier primeiro. Diferente de Churn/Insatisfação, aqui não existe uma nova
+ * "ocorrência" que naturalmente reapareça, então o tratamento tem validade
+ * (não é definitivo), pra não esconder um cliente afastado pra sempre.
  */
 router.get('/afastamento', requireAuth, requireAdmin, async (req, res) => {
   try {
     const pool = obterPool();
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS cs_afastamento_tratamentos (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      cliente_id UUID NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+      motivo TEXT, tratado_por TEXT, tratado_em TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (cliente_id)
+    )`).catch(() => {});
+
     const { rows } = await pool.query(`
       SELECT c.id AS cliente_id, c.nome_empresa, c.cnpj, c.grupo_empresas, c.unidade,
              c.data_entrada, v.id AS vinculo_id,
@@ -752,7 +766,11 @@ router.get('/afastamento', requireAuth, requireAdmin, async (req, res) => {
             JOIN cs_tickets ct ON ct.id = cm.ticket_id
            WHERE ct.vinculo_id = v.id AND cm.remetente = 'cliente'
         ) ultima ON true
+        LEFT JOIN cs_afastamento_tratamentos tr ON tr.cliente_id = c.id
+          AND tr.tratado_em >= NOW() - INTERVAL '30 days'
+          AND tr.tratado_em >= COALESCE(ultima.hora, '-infinity'::timestamptz)
        WHERE c.status = 'ativo'
+         AND tr.id IS NULL
        ORDER BY ultima.hora ASC NULLS FIRST
     `);
 
@@ -785,6 +803,123 @@ router.get('/afastamento', requireAuth, requireAdmin, async (req, res) => {
   } catch (e) {
     console.error('[cs] GET /afastamento falhou:', e);
     res.status(500).json({ error: 'Falha ao calcular afastamento: ' + e.message });
+  }
+});
+
+/**
+ * POST /api/cs/afastamento/:clienteId/tratar — marca o cliente como
+ * acompanhado (já ligamos, já confirmamos que está tudo bem, etc). Some da
+ * lista por até 30 dias ou até ele mandar uma mensagem nova no Zappy — o
+ * que vier primeiro (ver comentário no GET /afastamento acima).
+ */
+router.post('/afastamento/:clienteId/tratar', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const { motivo } = req.body || {};
+    const tratadoPor = (req.user && (req.user.name || req.user.email || req.user.id)) || 'desconhecido';
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS cs_afastamento_tratamentos (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      cliente_id UUID NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+      motivo TEXT, tratado_por TEXT, tratado_em TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (cliente_id)
+    )`).catch(() => {});
+
+    await pool.query(
+      `INSERT INTO cs_afastamento_tratamentos (cliente_id, motivo, tratado_por)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (cliente_id) DO UPDATE SET motivo = EXCLUDED.motivo, tratado_por = EXCLUDED.tratado_por, tratado_em = NOW()`,
+      [req.params.clienteId, motivo || null, tratadoPor]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[cs] POST /afastamento/:clienteId/tratar falhou:', e);
+    res.status(500).json({ error: 'Falha ao marcar como tratado: ' + e.message });
+  }
+});
+
+/**
+ * GET /api/cs/tratados?dias=365 — relatório de tudo que já foi marcado como
+ * "Tratar" (falso alarme / já resolvido / já acompanhado) nos três painéis
+ * de Análise Inteligente: Possíveis Churns, Insatisfação nas Conversas e
+ * Afastamento. Pedido da Thais: depois de tratar um item ele some da lista
+ * de pendentes — isso aqui é o histórico do que já foi revisado, pra
+ * conferir depois quem tratou, quando e por quê. Une as três tabelas de
+ * tratamento com o contexto do ticket/mensagem/cliente original, mais
+ * recente primeiro.
+ */
+router.get('/tratados', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const dias = Math.max(1, Math.min(3650, parseInt(req.query.dias, 10) || 365));
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS cs_churn_tratamentos (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      ticket_id UUID NOT NULL REFERENCES cs_tickets(id) ON DELETE CASCADE,
+      motivo TEXT, tratado_por TEXT, tratado_em TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (ticket_id)
+    )`).catch(() => {});
+    await pool.query(`CREATE TABLE IF NOT EXISTS cs_insatisfacao_tratamentos (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      mensagem_id UUID NOT NULL REFERENCES cs_mensagens(id) ON DELETE CASCADE,
+      motivo TEXT, tratado_por TEXT, tratado_em TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (mensagem_id)
+    )`).catch(() => {});
+    await pool.query(`CREATE TABLE IF NOT EXISTS cs_afastamento_tratamentos (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      cliente_id UUID NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+      motivo TEXT, tratado_por TEXT, tratado_em TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (cliente_id)
+    )`).catch(() => {});
+
+    const [churnRes, insatRes, afastRes] = await Promise.all([
+      pool.query(`
+        SELECT tr.id AS tratamento_id, tr.motivo, tr.tratado_por, tr.tratado_em,
+               ct.id AS ticket_id, ct.zappy_id, ct.analista, ct.departamento,
+               COALESCE(cv.empresa_nome, ct.empresa_texto, '(sem nome identificado)') AS empresa,
+               cv.cnpj, NULL::text AS trecho, NULL::timestamptz AS hora_ocorrencia
+          FROM cs_churn_tratamentos tr
+          JOIN cs_tickets ct ON ct.id = tr.ticket_id
+          LEFT JOIN cs_vinculos cv ON cv.id = ct.vinculo_id
+         WHERE tr.tratado_em >= NOW() - ($1 || ' days')::interval
+         ORDER BY tr.tratado_em DESC
+         LIMIT 1000
+      `, [dias]),
+      pool.query(`
+        SELECT tr.id AS tratamento_id, tr.motivo, tr.tratado_por, tr.tratado_em,
+               ct.id AS ticket_id, ct.zappy_id, ct.analista, ct.departamento,
+               COALESCE(cv.empresa_nome, ct.empresa_texto, '(sem nome identificado)') AS empresa,
+               cv.cnpj, cm.texto AS trecho, cm.hora AS hora_ocorrencia
+          FROM cs_insatisfacao_tratamentos tr
+          JOIN cs_mensagens cm ON cm.id = tr.mensagem_id
+          JOIN cs_tickets ct ON ct.id = cm.ticket_id
+          LEFT JOIN cs_vinculos cv ON cv.id = ct.vinculo_id
+         WHERE tr.tratado_em >= NOW() - ($1 || ' days')::interval
+         ORDER BY tr.tratado_em DESC
+         LIMIT 1000
+      `, [dias]),
+      pool.query(`
+        SELECT tr.id AS tratamento_id, tr.motivo, tr.tratado_por, tr.tratado_em,
+               NULL::uuid AS ticket_id, NULL::text AS zappy_id, NULL::text AS analista, NULL::text AS departamento,
+               c.nome_empresa AS empresa, c.cnpj, NULL::text AS trecho, NULL::timestamptz AS hora_ocorrencia
+          FROM cs_afastamento_tratamentos tr
+          JOIN clientes c ON c.id = tr.cliente_id
+         WHERE tr.tratado_em >= NOW() - ($1 || ' days')::interval
+         ORDER BY tr.tratado_em DESC
+         LIMIT 1000
+      `, [dias]),
+    ]);
+
+    const data = [
+      ...churnRes.rows.map(r => ({ tipo: 'churn', ...r })),
+      ...insatRes.rows.map(r => ({ tipo: 'insatisfacao', ...r })),
+      ...afastRes.rows.map(r => ({ tipo: 'afastamento', ...r })),
+    ].sort((a, b) => new Date(b.tratado_em) - new Date(a.tratado_em));
+
+    res.json({ data, dias, total: data.length });
+  } catch (e) {
+    console.error('[cs] GET /tratados falhou:', e);
+    res.status(500).json({ error: 'Falha ao carregar relatório de tratados: ' + e.message });
   }
 });
 
