@@ -32,7 +32,7 @@ const { obterPool } = require('./pool');
 const { ingerirTickets, executarCargaRetroativa, recalcularSlaTodos } = require('./ingestao');
 const { criarClienteZappy } = require('./zappyClient');
 const { listarPendentes, confirmarVinculo } = require('./vinculos');
-const { detectarSinalChurn } = require('./slaEngine');
+const { detectarSinalChurn, detectarInsatisfacao } = require('./slaEngine');
 
 // Trava simples pra não deixar disparar 2 backfills ao mesmo tempo (ex.: duplo clique).
 let backfillEmAndamento = false;
@@ -623,6 +623,168 @@ router.post('/churn/:ticketId/tratar', requireAuth, requireAdmin, async (req, re
   } catch (e) {
     console.error('[cs] POST /churn/:ticketId/tratar falhou:', e);
     res.status(500).json({ error: 'Falha ao marcar como tratado: ' + e.message });
+  }
+});
+
+/**
+ * GET /api/cs/insatisfacao-conversas?dias=180 — varre TODAS as mensagens do
+ * CLIENTE (não só as que sinalizam risco de cancelamento) procurando
+ * qualquer sinal de insatisfação, desespero, desrespeito, erro ou
+ * juros/multa (ver PALAVRAS_INSATISFACAO em slaEngine.js). Pedido da Thais:
+ * o painel "Sentimento dos Comentários" só olhava as pesquisas de
+ * satisfação — isso aqui cobre TODO atendimento do Zappy. Diferente de
+ * /churn, NÃO agrupa por empresa — devolve uma linha por MENSAGEM que
+ * bateu (mais recentes primeiro), porque uma insatisfação em cada
+ * atendimento merece ser vista, não só resumida num contador.
+ */
+router.get('/insatisfacao-conversas', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const dias = Math.max(1, Math.min(365, parseInt(req.query.dias, 10) || 180));
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS cs_insatisfacao_tratamentos (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      mensagem_id UUID NOT NULL REFERENCES cs_mensagens(id) ON DELETE CASCADE,
+      motivo TEXT, tratado_por TEXT, tratado_em TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (mensagem_id)
+    )`).catch(() => {});
+
+    const { rows } = await pool.query(`
+      SELECT cm.id AS mensagem_id, cm.texto, cm.hora, ct.id AS ticket_id, ct.zappy_id,
+             ct.empresa_texto, ct.telefone, ct.analista, ct.departamento,
+             cv.empresa_nome, cv.cnpj, cv.tipo AS vinculo_tipo
+        FROM cs_mensagens cm
+        JOIN cs_tickets ct ON ct.id = cm.ticket_id
+        LEFT JOIN cs_vinculos cv ON cv.id = ct.vinculo_id
+        LEFT JOIN cs_insatisfacao_tratamentos tr ON tr.mensagem_id = cm.id
+       WHERE cm.remetente = 'cliente'
+         AND cm.hora >= NOW() - ($1 || ' days')::interval
+         AND cm.texto IS NOT NULL AND cm.texto <> ''
+         AND tr.id IS NULL
+       ORDER BY cm.hora DESC
+       LIMIT 5000
+    `, [dias]);
+
+    const MAX_LINHAS = 500;
+    const data = [];
+    for (const row of rows) {
+      const palavra = detectarInsatisfacao(row.texto);
+      if (!palavra) continue;
+      data.push({
+        mensagem_id: row.mensagem_id,
+        empresa: row.empresa_nome || row.empresa_texto || '(sem nome identificado)',
+        cnpj: row.cnpj || null,
+        telefone: row.telefone || null,
+        vinculado: row.vinculo_tipo === 'cliente',
+        hora: row.hora,
+        palavra_detectada: palavra,
+        trecho: row.texto,
+        ticket_id: row.ticket_id,
+        zappy_id: row.zappy_id,
+        analista: row.analista,
+        departamento: row.departamento,
+      });
+      if (data.length >= MAX_LINHAS) break;
+    }
+
+    res.json({ data, dias, mensagensAnalisadas: rows.length });
+  } catch (e) {
+    console.error('[cs] GET /insatisfacao-conversas falhou:', e);
+    res.status(500).json({ error: 'Falha ao analisar insatisfação nas conversas: ' + e.message });
+  }
+});
+
+/**
+ * POST /api/cs/insatisfacao-conversas/:mensagemId/tratar — marca a MENSAGEM
+ * como revisada (falso alarme / já resolvido). Diferente de /churn/:id
+ * (que trata o ticket inteiro), aqui é por mensagem individual, porque um
+ * mesmo ticket pode ter várias mensagens de insatisfação em momentos
+ * diferentes e cada uma merece revisão própria.
+ */
+router.post('/insatisfacao-conversas/:mensagemId/tratar', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const { motivo } = req.body || {};
+    const tratadoPor = (req.user && (req.user.name || req.user.email || req.user.id)) || 'desconhecido';
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS cs_insatisfacao_tratamentos (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      mensagem_id UUID NOT NULL REFERENCES cs_mensagens(id) ON DELETE CASCADE,
+      motivo TEXT, tratado_por TEXT, tratado_em TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (mensagem_id)
+    )`).catch(() => {});
+
+    await pool.query(
+      `INSERT INTO cs_insatisfacao_tratamentos (mensagem_id, motivo, tratado_por)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (mensagem_id) DO UPDATE SET motivo = EXCLUDED.motivo, tratado_por = EXCLUDED.tratado_por, tratado_em = NOW()`,
+      [req.params.mensagemId, motivo || null, tratadoPor]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[cs] POST /insatisfacao-conversas/:mensagemId/tratar falhou:', e);
+    res.status(500).json({ error: 'Falha ao marcar como tratado: ' + e.message });
+  }
+});
+
+/**
+ * GET /api/cs/afastamento — pra cada cliente ATIVO na Carteira com vínculo
+ * confirmado, calcula há quantos dias foi a última mensagem QUE ELE mandou
+ * no Zappy (não conta mensagem do escritório) — pedido da Thais: "medir o
+ * afastamento, a ausência de procura" como sinal indireto de possível
+ * churn silencioso (cliente que não reclama nada, só some). Clientes sem
+ * NENHUM histórico de conversa registrado vêm marcados à parte
+ * (`sem_historico: true`) — pode ser cliente antigo de antes do Zappy
+ * rastrear, não necessariamente afastamento real.
+ */
+router.get('/afastamento', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const { rows } = await pool.query(`
+      SELECT c.id AS cliente_id, c.nome_empresa, c.cnpj, c.grupo_empresas, c.unidade,
+             c.data_entrada, v.id AS vinculo_id,
+             ultima.hora AS ultimo_contato
+        FROM clientes c
+        LEFT JOIN cs_vinculos v ON v.cliente_id = c.id::text AND v.tipo = 'cliente'
+        LEFT JOIN LATERAL (
+          SELECT MAX(cm.hora) AS hora
+            FROM cs_mensagens cm
+            JOIN cs_tickets ct ON ct.id = cm.ticket_id
+           WHERE ct.vinculo_id = v.id AND cm.remetente = 'cliente'
+        ) ultima ON true
+       WHERE c.status = 'ativo'
+       ORDER BY ultima.hora ASC NULLS FIRST
+    `);
+
+    const agora = Date.now();
+    const diasEntre = (de) => de ? Math.floor((agora - new Date(de).getTime()) / (1000 * 60 * 60 * 24)) : null;
+
+    const data = rows.map(r => ({
+      cliente_id: r.cliente_id,
+      empresa: r.nome_empresa,
+      cnpj: r.cnpj,
+      grupo_empresas: r.grupo_empresas,
+      unidade: r.unidade,
+      vinculado: !!r.vinculo_id,
+      ultimo_contato: r.ultimo_contato,
+      dias_sem_contato: diasEntre(r.ultimo_contato),
+      sem_historico: !r.ultimo_contato,
+      dias_desde_entrada: diasEntre(r.data_entrada),
+    }));
+
+    // Mais afastado primeiro: sem_historico junto (ordenado por tempo de
+    // Carteira, já que não há conversa pra medir), depois os com contato
+    // registrado, do maior gap pro menor.
+    data.sort((a, b) => {
+      if (a.sem_historico !== b.sem_historico) return a.sem_historico ? -1 : 1;
+      if (a.sem_historico) return (b.dias_desde_entrada || 0) - (a.dias_desde_entrada || 0);
+      return (b.dias_sem_contato || 0) - (a.dias_sem_contato || 0);
+    });
+
+    res.json({ data, total: data.length });
+  } catch (e) {
+    console.error('[cs] GET /afastamento falhou:', e);
+    res.status(500).json({ error: 'Falha ao calcular afastamento: ' + e.message });
   }
 });
 
