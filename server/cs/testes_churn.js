@@ -74,6 +74,11 @@ bateu(
   'Recebi algumas guias de competência anteriores e estão me cobrando multas, não é possível! Isso são erros de vocês, quem vão pagar essas multas?'
 );
 
+bateu(
+  'Caso real (ticket Zappy #46551): "Guias calculadas erradas, sempre errado, estou insatisfeito com essa situação"',
+  'Guias calculadas erradas, sempre errado, estou insatisfeito com essa situação'
+);
+
 // ── Casos que NÃO devem bater (evitar falso positivo em mensagem de rotina) ──
 naoBateu('"deu erro no boleto" NÃO bate (erro sozinho não conta)', 'Deu erro no boleto, pode verificar?');
 naoBateu('"ruim" sozinho NÃO bate', 'O sistema tá meio ruim hoje.');
