@@ -1091,6 +1091,50 @@
               </table>
             </div>
           </div>
+
+          <div class="form-card" style="margin-top:16px">
+            <h2 class="form-title" style="margin:0 0 4px">Insatisfação nas Conversas (todos os atendimentos)</h2>
+            <div class="form-accent"></div>
+            <p style="color:var(--gray-500);font-size:13px;margin:0 0 12px">
+              Varre TODAS as mensagens que o CLIENTE escreveu em qualquer atendimento do Zappy (últimos 180 dias) procurando sinais de insatisfação, desespero, desrespeito, erro ou reclamação de juros/multa — mais abrangente que o painel de Churn acima, que é só sobre risco de cancelamento. Por palavras-chave, sem IA paga. Empresas ainda sem vínculo confirmado aparecem marcadas como "não vinculado".
+            </p>
+            <div style="display:flex;gap:8px;margin-bottom:12px">
+              <button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.carregarInsatisfacaoConversas()">🔄 Atualizar</button>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Data</th><th>Empresa</th><th>Ticket</th><th>Palavra detectada</th><th>Trecho</th><th>Ações</th></tr></thead>
+                <tbody id="insatisfacao-conversas-tbody"><tr><td colspan="6" style="color:var(--gray-400)">Carregando...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="form-card" style="margin-top:16px">
+            <h2 class="form-title" style="margin:0 0 4px">Afastamento — Clientes sem contato recente</h2>
+            <div class="form-accent"></div>
+            <p style="color:var(--gray-500);font-size:13px;margin:0 0 12px">
+              Mede há quantos dias cada cliente ativo mandou a última mensagem no Zappy — cliente que some sem reclamar nada também pode ser sinal de afastamento/possível churn. Clientes marcados "sem histórico" nunca tiveram conversa registrada no Zappy (pode ser cadastro anterior ao rastreamento, não necessariamente afastamento real).
+            </p>
+            <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.carregarAfastamento()">🔄 Atualizar</button>
+              <label style="font-size:13px;color:var(--gray-600);display:flex;align-items:center;gap:6px">
+                Mostrar a partir de
+                <select id="afast-dias-filter" onchange="AnaliseInteligente.filtrarAfastamento()" style="padding:4px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px">
+                  <option value="0">Todos</option>
+                  <option value="30">30 dias sem contato</option>
+                  <option value="60" selected>60 dias sem contato</option>
+                  <option value="90">90 dias sem contato</option>
+                  <option value="180">180 dias sem contato</option>
+                </select>
+              </label>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Empresa</th><th>CNPJ</th><th>Grupo</th><th>Unidade</th><th>Último contato</th><th>Dias sem contato</th></tr></thead>
+                <tbody id="afastamento-tbody"><tr><td colspan="6" style="color:var(--gray-400)">Carregando...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
         </section>
 
       </main>
