@@ -5991,7 +5991,7 @@ window.Tickets = Tickets;
      * alguma frase da lista em varreduras futuras.
      */
     async tratarChurn(ticketId) {
-      const motivo = window.prompt('Por que isso não é um risco de cancelamento? (opcional — pode deixar em branco)');
+      const motivo = window.prompt('O que foi feito / motivo do tratamento? (ex: "falso alarme, não é risco" ou "cliente contatado e resolvido" — opcional)');
       if (motivo === null) return; // cancelou o prompt
       try {
         const res = await fetch('/api/cs/churn/' + encodeURIComponent(ticketId) + '/tratar', {
@@ -6046,7 +6046,7 @@ window.Tickets = Tickets;
 
     /** Marca a MENSAGEM (não o ticket inteiro) como revisada. */
     async tratarInsatisfacao(mensagemId) {
-      const motivo = window.prompt('Por que isso não é um problema real? (opcional — pode deixar em branco)');
+      const motivo = window.prompt('O que foi feito / motivo do tratamento? (ex: "falso alarme, não é problema real" ou "cliente contatado e resolvido" — opcional)');
       if (motivo === null) return;
       try {
         const res = await fetch('/api/cs/insatisfacao-conversas/' + encodeURIComponent(mensagemId) + '/tratar', {
