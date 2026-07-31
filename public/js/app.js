@@ -5911,6 +5911,8 @@ window.Tickets = Tickets;
       AnaliseInteligente.carregarChurn();
       AnaliseInteligente.carregarSentimento();
       AnaliseInteligente.carregarChurnConversas();
+      AnaliseInteligente.carregarInsatisfacaoConversas();
+      AnaliseInteligente.carregarAfastamento();
     },
 
     async carregarChurnConversas() {
@@ -6002,6 +6004,108 @@ window.Tickets = Tickets;
       } catch (e) {
         if (window.App && App.Toast) App.Toast.err('Não foi possível marcar como tratado.');
       }
+    },
+
+    /**
+     * "Insatisfação nas Conversas" — igual ao Possíveis Churns, mas com uma
+     * lista bem mais ampla de palavras (não só frases de risco de
+     * cancelamento) e varrendo TODO atendimento, não só o que vira pesquisa.
+     * Lista uma linha por MENSAGEM (não agrupa por empresa).
+     */
+    async carregarInsatisfacaoConversas() {
+      const tbody = document.getElementById('insatisfacao-conversas-tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Carregando...</td></tr>';
+      try {
+        const res = await fetch('/api/cs/insatisfacao-conversas?dias=180', { headers: authHeaders() });
+        if (!res.ok) throw new Error('Falha ao buscar.');
+        const { data } = await res.json();
+        if (!data || !data.length) {
+          tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Nenhum sinal de insatisfação encontrado nas conversas dos últimos 180 dias.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data.map(c => {
+          const dt = new Date(c.hora).toLocaleString('pt-BR');
+          const nomeVinculo = c.vinculado
+            ? esc(c.empresa)
+            : `${esc(c.empresa)} <span style="color:var(--gray-400);font-size:11px">(não vinculado)</span>`;
+          return `<tr>
+            <td style="font-size:12px;color:var(--gray-500)">${dt}</td>
+            <td style="font-weight:600">${nomeVinculo}</td>
+            <td style="font-size:12px;color:var(--gray-500)">${c.zappy_id ? '#' + esc(c.zappy_id) : '—'}</td>
+            <td style="font-size:12px"><span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-weight:600">${esc(c.palavra_detectada)}</span></td>
+            <td style="font-size:12px;color:var(--gray-600)">${esc((c.trecho||'').slice(0,140))}${(c.trecho||'').length>140?'...':''}</td>
+            <td><button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.tratarInsatisfacao('${c.mensagem_id}')">✔ Tratar</button></td>
+          </tr>`;
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--danger)">Não foi possível analisar as conversas agora.</td></tr>';
+      }
+    },
+
+    /** Marca a MENSAGEM (não o ticket inteiro) como revisada. */
+    async tratarInsatisfacao(mensagemId) {
+      const motivo = window.prompt('Por que isso não é um problema real? (opcional — pode deixar em branco)');
+      if (motivo === null) return;
+      try {
+        const res = await fetch('/api/cs/insatisfacao-conversas/' + encodeURIComponent(mensagemId) + '/tratar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ motivo }),
+        });
+        if (!res.ok) throw new Error('Falha ao tratar.');
+        if (window.App && App.Toast) App.Toast.ok('Marcado como tratado — não vai aparecer mais nessa lista.');
+        AnaliseInteligente.carregarInsatisfacaoConversas();
+      } catch (e) {
+        if (window.App && App.Toast) App.Toast.err('Não foi possível marcar como tratado.');
+      }
+    },
+
+    /**
+     * "Afastamento" — clientes ativos que já não mandam mensagem no Zappy
+     * há muito tempo. Guarda a lista completa em memória e o filtro de dias
+     * (#afast-dias-filter) só reaplica sobre o que já foi carregado, sem
+     * bater no servidor de novo.
+     */
+    async carregarAfastamento() {
+      const tbody = document.getElementById('afastamento-tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Carregando...</td></tr>';
+      try {
+        const res = await fetch('/api/cs/afastamento', { headers: authHeaders() });
+        if (!res.ok) throw new Error('Falha ao buscar.');
+        const { data } = await res.json();
+        AnaliseInteligente._afastamentoData = data || [];
+        AnaliseInteligente.filtrarAfastamento();
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--danger)">Não foi possível calcular o afastamento agora.</td></tr>';
+      }
+    },
+
+    filtrarAfastamento() {
+      const tbody = document.getElementById('afastamento-tbody');
+      if (!tbody) return;
+      const minDias = parseInt(document.getElementById('afast-dias-filter')?.value || '0', 10);
+      const todos = AnaliseInteligente._afastamentoData || [];
+      const filtrados = todos.filter(c => c.sem_historico || (c.dias_sem_contato || 0) >= minDias);
+      if (!filtrados.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Nenhum cliente nessa faixa de afastamento.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = filtrados.map(c => {
+        const ultimo = c.ultimo_contato ? new Date(c.ultimo_contato).toLocaleDateString('pt-BR') : '—';
+        const dias = c.sem_historico
+          ? '<span style="color:var(--gray-400);font-size:12px">sem histórico</span>'
+          : `<span style="font-weight:700;color:${c.dias_sem_contato >= 90 ? '#e53e3e' : c.dias_sem_contato >= 60 ? '#dd6b20' : 'var(--gray-700)'}">${c.dias_sem_contato} dias</span>`;
+        return `<tr>
+          <td style="font-weight:600">${esc(c.empresa || '—')}</td>
+          <td style="font-size:12px;color:var(--gray-500)">${esc(c.cnpj || '—')}</td>
+          <td style="font-size:12px">${esc(c.grupo_empresas || '—')}</td>
+          <td style="font-size:12px">${esc(c.unidade || '—')}</td>
+          <td style="font-size:12px;color:var(--gray-500)">${ultimo}</td>
+          <td>${dias}</td>
+        </tr>`;
+      }).join('');
     },
 
     async carregarChurn() {
