@@ -1130,8 +1130,26 @@
             </div>
             <div class="table-wrap">
               <table class="data-table">
-                <thead><tr><th>Empresa</th><th>CNPJ</th><th>Grupo</th><th>Unidade</th><th>Último contato</th><th>Dias sem contato</th></tr></thead>
-                <tbody id="afastamento-tbody"><tr><td colspan="6" style="color:var(--gray-400)">Carregando...</td></tr></tbody>
+                <thead><tr><th>Empresa</th><th>CNPJ</th><th>Grupo</th><th>Unidade</th><th>Último contato</th><th>Dias sem contato</th><th>Ações</th></tr></thead>
+                <tbody id="afastamento-tbody"><tr><td colspan="7" style="color:var(--gray-400)">Carregando...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="form-card" style="margin-top:16px">
+            <h2 class="form-title" style="margin:0 0 4px">Histórico de Tratamentos</h2>
+            <div class="form-accent"></div>
+            <p style="color:var(--gray-500);font-size:13px;margin:0 0 12px">
+              Relatório de tudo que já foi marcado como "Tratar" nos três painéis acima (Possíveis Churns, Insatisfação e Afastamento) — quem tratou, quando e por quê, últimos 365 dias.
+            </p>
+            <div style="display:flex;gap:8px;margin-bottom:12px">
+              <button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.carregarTratados()">🔄 Atualizar</button>
+              <button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.exportTratadosCSV()">⬇️ Exportar CSV</button>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Tipo</th><th>Data do tratamento</th><th>Empresa</th><th>Ticket</th><th>Trecho</th><th>Motivo</th><th>Tratado por</th></tr></thead>
+                <tbody id="tratados-tbody"><tr><td colspan="7" style="color:var(--gray-400)">Carregando...</td></tr></tbody>
               </table>
             </div>
           </div>
