@@ -5913,6 +5913,7 @@ window.Tickets = Tickets;
       AnaliseInteligente.carregarChurnConversas();
       AnaliseInteligente.carregarInsatisfacaoConversas();
       AnaliseInteligente.carregarAfastamento();
+      AnaliseInteligente.carregarTratados();
     },
 
     async carregarChurnConversas() {
@@ -6070,7 +6071,7 @@ window.Tickets = Tickets;
     async carregarAfastamento() {
       const tbody = document.getElementById('afastamento-tbody');
       if (!tbody) return;
-      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Carregando...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400)">Carregando...</td></tr>';
       try {
         const res = await fetch('/api/cs/afastamento', { headers: authHeaders() });
         if (!res.ok) throw new Error('Falha ao buscar.');
@@ -6078,7 +6079,7 @@ window.Tickets = Tickets;
         AnaliseInteligente._afastamentoData = data || [];
         AnaliseInteligente.filtrarAfastamento();
       } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--danger)">Não foi possível calcular o afastamento agora.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="color:var(--danger)">Não foi possível calcular o afastamento agora.</td></tr>';
       }
     },
 
@@ -6089,7 +6090,7 @@ window.Tickets = Tickets;
       const todos = AnaliseInteligente._afastamentoData || [];
       const filtrados = todos.filter(c => c.sem_historico || (c.dias_sem_contato || 0) >= minDias);
       if (!filtrados.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Nenhum cliente nessa faixa de afastamento.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400)">Nenhum cliente nessa faixa de afastamento.</td></tr>';
         return;
       }
       tbody.innerHTML = filtrados.map(c => {
@@ -6104,8 +6105,98 @@ window.Tickets = Tickets;
           <td style="font-size:12px">${esc(c.unidade || '—')}</td>
           <td style="font-size:12px;color:var(--gray-500)">${ultimo}</td>
           <td>${dias}</td>
+          <td><button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.tratarAfastamento('${c.cliente_id}')">✔ Tratar</button></td>
         </tr>`;
       }).join('');
+    },
+
+    /**
+     * Marca o cliente como acompanhado (já ligamos, confirmamos que está
+     * tudo bem, etc). Some da lista por até 30 dias ou até ele voltar a
+     * mandar mensagem no Zappy — o que vier primeiro (ver rota no backend).
+     */
+    async tratarAfastamento(clienteId) {
+      const motivo = window.prompt('O que foi feito? (ex: ligamos e está tudo bem — opcional)');
+      if (motivo === null) return;
+      try {
+        const res = await fetch('/api/cs/afastamento/' + encodeURIComponent(clienteId) + '/tratar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ motivo }),
+        });
+        if (!res.ok) throw new Error('Falha ao tratar.');
+        if (window.App && App.Toast) App.Toast.ok('Marcado como acompanhado — some da lista por até 30 dias.');
+        AnaliseInteligente.carregarAfastamento();
+      } catch (e) {
+        if (window.App && App.Toast) App.Toast.err('Não foi possível marcar como tratado.');
+      }
+    },
+
+    /**
+     * Relatório unificado de tudo que já foi tratado (Churn + Insatisfação +
+     * Afastamento) — pedido da Thais: "não consigo extrair um relatório dos
+     * processos que tratei?". Some diferente dos outros: aqui não filtra o
+     * item da lista, é o histórico do que já foi revisado.
+     */
+    async carregarTratados() {
+      const tbody = document.getElementById('tratados-tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400)">Carregando...</td></tr>';
+      try {
+        const res = await fetch('/api/cs/tratados?dias=365', { headers: authHeaders() });
+        if (!res.ok) throw new Error('Falha ao buscar.');
+        const { data } = await res.json();
+        AnaliseInteligente._tratadosData = data || [];
+        if (!data || !data.length) {
+          tbody.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400)">Nenhum item tratado ainda nos últimos 365 dias.</td></tr>';
+          return;
+        }
+        const rotulos = {
+          churn: { label: 'Churn', bg: '#fef3c7', fg: '#92400e' },
+          insatisfacao: { label: 'Insatisfação', bg: '#fee2e2', fg: '#991b1b' },
+          afastamento: { label: 'Afastamento', bg: '#dbeafe', fg: '#1e40af' },
+        };
+        tbody.innerHTML = data.map(c => {
+          const r = rotulos[c.tipo] || { label: c.tipo, bg: '#e2e8f0', fg: '#334155' };
+          const dt = new Date(c.tratado_em).toLocaleString('pt-BR');
+          const trecho = c.trecho ? `${esc(c.trecho.slice(0,120))}${c.trecho.length>120?'...':''}` : '—';
+          return `<tr>
+            <td style="font-size:12px"><span style="background:${r.bg};color:${r.fg};padding:2px 8px;border-radius:10px;font-weight:600">${r.label}</span></td>
+            <td style="font-size:12px;color:var(--gray-500)">${dt}</td>
+            <td style="font-weight:600">${esc(c.empresa || '—')}</td>
+            <td style="font-size:12px;color:var(--gray-500)">${c.zappy_id ? '#' + esc(c.zappy_id) : '—'}</td>
+            <td style="font-size:12px;color:var(--gray-600)">${trecho}</td>
+            <td style="font-size:12px">${esc(c.motivo || '—')}</td>
+            <td style="font-size:12px;color:var(--gray-500)">${esc(c.tratado_por || '—')}</td>
+          </tr>`;
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="7" style="color:var(--danger)">Não foi possível carregar o relatório agora.</td></tr>';
+      }
+    },
+
+    exportTratadosCSV() {
+      const data = AnaliseInteligente._tratadosData || [];
+      if (!data.length) { if (window.App && App.Toast) App.Toast.err('Nenhum dado para exportar.'); return; }
+      const rotulos = { churn: 'Churn', insatisfacao: 'Insatisfação', afastamento: 'Afastamento' };
+      const header = ['Tipo','Data do tratamento','Empresa','CNPJ','Ticket','Trecho','Motivo','Tratado por'].join(';');
+      const linhas = data.map(c => [
+        rotulos[c.tipo] || c.tipo,
+        new Date(c.tratado_em).toLocaleString('pt-BR'),
+        c.empresa || '',
+        c.cnpj || '',
+        c.zappy_id ? '#' + c.zappy_id : '',
+        c.trecho || '',
+        c.motivo || '',
+        c.tratado_por || '',
+      ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(';'));
+      const csv = [header, ...linhas].join('\n');
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `tratados_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click(); URL.revokeObjectURL(url);
+      if (window.App && App.Toast) App.Toast.ok('CSV exportado!');
     },
 
     async carregarChurn() {
