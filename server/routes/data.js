@@ -155,9 +155,16 @@ const SOLICITACOES_SAIDA = ['Saída de empresa', 'Baixa de empresa'];
  * faz linha a linha (ver Forms.gestao() em app.js):
  *   - sempre grava o registro em gestao_clientes;
  *   - se a Solicitação for de ENTRADA (Constituição/Cliente vindo de outro
- *     contador/Transformação), também cria o cliente na Carteira (com CAC
- *     calculado do jeito que o formulário calcula) — honorário e data de
- *     entrada são obrigatórios nesse caso;
+ *     contador/Transformação) e não existir cliente ativo com esse CNPJ,
+ *     cria o cliente na Carteira (com CAC calculado do jeito que o
+ *     formulário calcula) — honorário e data de entrada são obrigatórios
+ *     nesse caso;
+ *   - se o CNPJ já bater com um cliente ATIVO na Carteira — em QUALQUER tipo
+ *     de Solicitação, não só entrada — atualiza honorário (se veio valor
+ *     novo na planilha), Grupo de Empresas, Unidade e Inadimplente Crônico
+ *     dele, sem duplicar registro. Isso permite subir uma planilha só pra
+ *     atualizar honorário/grupo/unidade em massa, sem precisar tratar como
+ *     entrada de cliente novo;
  *   - se for de SAÍDA (Saída/Baixa de empresa), encerra o cliente na
  *     Carteira pelo CNPJ (se não achar um cliente ativo com esse CNPJ, só
  *     avisa — não impede o registro de Gestão de entrar);
@@ -208,15 +215,21 @@ router.post('/gestao/importar', requireAdmin, async (req, res) => {
         [gestaoId, req.user.id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo || null, codigo || null, regime_tributario]
       );
 
-      if (isEntrada) {
-        const honorarioNum = parseFloat(String(honorario_inicial).replace(',', '.')) || 0;
+      // Atualiza/cria cliente na Carteira quando fizer sentido:
+      //  - Solicitação de ENTRADA sem cliente ativo existente com esse CNPJ -> cria cliente novo.
+      //  - QUALQUER solicitação (entrada ou não) cujo CNPJ bata com um cliente já
+      //    ativo na Carteira -> atualiza honorário/grupo/unidade/inadimplência dele.
+      //    Isso permite usar a planilha só pra "atualização em massa" de honorário
+      //    e grupo de empresas, sem precisar marcar a linha como uma "entrada"
+      //    de fato (pedido da Thais: subir uma planilha só com honorário e grupo
+      //    pros clientes que já estão na Carteira).
+      if (!isSaida) {
+        const honorarioNum = honorario_inicial ? (parseFloat(String(honorario_inicial).replace(',', '.')) || 0) : 0;
         const grupoVal = grupo_empresas || null;
         const unidadeVal = unidade || null;
         const inadimplenteVal = inadimplente_cronico === true || inadimplente_cronico === 'true';
+        const dataVigenciaHonorario = data_entrada || data_sol;
 
-        // Já existe cliente ATIVO com esse CNPJ na Carteira? Evita duplicar registro —
-        // atualiza grupo/unidade/tipo/inadimplência e, se o honorário mudou, registra um
-        // novo honorário no histórico (mesma lógica de "Atualizar honorário" da Carteira).
         const { rows: existentes } = await pool.query(
           `SELECT id FROM clientes WHERE cnpj = $1 AND status = 'ativo' LIMIT 1`, [cnpj]
         );
@@ -231,23 +244,25 @@ router.post('/gestao/importar', requireAdmin, async (req, res) => {
              WHERE id = $5`,
             [grupoVal, unidadeVal, solicitacao, inadimplenteVal, clienteId]
           );
-          const ant = await pool.query(
-            `SELECT valor FROM honorarios WHERE cliente_id=$1 ORDER BY data_vigencia DESC LIMIT 1`, [clienteId]
-          );
-          const honorarioAnterior = parseFloat(ant.rows[0]?.valor || 0);
-          if (honorarioNum && honorarioNum !== honorarioAnterior) {
-            await pool.query(
-              `INSERT INTO honorarios (cliente_id, valor, data_vigencia, obs) VALUES ($1,$2,$3,'Atualizado via importação de planilha')`,
-              [clienteId, honorarioNum, data_entrada]
+          if (honorarioNum) {
+            const ant = await pool.query(
+              `SELECT valor FROM honorarios WHERE cliente_id=$1 ORDER BY data_vigencia DESC LIMIT 1`, [clienteId]
             );
-            await pool.query(
-              `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, valor_anterior, valor_novo, data_evento)
-               VALUES ($1,'reajuste','Atualização via importação de planilha',$2,$3,$4)`,
-              [clienteId, honorarioAnterior, honorarioNum, data_entrada]
-            );
+            const honorarioAnterior = parseFloat(ant.rows[0]?.valor || 0);
+            if (honorarioNum !== honorarioAnterior) {
+              await pool.query(
+                `INSERT INTO honorarios (cliente_id, valor, data_vigencia, obs) VALUES ($1,$2,$3,'Atualizado via importação de planilha')`,
+                [clienteId, honorarioNum, dataVigenciaHonorario]
+              );
+              await pool.query(
+                `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, valor_anterior, valor_novo, data_evento)
+                 VALUES ($1,'reajuste','Atualização via importação de planilha',$2,$3,$4)`,
+                [clienteId, honorarioAnterior, honorarioNum, dataVigenciaHonorario]
+              );
+            }
           }
-          avisos.push({ linha: n, empresa, motivo: 'Já existia como cliente ativo na Carteira (mesmo CNPJ) — atualizei grupo/honorário em vez de duplicar.' });
-        } else {
+          avisos.push({ linha: n, empresa, motivo: 'Já existia como cliente ativo na Carteira (mesmo CNPJ) — atualizei grupo/unidade/honorário em vez de duplicar.' });
+        } else if (isEntrada) {
           let cacCalculado = 0;
           const mesEntrada = String(data_entrada).slice(0, 7);
           try {
@@ -274,6 +289,10 @@ router.post('/gestao/importar', requireAdmin, async (req, res) => {
             `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, valor_novo, data_evento) VALUES ($1,'entrada',$2,$3,$4)`,
             [clienteId, `Entrada — ${empresa}`, honorarioNum, data_entrada]
           );
+        } else if (honorarioNum || grupoVal || unidadeVal) {
+          // Não é entrada e não achei cliente ativo com esse CNPJ pra atualizar —
+          // avisa em vez de simplesmente ignorar o honorário/grupo informado.
+          avisos.push({ linha: n, empresa, motivo: 'Não encontrei cliente ativo com esse CNPJ na Carteira pra atualizar honorário/grupo/unidade. Se for um cliente novo, marque a Solicitação como "Constituição de empresa", "Cliente vindo de outro contador" ou "Transformação de empresa".' });
         }
       }
 
@@ -414,13 +433,18 @@ router.get('/dashboard', async (req, res) => {
     const analista = req.query.analista || '';
     // Filtra por PROCURADO (quem o cliente pediu), não por analista (quem digitou o registro) —
     // é o que bate com o gráfico "Por analista procurado" e com o conceito usado no Zappy.
-    const af = analista ? ` AND procurado = '${analista.replace(/'/g,"''")}' ` : '';
+    // Corrigido: antes montava a condição colando o valor direto na string SQL
+    // (com um escape manual de aspas); agora usa parâmetro $1 como todo o
+    // resto do arquivo já fazia — mesmo padrão, sem exceção.
+    const af = analista ? ` AND procurado = $1 ` : '';
+    const afParams = analista ? [analista] : [];
 
     const groupBy = async (table, col, limit=10, extra='') => {
       const r = await pool.query(
         `SELECT COALESCE(${col},'Não informado') as label, COUNT(*) as n
          FROM ${table} WHERE 1=1 ${pf} ${extra}
-         GROUP BY ${col} ORDER BY n DESC LIMIT ${limit}`
+         GROUP BY ${col} ORDER BY n DESC LIMIT ${limit}`,
+        afParams
       );
       return r.rows;
     };
@@ -429,7 +453,8 @@ router.get('/dashboard', async (req, res) => {
       const r = await pool.query(
         `SELECT COALESCE(${col},'Não informado') as label, COUNT(*) as n
          FROM ${table} WHERE 1=1 ${pf} ${extra}
-         GROUP BY ${col} ORDER BY n DESC`
+         GROUP BY ${col} ORDER BY n DESC`,
+        afParams
       );
       return r.rows;
     };
@@ -779,8 +804,21 @@ router.get('/carteira/dashboard', requireAuth, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro no dashboard.' }); }
 });
 
+/**
+ * DELETE /api/data/clientes/clear — apaga a Carteira INTEIRA. Antes só
+ * dependia de ser admin; um clique errado (ou um token vazado) zerava tudo
+ * de uma vez. Agora exige que o front mande a frase exata de confirmação
+ * no corpo da requisição — segunda trava, além do backup diário automático.
+ */
 router.delete('/clientes/clear', requireAdmin, async (req, res) => {
   try {
+    const FRASE_CONFIRMACAO = 'EXCLUIR TODOS OS CLIENTES';
+    const { confirmar } = req.body || {};
+    if (confirmar !== FRASE_CONFIRMACAO) {
+      return res.status(400).json({
+        error: `Ação bloqueada: para confirmar, é preciso enviar o texto exato "${FRASE_CONFIRMACAO}".`,
+      });
+    }
     await pool.query('DELETE FROM clientes');
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
@@ -1048,6 +1086,14 @@ router.get('/relatorio-executivo', requireAdmin, async (req, res) => {
   try {
     const { mes } = req.query; // formato: 2026-06
     const mesAtual = mes || new Date().toISOString().slice(0,7);
+    // Valida o formato ANTES de colar `mesAtual` dentro de uma string SQL
+    // abaixo (`pf`) — sem isso, um valor malicioso em ?mes= ia direto pra
+    // dentro da query (mesmo risco do filtro de analista no /dashboard,
+    // corrigido acima). Com o formato garantido AAAA-MM (só dígito e
+    // hífen), fica seguro interpolar.
+    if (!/^\d{4}-\d{2}$/.test(mesAtual)) {
+      return res.status(400).json({ error: 'Parâmetro "mes" inválido. Use o formato AAAA-MM.' });
+    }
     const [ano, m] = mesAtual.split('-');
     const inicio = `${mesAtual}-01`;
     const fim = new Date(parseInt(ano), parseInt(m), 0).toISOString().slice(0,10);
