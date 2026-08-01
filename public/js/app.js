@@ -4602,6 +4602,7 @@ const Gamificacao = (() => {
   const _tk = () => localStorage.getItem('ge_token') || '';
   let _colaboradores = [];
   let _pesoMinimo = 10;
+  let _mostrarConsolidado = true; // liga/desliga o card "Consolidado Geral" na página pública
 
   function _mesAtual() { return new Date().toISOString().slice(0,7); }
 
@@ -4625,6 +4626,40 @@ const Gamificacao = (() => {
     if (res && res.ok) {
       const d = await res.json();
       _pesoMinimo = d.peso_minimo;
+      _mostrarConsolidado = d.mostrar_consolidado !== false;
+      _atualizarBotaoConsolidado();
+    }
+  }
+
+  function _atualizarBotaoConsolidado() {
+    const btn = document.getElementById('gam-btn-consolidado');
+    if (!btn) return;
+    btn.textContent = _mostrarConsolidado ? '👁️ Consolidado Geral: Visível' : '🚫 Consolidado Geral: Oculto';
+    btn.style.color = _mostrarConsolidado ? '' : '#e53e3e';
+  }
+
+  /**
+   * Liga/desliga o card "Consolidado Geral" na página pública de
+   * Gamificação — pedido da Thais: "quero criar um botão para ocultar e
+   * desocultar o Consolidado Geral... ligo e desligo no painel interno,
+   * somente para o consolidado geral". Não mexe no ranking mensal, só nesse
+   * card específico. Reaproveita GET/PATCH /api/data/gam/config (mesma rota
+   * do Peso Mínimo), só que enviando mostrar_consolidado em vez de
+   * peso_minimo — o backend aceita os dois campos de forma independente.
+   */
+  async function toggleConsolidado() {
+    const novoValor = !_mostrarConsolidado;
+    const res = await fetch('/api/data/gam/config', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ mostrar_consolidado: novoValor })
+    });
+    if (res && res.ok) {
+      _mostrarConsolidado = novoValor;
+      _atualizarBotaoConsolidado();
+      App.Toast.ok(novoValor ? 'Consolidado Geral agora está visível na página pública.' : 'Consolidado Geral ocultado da página pública.');
+    } else {
+      App.Toast.err('Erro ao alterar visibilidade do Consolidado Geral.');
     }
   }
 
@@ -4885,7 +4920,7 @@ const Gamificacao = (() => {
   return {
     load, loadNotas, excluirNota,
     loadFormLancamento, salvarLote,
-    abrirConfig, salvarConfig,
+    abrirConfig, salvarConfig, toggleConsolidado,
     abrirColaboradores, adicionarColaborador, toggleColaborador, excluirColaborador,
   };
 })();
