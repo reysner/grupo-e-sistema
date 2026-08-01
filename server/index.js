@@ -111,17 +111,28 @@ initDB().then(async () => {
   const { pool } = require('./db');
 
   const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@grupoe.com.br';
-  const ADMIN_PASS  = process.env.ADMIN_PASS  || 'Admin@2024!';
+  const ADMIN_PASS  = process.env.ADMIN_PASS  || null;
   const ADMIN_NAME  = process.env.ADMIN_NAME  || 'Administrador';
 
   const existing = await pool.query(`SELECT id FROM users WHERE LOWER(email) = LOWER($1)`, [ADMIN_EMAIL]);
   if (existing.rows.length === 0) {
-    const hash = await bcrypt.hash(ADMIN_PASS, 12);
-    await pool.query(
-      `INSERT INTO users (id, name, email, password, role) VALUES ($1, $2, $3, $4, $5)`,
-      [uuidv4(), ADMIN_NAME, ADMIN_EMAIL.toLowerCase(), hash, 'administrador']
-    );
-    console.log(`✅ Admin criado: ${ADMIN_EMAIL}`);
+    // Sem ADMIN_PASS configurada no ambiente, NÃO cria admin com senha
+    // previsível — antes disso o fallback era 'Admin@2024!' fixo no código,
+    // visível a qualquer um com acesso ao repositório do GitHub. Melhor
+    // recusar a criação e avisar claramente do que abrir uma porta óbvia.
+    if (!ADMIN_PASS) {
+      console.error(
+        `⚠️  ADMIN_PASS não configurada — admin (${ADMIN_EMAIL}) NÃO foi criado. ` +
+        `Defina a variável de ambiente ADMIN_PASS no Render (Settings > Environment) e reinicie o serviço.`
+      );
+    } else {
+      const hash = await bcrypt.hash(ADMIN_PASS, 12);
+      await pool.query(
+        `INSERT INTO users (id, name, email, password, role) VALUES ($1, $2, $3, $4, $5)`,
+        [uuidv4(), ADMIN_NAME, ADMIN_EMAIL.toLowerCase(), hash, 'administrador']
+      );
+      console.log(`✅ Admin criado: ${ADMIN_EMAIL}`);
+    }
   } else {
     console.log(`✅ Admin verificado: ${ADMIN_EMAIL}`);
   }
