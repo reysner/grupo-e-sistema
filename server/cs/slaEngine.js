@@ -364,139 +364,566 @@ function detectarInsatisfacao(texto) {
  * Taxonomia de MOTIVO DE ABERTURA — por que o cliente entrou em contato,
  * não confundir com `departamento` (fila do Zappy: Fiscal/Financeiro/DP...),
  * que é routing, não motivo. Pedido da Thais: "quais são as principais
- * dores dos clientes, por quais motivos somos acionados". Primeira versão
- * (rascunho meu, baseado no que é comum em escritório de contabilidade) —
- * é pra AJUSTAR com exemplos reais do Zappy, mesmo processo usado nas
- * listas de Churn e Insatisfação. Ordem importa: primeira categoria cuja
- * palavra bater é a escolhida (categorias mais específicas primeiro).
+ * dores dos clientes, por quais motivos somos acionados".
+ *
+ * Duas camadas, mesmo espírito de FRASES_CHURN/PALAVRAS_INSATISFACAO (listas
+ * grandes, calibradas, zero IA):
+ *   - MOTIVO (categoria ampla, ex.: "Guias e Impostos") — o que já existia.
+ *   - SUBMOTIVO (a solicitação específica dentro da categoria, ex.:
+ *     "Recálculo/Correção de Guia") — pedido da Thais: "sempre há um pedido,
+ *     uma solicitação... o que de fato foi a solicitação do cliente? Tente
+ *     agrupar as mesmas solicitações... cliente quer recálculo de guias,
+ *     cada um pede de um jeito". O submotivo é exatamente isso: N jeitos
+ *     diferentes de pedir a MESMA coisa (recalcular, refazer, corrigir,
+ *     "valor errado", "podem refazer?") caem todos no mesmo rótulo, então
+ *     dá pra ver "43 pedidos de recálculo de guia" em vez de 43 linhas soltas
+ *     de "Guias e Impostos" sem saber o que, de fato, cada uma queria.
+ *
+ * Ordem importa DUAS VEZES: entre categorias (primeira que bater vence) e
+ * dentro de cada categoria, entre submotivos (idem). "Quer Falar com Alguém
+ * Específico" fica de propósito por ÚLTIMO, logo antes do fallback "outros"
+ * — pedido pela Thais ao ver o painel: "sobre qual motivo foi estes
+ * contatos?" — ou seja, "quero falar com o Guilherme" sozinho não diz nada
+ * sobre o ASSUNTO; mas "quero falar com o Guilherme sobre minha guia que
+ * veio errada" tem assunto (Guias e Impostos) E pessoa — como a janela
+ * inteira (até 10 mensagens) é concatenada antes de classificar, colocando
+ * as categorias de ASSUNTO primeiro, o texto cai no assunto real sempre que
+ * ele aparecer em algum ponto da conversa; "Quer Falar com Alguém
+ * Específico" só vence quando NENHUM assunto foi mencionado na janela.
+ *
+ * Calibrada com o que é comum em escritório de contabilidade brasileiro —
+ * segue sendo um ponto de partida, não lista fechada: o painel "palavras
+ * não classificadas" (ver palavrasFrequentes abaixo) mostra o que ainda cai
+ * em Outros, pra continuar calibrando com exemplo real, sem precisar ler
+ * ticket a ticket.
  */
 const MOTIVOS_ATENDIMENTO = [
   {
-    // Checado primeiro: padrão bem específico (baixo risco de falso
-    // positivo) e não diz o ASSUNTO — o cliente já tem alguém de
-    // confiança e prefere falar direto com essa pessoa. Casos reais
-    // levantados pela Thais: "Quero falar com o Guilherme" / "...a Ivone"
-    // / "...a Lilian" / "...a Thais". Ver extrairNomeSolicitado abaixo,
-    // que tenta pegar QUEM foi pedido — dá pra ver quem os clientes mais
-    // procuram por nome.
-    chave: 'atendimento_especifico', label: 'Quer Falar com Alguém Específico',
-    palavras: [
-      'quero falar com', 'gostaria de falar com', 'poderia falar com',
-      'preciso falar com', 'preciso conversar com', 'quero conversar com',
-      'gostaria de conversar com', 'pode me passar com', 'me passa com',
-      'falar com o', 'falar com a', 'passar para o', 'passar para a',
-    ],
-  },
-  {
-    chave: 'duvida_fiscal_tributaria', label: 'Dúvida Fiscal/Tributária',
-    palavras: [
-      'duvida sobre imposto', 'duvida tributaria', 'como funciona o imposto',
-      'posso deduzir', 'enquadramento tributario', 'regime tributario',
-      'qual imposto', 'tem que pagar imposto', 'duvida contabil',
-    ],
-  },
-  {
     chave: 'guias_impostos', label: 'Guias e Impostos',
-    palavras: [
-      'guia de das', 'guia do simples', 'guia errada', 'guia atrasada', 'darf',
-      'das vencido', 'das venceu', 'calculo do imposto', 'valor do imposto',
-      'irpj', 'csll', 'icms', 'iss retido', 'pis cofins',
-      'inss guia', 'gps', 'fgts guia', 'guia de recolhimento', '2 via da guia',
-      'segunda via da guia', 'guia nao chegou', 'nao recebi a guia',
-      'imposto errado', 'valor do das', 'das errado', 'guia do das',
-      'imposto atrasado', 'imposto vencido', 'guia do imposto de renda',
-      'guia veio errada', 'guia veio com valor errado', 'erro na guia',
-      'a guia esta errada', 'guia chegou errada', 'guia com erro',
-      'guia veio com o valor errado',
+    submotivos: [
+      {
+        chave: 'guia_recalculo', label: 'Recálculo/Correção de Guia',
+        palavras: [
+          'recalcular a guia', 'recalculo da guia', 'recalculo de guia', 'refazer a guia',
+          'refazer minha guia', 'corrigir a guia', 'correcao da guia', 'correcao na guia',
+          'guia precisa ser refeita', 'preciso que refacam a guia', 'podem refazer a guia',
+          'pode refazer a guia', 'gerar a guia novamente', 'gerar guia de novo',
+          'gerar guia novamente', 'emitir a guia novamente', 'reemitir a guia',
+          'guia com valor errado', 'guia veio com valor errado', 'guia veio errada',
+          'a guia esta errada', 'guia chegou errada', 'guia com erro', 'erro na guia',
+          'valor da guia esta errado', 'valor incorreto na guia', 'guia calculada errado',
+          'calculo da guia errado', 'guia veio com o valor errado', 'valor da das errado',
+          'das veio errado', 'das calculado errado', 'guia diferente do combinado',
+          'guia com valor diferente', 'esse valor da guia nao confere',
+          'esse valor nao esta certo na guia', 'a guia ta errada', 'guia ta com erro',
+          'valor da guia ta errado', 'pode corrigir a guia', 'preciso corrigir a guia',
+          'guia saiu com valor errado', 'refizeram a guia errado', 'guia bugada',
+          'sistema gerou a guia errada', 'guia duplicada', 'guia com valor a maior',
+          'guia com valor a menor', 'valor menor do que devia', 'valor maior do que devia',
+          'guia que veio errada', 'guia que veio com valor errado', 'guia que chegou errada',
+          'essa guia veio errada', 'sua guia veio errada', 'guia esta com valor errado',
+          'guia esta com o valor errado', 'recalculem a guia', 'recalculem minha guia',
+          'podem recalcular', 'preciso recalcular', 'gostaria de recalcular',
+          'recalcular minha guia', 'novo calculo da guia', 'solicito novo calculo da guia',
+          'solicito recalculo', 'solicito o recalculo',
+        ],
+      },
+      {
+        chave: 'guia_2via', label: '2ª Via / Reemissão de Guia',
+        palavras: [
+          '2 via da guia', 'segunda via da guia', 'guia nao chegou', 'nao recebi a guia',
+          'nao chegou minha guia', 'nao chegou a guia', 'perdi a guia', 'nao encontro a guia',
+          'cade a guia', 'onde esta a guia', 'me manda a guia', 'me envia a guia',
+          'preciso da guia', 'preciso da segunda via', 'reenviar a guia', 'reenviem a guia',
+          'mandar a guia de novo', 'nao localizo a guia', 'nao achei a guia', 'sumiu a guia',
+          'nao tenho a guia', 'pode me mandar a guia', 'poderia me enviar a guia',
+          'me manda a segunda via', 'preciso de uma copia da guia', 'perdi o boleto da guia',
+        ],
+      },
+      {
+        chave: 'guia_vencimento', label: 'Vencimento / Atraso de Guia',
+        palavras: [
+          'guia vencida', 'guia atrasada', 'das vencido', 'das venceu', 'guia venceu',
+          'imposto atrasado', 'imposto vencido', 'perdi o prazo da guia',
+          'venceu o prazo da guia', 'venceu ontem', 'venceu hoje a guia', 'vence hoje a guia',
+          'vence amanha a guia', 'qual o vencimento da guia', 'quando vence a guia',
+          'data de vencimento da guia', 'multa por atraso na guia', 'juros por atraso na guia',
+          'paguei a guia atrasado', 'guia ja passou do prazo', 'nao paguei a guia a tempo',
+          'atrasei o pagamento da guia',
+        ],
+      },
+      {
+        chave: 'guia_tributos_fiscais', label: 'Guia de Tributos (DAS/DARF/ICMS)',
+        palavras: [
+          'guia de das', 'guia do simples', 'darf', 'guia do darf', 'irpj', 'csll', 'icms',
+          'iss retido', 'pis cofins', 'guia do icms', 'guia do iss', 'guia de irpj',
+          'guia de csll', 'calculo do imposto', 'valor do imposto', 'valor do das',
+          'das errado', 'guia do das', 'guia do imposto de renda', 'imposto errado',
+          'quanto vou pagar de imposto', 'quanto e o imposto desse mes', 'imposto do mes',
+          'guia do simples nacional', 'imposto do simples', 'darf do irpj', 'darf do csll',
+        ],
+      },
+      {
+        chave: 'guia_encargos_dp', label: 'Guia de Encargos (INSS/GPS/FGTS)',
+        palavras: [
+          'inss guia', 'guia do inss', 'gps', 'guia gps', 'fgts guia', 'guia do fgts',
+          'guia de recolhimento', 'guia da folha', 'inss da folha', 'fgts da folha',
+          'encargo da folha', 'guia de encargos', 'pagamento do inss', 'pagamento do fgts',
+          'guia do fgts do funcionario', 'guia previdenciaria',
+        ],
+      },
+      {
+        chave: 'guia_parcelamento', label: 'Parcelamento de Imposto/Guia',
+        palavras: [
+          'parcelar o imposto', 'parcelar a guia', 'parcelamento do imposto',
+          'parcelamento do das', 'dividir o imposto', 'dividir a guia', 'parcelar debito',
+          'parcelamento de debito fiscal', 'reparcelamento', 'quero parcelar o imposto',
+          'da pra parcelar o imposto', 'como faco pra parcelar', 'parcelar em quantas vezes',
+        ],
+      },
+      {
+        chave: 'guia_duvida', label: 'Dúvida sobre Guia',
+        palavras: [
+          'duvida sobre a guia', 'como funciona a guia', 'pra que serve essa guia',
+          'essa guia e de que', 'essa guia e referente a que', 'nao entendi a guia',
+          'o que e essa guia', 'porque veio essa guia', 'por que gerou essa guia',
+          'essa guia e sobre o que',
+        ],
+      },
     ],
   },
   {
-    chave: 'boletos_financeiro', label: 'Boletos e Financeiro',
-    palavras: [
-      'boleto', '2 via do boleto', 'segunda via do boleto', 'nota de honorario',
-      'honorario atrasado', 'honorario em atraso', 'fatura', 'cobranca indevida',
-      'pagamento nao caiu', 'comprovante de pagamento', 'valor cobrado',
-      'desconto no boleto', 'parcelamento do honorario', 'atraso no pagamento',
-      'boleto nao chegou', 'nao recebi o boleto',
+    chave: 'boletos_honorarios', label: 'Boletos e Honorários',
+    submotivos: [
+      {
+        chave: 'boleto_2via', label: '2ª Via de Boleto',
+        palavras: [
+          '2 via do boleto', 'segunda via do boleto', 'boleto nao chegou',
+          'nao recebi o boleto', 'cade o boleto', 'onde esta o boleto', 'perdi o boleto',
+          'nao encontro o boleto', 'me manda o boleto', 'me envia o boleto',
+          'reenviar o boleto', 'mandar o boleto de novo', 'preciso do boleto',
+          'nao achei o boleto', 'poderia me enviar o boleto', 'pode me mandar o boleto',
+          'me manda a segunda via do boleto',
+        ],
+      },
+      {
+        chave: 'boleto_valor', label: 'Valor do Boleto / Cobrança Indevida',
+        palavras: [
+          'valor cobrado', 'cobranca indevida', 'valor do boleto errado',
+          'boleto com valor errado', 'boleto veio errado', 'cobraram errado',
+          'esse valor esta errado', 'nao reconheco essa cobranca',
+          'nao e esse o valor combinado', 'valor diferente do combinado',
+          'porque esse valor', 'de onde veio esse valor', 'esse valor no boleto',
+          'boleto veio com valor diferente', 'cobranca a mais', 'me cobraram a mais',
+          'boleto que veio errado', 'boleto que veio com valor errado',
+        ],
+      },
+      {
+        chave: 'boleto_pagamento', label: 'Pagamento Não Reconhecido / Comprovante',
+        palavras: [
+          'pagamento nao caiu', 'ja paguei e nao baixou', 'comprovante de pagamento',
+          'ja fiz o pagamento', 'pagamento nao foi identificado',
+          'nao esta constando o pagamento', 'ja paguei esse boleto', 'segue o comprovante',
+          'anexei o comprovante', 'ja quitei esse boleto', 'pagamento nao compensou',
+          'boleto ja foi pago', 'consta em aberto mas ja paguei',
+        ],
+      },
+      {
+        chave: 'honorario_atraso', label: 'Honorário em Atraso',
+        palavras: [
+          'honorario atrasado', 'honorario em atraso', 'atraso no pagamento do honorario',
+          'estou em atraso com o honorario', 'fatura em atraso', 'nota de honorario',
+          'fatura do mes', 'esqueci de pagar o honorario', 'vou atrasar o pagamento',
+          'honorario vencido', 'nao paguei o honorario ainda',
+        ],
+      },
+      {
+        chave: 'honorario_negociacao', label: 'Negociação / Desconto de Honorário',
+        palavras: [
+          'desconto no boleto', 'desconto no honorario', 'negociar o honorario',
+          'renegociar honorario', 'consigo um desconto', 'da pra dar um desconto',
+          'valor do honorario esta alto', 'revisar o valor do honorario',
+          'reajuste do honorario', 'aumento do honorario', 'esta muito caro o honorario',
+          'reduzir o valor do honorario',
+        ],
+      },
+      {
+        chave: 'honorario_parcelamento', label: 'Parcelamento de Honorário',
+        palavras: [
+          'parcelamento do honorario', 'parcelar o honorario', 'parcelar a fatura',
+          'dividir o honorario', 'quero parcelar o honorario', 'parcelar a mensalidade',
+        ],
+      },
+      {
+        chave: 'boleto_cancelamento', label: 'Cancelamento de Cobrança',
+        palavras: [
+          'cancelar o boleto', 'cancelar a cobranca', 'estornar o boleto',
+          'boleto duplicado', 'cobraram duas vezes', 'cobranca duplicada',
+          'gerou boleto errado', 'cancelar essa fatura', 'estorno da cobranca',
+        ],
+      },
     ],
   },
   {
     chave: 'folha_dp', label: 'Folha de Pagamento / DP',
-    palavras: [
-      'admissao', 'admitir', 'contratacao de funcionario', 'contratar funcionario',
-      'novo funcionario', 'rescisao', 'demissao', 'ferias',
-      'decimo terceiro', '13 salario', 'holerite', 'contracheque',
-      'afastamento do funcionario', 'atestado medico', 'esocial',
-      'fgts do funcionario', 'exame admissional', 'exame demissional',
-      'folha de pagamento', 'vale transporte', 'vale alimentacao',
+    submotivos: [
+      {
+        chave: 'dp_admissao', label: 'Admissão de Funcionário',
+        palavras: [
+          'admissao', 'admitir', 'contratacao de funcionario', 'contratar funcionario',
+          'novo funcionario', 'vou contratar', 'preciso admitir', 'documentos para admissao',
+          'exame admissional', 'registro de funcionario', 'carteira assinada',
+          'assinar carteira', 'contratando um funcionario', 'vou admitir alguem',
+          'preciso registrar um funcionario',
+        ],
+      },
+      {
+        chave: 'dp_rescisao', label: 'Rescisão / Demissão',
+        palavras: [
+          'rescisao', 'demissao', 'demitir', 'vou demitir', 'desligamento de funcionario',
+          'desligar funcionario', 'exame demissional', 'calculo da rescisao',
+          'aviso previo', 'termo de rescisao', 'homologacao', 'quero demitir',
+          'preciso desligar um funcionario', 'vou fazer uma rescisao',
+        ],
+      },
+      {
+        chave: 'dp_ferias', label: 'Férias',
+        palavras: [
+          'ferias', 'agendar ferias', 'marcar ferias', 'ferias do funcionario',
+          'aviso de ferias', 'recibo de ferias', 'calculo de ferias', 'ferias vencidas',
+          'programar ferias', 'colocar ferias', 'preciso tirar ferias',
+        ],
+      },
+      {
+        chave: 'dp_13', label: '13º Salário',
+        palavras: [
+          'decimo terceiro', '13 salario', 'calculo do decimo terceiro',
+          'adiantamento do decimo terceiro', 'primeira parcela do 13',
+          'segunda parcela do 13', 'quando cai o decimo terceiro',
+        ],
+      },
+      {
+        chave: 'dp_holerite', label: 'Holerite / Contracheque',
+        palavras: [
+          'holerite', 'contracheque', 'recibo de pagamento', 'demonstrativo de pagamento',
+          'nao recebi o holerite', 'preciso do holerite', 'preciso do contracheque',
+          'me envia o holerite', 'me manda o contracheque',
+        ],
+      },
+      {
+        chave: 'dp_afastamento', label: 'Afastamento / Atestado',
+        palavras: [
+          'afastamento do funcionario', 'atestado medico', 'funcionario afastado',
+          'auxilio doenca', 'licenca medica', 'enviar atestado', 'atestado do funcionario',
+          'afastamento por doenca', 'funcionario de atestado', 'funcionario doente',
+        ],
+      },
+      {
+        chave: 'dp_beneficios', label: 'Benefícios (VT/VA/VR)',
+        palavras: [
+          'vale transporte', 'vale alimentacao', 'vale refeicao', 'beneficio do funcionario',
+          'cartao alimentacao', 'plano de saude do funcionario', 'cadastrar vale transporte',
+        ],
+      },
+      {
+        chave: 'dp_esocial', label: 'eSocial / Obrigações Trabalhistas',
+        palavras: [
+          'esocial', 'fgts do funcionario', 'ponto eletronico', 'cartao ponto',
+          'banco de horas', 'hora extra do funcionario', 'folha de pagamento',
+          'evento no esocial',
+        ],
+      },
     ],
   },
   {
-    chave: 'abertura_alteracao_empresa', label: 'Abertura/Alteração de Empresa',
-    palavras: [
-      'abertura de empresa', 'abrir empresa', 'alteracao contratual',
-      'mudanca de endereco da empresa', 'mudar razao social', 'incluir socio',
-      'retirar socio', 'alterar capital social', 'encerramento de empresa',
-      'baixar empresa', 'baixa da empresa', 'mudanca de regime tributario',
-      'enquadramento', 'abrir cnpj', 'segunda empresa', 'nova empresa',
+    chave: 'notas_fiscais', label: 'Notas Fiscais',
+    submotivos: [
+      {
+        chave: 'nf_emissao', label: 'Emissão de Nota Fiscal',
+        palavras: [
+          'emitir nota', 'emitir nota fiscal', 'nao consigo emitir', 'nao esta emitindo',
+          'preciso emitir uma nota', 'como emito a nota', 'emissao de nfse',
+          'emissao de nfe', 'gerar nota fiscal', 'preciso de uma nota fiscal',
+          'emitir a nota para o cliente',
+        ],
+      },
+      {
+        chave: 'nf_cancelamento', label: 'Cancelamento de Nota',
+        palavras: [
+          'cancelar nota', 'cancelar a nota fiscal', 'cancelamento de nfse',
+          'nota emitida errada', 'preciso cancelar essa nota', 'nota com erro',
+          'cancelamento de nota fiscal',
+        ],
+      },
+      {
+        chave: 'nf_erro', label: 'Erro / Rejeição de Nota',
+        palavras: [
+          'nota rejeitada', 'erro na nota fiscal', 'nota fiscal com erro',
+          'nota nao autorizada', 'xml da nota', 'nota fiscal errada',
+          'nota com valor errado', 'nota emitida com erro', 'nota nao foi aceita',
+          'nota deu erro', 'nota que veio errada', 'nota que veio com erro',
+        ],
+      },
+      {
+        chave: 'nf_naolocalizada', label: 'Nota Fiscal Não Localizada',
+        palavras: [
+          'nao encontro a nota', 'nao achei a nota fiscal', 'nfse', 'nfe',
+          'cade a nota fiscal', 'preciso da nota fiscal', 'me envia a nota fiscal',
+          'nao localizo a nota',
+        ],
+      },
+    ],
+  },
+  {
+    chave: 'documentos_declaracoes', label: 'Documentos e Declarações',
+    submotivos: [
+      {
+        chave: 'doc_irpf', label: 'Declaração de Imposto de Renda',
+        palavras: [
+          'declaracao de imposto de renda', 'declaracao do imposto de renda',
+          'ir pessoa fisica', 'irpf', 'declarar imposto de renda',
+          'restituicao do imposto de renda', 'ajuste anual', 'informe de rendimentos',
+          'declaracao do ir',
+        ],
+      },
+      {
+        chave: 'doc_contabeis', label: 'Documentos Contábeis (Balanço/Extrato)',
+        palavras: [
+          'balanco', 'balancete', 'relatorio contabil', 'extrato', 'demonstrativo contabil',
+          'dre', 'demonstrativo de resultado', 'preciso do balanco', 'preciso do balancete',
+          'me envia o balanco',
+        ],
+      },
+      {
+        chave: 'doc_societarios', label: 'Documentos Societários',
+        palavras: [
+          'contrato social', 'preciso do contrato social', 'copia do contrato social',
+          'documento da empresa', 'cartao cnpj', 'comprovante de inscricao',
+          'ficha cadastral', 'me envia o contrato social',
+        ],
+      },
+      {
+        chave: 'doc_banco', label: 'Documento para Banco/Financiamento',
+        palavras: [
+          'documento para o banco', 'documento para financiamento',
+          'declaracao de faturamento', 'certidao negativa', 'documento para credito',
+          'documento para emprestimo', 'preciso de um documento para o banco',
+          'documento para o cartorio',
+        ],
+      },
+    ],
+  },
+  {
+    chave: 'abertura_alteracao_empresa', label: 'Abertura/Alteração/Baixa de Empresa',
+    submotivos: [
+      {
+        chave: 'emp_abertura', label: 'Abertura de Empresa',
+        palavras: [
+          'abertura de empresa', 'abrir empresa', 'abrir cnpj', 'segunda empresa',
+          'nova empresa', 'quero abrir uma empresa', 'como abro uma empresa',
+          'abrir uma nova empresa', 'abrir um mei', 'abertura de mei',
+        ],
+      },
+      {
+        chave: 'emp_alteracao', label: 'Alteração Contratual / Sócio',
+        palavras: [
+          'alteracao contratual', 'alterar contrato social', 'mudar razao social',
+          'incluir socio', 'retirar socio', 'alterar capital social',
+          'alteracao de socio', 'entrada de socio', 'saida de socio', 'mudanca de socio',
+        ],
+      },
+      {
+        chave: 'emp_endereco', label: 'Mudança de Endereço',
+        palavras: [
+          'mudanca de endereco da empresa', 'mudar endereco da empresa',
+          'alterar endereco da empresa', 'transferir endereco', 'mudanca de sede',
+        ],
+      },
+      {
+        chave: 'emp_regime', label: 'Mudança de Regime Tributário / Enquadramento',
+        palavras: [
+          'mudanca de regime tributario', 'enquadramento', 'mudar de regime',
+          'trocar de regime tributario', 'mudar para lucro presumido',
+          'mudar para simples nacional', 'desenquadramento',
+        ],
+      },
+      {
+        chave: 'emp_baixa', label: 'Baixa / Encerramento de Empresa',
+        palavras: [
+          'encerramento de empresa', 'baixar empresa', 'baixa da empresa',
+          'fechar a empresa', 'quero fechar a empresa', 'distrato', 'encerrar o cnpj',
+          'baixa de cnpj',
+        ],
+      },
     ],
   },
   {
     chave: 'certificado_digital', label: 'Certificado Digital',
-    palavras: [
-      'certificado digital', 'certificado vencido', 'certificado venceu',
-      'renovar certificado', 'token vencido', 'e-cnpj', 'e-cpf', 'ecnpj', 'ecpf',
-    ],
-  },
-  {
-    chave: 'documentos_notas', label: 'Documentos e Notas Fiscais',
-    palavras: [
-      'nota fiscal', 'emitir nota', 'cancelar nota', 'nfse', 'nfe', 'xml da nota',
-      'declaracao de imposto de renda', 'balanco', 'balancete',
-      'relatorio contabil', 'extrato', 'contrato social', 'nao consigo emitir',
-    ],
-  },
-  {
-    chave: 'duvida_fiscal_tributaria', label: 'Dúvida Fiscal/Tributária',
-    palavras: [
-      'duvida sobre imposto', 'duvida tributaria', 'como funciona o imposto',
-      'posso deduzir', 'enquadramento tributario', 'regime tributario',
-      'qual imposto', 'tem que pagar imposto', 'duvida contabil',
+    submotivos: [
+      {
+        chave: 'cert_vencimento', label: 'Certificado Vencido / Renovação',
+        palavras: [
+          'certificado digital', 'certificado vencido', 'certificado venceu',
+          'renovar certificado', 'token vencido', 'certificado vai vencer',
+          'preciso renovar o certificado',
+        ],
+      },
+      {
+        chave: 'cert_emissao', label: 'Emissão / Instalação',
+        palavras: [
+          'e-cnpj', 'e-cpf', 'ecnpj', 'ecpf', 'emitir certificado', 'instalar certificado',
+          'nao consigo instalar o certificado', 'como instalo o certificado',
+          'preciso do certificado digital',
+        ],
+      },
+      {
+        chave: 'cert_procuracao', label: 'Procuração Eletrônica',
+        palavras: [
+          'procuracao eletronica', 'procuracao digital', 'preciso de uma procuracao',
+        ],
+      },
     ],
   },
   {
     chave: 'prazos_obrigacoes', label: 'Prazos e Obrigações Acessórias',
-    palavras: [
-      'prazo de entrega', 'obrigacao acessoria', 'sped', 'dctf', 'dirf', 'rais',
-      'caged', 'declaracao vencendo', 'vencimento da declaracao', 'qual o prazo',
+    submotivos: [
+      {
+        chave: 'prazo_sped', label: 'SPED / ECD / ECF',
+        palavras: [
+          'sped', 'ecd', 'ecf', 'sped fiscal', 'sped contribuicoes', 'entrega do sped',
+        ],
+      },
+      {
+        chave: 'prazo_dctf', label: 'DCTF / DIRF',
+        palavras: [
+          'dctf', 'dirf', 'entrega da dctf', 'entrega da dirf',
+        ],
+      },
+      {
+        chave: 'prazo_trabalhista', label: 'RAIS / CAGED',
+        palavras: [
+          'rais', 'caged', 'entrega da rais', 'entrega do caged',
+        ],
+      },
+      {
+        chave: 'prazo_defis', label: 'DEFIS / DAS-MEI',
+        palavras: [
+          'defis', 'das mei', 'declaracao do mei', 'declaracao anual do simples',
+        ],
+      },
+      {
+        chave: 'prazo_geral', label: 'Prazo de Entrega (Geral)',
+        palavras: [
+          'prazo de entrega', 'obrigacao acessoria', 'qual o prazo', 'quando e o prazo',
+          'vencimento da declaracao', 'declaracao vencendo', 'ate quando posso entregar',
+          'perdi o prazo', 'qual o prazo pra entregar',
+        ],
+      },
     ],
   },
   {
-    chave: 'erros_reclamacoes', label: 'Erros e Reclamações',
-    palavras: [
-      'calculado errado', 'valor errado', 'guia errada de novo', 'erro no calculo',
-      'errado de novo', 'multa por erro', 'reclamacao', 'problema recorrente',
-      'sempre errado', 'de novo errado',
+    chave: 'duvida_fiscal_tributaria', label: 'Dúvida Fiscal/Tributária',
+    submotivos: [
+      {
+        chave: 'duvida_enquadramento', label: 'Enquadramento / Regime Tributário',
+        palavras: [
+          'enquadramento tributario', 'regime tributario', 'qual regime e melhor',
+          'simples nacional ou lucro presumido', 'melhor regime para minha empresa',
+        ],
+      },
+      {
+        chave: 'duvida_aliquota', label: 'Alíquota / Cálculo de Imposto',
+        palavras: [
+          'qual a aliquota', 'quanto vou pagar de imposto', 'como e calculado o imposto',
+          'como funciona o imposto', 'duvida sobre imposto', 'duvida tributaria',
+          'qual imposto', 'tem que pagar imposto',
+        ],
+      },
+      {
+        chave: 'duvida_deducao', label: 'Dedução / Benefício Fiscal',
+        palavras: [
+          'posso deduzir', 'da pra deduzir', 'quais gastos posso deduzir',
+          'beneficio fiscal', 'incentivo fiscal',
+        ],
+      },
+      {
+        chave: 'duvida_geral', label: 'Dúvida Contábil Geral',
+        palavras: [
+          'duvida contabil', 'tenho uma duvida', 'gostaria de entender',
+          'pode me explicar', 'tenho uma pergunta',
+        ],
+      },
+    ],
+  },
+  {
+    chave: 'erros_reclamacoes', label: 'Erros e Reclamações Operacionais',
+    submotivos: [
+      {
+        chave: 'erro_calculo', label: 'Erro em Cálculo / Guia',
+        palavras: [
+          'calculado errado', 'valor errado', 'guia errada de novo', 'erro no calculo',
+          'errado de novo', 'sempre errado', 'de novo errado', 'calculo errado',
+        ],
+      },
+      {
+        chave: 'erro_multa', label: 'Multa/Juros por Erro do Escritório',
+        palavras: [
+          'multa por erro', 'juros por erro', 'paguei multa por causa', 'gerou multa',
+          'multa indevida', 'quem vai pagar essa multa',
+        ],
+      },
+      {
+        chave: 'erro_atraso_escritorio', label: 'Atraso / Falta de Retorno do Escritório',
+        palavras: [
+          'nao recebi retorno', 'sem retorno', 'ainda nao me responderam',
+          'demorou pra responder', 'nao fui atendido', 'ninguem me respondeu',
+          'problema recorrente', 'reclamacao',
+        ],
+      },
+    ],
+  },
+  {
+    // Checado por ÚLTIMO de propósito (ver comentário acima do array):
+    // não diz o ASSUNTO sozinho, só que o cliente quer falar com alguém
+    // específico. Casos reais levantados pela Thais: "Quero falar com o
+    // Guilherme" / "...a Ivone" / "...a Lilian" / "...a Thais". Ver
+    // extrairNomeSolicitado abaixo, que tenta pegar QUEM foi pedido.
+    chave: 'atendimento_especifico', label: 'Quer Falar com Alguém Específico',
+    submotivos: [
+      {
+        chave: 'pessoa_especifica', label: 'Pedido de Contato Específico',
+        palavras: [
+          'quero falar com', 'gostaria de falar com', 'poderia falar com',
+          'preciso falar com', 'preciso conversar com', 'quero conversar com',
+          'gostaria de conversar com', 'pode me passar com', 'me passa com',
+          'falar com o', 'falar com a', 'passar para o', 'passar para a',
+        ],
+      },
     ],
   },
 ];
 
 /**
- * Classifica a mensagem em um motivo de atendimento. Casamento por
- * substring (mesmo estilo de detectarInsatisfacao) — primeira categoria
- * que bater vence. Sem correspondência = {chave:'outros', ...} (não é
- * erro, só significa que essa mensagem não caiu em nenhuma categoria
- * ainda — sinal de que a lista precisa crescer).
+ * Classifica a mensagem em um motivo (categoria) + submotivo (solicitação
+ * específica) de atendimento. Casamento por substring (mesmo estilo de
+ * detectarInsatisfacao) — primeira categoria/submotivo que bater vence
+ * (ver comentário acima do array sobre a ordem). Sem correspondência =
+ * {chave:'outros', ...} (não é erro, só significa que essa mensagem não
+ * caiu em nenhuma categoria ainda — sinal de que a lista precisa crescer).
  */
 function classificarMotivo(texto) {
   const t = normalizarTexto(texto);
-  if (!t) return { chave: 'outros', label: 'Outros / Não identificado' };
+  if (!t) {
+    return { chave: 'outros', label: 'Outros / Não identificado', submotivoChave: null, submotivoLabel: null };
+  }
   for (const cat of MOTIVOS_ATENDIMENTO) {
-    if (cat.palavras.some(p => t.includes(p))) {
-      return { chave: cat.chave, label: cat.label };
+    for (const sub of cat.submotivos) {
+      if (sub.palavras.some(p => t.includes(p))) {
+        return { chave: cat.chave, label: cat.label, submotivoChave: sub.chave, submotivoLabel: sub.label };
+      }
     }
   }
-  return { chave: 'outros', label: 'Outros / Não identificado' };
+  return { chave: 'outros', label: 'Outros / Não identificado', submotivoChave: null, submotivoLabel: null };
 }
 
 /**
