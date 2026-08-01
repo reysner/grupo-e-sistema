@@ -6138,38 +6138,108 @@ window.Tickets = Tickets;
       }
     },
 
+    // Cor fixa por motivo — usada no resumo, na legenda e na barra empilhada
+    // de cada cliente, pra dar pra "bater o olho" e reconhecer o padrão sem
+    // precisar abrir nada (pedido da Thais depois de ver a 1ª versão: "só
+    // bate o olho e não dá pra analisar os insights estratégicos").
+    _CORES_MOTIVO: {
+      'Guias e Impostos': '#3b82f6',
+      'Boletos e Financeiro': '#10b981',
+      'Folha de Pagamento / DP': '#8b5cf6',
+      'Abertura/Alteração de Empresa': '#f59e0b',
+      'Certificado Digital': '#ec4899',
+      'Documentos e Notas Fiscais': '#6366f1',
+      'Dúvida Fiscal/Tributária': '#06b6d4',
+      'Prazos e Obrigações Acessórias': '#d97706',
+      'Erros e Reclamações': '#ef4444',
+      'Quer Falar com Alguém Específico': '#78716c',
+      'Outros / Não identificado': '#cbd5e0',
+    },
+    _corMotivo(label) { return AnaliseInteligente._CORES_MOTIVO[label] || '#94a3b8'; },
+
     /**
-     * "Motivos de Abertura por Cliente" — pra cada empresa, o motivo
-     * principal (mais frequente) dos tickets dos últimos 180 dias, com
-     * expand pra ver a lista detalhada. Mesmo padrão de agrupamento do
-     * Possíveis Churns (empresa > detalhes[]).
+     * "Motivos de Abertura por Cliente" — resumo executivo no topo (total,
+     * % não identificado, motivo #1), depois cada empresa com uma barra
+     * proporcional (visual, sem precisar abrir) e no fim as palavras mais
+     * comuns em "Outros" pra calibrar a lista sem ler ticket a ticket.
      */
     async carregarMotivosCliente() {
       const tbody = document.getElementById('motivos-cliente-tbody');
+      const resumoEl = document.getElementById('motivos-resumo');
+      const legendaEl = document.getElementById('motivos-legenda');
+      const palavrasEl = document.getElementById('motivos-palavras-outros');
       if (!tbody) return;
-      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--gray-400)">Carregando...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400)">Carregando...</td></tr>';
+      if (resumoEl) resumoEl.innerHTML = '';
+      if (legendaEl) legendaEl.innerHTML = '';
+      if (palavrasEl) palavrasEl.innerHTML = '';
       try {
         const res = await fetch('/api/cs/motivos?dias=180', { headers: authHeaders() });
         if (!res.ok) throw new Error('Falha ao buscar.');
-        const { data } = await res.json();
+        const { data, resumo, palavrasNaoClassificadas } = await res.json();
         AnaliseInteligente._motivosData = data || [];
-        if (!data || !data.length) {
-          tbody.innerHTML = '<tr><td colspan="4" style="color:var(--gray-400)">Nenhum ticket classificado nos últimos 180 dias.</td></tr>';
-          return;
+
+        // ── Resumo executivo ──────────────────────────────────────────────
+        if (resumoEl && resumo) {
+          const cards = [
+            { label: 'Tickets analisados (180 dias)', valor: resumo.totalTickets, cor: 'var(--g700)' },
+            { label: 'Motivo mais comum', valor: resumo.motivoTop ? resumo.motivoTop.label : '—', sub: resumo.motivoTop ? `${resumo.motivoTop.n} tickets` : '', cor: 'var(--g700)' },
+            { label: 'Não identificados', valor: resumo.percentOutros + '%', sub: 'do total — quanto menor, melhor', cor: resumo.percentOutros >= 40 ? '#e53e3e' : resumo.percentOutros >= 20 ? '#dd6b20' : '#38a169' },
+          ];
+          resumoEl.innerHTML = cards.map(c => `
+            <div style="background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:12px 18px;min-width:170px;flex:1">
+              <div style="font-size:11px;color:var(--gray-500);font-weight:600;margin-bottom:4px">${esc(c.label)}</div>
+              <div style="font-size:20px;font-weight:800;color:${c.cor}">${esc(String(c.valor))}</div>
+              ${c.sub ? `<div style="font-size:11px;color:var(--gray-400)">${esc(c.sub)}</div>` : ''}
+            </div>`).join('');
         }
-        tbody.innerHTML = data.map((c, idx) => {
-          const nomeVinculo = c.vinculado
-            ? esc(c.empresa)
-            : `${esc(c.empresa)} <span style="color:var(--gray-400);font-size:11px">(não vinculado)</span>`;
-          return `<tr id="motivo-row-${idx}">
-            <td style="font-weight:600">${nomeVinculo}</td>
-            <td>${c.totalTickets}</td>
-            <td style="font-size:12px"><span style="background:var(--g100);color:var(--g700);padding:2px 8px;border-radius:10px;font-weight:600">${esc(c.motivoPrincipal || '—')}</span></td>
-            <td><a href="#" onclick="AnaliseInteligente.toggleMotivoDetalhe(${idx});return false" style="cursor:pointer;text-decoration:underline;font-weight:600">Ver tickets <span id="motivo-seta-${idx}">▾</span></a></td>
-          </tr>`;
-        }).join('');
+
+        // ── Legenda de cores ──────────────────────────────────────────────
+        if (legendaEl && resumo && resumo.porMotivoGeral) {
+          legendaEl.innerHTML = resumo.porMotivoGeral.map(m => `
+            <span style="display:inline-flex;align-items:center;gap:5px">
+              <span style="width:10px;height:10px;border-radius:3px;background:${AnaliseInteligente._corMotivo(m.label)};display:inline-block"></span>
+              ${esc(m.label)} (${m.n})
+            </span>`).join('');
+        }
+
+        if (!data || !data.length) {
+          tbody.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400)">Nenhum ticket classificado nos últimos 180 dias.</td></tr>';
+        } else {
+          tbody.innerHTML = data.map((c, idx) => {
+            const nomeVinculo = c.vinculado
+              ? esc(c.empresa)
+              : `${esc(c.empresa)} <span style="color:var(--gray-400);font-size:11px">(não vinculado)</span>`;
+            // Barra empilhada: um <span> por motivo, largura proporcional ao total do cliente.
+            const segmentos = Object.entries(c.porMotivo || {})
+              .sort((a, b) => b[1] - a[1])
+              .map(([label, n]) => {
+                const pct = c.totalTickets ? (n / c.totalTickets * 100) : 0;
+                return `<span title="${esc(label)}: ${n}" style="display:inline-block;height:100%;width:${pct}%;background:${AnaliseInteligente._corMotivo(label)}"></span>`;
+              }).join('');
+            const barra = `<div style="display:flex;height:16px;width:100%;border-radius:4px;overflow:hidden;background:var(--gray-100)">${segmentos}</div>`;
+            return `<tr id="motivo-row-${idx}">
+              <td style="font-weight:600">${nomeVinculo}</td>
+              <td>${c.totalTickets}</td>
+              <td>${barra}</td>
+              <td style="font-size:12px"><span style="background:var(--g100);color:var(--g700);padding:2px 8px;border-radius:10px;font-weight:600">${esc(c.motivoPrincipal || '—')}</span></td>
+              <td><a href="#" onclick="AnaliseInteligente.toggleMotivoDetalhe(${idx});return false" style="cursor:pointer;text-decoration:underline;font-weight:600">Ver tickets <span id="motivo-seta-${idx}">▾</span></a></td>
+            </tr>`;
+          }).join('');
+        }
+
+        // ── Palavras mais frequentes em "Outros" ──────────────────────────
+        if (palavrasEl) {
+          if (!palavrasNaoClassificadas || !palavrasNaoClassificadas.length) {
+            palavrasEl.innerHTML = '<span style="color:var(--gray-400);font-size:12px">Nada relevante sobrando — a lista está cobrindo bem os casos.</span>';
+          } else {
+            palavrasEl.innerHTML = palavrasNaoClassificadas.map(p => `
+              <span style="background:var(--gray-100);color:var(--gray-700);padding:4px 10px;border-radius:8px;font-size:12px;font-weight:600">${esc(p.palavra)} <span style="color:var(--gray-400);font-weight:400">(${p.n})</span></span>
+            `).join('');
+          }
+        }
       } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--danger)">Não foi possível analisar os motivos agora.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="color:var(--danger)">Não foi possível analisar os motivos agora.</td></tr>';
       }
     },
 
@@ -6200,7 +6270,7 @@ window.Tickets = Tickets;
       const resumoMotivos = Object.entries(item?.porMotivo || {})
         .sort((a, b) => b[1] - a[1])
         .map(([m, n]) => `${esc(m)}: ${n}`).join(' · ');
-      const html = `<tr id="motivo-detalhe-${idx}"><td colspan="4" style="background:var(--gray-50);padding:10px 16px">
+      const html = `<tr id="motivo-detalhe-${idx}"><td colspan="5" style="background:var(--gray-50);padding:10px 16px">
         <div style="font-size:12px;font-weight:600;color:var(--gray-600);margin-bottom:6px">Resumo: ${resumoMotivos}</div>
         ${linhas}
       </td></tr>`;
