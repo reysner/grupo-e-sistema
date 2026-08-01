@@ -217,7 +217,23 @@
     <div class="chart-card"><p class="chart-title">Status do SLA</p><div class="chart-wrap"><canvas id="cs-dash-status"></canvas></div></div>
     <div class="chart-card"><p class="chart-title">Por departamento</p><div class="chart-wrap"><canvas id="cs-dash-departamento"></canvas></div></div>
     <div class="chart-card"><p class="chart-title">Por analista (volume)</p><div class="chart-wrap"><canvas id="cs-dash-analista"></canvas></div></div>
-    <div class="chart-card" style="grid-column:1/-1"><p class="chart-title">Principais motivos de abertura — por que os clientes nos procuram (classificação por palavra-chave das até 10 primeiras mensagens do cliente em cada ticket)</p><div class="chart-wrap"><canvas id="cs-dash-motivos"></canvas></div></div>
+    <div class="chart-card" style="grid-column:1/-1">
+      <p class="chart-title">Principais motivos de abertura — por que os clientes nos procuram (classificação por palavra-chave das até 10 primeiras mensagens do cliente em cada ticket)</p>
+      <div class="chart-wrap"><canvas id="cs-dash-motivos"></canvas></div>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--gray-100)">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+          <h3 style="font-size:13px;font-weight:700;color:var(--gray-700);margin:0">📋 Detalhamento das solicitações — o que de fato foi pedido</h3>
+          <button class="btn btn-ghost btn-sm" onclick="Dashboard.exportSubmotivosCSV()">⬇️ Exportar CSV</button>
+        </div>
+        <p style="color:var(--gray-500);font-size:12px;margin:0 0 10px">Solicitação específica dentro de cada motivo (ex.: "Recálculo de Guia" dentro de "Guias e Impostos"), agrupando quem pede a mesma coisa de jeitos diferentes.</p>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Motivo</th><th>Solicitação específica</th><th>Quantidade</th></tr></thead>
+            <tbody id="cs-dash-submotivos-tbody"><tr><td colspan="3" style="color:var(--gray-400)">Carregando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
     <div class="chart-card" style="grid-column:1/-1"><p class="chart-title">% dentro do SLA por analista (pior primeiro) — clique numa barra pra ver os tickets vermelhos</p><div class="chart-wrap"><canvas id="cs-dash-desempenho"></canvas></div></div>
     <div class="chart-card" style="grid-column:1/-1"><p class="chart-title">% dentro do SLA por etapa (aceite, transferência, resposta do analista após transferência, promessa de transferência, resolvendo direto) — clique numa barra pra ver os tickets vermelhos</p><div class="chart-wrap"><canvas id="cs-dash-etapas"></canvas></div></div>
     <div class="chart-card" style="grid-column:1/-1"><p class="chart-title">Resposta do analista após a transferência — por analista (pior primeiro) — clique numa barra pra ver os tickets vermelhos</p><div class="chart-wrap"><canvas id="cs-dash-analista-departamento"></canvas></div></div>
@@ -1141,15 +1157,27 @@
             <h2 class="form-title" style="margin:0 0 4px">Motivos de Abertura por Cliente</h2>
             <div class="form-accent"></div>
             <p style="color:var(--gray-500);font-size:13px;margin:0 0 12px">
-              Para cada empresa, classifica os tickets dos últimos 180 dias em um motivo (guia/imposto, boleto, folha/DP, abertura de empresa, certificado digital, documentos, dúvida fiscal, prazo, erro/reclamação, quer falar com alguém específico), olhando até as 10 primeiras mensagens do cliente em cada ticket (não só a 1ª) — pra enxergar as dores específicas de cada cliente. Lista de palavras-chave em calibração — a lista de "não identificados" abaixo ajuda a calibrar rápido, sem precisar ler ticket a ticket. Visão agregada (ranking geral) fica no Dashboard, dentro de Sucesso do Cliente.
+              Para cada empresa, classifica os tickets dos últimos 180 dias em um motivo (Guias e Impostos, Boletos e Honorários, Folha/DP, Notas Fiscais, Documentos e Declarações, Abertura/Alteração/Baixa de Empresa, Certificado Digital, Prazos e Obrigações Acessórias, Dúvida Fiscal/Tributária, Erros e Reclamações, quer falar com alguém específico) e dentro de cada motivo, num submotivo — a solicitação específica de verdade (ex.: "Recálculo de Guia", "2ª Via de Boleto"), agrupando quem pede a mesma coisa de jeitos diferentes. Olha até as 10 primeiras mensagens do cliente em cada ticket (não só a 1ª). Lista de palavras-chave em calibração — a lista de "não identificados" abaixo ajuda a calibrar rápido, sem precisar ler ticket a ticket. Visão agregada (ranking geral) fica no Dashboard, dentro de Sucesso do Cliente.
             </p>
             <div style="display:flex;gap:8px;margin-bottom:14px">
               <button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.carregarMotivosCliente()">🔄 Atualizar</button>
+              <button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.exportSubmotivosCSV()">⬇️ Exportar relatório (CSV)</button>
             </div>
 
             <div id="motivos-resumo" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
 
-            <div id="motivos-legenda" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;color:var(--gray-500)"></div>
+            <div id="motivos-legenda" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;font-size:11px;color:var(--gray-500)"></div>
+
+            <div style="margin-bottom:18px">
+              <h3 style="font-size:13px;font-weight:700;color:var(--gray-700);margin:0 0 6px">📋 O que de fato foi pedido</h3>
+              <p style="color:var(--gray-500);font-size:12px;margin:0 0 10px">Solicitação específica dentro de cada motivo, agrupando quem pede a mesma coisa de jeitos diferentes — este é o relatório detalhado (exportável em CSV acima).</p>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead><tr><th>Motivo</th><th>Solicitação específica</th><th>Quantidade</th></tr></thead>
+                  <tbody id="motivos-submotivos-tbody"><tr><td colspan="3" style="color:var(--gray-400)">Carregando...</td></tr></tbody>
+                </table>
+              </div>
+            </div>
 
             <div class="table-wrap">
               <table class="data-table">
