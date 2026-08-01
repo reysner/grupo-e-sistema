@@ -486,11 +486,13 @@ router.get('/dashboard/etapas', requireAuth, async (req, res) => {
  * Mesmos filtros do /dashboard: ?period=todos|hoje|semana|mes OU
  * ?ano=&mes=, opcionalmente ?analista=Nome.
  *
- * Olha uma JANELA de até 5 mensagens do cliente no início do ticket (só as
- * dos primeiros 30 minutos após a abertura), não só a 1ª — em chat é muito
- * comum "Bom dia" vir separado da mensagem que explica o motivo de verdade
- * (percebido pela Thais depois de ver a 1ª versão só olhando a 1ª
- * mensagem). Ver classificarMotivoConversa em slaEngine.js, que descarta
+ * Olha uma JANELA de até 10 mensagens do cliente no início do ticket, não
+ * só a 1ª — em chat é muito comum "Bom dia" vir separado da mensagem que
+ * explica o motivo de verdade, ou o assunto só ficar claro depois de umas
+ * trocas (percebido pela Thais: "não pode ser só a 1ª mensagem, até a 10ª
+ * mensagem que o cliente envia pra classificar melhor"). Sem limite de
+ * tempo — é por QUANTIDADE de mensagens do cliente, não por quanto tempo
+ * passou. Ver classificarMotivoConversa em slaEngine.js, que descarta
  * saudações puras da janela antes de classificar.
  */
 router.get('/dashboard/motivos', requireAuth, async (req, res) => {
@@ -522,9 +524,8 @@ router.get('/dashboard/motivos', requireAuth, async (req, res) => {
           FROM cs_mensagens cm
           JOIN cs_tickets t ON t.id = cm.ticket_id
           ${cond} AND cm.remetente = 'cliente' AND cm.texto IS NOT NULL AND cm.texto <> ''
-            AND (t.abertura IS NULL OR cm.hora <= t.abertura + INTERVAL '30 minutes')
       )
-      SELECT ticket_id, texto FROM primeiras WHERE rn <= 5 ORDER BY ticket_id, hora ASC
+      SELECT ticket_id, texto FROM primeiras WHERE rn <= 10 ORDER BY ticket_id, hora ASC
     `, params);
 
     const porTicket = new Map();
@@ -815,8 +816,8 @@ router.post('/insatisfacao-conversas/:mensagemId/tratar', requireAuth, requireAd
  * empresa" — útil em conversa de conta/renovação. Mesmo padrão de
  * agrupamento do GET /churn (empresa > detalhes[]).
  *
- * Olha uma JANELA de até 5 mensagens do cliente no início de cada ticket
- * (primeiros 30 minutos após a abertura) em vez de só a 1ª — mesmo ajuste
+ * Olha uma JANELA de até 10 mensagens do cliente no início de cada ticket
+ * (por QUANTIDADE, sem limite de tempo) em vez de só a 1ª — mesmo ajuste
  * do /dashboard/motivos, ver classificarMotivoConversa em slaEngine.js.
  */
 router.get('/motivos', requireAuth, requireAdmin, async (req, res) => {
@@ -836,9 +837,8 @@ router.get('/motivos', requireAuth, requireAdmin, async (req, res) => {
          WHERE cm.remetente = 'cliente'
            AND ct.abertura >= NOW() - ($1 || ' days')::interval
            AND cm.texto IS NOT NULL AND cm.texto <> ''
-           AND (ct.abertura IS NULL OR cm.hora <= ct.abertura + INTERVAL '30 minutes')
       )
-      SELECT * FROM primeiras WHERE rn <= 5 ORDER BY ticket_id, hora ASC
+      SELECT * FROM primeiras WHERE rn <= 10 ORDER BY ticket_id, hora ASC
     `, [dias]);
 
     // Agrupa as mensagens de cada ticket (janela de abertura) antes de classificar.
