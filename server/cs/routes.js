@@ -32,7 +32,7 @@ const { obterPool } = require('./pool');
 const { ingerirTickets, executarCargaRetroativa, recalcularSlaTodos } = require('./ingestao');
 const { criarClienteZappy } = require('./zappyClient');
 const { listarPendentes, confirmarVinculo } = require('./vinculos');
-const { detectarSinalChurn, detectarInsatisfacao } = require('./slaEngine');
+const { detectarSinalChurn, detectarInsatisfacao, classificarMotivoConversa } = require('./slaEngine');
 
 // Trava simples pra não deixar disparar 2 backfills ao mesmo tempo (ex.: duplo clique).
 let backfillEmAndamento = false;
@@ -473,6 +473,86 @@ router.get('/dashboard/etapas', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/cs/dashboard/motivos — ranking de MOTIVO DE ABERTURA (por que o
+ * cliente entrou em contato: guia errada, boleto, admissão, dúvida fiscal
+ * etc. — ver classificarMotivo em slaEngine.js), diferente de
+ * `departamento` (fila do Zappy, é routing). Pedido da Thais: "quais são
+ * as principais dores dos clientes, por quais motivos somos acionados" —
+ * essa é a visão operacional/agregada (o painel por cliente fica em
+ * Análise Inteligente, ver GET /motivos abaixo). Classifica a PRIMEIRA
+ * mensagem do cliente em cada ticket do período — é ela que carrega o
+ * motivo de abertura, mensagens seguintes já são o desenrolar da conversa.
+ * Mesmos filtros do /dashboard: ?period=todos|hoje|semana|mes OU
+ * ?ano=&mes=, opcionalmente ?analista=Nome.
+ *
+ * Olha uma JANELA de até 5 mensagens do cliente no início do ticket (só as
+ * dos primeiros 30 minutos após a abertura), não só a 1ª — em chat é muito
+ * comum "Bom dia" vir separado da mensagem que explica o motivo de verdade
+ * (percebido pela Thais depois de ver a 1ª versão só olhando a 1ª
+ * mensagem). Ver classificarMotivoConversa em slaEngine.js, que descarta
+ * saudações puras da janela antes de classificar.
+ */
+router.get('/dashboard/motivos', requireAuth, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const condicoes = [];
+    const params = [];
+
+    if (req.query.period) {
+      const intervalo = intervaloPorPeriod(req.query.period);
+      if (intervalo) {
+        params.push(intervalo[0].toISOString(), intervalo[1].toISOString());
+        condicoes.push(`t.abertura >= $${params.length - 1}`, `t.abertura <= $${params.length}`);
+      }
+    } else {
+      const ano = req.query.ano ? parseInt(req.query.ano, 10) : null;
+      const mes = req.query.mes ? parseInt(req.query.mes, 10) : null;
+      if (ano) { params.push(ano); condicoes.push(`EXTRACT(YEAR FROM t.abertura) = $${params.length}::int`); }
+      if (mes) { params.push(mes); condicoes.push(`EXTRACT(MONTH FROM t.abertura) = $${params.length}::int`); }
+    }
+    if (req.query.analista) { params.push(req.query.analista); condicoes.push(`t.analista = $${params.length}`); }
+    condicoes.unshift('TRUE');
+    const cond = 'WHERE ' + condicoes.join(' AND ');
+
+    const { rows } = await pool.query(`
+      WITH primeiras AS (
+        SELECT cm.ticket_id, cm.texto, cm.hora,
+               ROW_NUMBER() OVER (PARTITION BY cm.ticket_id ORDER BY cm.hora ASC) AS rn
+          FROM cs_mensagens cm
+          JOIN cs_tickets t ON t.id = cm.ticket_id
+          ${cond} AND cm.remetente = 'cliente' AND cm.texto IS NOT NULL AND cm.texto <> ''
+            AND (t.abertura IS NULL OR cm.hora <= t.abertura + INTERVAL '30 minutes')
+      )
+      SELECT ticket_id, texto FROM primeiras WHERE rn <= 5 ORDER BY ticket_id, hora ASC
+    `, params);
+
+    const porTicket = new Map();
+    for (const row of rows) {
+      if (!porTicket.has(row.ticket_id)) porTicket.set(row.ticket_id, []);
+      porTicket.get(row.ticket_id).push(row.texto);
+    }
+
+    const contagem = new Map();
+    for (const textos of porTicket.values()) {
+      const { label } = classificarMotivoConversa(textos);
+      contagem.set(label, (contagem.get(label) || 0) + 1);
+    }
+    const porMotivo = [...contagem.entries()]
+      .map(([label, n]) => ({ label, n }))
+      .sort((a, b) => b.n - a.n);
+
+    res.json({
+      porMotivo,
+      totalClassificados: porTicket.size,
+      semExemploSuficiente: porTicket.size < 20, // aviso na tela: taxonomia ainda não foi calibrada com dados reais
+    });
+  } catch (e) {
+    console.error('[cs] GET /dashboard/motivos falhou:', e);
+    res.status(500).json({ error: 'Falha ao carregar motivos de abertura: ' + e.message });
+  }
+});
+
 /** POST /api/cs/ingerir — dispara a ingestão manualmente (uso: botão "Atualizar agora" / debug). */
 router.post('/ingerir', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -724,6 +804,87 @@ router.post('/insatisfacao-conversas/:mensagemId/tratar', requireAuth, requireAd
   } catch (e) {
     console.error('[cs] POST /insatisfacao-conversas/:mensagemId/tratar falhou:', e);
     res.status(500).json({ error: 'Falha ao marcar como tratado: ' + e.message });
+  }
+});
+
+/**
+ * GET /api/cs/motivos?dias=180 — drill-down por EMPRESA de motivo de
+ * abertura (ver classificarMotivo em slaEngine.js e o comentário de
+ * GET /dashboard/motivos acima, que é a visão operacional agregada). Aqui
+ * agrupa por cliente, pra responder "quais são as dores específicas dessa
+ * empresa" — útil em conversa de conta/renovação. Mesmo padrão de
+ * agrupamento do GET /churn (empresa > detalhes[]).
+ *
+ * Olha uma JANELA de até 5 mensagens do cliente no início de cada ticket
+ * (primeiros 30 minutos após a abertura) em vez de só a 1ª — mesmo ajuste
+ * do /dashboard/motivos, ver classificarMotivoConversa em slaEngine.js.
+ */
+router.get('/motivos', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const dias = Math.max(1, Math.min(365, parseInt(req.query.dias, 10) || 180));
+
+    const { rows } = await pool.query(`
+      WITH primeiras AS (
+        SELECT cm.ticket_id, cm.texto, cm.hora,
+               ROW_NUMBER() OVER (PARTITION BY cm.ticket_id ORDER BY cm.hora ASC) AS rn,
+               ct.zappy_id, ct.empresa_texto, ct.telefone, ct.departamento,
+               ct.abertura, cv.empresa_nome, cv.cnpj, cv.tipo AS vinculo_tipo
+          FROM cs_mensagens cm
+          JOIN cs_tickets ct ON ct.id = cm.ticket_id
+          LEFT JOIN cs_vinculos cv ON cv.id = ct.vinculo_id
+         WHERE cm.remetente = 'cliente'
+           AND ct.abertura >= NOW() - ($1 || ' days')::interval
+           AND cm.texto IS NOT NULL AND cm.texto <> ''
+           AND (ct.abertura IS NULL OR cm.hora <= ct.abertura + INTERVAL '30 minutes')
+      )
+      SELECT * FROM primeiras WHERE rn <= 5 ORDER BY ticket_id, hora ASC
+    `, [dias]);
+
+    // Agrupa as mensagens de cada ticket (janela de abertura) antes de classificar.
+    const porTicket = new Map();
+    for (const row of rows) {
+      if (!porTicket.has(row.ticket_id)) {
+        porTicket.set(row.ticket_id, { meta: row, textos: [] });
+      }
+      porTicket.get(row.ticket_id).textos.push(row.texto);
+    }
+
+    const MAX_DETALHES = 30;
+    const porEmpresa = new Map();
+    for (const { meta, textos } of porTicket.values()) {
+      const { chave, label, trecho, pessoaSolicitada } = classificarMotivoConversa(textos);
+      const empresa = meta.empresa_nome || meta.empresa_texto || '(sem nome identificado)';
+      const chaveEmpresa = meta.empresa_nome || meta.empresa_texto || meta.telefone || meta.ticket_id;
+      if (!porEmpresa.has(chaveEmpresa)) {
+        porEmpresa.set(chaveEmpresa, {
+          empresa, cnpj: meta.cnpj || null, vinculado: meta.vinculo_tipo === 'cliente',
+          totalTickets: 0, porMotivo: {}, detalhes: [],
+        });
+      }
+      const item = porEmpresa.get(chaveEmpresa);
+      item.totalTickets++;
+      item.porMotivo[label] = (item.porMotivo[label] || 0) + 1;
+      if (item.detalhes.length < MAX_DETALHES) {
+        item.detalhes.push({
+          hora: meta.hora, ticket_id: meta.ticket_id, zappy_id: meta.zappy_id,
+          departamento: meta.departamento, motivo: label, motivo_chave: chave,
+          trecho, pessoaSolicitada: pessoaSolicitada || null,
+        });
+      }
+    }
+
+    const data = [...porEmpresa.values()]
+      .map(e => ({
+        ...e,
+        motivoPrincipal: Object.entries(e.porMotivo).sort((a, b) => b[1] - a[1])[0]?.[0] || null,
+      }))
+      .sort((a, b) => b.totalTickets - a.totalTickets);
+
+    res.json({ data, dias, ticketsAnalisados: rows.length });
+  } catch (e) {
+    console.error('[cs] GET /motivos falhou:', e);
+    res.status(500).json({ error: 'Falha ao analisar motivos de abertura: ' + e.message });
   }
 });
 
