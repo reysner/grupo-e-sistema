@@ -372,6 +372,13 @@ const App = (() => {
   const CHART_COLORS = ['#1a4233','#f5c518','#3182ce','#e53e3e','#38a169','#d69e2e','#9b2c2c','#2c7a7b'];
   let _charts = {};
 
+  // Escape de HTML local — o `esc()` usado em Análise Inteligente vive numa
+  // IIFE separada (outro escopo), não dá pra chamar daqui. Mesma lógica.
+  function escDash(s) {
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => map[c]);
+  }
+
   /** Converte minutos (número) em "Xh Ymin" (ou só "Ymin" se < 1h) — pra tooltip de gráfico. */
   function formatarMinutos(min) {
     const n = Math.round(Number(min) || 0);
@@ -572,8 +579,8 @@ const App = (() => {
       tbody.innerHTML = porSubmotivo.map(r => {
         const pct = total ? Math.round((r.n / total) * 100) : 0;
         return `<tr>
-          <td>${esc(r.motivo)}</td>
-          <td style="font-weight:600">${esc(r.submotivo)}</td>
+          <td>${escDash(r.motivo)}</td>
+          <td style="font-weight:600">${escDash(r.submotivo)}</td>
           <td>${r.n} <span style="color:var(--gray-400);font-size:11px">(${pct}%)</span></td>
         </tr>`;
       }).join('');
