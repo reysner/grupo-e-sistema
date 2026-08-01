@@ -1238,8 +1238,10 @@ const App = (() => {
       const users = Admin._users;
       if (!users.length) { App.Toast.err('Nenhum usuário para exportar.'); return; }
       const header = 'Nome;E-mail;Perfil;Status';
+      // Escapa aspas duplas dentro do valor (nome poderia ter, ex.: Empresa "Fulano" Ltda)
+      // — sem isso, um "" no meio do texto quebra as colunas ao abrir no Excel.
       const rows = users.map(u =>
-        `"${u.name}";"${u.email}";"${u.role==='administrador'?'Administrador':'Usuário'}";"${u.ativo!==false?'Ativo':'Inativo'}"`
+        `"${String(u.name??'').replace(/"/g,'""')}";"${String(u.email??'').replace(/"/g,'""')}";"${u.role==='administrador'?'Administrador':'Usuário'}";"${u.ativo!==false?'Ativo':'Inativo'}"`
       );
       const csv = [header, ...rows].join('\n');
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -1972,8 +1974,11 @@ const Log = (() => {
   function exportCSV() {
     if (!_data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
     const header = 'Data/Hora;Usuário;Ação;Módulo;Descrição';
+    // Escapa aspas duplas dentro do valor — user_name/descricao são texto
+    // livre e podem ter "" no meio, o que quebra as colunas no Excel.
+    const esc = function(v) { return String(v == null ? '' : v).replace(/"/g, '""'); };
     const rows = _data.map(function(r) {
-      return '"' + new Date(r.created_at).toLocaleString('pt-BR') + '";"' + r.user_name + '";"' + r.acao + '";"' + r.modulo + '";"' + (r.descricao||'') + '"';
+      return '"' + new Date(r.created_at).toLocaleString('pt-BR') + '";"' + esc(r.user_name) + '";"' + esc(r.acao) + '";"' + esc(r.modulo) + '";"' + esc(r.descricao||'') + '"';
     });
     const csv = [header, ...rows].join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -2198,7 +2203,7 @@ const PesquisasGrid = (() => {
   async function load() {
     const tbody = document.getElementById('ps-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
 
     const headers = {};
     const token = localStorage.getItem('ge_token');
@@ -2391,7 +2396,7 @@ const Pesquisas = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('ps-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
 
     const res = await fetch('/api/data/pesquisas?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
@@ -2559,7 +2564,10 @@ const Pesquisas = (() => {
     App.Util.renderPagination('ps-pagination', pg.page, pg.pages, pg.total, 'Pesquisas.goPage');
   }
 
-  return { loadGrid, exportCSV, exportPDF, limpar, detail, marcarTratado, excluirPesquisa, goPage };
+  // `excluir` (não só `excluirPesquisa`) — o botão de lixeira na grid chama
+  // `Pesquisas.excluir(id)`, mas só `excluirPesquisa` estava exposto aqui,
+  // então o clique não fazia nada (TypeError silencioso no console).
+  return { loadGrid, exportCSV, exportPDF, limpar, detail, marcarTratado, excluirPesquisa, excluir: excluirPesquisa, goPage };
 })();
 
 // Expor globalmente
@@ -2611,7 +2619,7 @@ const Carteira = (() => {
     const tbody = document.getElementById('cart-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum cliente encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum cliente encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(c => {
@@ -2681,12 +2689,12 @@ const Carteira = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('cart-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr>';
     const res = await fetch('/api/data/clientes?status=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e53e3e;padding:32px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#e53e3e;padding:32px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data } = await res.json();
@@ -2769,23 +2777,40 @@ const Carteira = (() => {
     if (!App.Auth.isAdmin()) { App.Toast.err('Acesso restrito a administradores.'); return; }
     const total = _clientes.length;
     if (!total) { App.Toast.err('Não há clientes para remover.'); return; }
+    // Segunda trava além de "ser admin": precisa digitar a frase exata
+    // (o backend também confere isso) — ação zera a Carteira inteira,
+    // um clique errado antes não tinha proteção nenhuma além do backup diário.
+    const FRASE_CONFIRMACAO = 'EXCLUIR TODOS OS CLIENTES';
     const confirmado = await new Promise(resolve => {
       App.Modal.open('⚠️ Confirmar limpeza',
         `<div style="text-align:center;padding:10px 0">
           <p style="font-size:15px;margin-bottom:8px">Você está prestes a <strong>excluir permanentemente</strong></p>
           <p style="font-size:28px;font-weight:800;color:#e53e3e;margin:12px 0">${total} cliente${total!==1?'s':''}</p>
           <p style="color:var(--gray-500);font-size:13px">Todo o histórico de honorários e eventos será perdido.</p>
+          <p style="color:var(--gray-500);font-size:12px;margin-top:14px">Pra confirmar, digite <strong>${FRASE_CONFIRMACAO}</strong> abaixo:</p>
+          <input id="cart-limpar-confirma-input" type="text" autocomplete="off"
+            style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:8px;margin-top:6px;text-align:center;box-sizing:border-box" />
           <div style="display:flex;gap:10px;justify-content:center;margin-top:20px">
             <button class="btn btn-ghost" onclick="App.Modal.close()">Cancelar</button>
             <button class="btn" style="background:#e53e3e;color:#fff;border:none"
               onclick="document.dispatchEvent(new CustomEvent('cart-confirm-limpar'))">Sim, limpar tudo</button>
           </div>
         </div>`, () => resolve(false), { noFooter: true });
-      document.addEventListener('cart-confirm-limpar', () => { App.Modal.close(); resolve(true); }, {once:true});
+      document.addEventListener('cart-confirm-limpar', () => {
+        const digitado = (document.getElementById('cart-limpar-confirma-input')?.value || '').trim();
+        if (digitado !== FRASE_CONFIRMACAO) {
+          App.Toast.err(`Digite exatamente "${FRASE_CONFIRMACAO}" pra confirmar.`);
+          return;
+        }
+        App.Modal.close();
+        resolve(true);
+      }, {once:true});
     });
     if (!confirmado) return;
     const res = await fetch('/api/data/clientes/clear', {
-      method:'DELETE', headers:{'Authorization':`Bearer ${_token()}`}
+      method:'DELETE',
+      headers:{'Authorization':`Bearer ${_token()}`, 'Content-Type':'application/json'},
+      body: JSON.stringify({ confirmar: FRASE_CONFIRMACAO }),
     });
     if (res && res.ok) {
       _clientes=[]; _renderGrid([]); await loadDashboard();
@@ -2913,7 +2938,7 @@ const Atendimento = (() => {
     const tbody = document.getElementById('at-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(r => {
@@ -2936,7 +2961,7 @@ const Atendimento = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('at-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
     const res = await fetch('/api/data/atendimentos?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
@@ -3078,7 +3103,7 @@ const Atendimento = (() => {
     const ano = document.getElementById('at-ano-filter')?.value||'todos';
     const mes = document.getElementById('at-mes-filter')?.value||'todos';
     const titulo = `Atendimento — ${ano==='todos'?'Todos os anos':ano} / ${mes==='todos'?'Todos os meses':mes}`;
-    const rows = data.map(r=>`<tr>${cols.map(c=>{let v=r[c]??'—';if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');return`<td>${v}</td>`;})}</tr>`).join('');
+    const rows = data.map(r=>`<tr>${cols.map(c=>{let v=r[c]??'—';if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');return`<td>${v}</td>`;}).join('')}</tr>`).join('');
     const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
     <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
     h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
@@ -3817,7 +3842,7 @@ const Recuperacao = (() => {
     const ano = document.getElementById('rc-ano-filter')?.value||'todos';
     const mes = document.getElementById('rc-mes-filter')?.value||'todos';
     const titulo = `Recuperação de Experiência — ${ano==='todos'?'Todos os anos':ano} / ${mes==='todos'?'Todos os meses':mes}`;
-    const rows = data.map(r=>`<tr>${cols.map(c=>{let v=r[c]??'—';if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');return`<td>${v}</td>`;})}</tr>`).join('');
+    const rows = data.map(r=>`<tr>${cols.map(c=>{let v=r[c]??'—';if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');return`<td>${v}</td>`;}).join('')}</tr>`).join('');
     const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
     <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
     h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
@@ -3941,7 +3966,7 @@ const Insatisfacao = (() => {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data } = await res.json();
@@ -3983,7 +4008,7 @@ const Insatisfacao = (() => {
     const ano = document.getElementById('in-ano-filter')?.value||'todos';
     const mes = document.getElementById('in-mes-filter')?.value||'todos';
     const titulo = `Insatisfação — ${ano==='todos'?'Todos os anos':ano} / ${mes==='todos'?'Todos os meses':mes}`;
-    const rows = data.map(r=>`<tr>${cols.map(c=>{let v=r[c]??'—';if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');return`<td>${v}</td>`;})}</tr>`).join('');
+    const rows = data.map(r=>`<tr>${cols.map(c=>{let v=r[c]??'—';if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');return`<td>${v}</td>`;}).join('')}</tr>`).join('');
     const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
     <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
     h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
@@ -4079,7 +4104,7 @@ const Sensiveis = (() => {
     const tbody = document.getElementById('cs-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(r => {
@@ -4100,12 +4125,12 @@ const Sensiveis = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('cs-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
     const res = await fetch('/api/data/sensiveis?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data } = await res.json();
@@ -4147,7 +4172,7 @@ const Sensiveis = (() => {
     const ano = document.getElementById('cs-ano-filter')?.value||'todos';
     const mes = document.getElementById('cs-mes-filter')?.value||'todos';
     const titulo = `Clientes Sensíveis — ${ano==='todos'?'Todos os anos':ano} / ${mes==='todos'?'Todos os meses':mes}`;
-    const rows = data.map(r=>`<tr>${cols.map(c=>{let v=r[c]??'—';if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');return`<td>${v}</td>`;})}</tr>`).join('');
+    const rows = data.map(r=>`<tr>${cols.map(c=>{let v=r[c]??'—';if(c==='created_at')v=new Date(v).toLocaleString('pt-BR');return`<td>${v}</td>`;}).join('')}</tr>`).join('');
     const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
     <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
     h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
@@ -4461,6 +4486,10 @@ const CAC = (() => {
   }
 
   async function excluir(id) {
+    // Mesma segunda trava que os outros módulos de exclusão já têm — o
+    // botão só aparece pra admin na tela, mas a função em si não conferia
+    // de novo (quem chamasse CAC.excluir(id) pelo console driblava isso).
+    if (!App.Auth.isAdmin()) { App.Toast.err('Acesso restrito a administradores.'); return; }
     if (!confirm('Excluir este lançamento?')) return;
     const res = await fetch('/api/data/investimentos/' + id, {
       method: 'DELETE',
@@ -4474,7 +4503,10 @@ const CAC = (() => {
     if (!_data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
     const total = _data.reduce((s,r) => s + parseFloat(r.valor||0), 0);
     const header = 'Mês;Canal;Valor;Descrição;Lançado por';
-    const rows = _data.map(r => '"' + _mesLabel(r.mes) + '";"' + r.canal + '";"' + r.valor + '";"' + (r.descricao||'') + '";"' + (r.lancado_por||'') + '"');
+    // Escapa aspas duplas dentro do valor — descricao é texto livre e pode
+    // ter "" no meio, o que quebra as colunas ao abrir no Excel.
+    const esc = v => String(v == null ? '' : v).replace(/"/g, '""');
+    const rows = _data.map(r => '"' + esc(_mesLabel(r.mes)) + '";"' + esc(r.canal) + '";"' + esc(r.valor) + '";"' + esc(r.descricao||'') + '";"' + esc(r.lancado_por||'') + '"');
     const csv = [header, ...rows, ';;Total: R$ ' + total.toLocaleString('pt-BR',{minimumFractionDigits:2})].join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
