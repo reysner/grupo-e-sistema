@@ -360,6 +360,203 @@ function detectarInsatisfacao(texto) {
   return PALAVRAS_INSATISFACAO.find(p => t.includes(p)) || null;
 }
 
+/**
+ * Taxonomia de MOTIVO DE ABERTURA — por que o cliente entrou em contato,
+ * não confundir com `departamento` (fila do Zappy: Fiscal/Financeiro/DP...),
+ * que é routing, não motivo. Pedido da Thais: "quais são as principais
+ * dores dos clientes, por quais motivos somos acionados". Primeira versão
+ * (rascunho meu, baseado no que é comum em escritório de contabilidade) —
+ * é pra AJUSTAR com exemplos reais do Zappy, mesmo processo usado nas
+ * listas de Churn e Insatisfação. Ordem importa: primeira categoria cuja
+ * palavra bater é a escolhida (categorias mais específicas primeiro).
+ */
+const MOTIVOS_ATENDIMENTO = [
+  {
+    // Checado primeiro: padrão bem específico (baixo risco de falso
+    // positivo) e não diz o ASSUNTO — o cliente já tem alguém de
+    // confiança e prefere falar direto com essa pessoa. Casos reais
+    // levantados pela Thais: "Quero falar com o Guilherme" / "...a Ivone"
+    // / "...a Lilian" / "...a Thais". Ver extrairNomeSolicitado abaixo,
+    // que tenta pegar QUEM foi pedido — dá pra ver quem os clientes mais
+    // procuram por nome.
+    chave: 'atendimento_especifico', label: 'Quer Falar com Alguém Específico',
+    palavras: [
+      'quero falar com', 'gostaria de falar com', 'poderia falar com',
+      'preciso falar com', 'preciso conversar com', 'quero conversar com',
+      'gostaria de conversar com', 'pode me passar com', 'me passa com',
+      'falar com o', 'falar com a', 'passar para o', 'passar para a',
+    ],
+  },
+  {
+    chave: 'duvida_fiscal_tributaria', label: 'Dúvida Fiscal/Tributária',
+    palavras: [
+      'duvida sobre imposto', 'duvida tributaria', 'como funciona o imposto',
+      'posso deduzir', 'enquadramento tributario', 'regime tributario',
+      'qual imposto', 'tem que pagar imposto', 'duvida contabil',
+    ],
+  },
+  {
+    chave: 'guias_impostos', label: 'Guias e Impostos',
+    palavras: [
+      'guia de das', 'guia do simples', 'guia errada', 'guia atrasada', 'darf',
+      'das vencido', 'das venceu', 'calculo do imposto', 'valor do imposto',
+      'irpj', 'csll', 'icms', 'iss retido', 'pis cofins',
+      'inss guia', 'gps', 'fgts guia', 'guia de recolhimento', '2 via da guia',
+      'segunda via da guia', 'guia nao chegou', 'nao recebi a guia',
+      'imposto errado', 'valor do das', 'das errado', 'guia do das',
+      'imposto atrasado', 'imposto vencido', 'guia do imposto de renda',
+      'guia veio errada', 'guia veio com valor errado', 'erro na guia',
+      'a guia esta errada', 'guia chegou errada', 'guia com erro',
+      'guia veio com o valor errado',
+    ],
+  },
+  {
+    chave: 'boletos_financeiro', label: 'Boletos e Financeiro',
+    palavras: [
+      'boleto', '2 via do boleto', 'segunda via do boleto', 'nota de honorario',
+      'honorario atrasado', 'honorario em atraso', 'fatura', 'cobranca indevida',
+      'pagamento nao caiu', 'comprovante de pagamento', 'valor cobrado',
+      'desconto no boleto', 'parcelamento do honorario', 'atraso no pagamento',
+      'boleto nao chegou', 'nao recebi o boleto',
+    ],
+  },
+  {
+    chave: 'folha_dp', label: 'Folha de Pagamento / DP',
+    palavras: [
+      'admissao', 'admitir', 'contratacao de funcionario', 'contratar funcionario',
+      'novo funcionario', 'rescisao', 'demissao', 'ferias',
+      'decimo terceiro', '13 salario', 'holerite', 'contracheque',
+      'afastamento do funcionario', 'atestado medico', 'esocial',
+      'fgts do funcionario', 'exame admissional', 'exame demissional',
+      'folha de pagamento', 'vale transporte', 'vale alimentacao',
+    ],
+  },
+  {
+    chave: 'abertura_alteracao_empresa', label: 'Abertura/Alteração de Empresa',
+    palavras: [
+      'abertura de empresa', 'abrir empresa', 'alteracao contratual',
+      'mudanca de endereco da empresa', 'mudar razao social', 'incluir socio',
+      'retirar socio', 'alterar capital social', 'encerramento de empresa',
+      'baixar empresa', 'baixa da empresa', 'mudanca de regime tributario',
+      'enquadramento', 'abrir cnpj', 'segunda empresa', 'nova empresa',
+    ],
+  },
+  {
+    chave: 'certificado_digital', label: 'Certificado Digital',
+    palavras: [
+      'certificado digital', 'certificado vencido', 'certificado venceu',
+      'renovar certificado', 'token vencido', 'e-cnpj', 'e-cpf', 'ecnpj', 'ecpf',
+    ],
+  },
+  {
+    chave: 'documentos_notas', label: 'Documentos e Notas Fiscais',
+    palavras: [
+      'nota fiscal', 'emitir nota', 'cancelar nota', 'nfse', 'nfe', 'xml da nota',
+      'declaracao de imposto de renda', 'balanco', 'balancete',
+      'relatorio contabil', 'extrato', 'contrato social', 'nao consigo emitir',
+    ],
+  },
+  {
+    chave: 'duvida_fiscal_tributaria', label: 'Dúvida Fiscal/Tributária',
+    palavras: [
+      'duvida sobre imposto', 'duvida tributaria', 'como funciona o imposto',
+      'posso deduzir', 'enquadramento tributario', 'regime tributario',
+      'qual imposto', 'tem que pagar imposto', 'duvida contabil',
+    ],
+  },
+  {
+    chave: 'prazos_obrigacoes', label: 'Prazos e Obrigações Acessórias',
+    palavras: [
+      'prazo de entrega', 'obrigacao acessoria', 'sped', 'dctf', 'dirf', 'rais',
+      'caged', 'declaracao vencendo', 'vencimento da declaracao', 'qual o prazo',
+    ],
+  },
+  {
+    chave: 'erros_reclamacoes', label: 'Erros e Reclamações',
+    palavras: [
+      'calculado errado', 'valor errado', 'guia errada de novo', 'erro no calculo',
+      'errado de novo', 'multa por erro', 'reclamacao', 'problema recorrente',
+      'sempre errado', 'de novo errado',
+    ],
+  },
+];
+
+/**
+ * Classifica a mensagem em um motivo de atendimento. Casamento por
+ * substring (mesmo estilo de detectarInsatisfacao) — primeira categoria
+ * que bater vence. Sem correspondência = {chave:'outros', ...} (não é
+ * erro, só significa que essa mensagem não caiu em nenhuma categoria
+ * ainda — sinal de que a lista precisa crescer).
+ */
+function classificarMotivo(texto) {
+  const t = normalizarTexto(texto);
+  if (!t) return { chave: 'outros', label: 'Outros / Não identificado' };
+  for (const cat of MOTIVOS_ATENDIMENTO) {
+    if (cat.palavras.some(p => t.includes(p))) {
+      return { chave: cat.chave, label: cat.label };
+    }
+  }
+  return { chave: 'outros', label: 'Outros / Não identificado' };
+}
+
+/**
+ * Saudações "puras" — mensagens que são SÓ cumprimento, sem nenhum
+ * conteúdo próprio (ex.: "Bom dia", "Oi, tudo bem?"). Em chat é muito
+ * comum a pessoa mandar isso numa mensagem separada e só na próxima (ou
+ * depois) explicar o que precisa — se `classificarMotivo` olhasse só a
+ * 1ª mensagem, ia classificar esses casos como "outros" por engano
+ * (percebido pela Thais: "a primeira mensagem pode ser bom dia").
+ */
+const SAUDACOES_PURAS = [
+  'bom dia', 'boa tarde', 'boa noite', 'ola', 'oi', 'oii', 'oie', 'opa',
+  'eae', 'e ai', 'tudo bem', 'tudo bom', 'ola tudo bem', 'ola tudo bom',
+];
+
+/** true se o texto, tirando pontuação, não passa de uma saudação — sem pedido/assunto nenhum. */
+function ehSaudacaoPura(texto) {
+  let t = normalizarTexto(texto).replace(/[!?.,;]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!t) return true;
+  for (const s of SAUDACOES_PURAS) {
+    if (t === s) return true;
+    if (t.startsWith(s + ' ')) t = t.slice(s.length).trim();
+  }
+  return t.length === 0;
+}
+
+/**
+ * Classifica o MOTIVO DE ABERTURA olhando uma JANELA de mensagens do
+ * cliente no início do ticket (não só a primeira) — descarta as que são
+ * saudação pura antes de concatenar e classificar (a não ser que sobre só
+ * saudação na janela toda, aí usa tudo mesmo, pra não ficar sem texto).
+ * `textos` = array de strings, já na ordem cronológica (mais antiga primeiro).
+ */
+function classificarMotivoConversa(textos) {
+  const lista = (textos || []).filter(t => t && String(t).trim());
+  const substanciais = lista.filter(t => !ehSaudacaoPura(t));
+  const usar = substanciais.length ? substanciais : lista;
+  const combinado = usar.join(' ').slice(0, 800);
+  return { ...classificarMotivo(combinado), trecho: combinado, pessoaSolicitada: extrairNomeSolicitado(combinado) };
+}
+
+/**
+ * Tenta extrair o NOME de quem o cliente pediu pra falar (ex.: "quero
+ * falar com o Guilherme" -> "Guilherme"). Não decide a categoria sozinho
+ * (fica disponível à parte, mesmo quando o motivo real é outro — ex.:
+ * "minha guia veio errada, pode chamar o Guilherme?" continua caindo em
+ * Guias e Impostos, só que agora com o nome anexado) — serve pra ver
+ * quem os clientes mais procuram por nome, sinal de relação de confiança.
+ */
+function extrairNomeSolicitado(texto) {
+  const t = normalizarTexto(texto);
+  const m = t.match(/(?:falar|conversar|passar)\s+(?:com|para)\s+(?:o|a)?\s*([a-z]{2,})/);
+  if (!m) return null;
+  const nome = m[1];
+  const IGNORAR = ['favor', 'gentileza', 'voces', 'vc', 'vcs', 'ele', 'ela', 'alguem',
+    'responsavel', 'setor', 'financeiro', 'fiscal', 'suporte', 'atendente', 'equipe', 'time'];
+  if (IGNORAR.includes(nome)) return null;
+  return nome.charAt(0).toUpperCase() + nome.slice(1);
+}
+
 /** Ordena por hora (ascendente), tolerando Date ou ISO string */
 function ordenarPorHora(arr) {
   return [...arr].sort((a, b) => new Date(a.hora) - new Date(b.hora));
@@ -616,4 +813,6 @@ module.exports = {
   pareceAguardandoCliente, FRASES_AGUARDANDO_CLIENTE,
   detectarSinalChurn, FRASES_CHURN,
   detectarInsatisfacao, PALAVRAS_INSATISFACAO,
+  classificarMotivo, MOTIVOS_ATENDIMENTO,
+  classificarMotivoConversa, ehSaudacaoPura, SAUDACOES_PURAS, extrairNomeSolicitado,
 };
