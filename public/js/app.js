@@ -511,9 +511,10 @@ const App = (() => {
       try {
         const qs = new URLSearchParams({ period: period || 'todos' });
         if (analista) qs.set('analista', analista);
-        const [res, resEtapas] = await Promise.all([
+        const [res, resEtapas, resMotivos] = await Promise.all([
           API.get(`/api/cs/dashboard?${qs.toString()}`),
           API.get(`/api/cs/dashboard/etapas?${qs.toString()}`),
+          API.get(`/api/cs/dashboard/motivos?${qs.toString()}`),
         ]);
         if (res && res.ok) {
           const d = await res.json();
@@ -527,6 +528,10 @@ const App = (() => {
           Dashboard.renderChartEtapas(dE.porEtapa || []);
           Dashboard.renderChartAnalistaDepartamento(dE.porAnalistaDepartamento || []);
           Dashboard.renderChartAnalistaRespostaContinua(dE.porAnalistaRespostaContinua || []);
+        }
+        if (resMotivos && resMotivos.ok) {
+          const dM = await resMotivos.json();
+          Dashboard.renderChart('cs-dash-motivos', 'bar', dM.porMotivo || [], 'Motivo', { indexAxis: 'y' });
         }
       } catch (e) {
         console.error('[Dashboard] carregarSucessoCliente()', e);
@@ -5913,6 +5918,7 @@ window.Tickets = Tickets;
       AnaliseInteligente.carregarChurnConversas();
       AnaliseInteligente.carregarInsatisfacaoConversas();
       AnaliseInteligente.carregarAfastamento();
+      AnaliseInteligente.carregarMotivosCliente();
       AnaliseInteligente.carregarTratados();
     },
 
@@ -6130,6 +6136,75 @@ window.Tickets = Tickets;
       } catch (e) {
         if (window.App && App.Toast) App.Toast.err('Não foi possível marcar como tratado.');
       }
+    },
+
+    /**
+     * "Motivos de Abertura por Cliente" — pra cada empresa, o motivo
+     * principal (mais frequente) dos tickets dos últimos 180 dias, com
+     * expand pra ver a lista detalhada. Mesmo padrão de agrupamento do
+     * Possíveis Churns (empresa > detalhes[]).
+     */
+    async carregarMotivosCliente() {
+      const tbody = document.getElementById('motivos-cliente-tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--gray-400)">Carregando...</td></tr>';
+      try {
+        const res = await fetch('/api/cs/motivos?dias=180', { headers: authHeaders() });
+        if (!res.ok) throw new Error('Falha ao buscar.');
+        const { data } = await res.json();
+        AnaliseInteligente._motivosData = data || [];
+        if (!data || !data.length) {
+          tbody.innerHTML = '<tr><td colspan="4" style="color:var(--gray-400)">Nenhum ticket classificado nos últimos 180 dias.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data.map((c, idx) => {
+          const nomeVinculo = c.vinculado
+            ? esc(c.empresa)
+            : `${esc(c.empresa)} <span style="color:var(--gray-400);font-size:11px">(não vinculado)</span>`;
+          return `<tr id="motivo-row-${idx}">
+            <td style="font-weight:600">${nomeVinculo}</td>
+            <td>${c.totalTickets}</td>
+            <td style="font-size:12px"><span style="background:var(--g100);color:var(--g700);padding:2px 8px;border-radius:10px;font-weight:600">${esc(c.motivoPrincipal || '—')}</span></td>
+            <td><a href="#" onclick="AnaliseInteligente.toggleMotivoDetalhe(${idx});return false" style="cursor:pointer;text-decoration:underline;font-weight:600">Ver tickets <span id="motivo-seta-${idx}">▾</span></a></td>
+          </tr>`;
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--danger)">Não foi possível analisar os motivos agora.</td></tr>';
+      }
+    },
+
+    /** Expande/recolhe a lista de tickets (motivo + trecho) de uma empresa. */
+    toggleMotivoDetalhe(idx) {
+      const row = document.getElementById(`motivo-row-${idx}`);
+      if (!row) return;
+      const existente = document.getElementById(`motivo-detalhe-${idx}`);
+      const seta = document.getElementById(`motivo-seta-${idx}`);
+      if (existente) {
+        existente.remove();
+        if (seta) seta.textContent = '▾';
+        return;
+      }
+      if (seta) seta.textContent = '▴';
+      const item = (AnaliseInteligente._motivosData || [])[idx];
+      const detalhes = (item && item.detalhes) || [];
+      const linhas = detalhes.map(d => {
+        const dt = new Date(d.hora).toLocaleString('pt-BR');
+        const pessoa = d.pessoaSolicitada
+          ? ` <span style="background:var(--g100);color:var(--g700);padding:1px 6px;border-radius:8px;font-size:11px">pediu: ${esc(d.pessoaSolicitada)}</span>`
+          : '';
+        return `<div style="padding:8px 0;border-bottom:1px solid var(--gray-100)">
+          <div style="font-size:12px;color:var(--gray-500)">${dt} — Ticket ${d.zappy_id ? '#' + esc(d.zappy_id) : '—'} — ${esc(d.departamento || '—')}</div>
+          <div style="font-size:13px;color:var(--gray-700)"><strong>${esc(d.motivo)}</strong>${pessoa} — ${esc(d.trecho || '')}</div>
+        </div>`;
+      }).join('') || '<p style="color:var(--gray-400);font-size:13px">Sem detalhes disponíveis.</p>';
+      const resumoMotivos = Object.entries(item?.porMotivo || {})
+        .sort((a, b) => b[1] - a[1])
+        .map(([m, n]) => `${esc(m)}: ${n}`).join(' · ');
+      const html = `<tr id="motivo-detalhe-${idx}"><td colspan="4" style="background:var(--gray-50);padding:10px 16px">
+        <div style="font-size:12px;font-weight:600;color:var(--gray-600);margin-bottom:6px">Resumo: ${resumoMotivos}</div>
+        ${linhas}
+      </td></tr>`;
+      row.insertAdjacentHTML('afterend', html);
     },
 
     /**
