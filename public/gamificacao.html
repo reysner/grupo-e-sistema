@@ -165,7 +165,7 @@
       </div>
     </div>
 
-    <div class="consolidado-card">
+    <div class="consolidado-card" id="consolidado-card">
       <div class="consolidado-header">
         <h2>📊 Consolidado Geral</h2>
         <span class="consolidado-sub" id="inicio-label"></span>
@@ -215,6 +215,14 @@
 
         renderMes(data);
         renderConsolidado(data);
+
+        // Card "Consolidado Geral" pode ser ocultado pelo painel interno da
+        // Gamificação (pedido da Thais: "ligo e desligo no painel interno,
+        // somente para o consolidado geral") — quando desligado, a API já
+        // vem com mostrarConsolidado:false; some o card inteiro em vez de
+        // só deixar a lista vazia (evita a mensagem confusa "Sem dados").
+        const consolidadoCard = document.getElementById('consolidado-card');
+        if (consolidadoCard) consolidadoCard.style.display = data.mostrarConsolidado === false ? 'none' : '';
 
         if (data.inicioGamificacao) {
           document.getElementById('inicio-label').textContent = 'Desde ' + fmtMesLabel(data.inicioGamificacao);
