@@ -533,9 +533,15 @@ const App = (() => {
           const dM = await resMotivos.json();
           Dashboard.renderChart('cs-dash-motivos', 'bar', dM.porMotivo || [], 'Motivo', { indexAxis: 'y' });
           Dashboard.renderTabelaSubmotivos(dM.porSubmotivo || []);
+        } else {
+          // Sem isso, a tabela ficava presa em "Carregando..." pra sempre
+          // quando o endpoint falhasse (nunca virava erro visível) — pedido
+          // da Thais ao ver a tela travada: "está normal isso só carregando?".
+          Dashboard._erroTabelaSubmotivos();
         }
       } catch (e) {
         console.error('[Dashboard] carregarSucessoCliente()', e);
+        Dashboard._erroTabelaSubmotivos();
       }
     },
 
@@ -550,6 +556,10 @@ const App = (() => {
      * de recálculo de guia" batendo o olho, com exportação em CSV.
      */
     _submotivosData: [],
+    _erroTabelaSubmotivos() {
+      const tbody = document.getElementById('cs-dash-submotivos-tbody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="3" style="color:var(--danger)">Não foi possível carregar. Tente atualizar a página.</td></tr>';
+    },
     renderTabelaSubmotivos(porSubmotivo) {
       Dashboard._submotivosData = porSubmotivo || [];
       const tbody = document.getElementById('cs-dash-submotivos-tbody');
@@ -6376,6 +6386,9 @@ window.Tickets = Tickets;
         }
       } catch (e) {
         tbody.innerHTML = '<tr><td colspan="5" style="color:var(--danger)">Não foi possível analisar os motivos agora.</td></tr>';
+        // Sem isso, essa tabela também ficava presa em "Carregando..." pra
+        // sempre quando a busca falhasse (mesmo problema do Dashboard).
+        if (submotivosTbody) submotivosTbody.innerHTML = '<tr><td colspan="3" style="color:var(--danger)">Não foi possível carregar. Tente atualizar a página.</td></tr>';
       }
     },
 
