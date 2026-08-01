@@ -494,6 +494,17 @@ router.get('/dashboard/etapas', requireAuth, async (req, res) => {
  * tempo — é por QUANTIDADE de mensagens do cliente, não por quanto tempo
  * passou. Ver classificarMotivoConversa em slaEngine.js, que descarta
  * saudações puras da janela antes de classificar.
+ *
+ * Além do ranking por MOTIVO (categoria ampla), devolve também `porSubmotivo`
+ * — a solicitação específica dentro de cada motivo (ex.: dentro de "Guias e
+ * Impostos": "Recálculo/Correção de Guia", "2ª Via de Guia" etc.). Pedido
+ * direto da Thais, ao ver o painel: "sempre há um pedido, uma solicitação...
+ * o que de fato foi a solicitação do cliente? Tente agrupar as mesmas
+ * solicitações... cliente quer recálculo de guias, cada um pede de um
+ * jeito". `porSubmotivo` é esse agrupamento — é o "relatório" que ela pediu
+ * pra enxergar, por exemplo, "43 pedidos de recálculo de guia" batendo o
+ * olho, em vez de várias linhas soltas de "Guias e Impostos" sem saber o
+ * que, de fato, cada uma queria.
  */
 router.get('/dashboard/motivos', requireAuth, async (req, res) => {
   try {
@@ -535,16 +546,28 @@ router.get('/dashboard/motivos', requireAuth, async (req, res) => {
     }
 
     const contagem = new Map();
+    const contagemSub = new Map(); // chave: "motivoLabel|||submotivoLabel"
     for (const textos of porTicket.values()) {
-      const { label } = classificarMotivoConversa(textos);
-      contagem.set(label, (contagem.get(label) || 0) + 1);
+      const r = classificarMotivoConversa(textos);
+      contagem.set(r.label, (contagem.get(r.label) || 0) + 1);
+      if (r.submotivoLabel) {
+        const chaveSub = `${r.label}|||${r.submotivoLabel}`;
+        contagemSub.set(chaveSub, (contagemSub.get(chaveSub) || 0) + 1);
+      }
     }
     const porMotivo = [...contagem.entries()]
       .map(([label, n]) => ({ label, n }))
       .sort((a, b) => b.n - a.n);
+    const porSubmotivo = [...contagemSub.entries()]
+      .map(([chave, n]) => {
+        const [motivo, submotivo] = chave.split('|||');
+        return { motivo, submotivo, n };
+      })
+      .sort((a, b) => b.n - a.n);
 
     res.json({
       porMotivo,
+      porSubmotivo,
       totalClassificados: porTicket.size,
       semExemploSuficiente: porTicket.size < 20, // aviso na tela: taxonomia ainda não foi calibrada com dados reais
     });
@@ -819,6 +842,12 @@ router.post('/insatisfacao-conversas/:mensagemId/tratar', requireAuth, requireAd
  * Olha uma JANELA de até 10 mensagens do cliente no início de cada ticket
  * (por QUANTIDADE, sem limite de tempo) em vez de só a 1ª — mesmo ajuste
  * do /dashboard/motivos, ver classificarMotivoConversa em slaEngine.js.
+ *
+ * Cada ticket em `detalhes` e o ranking em `resumo.porSubmotivoGeral` agora
+ * também trazem o SUBMOTIVO (a solicitação específica, ex.: "Recálculo de
+ * Guia" dentro de "Guias e Impostos") — pedido da Thais pra ver o pedido de
+ * verdade por trás de cada contato, e agrupar quem pede a mesma coisa de
+ * jeitos diferentes. Ver comentário completo em GET /dashboard/motivos.
  */
 router.get('/motivos', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -853,10 +882,15 @@ router.get('/motivos', requireAuth, requireAdmin, async (req, res) => {
     const MAX_DETALHES = 30;
     const porEmpresa = new Map();
     const porMotivoGeral = new Map();
+    const porSubmotivoGeral = new Map(); // chave: "motivoLabel|||submotivoLabel"
     const textosOutros = [];
     for (const { meta, textos } of porTicket.values()) {
-      const { chave, label, trecho, pessoaSolicitada } = classificarMotivoConversa(textos);
+      const { chave, label, submotivoChave, submotivoLabel, trecho, pessoaSolicitada } = classificarMotivoConversa(textos);
       porMotivoGeral.set(label, (porMotivoGeral.get(label) || 0) + 1);
+      if (submotivoLabel) {
+        const chaveSub = `${label}|||${submotivoLabel}`;
+        porSubmotivoGeral.set(chaveSub, (porSubmotivoGeral.get(chaveSub) || 0) + 1);
+      }
       if (chave === 'outros') textosOutros.push(trecho);
 
       const empresa = meta.empresa_nome || meta.empresa_texto || '(sem nome identificado)';
@@ -874,6 +908,7 @@ router.get('/motivos', requireAuth, requireAdmin, async (req, res) => {
         item.detalhes.push({
           hora: meta.hora, ticket_id: meta.ticket_id, zappy_id: meta.zappy_id,
           departamento: meta.departamento, motivo: label, motivo_chave: chave,
+          submotivo: submotivoLabel || null, submotivo_chave: submotivoChave || null,
           trecho, pessoaSolicitada: pessoaSolicitada || null,
         });
       }
@@ -891,6 +926,12 @@ router.get('/motivos', requireAuth, requireAdmin, async (req, res) => {
     const porMotivoGeralArr = [...porMotivoGeral.entries()]
       .map(([label, n]) => ({ label, n }))
       .sort((a, b) => b.n - a.n);
+    const porSubmotivoGeralArr = [...porSubmotivoGeral.entries()]
+      .map(([chave, n]) => {
+        const [motivo, submotivo] = chave.split('|||');
+        return { motivo, submotivo, n };
+      })
+      .sort((a, b) => b.n - a.n);
 
     res.json({
       data,
@@ -899,6 +940,7 @@ router.get('/motivos', requireAuth, requireAdmin, async (req, res) => {
       resumo: {
         totalTickets,
         porMotivoGeral: porMotivoGeralArr,
+        porSubmotivoGeral: porSubmotivoGeralArr,
         motivoTop: porMotivoGeralArr.find(m => m.label !== 'Outros / Não identificado') || porMotivoGeralArr[0] || null,
         percentOutros: totalTickets ? Math.round((nOutros / totalTickets) * 100) : 0,
       },
