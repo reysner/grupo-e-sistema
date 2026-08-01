@@ -532,10 +532,54 @@ const App = (() => {
         if (resMotivos && resMotivos.ok) {
           const dM = await resMotivos.json();
           Dashboard.renderChart('cs-dash-motivos', 'bar', dM.porMotivo || [], 'Motivo', { indexAxis: 'y' });
+          Dashboard.renderTabelaSubmotivos(dM.porSubmotivo || []);
         }
       } catch (e) {
         console.error('[Dashboard] carregarSucessoCliente()', e);
       }
+    },
+
+    /**
+     * Tabela "Detalhamento das solicitações" — o SUBMOTIVO (pedido
+     * específico dentro de cada motivo, ex.: "Recálculo de Guia" dentro de
+     * "Guias e Impostos") ranqueado por quantidade. Pedido direto da Thais
+     * ao ver o gráfico com 63% em "Outros": "sempre há um pedido, uma
+     * solicitação... o que de fato foi a solicitação do cliente? Tente
+     * agrupar as mesmas solicitações". Esta tabela é o "relatório sobre
+     * essas situações" que ela pediu — dá pra ver, por exemplo, "43 pedidos
+     * de recálculo de guia" batendo o olho, com exportação em CSV.
+     */
+    _submotivosData: [],
+    renderTabelaSubmotivos(porSubmotivo) {
+      Dashboard._submotivosData = porSubmotivo || [];
+      const tbody = document.getElementById('cs-dash-submotivos-tbody');
+      if (!tbody) return;
+      if (!porSubmotivo || !porSubmotivo.length) {
+        tbody.innerHTML = '<tr><td colspan="3" style="color:var(--gray-400)">Nenhuma solicitação específica identificada ainda.</td></tr>';
+        return;
+      }
+      const total = porSubmotivo.reduce((s, r) => s + r.n, 0);
+      tbody.innerHTML = porSubmotivo.map(r => {
+        const pct = total ? Math.round((r.n / total) * 100) : 0;
+        return `<tr>
+          <td>${esc(r.motivo)}</td>
+          <td style="font-weight:600">${esc(r.submotivo)}</td>
+          <td>${r.n} <span style="color:var(--gray-400);font-size:11px">(${pct}%)</span></td>
+        </tr>`;
+      }).join('');
+    },
+    exportSubmotivosCSV() {
+      const dados = Dashboard._submotivosData || [];
+      if (!dados.length) { App.Toast.err('Nada para exportar ainda.'); return; }
+      const escCsv = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const linhas = [['Motivo', 'Solicitação Específica', 'Quantidade'].map(escCsv).join(',')];
+      dados.forEach(r => linhas.push([r.motivo, r.submotivo, r.n].map(escCsv).join(',')));
+      const blob = new Blob(['﻿' + linhas.join('\n')], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `detalhamento_solicitacoes_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
     },
 
     /**
@@ -6176,14 +6220,15 @@ window.Tickets = Tickets;
     // bate o olho e não dá pra analisar os insights estratégicos").
     _CORES_MOTIVO: {
       'Guias e Impostos': '#3b82f6',
-      'Boletos e Financeiro': '#10b981',
+      'Boletos e Honorários': '#10b981',
       'Folha de Pagamento / DP': '#8b5cf6',
-      'Abertura/Alteração de Empresa': '#f59e0b',
+      'Notas Fiscais': '#0ea5e9',
+      'Documentos e Declarações': '#6366f1',
+      'Abertura/Alteração/Baixa de Empresa': '#f59e0b',
       'Certificado Digital': '#ec4899',
-      'Documentos e Notas Fiscais': '#6366f1',
-      'Dúvida Fiscal/Tributária': '#06b6d4',
       'Prazos e Obrigações Acessórias': '#d97706',
-      'Erros e Reclamações': '#ef4444',
+      'Dúvida Fiscal/Tributária': '#06b6d4',
+      'Erros e Reclamações Operacionais': '#ef4444',
       'Quer Falar com Alguém Específico': '#78716c',
       'Outros / Não identificado': '#cbd5e0',
     },
@@ -6200,16 +6245,40 @@ window.Tickets = Tickets;
       const resumoEl = document.getElementById('motivos-resumo');
       const legendaEl = document.getElementById('motivos-legenda');
       const palavrasEl = document.getElementById('motivos-palavras-outros');
+      const submotivosTbody = document.getElementById('motivos-submotivos-tbody');
       if (!tbody) return;
       tbody.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400)">Carregando...</td></tr>';
       if (resumoEl) resumoEl.innerHTML = '';
       if (legendaEl) legendaEl.innerHTML = '';
       if (palavrasEl) palavrasEl.innerHTML = '';
+      if (submotivosTbody) submotivosTbody.innerHTML = '<tr><td colspan="3" style="color:var(--gray-400)">Carregando...</td></tr>';
       try {
         const res = await fetch('/api/cs/motivos?dias=180', { headers: authHeaders() });
         if (!res.ok) throw new Error('Falha ao buscar.');
         const { data, resumo, palavrasNaoClassificadas } = await res.json();
         AnaliseInteligente._motivosData = data || [];
+        AnaliseInteligente._submotivosData = (resumo && resumo.porSubmotivoGeral) || [];
+
+        // ── "O que de fato foi pedido" — ranking de solicitações específicas ──
+        // Pedido direto da Thais: "sempre há um pedido, uma solicitação... o
+        // que de fato foi a solicitação do cliente? Tente agrupar as mesmas
+        // solicitações". Esse é o relatório que ela pediu, com export CSV.
+        if (submotivosTbody) {
+          const subs = AnaliseInteligente._submotivosData;
+          if (!subs.length) {
+            submotivosTbody.innerHTML = '<tr><td colspan="3" style="color:var(--gray-400)">Nenhuma solicitação específica identificada ainda.</td></tr>';
+          } else {
+            const totalSub = subs.reduce((s, r) => s + r.n, 0);
+            submotivosTbody.innerHTML = subs.map(r => {
+              const pct = totalSub ? Math.round((r.n / totalSub) * 100) : 0;
+              return `<tr>
+                <td><span style="width:9px;height:9px;border-radius:2px;background:${AnaliseInteligente._corMotivo(r.motivo)};display:inline-block;margin-right:6px"></span>${esc(r.motivo)}</td>
+                <td style="font-weight:600">${esc(r.submotivo)}</td>
+                <td>${r.n} <span style="color:var(--gray-400);font-size:11px">(${pct}%)</span></td>
+              </tr>`;
+            }).join('');
+          }
+        }
 
         // ── Resumo executivo ──────────────────────────────────────────────
         if (resumoEl && resumo) {
@@ -6275,6 +6344,21 @@ window.Tickets = Tickets;
       }
     },
 
+    /** Exporta o ranking de solicitações específicas (motivo + submotivo) em CSV — o "relatório sobre essas situações" pedido pela Thais. */
+    exportSubmotivosCSV() {
+      const dados = AnaliseInteligente._submotivosData || [];
+      if (!dados.length) { App.Toast.err('Nada para exportar ainda.'); return; }
+      const escCsv = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const linhas = [['Motivo', 'Solicitação Específica', 'Quantidade'].map(escCsv).join(',')];
+      dados.forEach(r => linhas.push([r.motivo, r.submotivo, r.n].map(escCsv).join(',')));
+      const blob = new Blob(['﻿' + linhas.join('\n')], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `solicitacoes_por_cliente_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    },
+
     /** Expande/recolhe a lista de tickets (motivo + trecho) de uma empresa. */
     toggleMotivoDetalhe(idx) {
       const row = document.getElementById(`motivo-row-${idx}`);
@@ -6294,9 +6378,13 @@ window.Tickets = Tickets;
         const pessoa = d.pessoaSolicitada
           ? ` <span style="background:var(--g100);color:var(--g700);padding:1px 6px;border-radius:8px;font-size:11px">pediu: ${esc(d.pessoaSolicitada)}</span>`
           : '';
+        // Motivo → Submotivo: pedido da Thais pra ver A SOLICITAÇÃO ESPECÍFICA
+        // (ex.: "Guias e Impostos → Recálculo/Correção de Guia"), não só a
+        // categoria ampla — "o que de fato foi a solicitação do cliente?".
+        const motivoTexto = d.submotivo ? `${esc(d.motivo)} → ${esc(d.submotivo)}` : esc(d.motivo);
         return `<div style="padding:8px 0;border-bottom:1px solid var(--gray-100)">
           <div style="font-size:12px;color:var(--gray-500)">${dt} — Ticket ${d.zappy_id ? '#' + esc(d.zappy_id) : '—'} — ${esc(d.departamento || '—')}</div>
-          <div style="font-size:13px;color:var(--gray-700)"><strong>${esc(d.motivo)}</strong>${pessoa} — ${esc(d.trecho || '')}</div>
+          <div style="font-size:13px;color:var(--gray-700)"><strong>${motivoTexto}</strong>${pessoa} — ${esc(d.trecho || '')}</div>
         </div>`;
       }).join('') || '<p style="color:var(--gray-400);font-size:13px">Sem detalhes disponíveis.</p>';
       const resumoMotivos = Object.entries(item?.porMotivo || {})
