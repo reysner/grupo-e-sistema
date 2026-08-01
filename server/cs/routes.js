@@ -32,7 +32,7 @@ const { obterPool } = require('./pool');
 const { ingerirTickets, executarCargaRetroativa, recalcularSlaTodos } = require('./ingestao');
 const { criarClienteZappy } = require('./zappyClient');
 const { listarPendentes, confirmarVinculo } = require('./vinculos');
-const { detectarSinalChurn, detectarInsatisfacao, classificarMotivoConversa } = require('./slaEngine');
+const { detectarSinalChurn, detectarInsatisfacao, classificarMotivoConversa, palavrasFrequentes } = require('./slaEngine');
 
 // Trava simples pra não deixar disparar 2 backfills ao mesmo tempo (ex.: duplo clique).
 let backfillEmAndamento = false;
@@ -852,8 +852,13 @@ router.get('/motivos', requireAuth, requireAdmin, async (req, res) => {
 
     const MAX_DETALHES = 30;
     const porEmpresa = new Map();
+    const porMotivoGeral = new Map();
+    const textosOutros = [];
     for (const { meta, textos } of porTicket.values()) {
       const { chave, label, trecho, pessoaSolicitada } = classificarMotivoConversa(textos);
+      porMotivoGeral.set(label, (porMotivoGeral.get(label) || 0) + 1);
+      if (chave === 'outros') textosOutros.push(trecho);
+
       const empresa = meta.empresa_nome || meta.empresa_texto || '(sem nome identificado)';
       const chaveEmpresa = meta.empresa_nome || meta.empresa_texto || meta.telefone || meta.ticket_id;
       if (!porEmpresa.has(chaveEmpresa)) {
@@ -881,7 +886,27 @@ router.get('/motivos', requireAuth, requireAdmin, async (req, res) => {
       }))
       .sort((a, b) => b.totalTickets - a.totalTickets);
 
-    res.json({ data, dias, ticketsAnalisados: rows.length });
+    const totalTickets = porTicket.size;
+    const nOutros = porMotivoGeral.get('Outros / Não identificado') || 0;
+    const porMotivoGeralArr = [...porMotivoGeral.entries()]
+      .map(([label, n]) => ({ label, n }))
+      .sort((a, b) => b.n - a.n);
+
+    res.json({
+      data,
+      dias,
+      ticketsAnalisados: rows.length,
+      resumo: {
+        totalTickets,
+        porMotivoGeral: porMotivoGeralArr,
+        motivoTop: porMotivoGeralArr.find(m => m.label !== 'Outros / Não identificado') || porMotivoGeralArr[0] || null,
+        percentOutros: totalTickets ? Math.round((nOutros / totalTickets) * 100) : 0,
+      },
+      // Palavras que mais aparecem nos tickets caídos em "Outros" — pra
+      // calibrar a lista de palavras-chave sem precisar ler ticket a ticket
+      // (pedido da Thais: "preciso entrar e analisar ticket a ticket").
+      palavrasNaoClassificadas: palavrasFrequentes(textosOutros, { topN: 20 }),
+    });
   } catch (e) {
     console.error('[cs] GET /motivos falhou:', e);
     res.status(500).json({ error: 'Falha ao analisar motivos de abertura: ' + e.message });
