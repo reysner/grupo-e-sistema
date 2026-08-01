@@ -1477,9 +1477,16 @@ publicRouter.get('/gamificacao', async (req, res) => {
       chave TEXT PRIMARY KEY, valor NUMERIC(6,2) NOT NULL
     )`).catch(()=>{});
     await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('peso_minimo', 10) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
+    await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('mostrar_consolidado', 1) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
 
     const pesoR = await pool.query(`SELECT valor FROM gam_config WHERE chave = 'peso_minimo'`);
     const pesoMinimo = pesoR.rows[0] ? parseFloat(pesoR.rows[0].valor) : 10;
+
+    // Liga/desliga o card "Consolidado Geral" na página pública, controlado
+    // pelo painel interno da Gamificação (pedido da Thais). Desligado, pula
+    // o cálculo inteiro (evita recalcular nota final mês a mês à toa).
+    const mostrarR = await pool.query(`SELECT valor FROM gam_config WHERE chave = 'mostrar_consolidado'`);
+    const mostrarConsolidado = mostrarR.rows[0] ? parseFloat(mostrarR.rows[0].valor) !== 0 : true;
 
     // Determina o mês a usar: se não veio na query, usa o ÚLTIMO mês com notas lançadas
     let { mes } = req.query;
@@ -1541,59 +1548,63 @@ publicRouter.get('/gamificacao', async (req, res) => {
 
     // ── Consolidado acumulado: média das notas finais mensais por colaborador ──
     // Para cada mês, recalcula as notas finais com a mesma fórmula do ranking mensal
-    // e depois tira a média simples dessas notas finais ao longo dos meses
+    // e depois tira a média simples dessas notas finais ao longo dos meses.
+    // Pulado inteiro quando `mostrar_consolidado` está desligado (painel interno
+    // da Gamificação) — nem faz sentido gastar as N queries por mês à toa.
+    let consolidado = [];
+    if (mostrarConsolidado) {
+      // Busca todos os meses disponíveis
+      const mesesDisp = await pool.query(`SELECT DISTINCT mes FROM gam_notas ORDER BY mes ASC`);
+      const todosMeses = mesesDisp.rows.map(r => r.mes);
 
-    // Busca todos os meses disponíveis
-    const mesesDisp = await pool.query(`SELECT DISTINCT mes FROM gam_notas ORDER BY mes ASC`);
-    const todosMeses = mesesDisp.rows.map(r => r.mes);
+      // Para cada mês, calcula a nota final de cada colaborador (mesma lógica do ranking mensal)
+      const notasFinalPorMes = {}; // { colaborador_id: [nota_final_mes1, nota_final_mes2, ...] }
+      const nomesPorId = {};
 
-    // Para cada mês, calcula a nota final de cada colaborador (mesma lógica do ranking mensal)
-    const notasFinalPorMes = {}; // { colaborador_id: [nota_final_mes1, nota_final_mes2, ...] }
-    const nomesPorId = {};
+      for (const mes of todosMeses) {
+        const dadosMesC = await pool.query(`
+          SELECT c.id, c.nome, n.media_individual, n.avaliacoes
+          FROM gam_notas n
+          JOIN gam_colaboradores c ON c.id = n.colaborador_id
+          WHERE n.mes = $1 AND c.ativo = true
+        `, [mes]);
 
-    for (const mes of todosMeses) {
-      const dadosMesC = await pool.query(`
-        SELECT c.id, c.nome, n.media_individual, n.avaliacoes
-        FROM gam_notas n
-        JOIN gam_colaboradores c ON c.id = n.colaborador_id
-        WHERE n.mes = $1 AND c.ativo = true
-      `, [mes]);
+        const comAvalC = dadosMesC.rows.filter(r => parseInt(r.avaliacoes) > 0);
+        const mediasC = comAvalC.map(r => parseFloat(r.media_individual));
+        const mediaGeralC = mediasC.length ? mediasC.reduce((s,m) => s+m, 0) / mediasC.length : 0;
 
-      const comAvalC = dadosMesC.rows.filter(r => parseInt(r.avaliacoes) > 0);
-      const mediasC = comAvalC.map(r => parseFloat(r.media_individual));
-      const mediaGeralC = mediasC.length ? mediasC.reduce((s,m) => s+m, 0) / mediasC.length : 0;
+        // Calcula nota final de quem tem avaliações
+        const notasC = comAvalC.map(r => {
+          const mi = parseFloat(r.media_individual);
+          const av = parseInt(r.avaliacoes);
+          return { id: r.id, nome: r.nome, nf: ((mi*av)+(mediaGeralC*pesoMinimo))/(av+pesoMinimo) };
+        });
+        const menorC = notasC.length ? Math.min(...notasC.map(r => r.nf)) : 0;
 
-      // Calcula nota final de quem tem avaliações
-      const notasC = comAvalC.map(r => {
-        const mi = parseFloat(r.media_individual);
-        const av = parseInt(r.avaliacoes);
-        return { id: r.id, nome: r.nome, nf: ((mi*av)+(mediaGeralC*pesoMinimo))/(av+pesoMinimo) };
-      });
-      const menorC = notasC.length ? Math.min(...notasC.map(r => r.nf)) : 0;
+        // Atribui nota a todos (zerados recebem a menor nota final do mês)
+        dadosMesC.rows.forEach(r => {
+          nomesPorId[r.id] = r.nome;
+          if (!notasFinalPorMes[r.id]) notasFinalPorMes[r.id] = [];
+          const encontrado = notasC.find(n => n.id === r.id);
+          notasFinalPorMes[r.id].push(encontrado ? encontrado.nf : menorC);
+        });
+      }
 
-      // Atribui nota a todos (zerados recebem a menor nota final do mês)
-      dadosMesC.rows.forEach(r => {
-        nomesPorId[r.id] = r.nome;
-        if (!notasFinalPorMes[r.id]) notasFinalPorMes[r.id] = [];
-        const encontrado = notasC.find(n => n.id === r.id);
-        notasFinalPorMes[r.id].push(encontrado ? encontrado.nf : menorC);
+      // Calcula média das notas finais mensais (simples: soma / quantidade de meses)
+      consolidado = Object.entries(notasFinalPorMes).map(([id, notas]) => {
+        const media = notas.reduce((s,n) => s+n, 0) / notas.length;
+        return {
+          nome: nomesPorId[id],
+          media_geral: media.toFixed(2),
+          meses_avaliados: notas.length,
+          total_avaliacoes: 0
+        };
+      }).sort((a,b) => {
+        const diff = parseFloat(b.media_geral) - parseFloat(a.media_geral);
+        if (Math.abs(diff) >= 0.005) return diff;
+        return a.nome.localeCompare(b.nome, 'pt-BR');
       });
     }
-
-    // Calcula média das notas finais mensais (simples: soma / quantidade de meses)
-    const consolidado = Object.entries(notasFinalPorMes).map(([id, notas]) => {
-      const media = notas.reduce((s,n) => s+n, 0) / notas.length;
-      return {
-        nome: nomesPorId[id],
-        media_geral: media.toFixed(2),
-        meses_avaliados: notas.length,
-        total_avaliacoes: 0
-      };
-    }).sort((a,b) => {
-      const diff = parseFloat(b.media_geral) - parseFloat(a.media_geral);
-      if (Math.abs(diff) >= 0.005) return diff;
-      return a.nome.localeCompare(b.nome, 'pt-BR');
-    });
 
     const meses = await pool.query(`SELECT DISTINCT mes FROM gam_notas ORDER BY mes DESC`);
     const inicio = await pool.query(`SELECT MIN(mes) as primeiro_mes FROM gam_notas`);
@@ -1603,6 +1614,7 @@ publicRouter.get('/gamificacao', async (req, res) => {
       ranking,
       mediaGeral,
       consolidado,
+      mostrarConsolidado,
       meses: meses.rows.map(r => r.mes),
       inicioGamificacao: inicio.rows[0]?.primeiro_mes || null,
     });
@@ -1635,11 +1647,22 @@ async function ensureGamTables() {
     chave TEXT PRIMARY KEY, valor NUMERIC(6,2) NOT NULL
   )`).catch(()=>{});
   await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('peso_minimo', 10) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
+  // Liga/desliga o card "Consolidado Geral" na página pública — pedido da
+  // Thais: "ligo e desligo no painel interno da Gamificação, somente para o
+  // consolidado geral". Reaproveita a mesma tabela chave/valor de peso_minimo
+  // (1 = mostrar, 0 = ocultar); default ligado, pra não mudar o comportamento
+  // de quem nunca mexeu nisso.
+  await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('mostrar_consolidado', 1) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
 }
 
 async function getPesoMinimo() {
   const r = await pool.query(`SELECT valor FROM gam_config WHERE chave = 'peso_minimo'`);
   return r.rows[0] ? parseFloat(r.rows[0].valor) : 10;
+}
+
+async function getMostrarConsolidado() {
+  const r = await pool.query(`SELECT valor FROM gam_config WHERE chave = 'mostrar_consolidado'`);
+  return r.rows[0] ? parseFloat(r.rows[0].valor) !== 0 : true;
 }
 
 // Fórmula de média ponderada com peso mínimo (Bayesian average)
@@ -1653,19 +1676,35 @@ router.get('/gam/config', requireAdmin, async (req, res) => {
   try {
     await ensureGamTables();
     const peso = await getPesoMinimo();
-    res.json({ peso_minimo: peso });
+    const mostrarConsolidado = await getMostrarConsolidado();
+    res.json({ peso_minimo: peso, mostrar_consolidado: mostrarConsolidado });
   } catch (err) { res.status(500).json({ error: 'Erro ao buscar configuração.' }); }
 });
 
+// Aceita peso_minimo e/ou mostrar_consolidado — parcial, só grava o que veio
+// no corpo (o botão de ligar/desligar o Consolidado não deve exigir reenviar
+// o peso mínimo, e vice-versa).
 router.patch('/gam/config', requireAdmin, async (req, res) => {
   try {
-    const { peso_minimo } = req.body;
-    if (peso_minimo == null || peso_minimo < 0) return res.status(400).json({ error: 'Peso mínimo inválido.' });
-    await pool.query(
-      `INSERT INTO gam_config (chave, valor) VALUES ('peso_minimo', $1)
-       ON CONFLICT (chave) DO UPDATE SET valor = $1`,
-      [peso_minimo]
-    );
+    const { peso_minimo, mostrar_consolidado } = req.body;
+    if (peso_minimo == null && mostrar_consolidado == null) {
+      return res.status(400).json({ error: 'Nenhum campo para atualizar.' });
+    }
+    if (peso_minimo != null) {
+      if (peso_minimo < 0) return res.status(400).json({ error: 'Peso mínimo inválido.' });
+      await pool.query(
+        `INSERT INTO gam_config (chave, valor) VALUES ('peso_minimo', $1)
+         ON CONFLICT (chave) DO UPDATE SET valor = $1`,
+        [peso_minimo]
+      );
+    }
+    if (mostrar_consolidado != null) {
+      await pool.query(
+        `INSERT INTO gam_config (chave, valor) VALUES ('mostrar_consolidado', $1)
+         ON CONFLICT (chave) DO UPDATE SET valor = $1`,
+        [mostrar_consolidado ? 1 : 0]
+      );
+    }
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao salvar configuração.' }); }
 });
