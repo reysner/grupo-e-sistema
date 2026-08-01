@@ -217,6 +217,7 @@
     <div class="chart-card"><p class="chart-title">Status do SLA</p><div class="chart-wrap"><canvas id="cs-dash-status"></canvas></div></div>
     <div class="chart-card"><p class="chart-title">Por departamento</p><div class="chart-wrap"><canvas id="cs-dash-departamento"></canvas></div></div>
     <div class="chart-card"><p class="chart-title">Por analista (volume)</p><div class="chart-wrap"><canvas id="cs-dash-analista"></canvas></div></div>
+    <div class="chart-card" style="grid-column:1/-1"><p class="chart-title">Principais motivos de abertura — por que os clientes nos procuram (classificação por palavra-chave da 1ª mensagem de cada ticket)</p><div class="chart-wrap"><canvas id="cs-dash-motivos"></canvas></div></div>
     <div class="chart-card" style="grid-column:1/-1"><p class="chart-title">% dentro do SLA por analista (pior primeiro) — clique numa barra pra ver os tickets vermelhos</p><div class="chart-wrap"><canvas id="cs-dash-desempenho"></canvas></div></div>
     <div class="chart-card" style="grid-column:1/-1"><p class="chart-title">% dentro do SLA por etapa (aceite, transferência, resposta do analista após transferência, promessa de transferência, resolvendo direto) — clique numa barra pra ver os tickets vermelhos</p><div class="chart-wrap"><canvas id="cs-dash-etapas"></canvas></div></div>
     <div class="chart-card" style="grid-column:1/-1"><p class="chart-title">Resposta do analista após a transferência — por analista (pior primeiro) — clique numa barra pra ver os tickets vermelhos</p><div class="chart-wrap"><canvas id="cs-dash-analista-departamento"></canvas></div></div>
@@ -1132,6 +1133,23 @@
               <table class="data-table">
                 <thead><tr><th>Empresa</th><th>CNPJ</th><th>Grupo</th><th>Unidade</th><th>Último contato</th><th>Dias sem contato</th><th>Ações</th></tr></thead>
                 <tbody id="afastamento-tbody"><tr><td colspan="7" style="color:var(--gray-400)">Carregando...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="form-card" style="margin-top:16px">
+            <h2 class="form-title" style="margin:0 0 4px">Motivos de Abertura por Cliente</h2>
+            <div class="form-accent"></div>
+            <p style="color:var(--gray-500);font-size:13px;margin:0 0 12px">
+              Para cada empresa, classifica a 1ª mensagem de cada ticket dos últimos 180 dias em um motivo (guia/imposto, boleto, folha/DP, abertura de empresa, certificado digital, documentos, dúvida fiscal, prazo, erro/reclamação) — pra enxergar as dores específicas de cada cliente. Primeira versão da lista de palavras-chave, feita com base no que é comum em contabilidade — vai precisar de ajuste com exemplos reais, mesmo processo já feito com Insatisfação. Visão agregada (ranking geral) fica no Dashboard, dentro de Sucesso do Cliente.
+            </p>
+            <div style="display:flex;gap:8px;margin-bottom:12px">
+              <button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.carregarMotivosCliente()">🔄 Atualizar</button>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Empresa</th><th>Tickets no período</th><th>Motivo principal</th><th>Detalhe</th></tr></thead>
+                <tbody id="motivos-cliente-tbody"><tr><td colspan="4" style="color:var(--gray-400)">Carregando...</td></tr></tbody>
               </table>
             </div>
           </div>
