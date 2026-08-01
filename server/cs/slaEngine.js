@@ -539,6 +539,52 @@ function classificarMotivoConversa(textos) {
 }
 
 /**
+ * Palavras muito comuns em português (+ jargão de atendimento tipo "bom
+ * dia"/"gostaria"/"poderia") que não ajudam a identificar assunto nenhum —
+ * fora da lista pra `palavrasFrequentes` (abaixo) não virar uma nuvem de
+ * "de", "para", "que".
+ */
+const STOPWORDS_PT = new Set([
+  'de', 'da', 'do', 'das', 'dos', 'o', 'os', 'as', 'um', 'uma', 'uns', 'umas',
+  'e', 'ou', 'que', 'para', 'por', 'com', 'sem', 'em', 'no', 'na', 'nos', 'nas',
+  'ao', 'aos', 'se', 'sua', 'seu', 'suas', 'seus', 'minha', 'meu', 'minhas',
+  'meus', 'voce', 'voces', 'esta', 'esse', 'essa', 'isso', 'isto', 'aquele',
+  'aquela', 'tem', 'tenho', 'temos', 'ja', 'ainda', 'mais', 'muito', 'muita',
+  'muitos', 'muitas', 'bom', 'boa', 'dia', 'tarde', 'noite', 'ola', 'oi',
+  'obrigado', 'obrigada', 'favor', 'gentileza', 'pode', 'poderia', 'gostaria',
+  'preciso', 'precisava', 'qual', 'quando', 'onde', 'como', 'porque', 'pois',
+  'mas', 'tambem', 'so', 'ate', 'entao', 'nao', 'sim', 'vou', 'vamos', 'vai',
+  'vao', 'vez', 'pra', 'sobre', 'desde', 'apos', 'antes', 'depois', 'me', 'te',
+  'lhe', 'nos', 'eu', 'ele', 'ela', 'eles', 'elas', 'tudo', 'nada', 'algo',
+  'alguma', 'algum', 'tao', 'bem', 'ser', 'estar', 'ter', 'ai', 'la', 'ca',
+  'aqui', 'ali', 'ok', 'blz', 'certo', 'oii', 'oie', 'opa', 'tudo bem', 'bom dia',
+]);
+
+/**
+ * Conta as palavras que mais aparecem numa lista de textos, ignorando
+ * stopwords — pra usar nos tickets caídos em "Outros / Não identificado" e
+ * enxergar rápido o que a taxonomia ainda não cobre, sem precisar ler
+ * ticket a ticket. Conta no máximo 1x por texto (não por repetição dentro
+ * do mesmo texto), pra uma pessoa insistente não inflar o número sozinha.
+ */
+function palavrasFrequentes(textos, { topN = 20, minLen = 4 } = {}) {
+  const contagem = new Map();
+  for (const texto of textos || []) {
+    const t = normalizarTexto(texto).replace(/[^a-z0-9\s]/g, ' ');
+    const vistas = new Set();
+    for (const palavra of t.split(/\s+/)) {
+      if (palavra.length < minLen || STOPWORDS_PT.has(palavra) || vistas.has(palavra)) continue;
+      vistas.add(palavra);
+      contagem.set(palavra, (contagem.get(palavra) || 0) + 1);
+    }
+  }
+  return [...contagem.entries()]
+    .map(([palavra, n]) => ({ palavra, n }))
+    .sort((a, b) => b.n - a.n)
+    .slice(0, topN);
+}
+
+/**
  * Tenta extrair o NOME de quem o cliente pediu pra falar (ex.: "quero
  * falar com o Guilherme" -> "Guilherme"). Não decide a categoria sozinho
  * (fica disponível à parte, mesmo quando o motivo real é outro — ex.:
@@ -815,4 +861,5 @@ module.exports = {
   detectarInsatisfacao, PALAVRAS_INSATISFACAO,
   classificarMotivo, MOTIVOS_ATENDIMENTO,
   classificarMotivoConversa, ehSaudacaoPura, SAUDACOES_PURAS, extrairNomeSolicitado,
+  palavrasFrequentes, STOPWORDS_PT,
 };
