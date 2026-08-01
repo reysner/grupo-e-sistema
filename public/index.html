@@ -1141,16 +1141,27 @@
             <h2 class="form-title" style="margin:0 0 4px">Motivos de Abertura por Cliente</h2>
             <div class="form-accent"></div>
             <p style="color:var(--gray-500);font-size:13px;margin:0 0 12px">
-              Para cada empresa, classifica a 1ª mensagem de cada ticket dos últimos 180 dias em um motivo (guia/imposto, boleto, folha/DP, abertura de empresa, certificado digital, documentos, dúvida fiscal, prazo, erro/reclamação) — pra enxergar as dores específicas de cada cliente. Primeira versão da lista de palavras-chave, feita com base no que é comum em contabilidade — vai precisar de ajuste com exemplos reais, mesmo processo já feito com Insatisfação. Visão agregada (ranking geral) fica no Dashboard, dentro de Sucesso do Cliente.
+              Para cada empresa, classifica os tickets dos últimos 180 dias em um motivo (guia/imposto, boleto, folha/DP, abertura de empresa, certificado digital, documentos, dúvida fiscal, prazo, erro/reclamação, quer falar com alguém específico) — pra enxergar as dores específicas de cada cliente. Primeira versão da lista de palavras-chave — a lista de "não identificados" abaixo ajuda a calibrar rápido, sem precisar ler ticket a ticket. Visão agregada (ranking geral) fica no Dashboard, dentro de Sucesso do Cliente.
             </p>
-            <div style="display:flex;gap:8px;margin-bottom:12px">
+            <div style="display:flex;gap:8px;margin-bottom:14px">
               <button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.carregarMotivosCliente()">🔄 Atualizar</button>
             </div>
+
+            <div id="motivos-resumo" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
+
+            <div id="motivos-legenda" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;color:var(--gray-500)"></div>
+
             <div class="table-wrap">
               <table class="data-table">
-                <thead><tr><th>Empresa</th><th>Tickets no período</th><th>Motivo principal</th><th>Detalhe</th></tr></thead>
-                <tbody id="motivos-cliente-tbody"><tr><td colspan="4" style="color:var(--gray-400)">Carregando...</td></tr></tbody>
+                <thead><tr><th>Empresa</th><th>Tickets</th><th style="min-width:180px">Distribuição de motivos</th><th>Motivo principal</th><th>Detalhe</th></tr></thead>
+                <tbody id="motivos-cliente-tbody"><tr><td colspan="5" style="color:var(--gray-400)">Carregando...</td></tr></tbody>
               </table>
+            </div>
+
+            <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--gray-100)">
+              <h3 style="font-size:13px;font-weight:700;color:var(--gray-700);margin:0 0 6px">🔍 Palavras mais frequentes em "Outros / Não identificado"</h3>
+              <p style="color:var(--gray-500);font-size:12px;margin:0 0 10px">Se uma palavra aqui apontar um assunto recorrente, me manda que eu adiciono na lista de categorias.</p>
+              <div id="motivos-palavras-outros" style="display:flex;gap:8px;flex-wrap:wrap"></div>
             </div>
           </div>
 
