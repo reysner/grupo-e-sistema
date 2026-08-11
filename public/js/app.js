@@ -422,6 +422,9 @@ const App = (() => {
       // ── SUCESSO DO CLIENTE ──────────────────────────────────────────────────
       await Dashboard.carregarSucessoCliente(period, analista);
 
+      // ── RESUMO (KPIs no topo) — depois do CS pra já ter % de SLA disponível ──
+      Dashboard.renderKPIs();
+
       // ── GESTÃO ───────────────────────────────────────────────────────────────
       Dashboard.renderChart('c-gestao', 'doughnut', c.gcTipo,  'Solicitação');
       Dashboard.renderChart('c-canal',  'pie',      c.gcCanal, 'Canal');
@@ -514,6 +517,44 @@ const App = (() => {
       });
     },
 
+    /**
+     * Cards de resumo no topo do Dashboard. Não faz nenhuma chamada nova à
+     * API — só agrega o que `load()` e `carregarSucessoCliente()` já
+     * buscaram (`_lastData` e `_lastCS`), pra dar uma resposta rápida antes
+     * dos ~20 gráficos que vêm em seguida (pedido do usuário: dashboard
+     * "sujo" e pouco funcional).
+     */
+    renderKPIs() {
+      const d  = Dashboard._lastData;
+      const cs = Dashboard._lastCS;
+      const set = (id, val, cor) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = val;
+        el.style.color = cor || 'var(--g700)';
+      };
+      if (!d) return;
+
+      // Soma as versões SEM limite (chartsFull) — as de `charts` cortam em
+      // top 8/10 pra caber nos gráficos, então somar aquelas subestimaria o total.
+      const soma = rows => (rows || []).reduce((acc, r) => acc + Number(r.n || 0), 0);
+      set('dash-kpi-atendimentos',  soma(d.chartsFull?.atEmpresa));
+      set('dash-kpi-gestao',        soma(d.chartsFull?.gcTipo));
+      set('dash-kpi-insatisfacoes', soma(d.chartsFull?.insGrav));
+      set('dash-kpi-nps', d.nps != null ? d.nps.toFixed(1) : '—');
+
+      if (cs && cs.totalTickets) {
+        const verdes = (cs.porStatus || []).find(s => s.label === 'verde')?.n || 0;
+        const pct = Math.round((verdes / cs.totalTickets) * 100);
+        set('dash-kpi-sla', `${pct}%`, pct >= 80 ? '#1a4233' : pct >= 60 ? '#d69e2e' : '#e53e3e');
+      } else {
+        set('dash-kpi-sla', '—');
+      }
+
+      const risco = cs?.emRiscoAgora;
+      set('dash-kpi-risco', risco != null ? String(risco) : '—', risco > 0 ? '#e53e3e' : '#1a4233');
+    },
+
     async carregarSucessoCliente(period, analista) {
       try {
         const qs = new URLSearchParams({ period: period || 'todos' });
@@ -525,6 +566,7 @@ const App = (() => {
         ]);
         if (res && res.ok) {
           const d = await res.json();
+          Dashboard._lastCS = d; // usado pelos KPIs do topo (% SLA, em risco agora)
           Dashboard.renderChartStatusCS(d.porStatus || []);
           Dashboard.renderChart('cs-dash-departamento', 'bar', d.porDepartamento || [], 'Departamento');
           Dashboard.renderChart('cs-dash-analista', 'bar', d.porAnalista || [], 'Analista', { indexAxis: 'y' });

@@ -193,6 +193,40 @@
             </div>
           </div>
 
+          <!-- RESUMO — visão rápida antes de descer pros gráficos (mesmo padrão visual dos cards da Carteira) -->
+          <div class="stats-grid" style="grid-template-columns:repeat(6,minmax(0,1fr));margin-bottom:24px">
+            <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:20px 18px 16px;border-top:3px solid var(--g500)">
+              <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Atendimentos</div>
+              <div id="dash-kpi-atendimentos" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
+              <div style="font-size:11px;color:var(--gray-400);margin-top:4px">No período selecionado</div>
+            </div>
+            <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:20px 18px 16px;border-top:3px solid var(--g500)">
+              <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">% dentro do SLA</div>
+              <div id="dash-kpi-sla" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
+              <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Tickets do Sucesso do Cliente</div>
+            </div>
+            <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:20px 18px 16px;border-top:3px solid var(--g500)">
+              <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Em risco agora</div>
+              <div id="dash-kpi-risco" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
+              <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Tickets perto de estourar o SLA</div>
+            </div>
+            <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:20px 18px 16px;border-top:3px solid var(--g500)">
+              <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">NPS médio</div>
+              <div id="dash-kpi-nps" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
+              <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Pesquisas do período</div>
+            </div>
+            <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:20px 18px 16px;border-top:3px solid var(--g500)">
+              <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Insatisfações</div>
+              <div id="dash-kpi-insatisfacoes" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
+              <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Registradas no período</div>
+            </div>
+            <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:20px 18px 16px;border-top:3px solid var(--g500)">
+              <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Gestão de Clientes</div>
+              <div id="dash-kpi-gestao" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
+              <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Solicitações no período</div>
+            </div>
+          </div>
+
           <!-- ATENDIMENTO -->
           <div style="margin-bottom:28px">
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
