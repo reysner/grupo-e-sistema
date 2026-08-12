@@ -252,7 +252,7 @@
     <div class="chart-card"><p class="chart-title">Por departamento</p><div class="chart-wrap"><canvas id="cs-dash-departamento"></canvas></div></div>
     <div class="chart-card"><p class="chart-title">Por analista (volume)</p><div class="chart-wrap"><canvas id="cs-dash-analista"></canvas></div></div>
     <div class="chart-card" style="grid-column:1/-1">
-      <p class="chart-title">Principais motivos de abertura — por que os clientes nos procuram (classificação por palavra-chave das até 10 primeiras mensagens do cliente em cada ticket)</p>
+      <p class="chart-title">Principais motivos de abertura — por que os clientes nos procuram (classificação por palavra-chave das até 20 primeiras mensagens do cliente em cada ticket)</p>
       <div class="chart-wrap"><canvas id="cs-dash-motivos"></canvas></div>
       <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--gray-100)">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
@@ -1192,7 +1192,7 @@
             <h2 class="form-title" style="margin:0 0 4px">Motivos de Abertura por Cliente</h2>
             <div class="form-accent"></div>
             <p style="color:var(--gray-500);font-size:13px;margin:0 0 12px">
-              Para cada empresa, classifica os tickets dos últimos 180 dias em um motivo (Guias e Impostos, Boletos e Honorários, Folha/DP, Notas Fiscais, Documentos e Declarações, Abertura/Alteração/Baixa de Empresa, Certificado Digital, Prazos e Obrigações Acessórias, Dúvida Fiscal/Tributária, Erros e Reclamações, quer falar com alguém específico) e dentro de cada motivo, num submotivo — a solicitação específica de verdade (ex.: "Recálculo de Guia", "2ª Via de Boleto"), agrupando quem pede a mesma coisa de jeitos diferentes. Olha até as 10 primeiras mensagens do cliente em cada ticket (não só a 1ª). Lista de palavras-chave em calibração — a lista de "não identificados" abaixo ajuda a calibrar rápido, sem precisar ler ticket a ticket. Visão agregada (ranking geral) fica no Dashboard, dentro de Sucesso do Cliente.
+              Para cada empresa, classifica os tickets dos últimos 180 dias em um motivo (Guias e Impostos, Boletos e Honorários, Folha/DP, Notas Fiscais, Documentos e Declarações, Abertura/Alteração/Baixa de Empresa, Certificado Digital, Prazos e Obrigações Acessórias, Dúvida Fiscal/Tributária, Erros e Reclamações, quer falar com alguém específico) e dentro de cada motivo, num submotivo — a solicitação específica de verdade (ex.: "Recálculo de Guia", "2ª Via de Boleto"), agrupando quem pede a mesma coisa de jeitos diferentes. Olha até as 20 primeiras mensagens do cliente em cada ticket (não só a 1ª). Lista de palavras-chave em calibração — a lista de "não identificados" abaixo ajuda a calibrar rápido, sem precisar ler ticket a ticket. Visão agregada (ranking geral) fica no Dashboard, dentro de Sucesso do Cliente.
             </p>
             <div style="display:flex;gap:8px;margin-bottom:14px">
               <button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.carregarMotivosCliente()">🔄 Atualizar</button>

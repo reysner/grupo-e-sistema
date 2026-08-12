@@ -386,7 +386,7 @@ function detectarInsatisfacao(texto) {
  * contatos?" — ou seja, "quero falar com o Guilherme" sozinho não diz nada
  * sobre o ASSUNTO; mas "quero falar com o Guilherme sobre minha guia que
  * veio errada" tem assunto (Guias e Impostos) E pessoa — como a janela
- * inteira (até 10 mensagens) é concatenada antes de classificar, colocando
+ * inteira (até 20 mensagens) é concatenada antes de classificar, colocando
  * as categorias de ASSUNTO primeiro, o texto cai no assunto real sempre que
  * ele aparecer em algum ponto da conversa; "Quer Falar com Alguém
  * Específico" só vence quando NENHUM assunto foi mencionado na janela.
@@ -951,15 +951,35 @@ function ehSaudacaoPura(texto) {
 }
 
 /**
+ * true se a mensagem inteira não é texto de verdade, e sim o mimetype que o
+ * Zappy manda como `body` quando o cliente envia só uma foto/áudio/vídeo sem
+ * escrever nada junto (ex.: "image/jpeg", "audio/ogg; codecs=opus",
+ * "video/mp4"). Achado ao calibrar a lista de palavras-chave com o Reysner:
+ * as palavras mais frequentes nos tickets caídos em "Outros / Não
+ * identificado" eram "image" (249), "jpeg" (249) e "audio" (222) — ou seja,
+ * um baita pedaço do "Outros" nem é o classificador falhando em entender o
+ * assunto, é o classificador tentando entender um mimetype como se fosse a
+ * fala do cliente. Mesmo tratamento de `ehSaudacaoPura`: sem assunto real,
+ * então a janela de mensagens continua procurando a próxima que tenha.
+ */
+function ehAnexoSemLegenda(texto) {
+  const t = String(texto || '').trim();
+  if (!t) return false;
+  return /^(image|audio|video|application)\/[a-z0-9.+_-]+(\s*;.*)?$/i.test(t);
+}
+
+/**
  * Classifica o MOTIVO DE ABERTURA olhando uma JANELA de mensagens do
  * cliente no início do ticket (não só a primeira) — descarta as que são
- * saudação pura antes de concatenar e classificar (a não ser que sobre só
- * saudação na janela toda, aí usa tudo mesmo, pra não ficar sem texto).
+ * saudação pura ou anexo sem legenda antes de concatenar e classificar (a
+ * não ser que sobre só isso na janela toda, aí usa tudo mesmo, pra não
+ * ficar sem texto — nesse caso "Outros / Não identificado" é honesto: o
+ * cliente só mandou foto/áudio, não dá pra saber o motivo sem abrir o anexo).
  * `textos` = array de strings, já na ordem cronológica (mais antiga primeiro).
  */
 function classificarMotivoConversa(textos) {
   const lista = (textos || []).filter(t => t && String(t).trim());
-  const substanciais = lista.filter(t => !ehSaudacaoPura(t));
+  const substanciais = lista.filter(t => !ehSaudacaoPura(t) && !ehAnexoSemLegenda(t));
   const usar = substanciais.length ? substanciais : lista;
   const combinado = usar.join(' ').slice(0, 800);
   return { ...classificarMotivo(combinado), trecho: combinado, pessoaSolicitada: extrairNomeSolicitado(combinado) };
@@ -997,6 +1017,11 @@ const STOPWORDS_PT = new Set([
 function palavrasFrequentes(textos, { topN = 20, minLen = 4 } = {}) {
   const contagem = new Map();
   for (const texto of textos || []) {
+    // Anexo sem legenda ("image/jpeg", "audio/ogg"...) não é fala do
+    // cliente — sem isso, "image"/"jpeg"/"audio" dominavam essa lista (249,
+    // 249, 222 ocorrências) e escondiam palavras de verdade como "fiscal",
+    // "pagamento", "contato". Ver ehAnexoSemLegenda.
+    if (ehAnexoSemLegenda(texto)) continue;
     const t = normalizarTexto(texto).replace(/[^a-z0-9\s]/g, ' ');
     const vistas = new Set();
     for (const palavra of t.split(/\s+/)) {
@@ -1287,6 +1312,6 @@ module.exports = {
   detectarSinalChurn, FRASES_CHURN,
   detectarInsatisfacao, PALAVRAS_INSATISFACAO,
   classificarMotivo, MOTIVOS_ATENDIMENTO,
-  classificarMotivoConversa, ehSaudacaoPura, SAUDACOES_PURAS, extrairNomeSolicitado,
+  classificarMotivoConversa, ehSaudacaoPura, ehAnexoSemLegenda, SAUDACOES_PURAS, extrairNomeSolicitado,
   palavrasFrequentes, STOPWORDS_PT,
 };
