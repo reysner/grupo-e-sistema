@@ -438,6 +438,9 @@ const MOTIVOS_ATENDIMENTO = [
           'mandar a guia de novo', 'nao localizo a guia', 'nao achei a guia', 'sumiu a guia',
           'nao tenho a guia', 'pode me mandar a guia', 'poderia me enviar a guia',
           'me manda a segunda via', 'preciso de uma copia da guia', 'perdi o boleto da guia',
+          // variação real vista em "Outros" — cliente no aguardo da guia
+          // atualizada/reemitida, sem citar qual imposto.
+          'atualizacao da guia', 'aguardo da guia',
         ],
       },
       {
@@ -470,6 +473,10 @@ const MOTIVOS_ATENDIMENTO = [
           'guia de recolhimento', 'guia da folha', 'inss da folha', 'fgts da folha',
           'encargo da folha', 'guia de encargos', 'pagamento do inss', 'pagamento do fgts',
           'guia do fgts do funcionario', 'guia previdenciaria',
+          // variações reais vistas em "Outros / Não identificado" (achado
+          // calibrando com o Reysner): "guia de fgts" e "guia fgts" sem o
+          // "do" que as frases acima exigiam.
+          'guia de fgts', 'guia fgts',
         ],
       },
       {
@@ -504,6 +511,19 @@ const MOTIVOS_ATENDIMENTO = [
           'reenviar o boleto', 'mandar o boleto de novo', 'preciso do boleto',
           'nao achei o boleto', 'poderia me enviar o boleto', 'pode me mandar o boleto',
           'me manda a segunda via do boleto',
+        ],
+      },
+      {
+        // Não existia equivalente pra boleto do que já existia pra guia
+        // (guia_vencimento, acima) — achado calibrando com o Reysner:
+        // cliente real avisando que o boleto venceu, sem estar pedindo
+        // 2ª via nem contestando valor.
+        chave: 'boleto_vencimento', label: 'Vencimento / Boleto Atrasado',
+        palavras: [
+          'boleto venceu', 'meu boleto venceu', 'o boleto venceu', 'boleto vencido',
+          'boleto ja venceu', 'vence hoje o boleto', 'vence amanha o boleto',
+          'qual o vencimento do boleto', 'quando vence o boleto',
+          'data de vencimento do boleto', 'boleto passou do prazo',
         ],
       },
       {
@@ -670,6 +690,11 @@ const MOTIVOS_ATENDIMENTO = [
           'nao encontro a nota', 'nao achei a nota fiscal', 'nfse', 'nfe',
           'cade a nota fiscal', 'preciso da nota fiscal', 'me envia a nota fiscal',
           'nao localizo a nota',
+          // variações reais vistas em "Outros" — "de" no lugar de "da", e
+          // plural. 'nota fiscal' sozinho fica por último de propósito: só
+          // pega o que nenhuma frase mais específica das outras 3
+          // submotivos acima (emissão/cancelamento/erro) já capturou.
+          'preciso de nota fiscal', 'preciso de notas fiscais', 'nota fiscal',
         ],
       },
     ],
