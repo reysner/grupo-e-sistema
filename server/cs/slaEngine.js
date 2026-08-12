@@ -951,36 +951,53 @@ function ehSaudacaoPura(texto) {
 }
 
 /**
- * true se a mensagem inteira não é texto de verdade, e sim o mimetype que o
- * Zappy manda como `body` quando o cliente envia só uma foto/áudio/vídeo sem
- * escrever nada junto (ex.: "image/jpeg", "audio/ogg; codecs=opus",
- * "video/mp4"). Achado ao calibrar a lista de palavras-chave com o Reysner:
- * as palavras mais frequentes nos tickets caídos em "Outros / Não
- * identificado" eram "image" (249), "jpeg" (249) e "audio" (222) — ou seja,
- * um baita pedaço do "Outros" nem é o classificador falhando em entender o
- * assunto, é o classificador tentando entender um mimetype como se fosse a
- * fala do cliente. Mesmo tratamento de `ehSaudacaoPura`: sem assunto real,
- * então a janela de mensagens continua procurando a próxima que tenha.
+ * Ruído que aparece dentro de `texto` mas não é o cliente falando nada:
+ *
+ * 1. Nome de arquivo de anexo sem legenda — quando o cliente manda só
+ *    foto/áudio/vídeo sem escrever nada junto, o Zappy grava o NOME DO
+ *    ARQUIVO como texto da mensagem, ex.: "image_1784114637691.jpeg",
+ *    "audio_1784114563564.ogg" (confirmado inspecionando `trecho` de
+ *    tickets reais em "Outros / Não identificado" com o Reysner — a 1ª
+ *    tentativa aqui assumiu formato de mimetype tipo "image/jpeg", que
+ *    NUNCA bateu com o dado de verdade; por isso "image"/"jpeg"/"audio"
+ *    continuavam no topo das Palavras mais frequentes mesmo depois do
+ *    primeiro filtro).
+ * 2. Resposta automática de fora do expediente — texto fixo que chega
+ *    marcado como vindo do cliente (autorresponder do WhatsApp Business
+ *    dele reagindo à nossa mensagem), não é ele dizendo nada de verdade.
  */
-function ehAnexoSemLegenda(texto) {
-  const t = String(texto || '').trim();
-  if (!t) return false;
-  return /^(image|audio|video|application)\/[a-z0-9.+_-]+(\s*;.*)?$/i.test(t);
+const RUIDO_ANEXO = /(image|audio|video|document|sticker)_\d+\.\w+/gi;
+const RUIDO_AUTORRESPOSTA = 'Agradecemos sua mensagem. Não estamos disponíveis no momento, mas responderemos assim que possível.';
+
+/** Tira o ruído (anexo sem legenda + autorresposta) de um texto, mantendo o resto. */
+function limparRuido(texto) {
+  return String(texto || '')
+    .split(RUIDO_AUTORRESPOSTA).join(' ')
+    .replace(RUIDO_ANEXO, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** true se, tirando o ruído acima, não sobra nenhum conteúdo real na mensagem. */
+function ehMensagemSemConteudo(texto) {
+  return limparRuido(texto).length === 0;
 }
 
 /**
  * Classifica o MOTIVO DE ABERTURA olhando uma JANELA de mensagens do
  * cliente no início do ticket (não só a primeira) — descarta as que são
- * saudação pura ou anexo sem legenda antes de concatenar e classificar (a
- * não ser que sobre só isso na janela toda, aí usa tudo mesmo, pra não
- * ficar sem texto — nesse caso "Outros / Não identificado" é honesto: o
- * cliente só mandou foto/áudio, não dá pra saber o motivo sem abrir o anexo).
- * `textos` = array de strings, já na ordem cronológica (mais antiga primeiro).
+ * saudação pura ou não têm conteúdo real (só anexo sem legenda e/ou
+ * autorresposta) antes de concatenar e classificar, e tira esse ruído do
+ * que sobra (a não ser que sobre só isso na janela toda, aí usa tudo mesmo,
+ * pra não ficar sem texto — nesse caso "Outros / Não identificado" é
+ * honesto: o cliente só mandou foto/áudio, não dá pra saber o motivo sem
+ * abrir o anexo). `textos` = array de strings, já na ordem cronológica
+ * (mais antiga primeiro).
  */
 function classificarMotivoConversa(textos) {
   const lista = (textos || []).filter(t => t && String(t).trim());
-  const substanciais = lista.filter(t => !ehSaudacaoPura(t) && !ehAnexoSemLegenda(t));
-  const usar = substanciais.length ? substanciais : lista;
+  const substanciais = lista.filter(t => !ehSaudacaoPura(t) && !ehMensagemSemConteudo(t));
+  const usar = (substanciais.length ? substanciais : lista).map(limparRuido);
   const combinado = usar.join(' ').slice(0, 800);
   return { ...classificarMotivo(combinado), trecho: combinado, pessoaSolicitada: extrairNomeSolicitado(combinado) };
 }
@@ -1017,12 +1034,12 @@ const STOPWORDS_PT = new Set([
 function palavrasFrequentes(textos, { topN = 20, minLen = 4 } = {}) {
   const contagem = new Map();
   for (const texto of textos || []) {
-    // Anexo sem legenda ("image/jpeg", "audio/ogg"...) não é fala do
-    // cliente — sem isso, "image"/"jpeg"/"audio" dominavam essa lista (249,
-    // 249, 222 ocorrências) e escondiam palavras de verdade como "fiscal",
-    // "pagamento", "contato". Ver ehAnexoSemLegenda.
-    if (ehAnexoSemLegenda(texto)) continue;
-    const t = normalizarTexto(texto).replace(/[^a-z0-9\s]/g, ' ');
+    // Tira nome de arquivo de anexo e autorresposta antes de contar — sem
+    // isso, "image"/"jpeg"/"audio" dominavam essa lista e escondiam
+    // palavras de verdade como "fiscal", "pagamento", "contato",
+    // "comprovante". Ver limparRuido/ehMensagemSemConteudo.
+    if (ehMensagemSemConteudo(texto)) continue;
+    const t = normalizarTexto(limparRuido(texto)).replace(/[^a-z0-9\s]/g, ' ');
     const vistas = new Set();
     for (const palavra of t.split(/\s+/)) {
       if (palavra.length < minLen || STOPWORDS_PT.has(palavra) || vistas.has(palavra)) continue;
@@ -1312,6 +1329,6 @@ module.exports = {
   detectarSinalChurn, FRASES_CHURN,
   detectarInsatisfacao, PALAVRAS_INSATISFACAO,
   classificarMotivo, MOTIVOS_ATENDIMENTO,
-  classificarMotivoConversa, ehSaudacaoPura, ehAnexoSemLegenda, SAUDACOES_PURAS, extrairNomeSolicitado,
+  classificarMotivoConversa, ehSaudacaoPura, ehMensagemSemConteudo, limparRuido, SAUDACOES_PURAS, extrairNomeSolicitado,
   palavrasFrequentes, STOPWORDS_PT,
 };
