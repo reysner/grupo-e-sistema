@@ -662,7 +662,7 @@ const MOTIVOS_ATENDIMENTO = [
         chave: 'nf_emissao', label: 'Emissão de Nota Fiscal',
         palavras: [
           'emitir nota', 'emitir nota fiscal', 'nao consigo emitir', 'nao esta emitindo',
-          'preciso emitir uma nota', 'como emito a nota', 'emissao de nfse',
+          'preciso emitir uma nota', 'emitir uma nota', 'como emito a nota', 'emissao de nfse',
           'emissao de nfe', 'gerar nota fiscal', 'preciso de uma nota fiscal',
           'emitir a nota para o cliente',
         ],
@@ -862,6 +862,10 @@ const MOTIVOS_ATENDIMENTO = [
           'qual a aliquota', 'quanto vou pagar de imposto', 'como e calculado o imposto',
           'como funciona o imposto', 'duvida sobre imposto', 'duvida tributaria',
           'qual imposto', 'tem que pagar imposto',
+          // variações reais vistas em "Outros" (4ª rodada de calibração):
+          // "aliquota" sozinho é específico o bastante pra não precisar de
+          // frase inteira antes.
+          'aliquota',
         ],
       },
       {
@@ -922,6 +926,10 @@ const MOTIVOS_ATENDIMENTO = [
           'preciso falar com', 'preciso conversar com', 'quero conversar com',
           'gostaria de conversar com', 'pode me passar com', 'me passa com',
           'falar com o', 'falar com a', 'passar para o', 'passar para a',
+          // variação real vista em "Outros" — pergunta em vez de pedido
+          // ("com quem falo sobre X?"), e "falar com [Nome]" sem artigo
+          // antes do nome (as duas frases acima exigiam "com o"/"com a").
+          'com quem falo', 'falar com',
         ],
       },
     ],
@@ -994,17 +1002,28 @@ function ehSaudacaoPura(texto) {
  *    do cliente (autorresponder do WhatsApp Business dele reagindo à nossa
  *    mensagem). A abertura muda por empresa ("Agradecemos sua mensagem...",
  *    "A RT agradece a sua mensagem..."), então em vez de string fixa
- *    completa, casa só pelo miolo que se repete entre empresas diferentes.
+ *    completa, casa pelos dois pedaços fixos que se repetem entre empresas
+ *    diferentes: a abertura ("[algo] agradece[mos] ... sua mensagem") e o
+ *    miolo ("não estamos disponíveis..."). 4ª rodada de calibração achou
+ *    que a 3ª só cortava o miolo — "Agradecemos sua mensagem." sozinho
+ *    sobrava no texto e ainda aparecia nas Palavras mais frequentes.
+ * 4. Bot de atendimento (chatbot da própria empresa do cliente, não é a
+ *    pessoa falando) — mensagens de encerrar por inatividade e de
+ *    boas-vindas pedindo CNPJ/CPF pra iniciar.
  */
 const RUIDO_ANEXO = /[\w-]+[_-]?\d{2,}[\w-]*\.(pdf|docx?|xlsx?|jpe?g|png|gif|webp|heic|ogg|mp3|mp4|mov)\b/gi;
 const RUIDO_VCARD = /BEGIN:VCARD[\s\S]*?END:VCARD/gi;
 const RUIDO_AUTORRESPOSTA = /n[ãa]o estamos dispon[íi]veis no momento,?\s*mas responderemos assim que poss[íi]vel\.?/gi;
+const RUIDO_AUTORRESPOSTA_ABERTURA = /\w*\s*agradece(mos)?\s*(a\s+)?sua mensagem\.?/gi;
+const RUIDO_BOT = /(seja bem[- ]vindo ao atendimento[^.!?]*[.!?]|portanto encerrarei nosso atendimento[^.!?]*[.!?])/gi;
 
-/** Tira o ruído (anexo sem legenda, vCard, autorresposta) de um texto, mantendo o resto. */
+/** Tira o ruído (anexo sem legenda, vCard, autorresposta, bot) de um texto, mantendo o resto. */
 function limparRuido(texto) {
   return String(texto || '')
     .replace(RUIDO_VCARD, ' ')
     .replace(RUIDO_AUTORRESPOSTA, ' ')
+    .replace(RUIDO_AUTORRESPOSTA_ABERTURA, ' ')
+    .replace(RUIDO_BOT, ' ')
     .replace(RUIDO_ANEXO, ' ')
     .replace(/\s+/g, ' ')
     .trim();
