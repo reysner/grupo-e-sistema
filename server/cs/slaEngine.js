@@ -976,28 +976,35 @@ function ehSaudacaoPura(texto) {
 }
 
 /**
- * Ruído que aparece dentro de `texto` mas não é o cliente falando nada:
+ * Ruído que aparece dentro de `texto` mas não é o cliente falando nada —
+ * achado inspecionando `trecho` de tickets reais em "Outros / Não
+ * identificado" com o Reysner, em duas rodadas de calibração:
  *
  * 1. Nome de arquivo de anexo sem legenda — quando o cliente manda só
- *    foto/áudio/vídeo sem escrever nada junto, o Zappy grava o NOME DO
- *    ARQUIVO como texto da mensagem, ex.: "image_1784114637691.jpeg",
- *    "audio_1784114563564.ogg" (confirmado inspecionando `trecho` de
- *    tickets reais em "Outros / Não identificado" com o Reysner — a 1ª
- *    tentativa aqui assumiu formato de mimetype tipo "image/jpeg", que
- *    NUNCA bateu com o dado de verdade; por isso "image"/"jpeg"/"audio"
- *    continuavam no topo das Palavras mais frequentes mesmo depois do
- *    primeiro filtro).
- * 2. Resposta automática de fora do expediente — texto fixo que chega
- *    marcado como vindo do cliente (autorresponder do WhatsApp Business
- *    dele reagindo à nossa mensagem), não é ele dizendo nada de verdade.
+ *    foto/áudio/vídeo/documento sem escrever nada junto, o texto da
+ *    mensagem vira o NOME DO ARQUIVO. 1ª rodada só cobria o padrão gerado
+ *    pelo Zappy ("image_1784114637691.jpeg", "audio_1784114563564.ogg");
+ *    2ª rodada generalizou pra qualquer nome de arquivo com extensão de
+ *    documento/mídia, porque recibo de banco tem nome próprio
+ *    ("Comprovante_08-07-2026_163403.pdf", "Pagamento_06_2025_Final.xlsx")
+ *    — sozinho já pegava quase o dobro de tickets que o padrão específico.
+ * 2. Cartão de contato (vCard) compartilhado — vira um bloco
+ *    "BEGIN:VCARD ... END:VCARD" no texto, não é o cliente dizendo nada.
+ * 3. Resposta automática de fora do expediente — chega marcada como vindo
+ *    do cliente (autorresponder do WhatsApp Business dele reagindo à nossa
+ *    mensagem). A abertura muda por empresa ("Agradecemos sua mensagem...",
+ *    "A RT agradece a sua mensagem..."), então em vez de string fixa
+ *    completa, casa só pelo miolo que se repete entre empresas diferentes.
  */
-const RUIDO_ANEXO = /(image|audio|video|document|sticker)_\d+\.\w+/gi;
-const RUIDO_AUTORRESPOSTA = 'Agradecemos sua mensagem. Não estamos disponíveis no momento, mas responderemos assim que possível.';
+const RUIDO_ANEXO = /[\w-]+[_-]?\d{2,}[\w-]*\.(pdf|docx?|xlsx?|jpe?g|png|gif|webp|heic|ogg|mp3|mp4|mov)\b/gi;
+const RUIDO_VCARD = /BEGIN:VCARD[\s\S]*?END:VCARD/gi;
+const RUIDO_AUTORRESPOSTA = /n[ãa]o estamos dispon[íi]veis no momento,?\s*mas responderemos assim que poss[íi]vel\.?/gi;
 
-/** Tira o ruído (anexo sem legenda + autorresposta) de um texto, mantendo o resto. */
+/** Tira o ruído (anexo sem legenda, vCard, autorresposta) de um texto, mantendo o resto. */
 function limparRuido(texto) {
   return String(texto || '')
-    .split(RUIDO_AUTORRESPOSTA).join(' ')
+    .replace(RUIDO_VCARD, ' ')
+    .replace(RUIDO_AUTORRESPOSTA, ' ')
     .replace(RUIDO_ANEXO, ' ')
     .replace(/\s+/g, ' ')
     .trim();
