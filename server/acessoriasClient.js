@@ -52,8 +52,15 @@ function normalizarRegime(regimeAcessorias) {
  * afins — são status operacional, não tipo de contribuinte, e aparecem
  * também em empresas que JÁ TÊM um regime de verdade (usar isso como
  * regime seria enganoso, não só impreciso).
+ *
+ * Último recurso: se `GrupoDeEmpresas` também não ajudar, olha se a Razão
+ * Social começa com "Condomínio" — achado real: "Condomínio Residencial
+ * Limoeiro" veio com GrupoDeEmpresas="Sem Movimento" (não "Condomínios"),
+ * mas o nome já entrega o tipo. Só "condomínio" por enquanto — os outros
+ * casos restantes (Consultório e Obras, Indefinido) não têm esse tipo de
+ * sinal claro no nome, então continuam de fora de propósito.
  */
-function normalizarRegimeComFallback(regimeAcessorias, grupoDeEmpresasAcessorias) {
+function normalizarRegimeComFallback(regimeAcessorias, grupoDeEmpresasAcessorias, razaoSocial) {
   const direto = normalizarRegime(regimeAcessorias);
   if (direto) return direto;
   const grupo = String(grupoDeEmpresasAcessorias || '').toLowerCase();
@@ -62,6 +69,8 @@ function normalizarRegimeComFallback(regimeAcessorias, grupoDeEmpresasAcessorias
   if (grupo.includes('produtor rural')) return 'Produtor Rural';
   if (grupo.includes('condominio') || grupo.includes('condomínio')) return 'Condomínio';
   if (grupo.includes('pessoa fisica') || grupo.includes('pessoa física')) return 'Pessoa Física';
+  const razao = String(razaoSocial || '').toLowerCase();
+  if (razao.includes('condominio') || razao.includes('condomínio')) return 'Condomínio';
   return null;
 }
 
@@ -178,7 +187,7 @@ function empresaParaCliente(empresa) {
     // Fantasia só entra como último recurso, se por algum motivo a Razão
     // Social vier vazia (não deveria acontecer, é campo obrigatório lá).
     nome_empresa: derivarApelido(empresa.Razao) || empresa.Razao || fantasiaUtilizavel(empresa.Fantasia) || null,
-    regime_tributario: normalizarRegimeComFallback(empresa.Regime, empresa.GrupoDeEmpresas),
+    regime_tributario: normalizarRegimeComFallback(empresa.Regime, empresa.GrupoDeEmpresas, empresa.Razao),
     regime_tributario_bruto: empresa.Regime || null, // pra revisão de quem não mapeou
     data_entrada: normalizarData(empresa.ClienteDesde) || normalizarData(empresa.DataDoCadastro),
   };
