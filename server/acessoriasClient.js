@@ -58,10 +58,16 @@ function fantasiaUtilizavel(fantasia) {
 /**
  * A API não expõe o campo "Apelido e-Contínuo" do Acessórias (confirmado
  * testando com todos os parâmetros da documentação — não vem em nenhuma
- * resposta). Pedido do Reysner: quando `Fantasia` vier mascarado/vazio,
- * aproxima o Apelido derivando da Razão Social — troca "&" por " E ", que é
- * exatamente o padrão que ele mostrou (ex.: "M&F PARTICIPACOES LTDA" vira
- * "M E F PARTICIPACOES LTDA", igual "B&L" vira "B E L").
+ * resposta). Decisão do Reysner: já que não dá pra buscar o Apelido, usar
+ * SEMPRE a Razão Social (não o Nome Fantasia) como nome da empresa aqui —
+ * troca "&" por " E " em qualquer situação (ex.: "M&F PARTICIPACOES LTDA"
+ * vira "M E F PARTICIPACOES LTDA", "PITTELLI & PITTELLI" vira "PITTELLI E
+ * PITTELLI").
+ *
+ * De propósito NÃO corta sufixo tipo "LTDA"/"EIRELI"/"ME": pra empresa com
+ * filiais (ex.: "CARDOSO ADEGA LTDA - FILIAL UBERABA") é exatamente esse
+ * sufixo que diferencia uma filial da outra — cortar recriaria o problema
+ * de nomes duplicados que a Razão Social resolve.
  */
 function derivarApelido(razaoSocial) {
   if (!razaoSocial) return null;
@@ -112,7 +118,13 @@ function empresaParaCliente(empresa) {
     acessorias_id: String(empresa.ID || ''),
     codigo: empresa.ID != null ? String(empresa.ID) : null, // pedido do Reysner: usar o ID do Acessórias como código
     cnpj: empresa.Identificador || null,
-    nome_empresa: fantasiaUtilizavel(empresa.Fantasia) || derivarApelido(empresa.Razao) || empresa.Razao || null,
+    // Sempre Razão Social (não Fantasia) — decisão do Reysner: além de não
+    // dar pra buscar o Apelido e-Contínuo, a Razão Social já desambigua
+    // empresas diferentes que por coincidência usam a mesma marca/fantasia
+    // (ex.: duas academias "Muscle Training" de donos diferentes).
+    // Fantasia só entra como último recurso, se por algum motivo a Razão
+    // Social vier vazia (não deveria acontecer, é campo obrigatório lá).
+    nome_empresa: derivarApelido(empresa.Razao) || empresa.Razao || fantasiaUtilizavel(empresa.Fantasia) || null,
     regime_tributario: normalizarRegime(empresa.Regime),
     regime_tributario_bruto: empresa.Regime || null, // pra revisão de quem não mapeou
     data_entrada: normalizarData(empresa.ClienteDesde) || normalizarData(empresa.DataDoCadastro),
