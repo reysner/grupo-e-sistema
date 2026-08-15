@@ -86,7 +86,7 @@ router.get('/gestao', async (req, res) => {
       FROM gestao_clientes g
       LEFT JOIN clientes c ON c.cnpj = g.cnpj AND c.status = 'ativo'
       WHERE 1=1 ${pf}
-      ORDER BY g.created_at DESC`);
+      ORDER BY g.empresa ASC`);
 
     // Ticket médio (ativos, honorário vigente) — mesma base do dashboard de Carteira.
     const ticketQ = await pool.query(`
@@ -132,15 +132,22 @@ router.get('/gestao', async (req, res) => {
 router.post('/gestao', async (req, res) => {
   try {
     const { analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario } = req.body;
-    if (!analista || !solicitacao || !cnpj || !empresa || !data_sol || !competencia || !canal)
+    // Data da Solicitação / Fim da Competência deixaram de ser obrigatórios
+    // pras 3 solicitações de ENTRADA (Constituição/Cliente vindo de outro
+    // contador/Transformação) — pedido do Reysner: não fazem sentido nesse
+    // caso, o que importa ali é a Data de Entrada do Cliente.
+    const ehEntrada = SOLICITACOES_ENTRADA.includes(solicitacao);
+    if (!analista || !solicitacao || !cnpj || !empresa || !canal || (!ehEntrada && (!data_sol || !competencia)))
       return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
     await pool.query(`ALTER TABLE gestao_clientes ADD COLUMN IF NOT EXISTS codigo TEXT`).catch(()=>{});
     await pool.query(`ALTER TABLE gestao_clientes ADD COLUMN IF NOT EXISTS regime_tributario TEXT`).catch(()=>{});
+    await pool.query(`ALTER TABLE gestao_clientes ALTER COLUMN data_sol DROP NOT NULL`).catch(()=>{});
+    await pool.query(`ALTER TABLE gestao_clientes ALTER COLUMN competencia DROP NOT NULL`).catch(()=>{});
     const id = uuidv4();
     await pool.query(
       `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [id, req.user.id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo || null, codigo || null, regime_tributario || null]
+      [id, req.user.id, analista, solicitacao, cnpj, empresa, data_sol || null, competencia || null, canal, motivo || null, codigo || null, regime_tributario || null]
     );
     await registrarLog(req.user.id, req.user.name, 'criar', 'gestao', `Gestao: ${solicitacao} - ${empresa}`, req);
     res.status(201).json({ id });
@@ -356,6 +363,21 @@ async function sincronizarAcessorias({ userId = null } = {}) {
   // user_id normalmente é preenchido por quem cadastra manualmente — o job
   // automático não tem usuário logado, então a coluna precisa aceitar null.
   await pool.query(`ALTER TABLE clientes ALTER COLUMN user_id DROP NOT NULL`).catch(() => {});
+  // Data da Solicitação / Fim da Competência não fazem sentido pra um
+  // registro que só existe porque o cliente já é ativo no Acessórias —
+  // pedido do Reysner pra deixar em branco em vez de forçar a data de hoje.
+  await pool.query(`ALTER TABLE gestao_clientes ALTER COLUMN data_sol DROP NOT NULL`).catch(() => {});
+  await pool.query(`ALTER TABLE gestao_clientes ALTER COLUMN competencia DROP NOT NULL`).catch(() => {});
+  // Limpa o placeholder (data de hoje) que as rodadas anteriores já tinham
+  // gravado nesses dois campos antes dessa mudança — só nos registros
+  // vindos da sincronização, nunca em registro criado manualmente.
+  await pool.query(`
+    UPDATE gestao_clientes SET data_sol = NULL, competencia = NULL
+     WHERE motivo IN (
+       'Importado automaticamente do Sistema Acessórias',
+       'Registro completado a partir da Carteira (cliente já existia sem essa linha)'
+     ) AND (data_sol IS NOT NULL OR competencia IS NOT NULL)
+  `).catch(() => {});
 
   // gestao_clientes.user_id é NOT NULL (referencia users) — sem usuário
   // logado (job automático), assina com o admin mais antigo cadastrado.
@@ -371,8 +393,6 @@ async function sincronizarAcessorias({ userId = null } = {}) {
   const empresas = await acessoriasClient.listarEmpresasAtivas({ token });
   let criados = 0, atualizados = 0, semRegimeReconhecido = 0, semGestaoRegistrada = 0, gestaoCompletados = 0;
   const erros = [];
-  const hoje = new Date().toISOString().slice(0, 10);
-  const competenciaAtual = hoje.slice(0, 7);
 
   for (const emp of empresas) {
     if (!emp.cnpj) { erros.push({ empresa: emp.nome_empresa, motivo: 'Sem CNPJ/CPF na Acessórias.' }); continue; }
@@ -405,7 +425,7 @@ async function sincronizarAcessorias({ userId = null } = {}) {
             await pool.query(
               `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario)
                VALUES ($1,$2,$3,'Cliente vindo de outro contador',$4,$5,$6,$7,'Outro',$8,$9,$10)`,
-              [uuidv4(), userIdEfetivo, userNomeEfetivo, emp.cnpj, emp.nome_empresa, hoje, competenciaAtual,
+              [uuidv4(), userIdEfetivo, userNomeEfetivo, emp.cnpj, emp.nome_empresa, null, null,
                'Registro completado a partir da Carteira (cliente já existia sem essa linha)', emp.codigo, emp.regime_tributario]
             );
             gestaoCompletados++;
@@ -430,7 +450,7 @@ async function sincronizarAcessorias({ userId = null } = {}) {
           await pool.query(
             `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario)
              VALUES ($1,$2,$3,'Cliente vindo de outro contador',$4,$5,$6,$7,'Outro',$8,$9,$10)`,
-            [uuidv4(), userIdEfetivo, userNomeEfetivo, emp.cnpj, emp.nome_empresa, hoje, competenciaAtual,
+            [uuidv4(), userIdEfetivo, userNomeEfetivo, emp.cnpj, emp.nome_empresa, null, null,
              'Importado automaticamente do Sistema Acessórias', emp.codigo, emp.regime_tributario]
           );
         } else {

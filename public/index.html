@@ -440,8 +440,8 @@
               <div class="field"><label>Unidade <small class="opt">(opcional)</small> <a href="#" onclick="Gestao.gerenciarUnidades();return false" style="font-size:11px;font-weight:400;color:var(--g500)">(gerenciar lista)</a></label>
                 <select id="gc-unidade"><option value="">Selecione (opcional)</option></select>
               </div>
-              <div class="field"><label>Data da Solicitação <span class="req">*</span></label><input id="gc-data" type="date" /></div>
-              <div class="field"><label>Fim da Competência <span class="req">*</span></label><input id="gc-competencia" type="month" /></div>
+              <div class="field" id="gc-data-wrap"><label>Data da Solicitação <span class="req">*</span></label><input id="gc-data" type="date" /></div>
+              <div class="field" id="gc-competencia-wrap"><label>Fim da Competência <span class="req">*</span></label><input id="gc-competencia" type="month" /></div>
               <div class="field"><label>Canal da Solicitação <span class="req">*</span></label>
                 <select id="gc-canal" onchange="gcToggleOutros()">
                   <option value="">Selecione</option>

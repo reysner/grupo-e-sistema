@@ -1065,10 +1065,15 @@ const App = (() => {
     },
 
     async gestao() {
-      if (!Util.requireFields([['gc-analista','Analista'],['gc-solicitacao','Solicitação'],['gc-cnpj','CNPJ'],['gc-empresa','Empresa'],['gc-data','Data'],['gc-competencia','Competência'],['gc-canal','Canal'],['gc-regime','Regime Tributário']])) return;
       const gcSol = Util.val('gc-solicitacao') === 'Outro' ? Util.val('gc-sol-outro') : Util.val('gc-solicitacao');
-      const gcCanal = Util.val('gc-canal') === 'Outro' ? Util.val('gc-canal-outro') : Util.val('gc-canal');
       const isEntrada = gcSol==='Constituição de empresa' || gcSol==='Cliente vindo de outro contador' || gcSol==='Transformação de empresa';
+      // Data da Solicitação / Fim da Competência ficam de fora da validação
+      // pras 3 solicitações de ENTRADA — campo escondido nesse caso (ver
+      // gcToggleOutros), não faz sentido exigir preenchimento.
+      const camposObrigatorios = [['gc-analista','Analista'],['gc-solicitacao','Solicitação'],['gc-cnpj','CNPJ'],['gc-empresa','Empresa'],['gc-canal','Canal'],['gc-regime','Regime Tributário']];
+      if (!isEntrada) camposObrigatorios.push(['gc-data','Data'], ['gc-competencia','Competência']);
+      if (!Util.requireFields(camposObrigatorios)) return;
+      const gcCanal = Util.val('gc-canal') === 'Outro' ? Util.val('gc-canal-outro') : Util.val('gc-canal');
       const isSaida = gcSol==='Saída de empresa' || gcSol==='Baixa de empresa';
       // Validar honorario obrigatorio na entrada
       if (isEntrada && !Util.val('gc-honorario')) {
@@ -1530,6 +1535,13 @@ function gcToggleOutros() {
   ['gc-honorario-wrap','gc-origem-wrap','gc-data-entrada-wrap'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.style.display = isEntrada ? 'flex' : 'none'; el.hidden = !isEntrada; }
+  });
+  // Data da Solicitação / Fim da Competência não fazem sentido pra ENTRADA
+  // de cliente (o que importa ali é a Data de Entrada do Cliente, acima) —
+  // pedido do Reysner. Escondidos (não obrigatórios) só nesse caso.
+  ['gc-data-wrap','gc-competencia-wrap'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.style.display = isEntrada ? 'none' : 'flex'; el.hidden = isEntrada; }
   });
   // Campos de SAÍDA
   const isSaida = sol==='Saída de empresa' || sol==='Baixa de empresa';
