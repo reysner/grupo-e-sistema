@@ -3162,7 +3162,7 @@ const Carteira = (() => {
     } else { App.Toast.err('Erro ao atualizar honorário.'); }
   }
 
-  const _REGIMES = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'MEI', 'Sem fins lucrativos'];
+  const _REGIMES = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'MEI', 'Sem fins lucrativos', 'Doméstica', 'Produtor Rural', 'Condomínio', 'Pessoa Física'];
   const _ORIGENS = ['Indicação', 'Google', 'Instagram', 'LinkedIn', 'WhatsApp', 'Parceiro', 'Evento', 'Site', 'Tráfego Pago', 'Prospecção Ativa', 'Outro'];
 
   async function editarCliente(id) {

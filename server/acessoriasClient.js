@@ -20,12 +20,13 @@ const BASE_URL = 'https://api.acessorias.com';
 const ESPACAMENTO_MS = 700;
 
 /**
- * A API usa uma variedade maior de regimes do que as 5 opções que o
+ * A API usa uma variedade maior de regimes do que as opções que o
  * formulário do Grupo-E aceita (Simples Nacional, Lucro Presumido, Lucro
- * Real, MEI, Sem fins lucrativos). Mapeia os valores reais vistos na API
- * (ex.: "Simples Nacional - Isenta") pro valor equivalente daqui. Valor não
- * reconhecido vira `null` — melhor deixar em branco pra alguém revisar do
- * que adivinhar errado.
+ * Real, MEI, Sem fins lucrativos — + Doméstica/Produtor Rural/Condomínio/
+ * Pessoa Física, ver normalizarRegimeComFallback abaixo). Mapeia os
+ * valores reais vistos na API (ex.: "Simples Nacional - Isenta") pro valor
+ * equivalente daqui. Valor não reconhecido vira `null` — melhor deixar em
+ * branco pra alguém revisar do que adivinhar errado.
  */
 function normalizarRegime(regimeAcessorias) {
   const r = String(regimeAcessorias || '').toLowerCase();
@@ -35,6 +36,32 @@ function normalizarRegime(regimeAcessorias) {
   if (r.includes('lucro presumido')) return 'Lucro Presumido';
   if (r.includes('lucro real')) return 'Lucro Real';
   if (r.includes('sem fins lucrativos') || r.includes('sem fim lucrativo')) return 'Sem fins lucrativos';
+  return null;
+}
+
+/**
+ * Fallback pra quando `Regime` vem null da API (achado investigando as 115
+ * empresas "sem regime reconhecido" com o Reysner: 111 são Pessoa Física,
+ * onde Simples/Presumido/Real nem se aplicam de verdade — são conceito de
+ * empresa). Regra pedida: olhar `GrupoDeEmpresas` ao lado antes de
+ * desistir. Decisão do Reysner: promover Doméstica/Produtor Rural/
+ * Condomínio/Pessoa Física a opções de Regime Tributário aqui no Grupo-E,
+ * mesmo não sendo "regime tributário" no sentido fiscal estrito — dá uma
+ * classificação real em vez de ficar em branco. NÃO promovidos (de
+ * propósito): "Sem Movimento", "Indefinido", "Empresas com Empregados" e
+ * afins — são status operacional, não tipo de contribuinte, e aparecem
+ * também em empresas que JÁ TÊM um regime de verdade (usar isso como
+ * regime seria enganoso, não só impreciso).
+ */
+function normalizarRegimeComFallback(regimeAcessorias, grupoDeEmpresasAcessorias) {
+  const direto = normalizarRegime(regimeAcessorias);
+  if (direto) return direto;
+  const grupo = String(grupoDeEmpresasAcessorias || '').toLowerCase();
+  if (grupo.includes('mei')) return 'MEI';
+  if (grupo.includes('domestica') || grupo.includes('doméstica')) return 'Doméstica';
+  if (grupo.includes('produtor rural')) return 'Produtor Rural';
+  if (grupo.includes('condominio') || grupo.includes('condomínio')) return 'Condomínio';
+  if (grupo.includes('pessoa fisica') || grupo.includes('pessoa física')) return 'Pessoa Física';
   return null;
 }
 
@@ -151,10 +178,10 @@ function empresaParaCliente(empresa) {
     // Fantasia só entra como último recurso, se por algum motivo a Razão
     // Social vier vazia (não deveria acontecer, é campo obrigatório lá).
     nome_empresa: derivarApelido(empresa.Razao) || empresa.Razao || fantasiaUtilizavel(empresa.Fantasia) || null,
-    regime_tributario: normalizarRegime(empresa.Regime),
+    regime_tributario: normalizarRegimeComFallback(empresa.Regime, empresa.GrupoDeEmpresas),
     regime_tributario_bruto: empresa.Regime || null, // pra revisão de quem não mapeou
     data_entrada: normalizarData(empresa.ClienteDesde) || normalizarData(empresa.DataDoCadastro),
   };
 }
 
-module.exports = { listarEmpresasAtivas, buscarEmpresaPorCnpj, normalizarRegime, normalizarData, fantasiaUtilizavel, derivarApelido, empresaParaCliente };
+module.exports = { listarEmpresasAtivas, buscarEmpresaPorCnpj, normalizarRegime, normalizarRegimeComFallback, normalizarData, fantasiaUtilizavel, derivarApelido, empresaParaCliente };
