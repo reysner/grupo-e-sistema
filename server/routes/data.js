@@ -360,6 +360,9 @@ async function sincronizarAcessorias({ userId = null } = {}) {
 
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS acessorias_id TEXT`).catch(() => {});
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_acessorias_id ON clientes (acessorias_id) WHERE acessorias_id IS NOT NULL`).catch(() => {});
+  // Usada tanto no loop principal (reseta ao ver o cliente ainda ativo)
+  // quanto em detectarPossiveisChurns — precisa existir antes das duas.
+  await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS alerta_baixa_notificado_em TIMESTAMPTZ`).catch(() => {});
   // user_id normalmente é preenchido por quem cadastra manualmente — o job
   // automático não tem usuário logado, então a coluna precisa aceitar null.
   await pool.query(`ALTER TABLE clientes ALTER COLUMN user_id DROP NOT NULL`).catch(() => {});
@@ -408,7 +411,8 @@ async function sincronizarAcessorias({ userId = null } = {}) {
              nome_empresa = COALESCE($1, nome_empresa),
              regime_tributario = COALESCE($2, regime_tributario),
              codigo = COALESCE(codigo, $3),
-             acessorias_id = $4
+             acessorias_id = $4,
+             alerta_baixa_notificado_em = NULL
            WHERE id = $5`,
           [emp.nome_empresa, emp.regime_tributario, emp.codigo, emp.acessorias_id, existente.rows[0].id]
         );
@@ -462,7 +466,58 @@ async function sincronizarAcessorias({ userId = null } = {}) {
     }
   }
 
-  return { totalNaAcessorias: empresas.length, criados, atualizados, gestaoCompletados, semRegimeReconhecido, semGestaoRegistrada, erros };
+  const possiveisChurns = await detectarPossiveisChurns(empresas);
+
+  return { totalNaAcessorias: empresas.length, criados, atualizados, gestaoCompletados, semRegimeReconhecido, semGestaoRegistrada, possiveisChurns, erros };
+}
+
+/**
+ * Detecta cliente que estava ATIVO aqui e sumiu da lista de ativos do
+ * Acessórias (baixa/saída registrada lá) — notifica pelo sininho, mas NÃO
+ * encerra o cliente sozinho: quem decide o motivo do churn e confirma o
+ * encerramento é humano (pedido do Reysner: "eu incluo o motivo dos
+ * churns"). Notifica só 1x por cliente (marca `alerta_baixa_notificado_em`)
+ * — enquanto ele continuar "ativo" aqui sem ser tratado, não repete o
+ * aviso todo dia; assim que alguém encerra o cliente (status vira
+ * 'encerrado'), ele simplesmente sai da comparação.
+ *
+ * Guarda de segurança: se a lista vinda da Acessórias vier bem menor que o
+ * esperado (ex.: paginação falhou no meio), NÃO dispara nada — evita um
+ * alarme falso em massa por causa de uma falha de rede, não de baixa real.
+ */
+async function detectarPossiveisChurns(empresasAtivasNaAcessorias) {
+  await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS alerta_baixa_notificado_em TIMESTAMPTZ`).catch(() => {});
+  await pool.query(`CREATE TABLE IF NOT EXISTS notificacoes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tipo TEXT NOT NULL, titulo TEXT NOT NULL, mensagem TEXT NOT NULL,
+    lida BOOLEAN DEFAULT false, link_modulo TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`).catch(() => {});
+
+  const nossosAtivos = await pool.query(
+    `SELECT id, nome_empresa, cnpj, acessorias_id FROM clientes
+      WHERE status = 'ativo' AND acessorias_id IS NOT NULL AND alerta_baixa_notificado_em IS NULL`
+  );
+  if (!nossosAtivos.rows.length) return 0;
+
+  // Guarda: só compara se a lista da Acessórias tiver um tamanho plausível
+  // perto do que já temos cadastrado (evita falso alarme por paginação
+  // incompleta — ver comentário acima).
+  if (empresasAtivasNaAcessorias.length < nossosAtivos.rows.length * 0.7) return 0;
+
+  const idsAtivosNaAcessorias = new Set(empresasAtivasNaAcessorias.map(e => e.acessorias_id));
+  let notificados = 0;
+  for (const cliente of nossosAtivos.rows) {
+    if (idsAtivosNaAcessorias.has(cliente.acessorias_id)) continue;
+    await pool.query(
+      `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo)
+       VALUES ('churn_acessorias', 'Possível baixa/saída no Acessórias', $1, 'carteira')`,
+      [`${cliente.nome_empresa} (CNPJ ${cliente.cnpj}) não aparece mais como ativa no Acessórias — confirme a saída e registre o motivo do churn na Carteira.`]
+    );
+    await pool.query(`UPDATE clientes SET alerta_baixa_notificado_em = NOW() WHERE id = $1`, [cliente.id]);
+    notificados++;
+  }
+  return notificados;
 }
 
 /** POST /api/data/clientes/importar-acessorias — dispara a sincronização manualmente (botão "Atualizar agora"). */

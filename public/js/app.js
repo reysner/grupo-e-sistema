@@ -433,7 +433,7 @@ const App = (() => {
       await Dashboard.carregarSucessoCliente(period, analista);
 
       // ── RESUMO (KPIs no topo) — depois do CS pra já ter % de SLA disponível ──
-      Dashboard.renderKPIs();
+      await Dashboard.renderKPIs();
 
       // ── GESTÃO ───────────────────────────────────────────────────────────────
       Dashboard.renderChart('c-gestao', 'doughnut', c.gcTipo,  'Solicitação');
@@ -534,7 +534,7 @@ const App = (() => {
      * dos ~20 gráficos que vêm em seguida (pedido do usuário: dashboard
      * "sujo" e pouco funcional).
      */
-    renderKPIs() {
+    async renderKPIs() {
       const d  = Dashboard._lastData;
       const cs = Dashboard._lastCS;
       const set = (id, val, cor) => {
@@ -549,7 +549,16 @@ const App = (() => {
       // top 8/10 pra caber nos gráficos, então somar aquelas subestimaria o total.
       const soma = rows => (rows || []).reduce((acc, r) => acc + Number(r.n || 0), 0);
       set('dash-kpi-atendimentos',  soma(d.chartsFull?.atEmpresa));
-      set('dash-kpi-gestao',        soma(d.chartsFull?.gcTipo));
+      // "Gestão de Clientes" virou "Clientes ativos" — pedido do Reysner:
+      // não quer que pareça contagem de solicitações no período, e sim a
+      // base de clientes de verdade (não é filtrado por período de propósito).
+      try {
+        const resCart = await API.get('/api/data/carteira/dashboard');
+        if (resCart && resCart.ok) {
+          const dCart = await resCart.json();
+          set('dash-kpi-gestao', dCart.ativos ?? '—');
+        }
+      } catch (e) { console.error('[Dashboard] renderKPIs carteira', e); }
       set('dash-kpi-insatisfacoes', soma(d.chartsFull?.insGrav));
       set('dash-kpi-nps', d.nps != null ? d.nps.toFixed(1) : '—');
 
@@ -1703,7 +1712,7 @@ const Notificacoes = (() => {
       list.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:13px;padding:20px">Sem notificações</p>';
       return;
     }
-    const icons = { insatisfacao_alta: '🚨', reajuste: '⚠️', novo_cliente: '🎉', pesquisa: '📊', default: '🔔' };
+    const icons = { insatisfacao_alta: '🚨', reajuste: '⚠️', novo_cliente: '🎉', pesquisa: '📊', churn_acessorias: '📉', default: '🔔' };
     list.innerHTML = data.map(function(n) {
       const icon = icons[n.tipo] || icons.default;
       const bg = n.lida ? '' : 'background:#f0fff4;';
@@ -3948,7 +3957,9 @@ const Gestao = (() => {
         <div><p style="font-size:24px;font-weight:800;color:var(--g700);margin:0">${r.atualizados}</p><p style="color:var(--gray-500);font-size:12px;margin:0">atualizado(s)</p></div>
         <div><p style="font-size:24px;font-weight:800;color:var(--gray-400);margin:0">${r.totalNaAcessorias}</p><p style="color:var(--gray-500);font-size:12px;margin:0">ativos no Acessórias</p></div>
         ${r.gestaoCompletados ? `<div><p style="font-size:24px;font-weight:800;color:#3182ce;margin:0">${r.gestaoCompletados}</p><p style="color:var(--gray-500);font-size:12px;margin:0">Gestão completada</p></div>` : ''}
+        ${r.possiveisChurns ? `<div><p style="font-size:24px;font-weight:800;color:#e53e3e;margin:0">${r.possiveisChurns}</p><p style="color:var(--gray-500);font-size:12px;margin:0">possível baixa/saída</p></div>` : ''}
       </div>
+      ${r.possiveisChurns ? `<p style="font-size:12px;color:#e53e3e;margin:0 0 10px">⚠️ ${r.possiveisChurns} cliente(s) sumiram da lista de ativos do Acessórias — confira o sininho de notificações e registre o motivo do churn na Carteira.</p>` : ''}
       <p style="font-size:12px;color:var(--gray-500);margin:0 0 14px">Honorário não foi trazido de propósito — clientes novos ficam com honorário pendente pra você preencher. ${r.semRegimeReconhecido ? `${r.semRegimeReconhecido} empresa(s) vieram com um regime tributário que não reconheci — revise manualmente.` : ''}</p>
       ${listaErros ? `<div><p style="font-weight:700;color:#e53e3e;font-size:13px;margin-bottom:6px">❌ Não importados (${r.erros.length})</p><ul style="font-size:12px;color:var(--gray-600);padding-left:18px;max-height:160px;overflow:auto">${listaErros}</ul></div>` : ''}
       <div style="text-align:right;margin-top:16px"><button class="btn btn-primary" onclick="App.Modal.close()">Entendi</button></div>
