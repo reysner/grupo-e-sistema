@@ -155,6 +155,24 @@ initDB().then(async () => {
     rodarIngestaoCS(); // já roda uma vez ao subir
   }
 
+  // Carteira — sincronização automática diária com o Sistema Acessórias
+  // (clientes ativos de lá, SEM honorário — pedido do Reysner). Botão
+  // "Atualizar agora" em Gestão de Clientes cobre o caso de querer rodar
+  // na hora, sem esperar o ciclo de 24h.
+  if (process.env.ACESSORIAS_API_TOKEN) {
+    const { sincronizarAcessorias } = require('./routes/data');
+    const rodarSyncAcessorias = async () => {
+      try {
+        const resultado = await sincronizarAcessorias();
+        console.log('[Acessórias] Sincronização automática:', resultado);
+      } catch (e) {
+        console.error('[Acessórias] Falha na sincronização automática:', e.message);
+      }
+    };
+    setInterval(rodarSyncAcessorias, 24 * 60 * 60 * 1000); // 1x por dia
+    rodarSyncAcessorias(); // já roda uma vez ao subir
+  }
+
   app.listen(PORT, () => console.log(`🚀 Grupo-E rodando na porta ${PORT}`));
 }).catch(err => {
   console.error('❌ Erro ao conectar ao banco:', err);

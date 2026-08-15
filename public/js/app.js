@@ -3838,10 +3838,52 @@ const Gestao = (() => {
     }
   }
 
+  /** Resultado da sincronização com o Acessórias (formato diferente do de importação de planilha). */
+  function _resultadoAcessoriasHTML(r) {
+    const listaErros = (r.erros || []).map(e => `<li><strong>${_esc(e.empresa || '(sem nome)')}</strong>: ${_esc(e.motivo)}</li>`).join('');
+    return `<div style="padding:6px 0">
+      <div style="display:flex;gap:24px;margin-bottom:14px">
+        <div><p style="font-size:24px;font-weight:800;color:#38a169;margin:0">${r.criados}</p><p style="color:var(--gray-500);font-size:12px;margin:0">cliente(s) novo(s)</p></div>
+        <div><p style="font-size:24px;font-weight:800;color:var(--g700);margin:0">${r.atualizados}</p><p style="color:var(--gray-500);font-size:12px;margin:0">atualizado(s)</p></div>
+        <div><p style="font-size:24px;font-weight:800;color:var(--gray-400);margin:0">${r.totalNaAcessorias}</p><p style="color:var(--gray-500);font-size:12px;margin:0">ativos no Acessórias</p></div>
+      </div>
+      <p style="font-size:12px;color:var(--gray-500);margin:0 0 14px">Honorário não foi trazido de propósito — clientes novos ficam com honorário pendente pra você preencher. ${r.semRegimeReconhecido ? `${r.semRegimeReconhecido} empresa(s) vieram com um regime tributário que não reconheci — revise manualmente.` : ''}</p>
+      ${listaErros ? `<div><p style="font-weight:700;color:#e53e3e;font-size:13px;margin-bottom:6px">❌ Não importados (${r.erros.length})</p><ul style="font-size:12px;color:var(--gray-600);padding-left:18px;max-height:160px;overflow:auto">${listaErros}</ul></div>` : ''}
+      <div style="text-align:right;margin-top:16px"><button class="btn btn-primary" onclick="App.Modal.close()">Entendi</button></div>
+    </div>`;
+  }
+
+  async function sincronizarAcessorias() {
+    if (!App.Auth.isAdmin()) { App.Toast.err('Restrito a administradores.'); return; }
+    const btn = document.getElementById('btn-sync-acessorias');
+    if (btn) { btn.disabled = true; btn.textContent = '🔄 Sincronizando...'; }
+    App.Toast.ok('Buscando clientes ativos no Acessórias — pode levar um tempo dependendo do volume...');
+    try {
+      const res = await fetch('/api/data/clientes/importar-acessorias', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${_token()}` },
+      });
+      if (!res || !res.ok) {
+        const err = await res?.json().catch(() => ({}));
+        App.Toast.err(err?.error || 'Erro ao sincronizar com o Acessórias.');
+        return;
+      }
+      const resultado = await res.json();
+      App.Modal.open('🔄 Sincronização com o Acessórias', _resultadoAcessoriasHTML(resultado), () => {}, { noFooter: true });
+      loadGrid();
+    } catch (e) {
+      console.error('[Gestao] sincronizarAcessorias', e);
+      App.Toast.err('Não consegui sincronizar com o Acessórias.');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '🔄 Importar do Acessórias'; }
+    }
+  }
+
   return {
     loadGrid, exportCSV, exportPDF, limpar, excluir, goPage, importarPlanilha,
     gerenciarGrupos, _criarGrupo, _toggleGrupo, _excluirGrupo,
     gerenciarUnidades, _criarUnidade, _toggleUnidade, _excluirUnidade,
+    sincronizarAcessorias,
   };
 })();
 

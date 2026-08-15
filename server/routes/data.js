@@ -3,6 +3,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../db');
 const { requireAuth, requireAdmin } = require('../auth');
+const acessoriasClient = require('../acessoriasClient');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -60,12 +61,13 @@ router.post('/atendimentos', async (req, res) => {
 
 // ── GESTÃO ────────────────────────────────────────────────────────────────────
 
-// Faixa de ticket relativa à média: mesma banda de ±15% usada em Carteira.
-const FAIXA_BANDA = 0.15;
+// Faixa de ticket relativa à média: banda fixa de R$50 (pedido do Reysner —
+// antes era ±15% relativo, trocado pra valor fixo em reais).
+const FAIXA_BANDA_RS = 50;
 function classificarFaixa(valor, media) {
   if (valor == null || !media) return null;
-  if (valor > media * (1 + FAIXA_BANDA)) return 'acima';
-  if (valor < media * (1 - FAIXA_BANDA)) return 'abaixo';
+  if (valor > media + FAIXA_BANDA_RS) return 'acima';
+  if (valor < media - FAIXA_BANDA_RS) return 'abaixo';
   return 'na_media';
 }
 
@@ -326,6 +328,84 @@ router.post('/gestao/importar', requireAdmin, async (req, res) => {
 
   await registrarLog(req.user.id, req.user.name, 'importar', 'gestao', `Importação de planilha: ${processados} registro(s)`, req);
   res.json({ processados, avisos, erros });
+});
+
+/**
+ * Sincroniza clientes ATIVOS do Sistema Acessórias pra Carteira (`clientes`).
+ * Pedido do Reysner: traz tudo (nome, CNPJ, regime, data de entrada) MENOS
+ * o honorário — de propósito, fica pendente de preenchimento manual/depois.
+ * Casa por `acessorias_id` primeiro (estável entre sincronizações mesmo se o
+ * CNPJ vier formatado diferente em algum lugar), com fallback por CNPJ pra
+ * já linkar quem foi cadastrado manualmente antes de existir essa integração.
+ * NUNCA mexe em honorário de cliente existente — só cria/atualiza dados
+ * cadastrais. Usada tanto pelo endpoint manual (com `userId` de quem
+ * clicou) quanto pelo job automático em index.js (sem usuário logado —
+ * por isso `userId` é opcional e a coluna vira nullable abaixo).
+ */
+async function sincronizarAcessorias({ userId = null } = {}) {
+  const token = process.env.ACESSORIAS_API_TOKEN;
+  if (!token) throw new Error('ACESSORIAS_API_TOKEN não configurado.');
+
+  await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS acessorias_id TEXT`).catch(() => {});
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_acessorias_id ON clientes (acessorias_id) WHERE acessorias_id IS NOT NULL`).catch(() => {});
+  // user_id normalmente é preenchido por quem cadastra manualmente — o job
+  // automático não tem usuário logado, então a coluna precisa aceitar null.
+  await pool.query(`ALTER TABLE clientes ALTER COLUMN user_id DROP NOT NULL`).catch(() => {});
+
+  const empresas = await acessoriasClient.listarEmpresasAtivas({ token });
+  let criados = 0, atualizados = 0, semRegimeReconhecido = 0;
+  const erros = [];
+
+  for (const emp of empresas) {
+    if (!emp.cnpj) { erros.push({ empresa: emp.nome_empresa, motivo: 'Sem CNPJ/CPF na Acessórias.' }); continue; }
+    if (!emp.regime_tributario) semRegimeReconhecido++;
+    try {
+      const existente = await pool.query(
+        `SELECT id FROM clientes WHERE acessorias_id = $1 OR cnpj = $2 LIMIT 1`,
+        [emp.acessorias_id, emp.cnpj]
+      );
+      if (existente.rows.length) {
+        await pool.query(
+          `UPDATE clientes SET
+             nome_empresa = COALESCE($1, nome_empresa),
+             regime_tributario = COALESCE($2, regime_tributario),
+             acessorias_id = $3
+           WHERE id = $4`,
+          [emp.nome_empresa, emp.regime_tributario, emp.acessorias_id, existente.rows[0].id]
+        );
+        atualizados++;
+      } else {
+        await pool.query(
+          `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada, acessorias_id, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,'ativo')`,
+          [uuidv4(), userId, emp.cnpj, emp.nome_empresa, emp.regime_tributario, emp.data_entrada, emp.acessorias_id]
+        );
+        // Sem INSERT em `honorarios` de propósito — cliente fica com
+        // honorário pendente (honorario_atual sai null nas telas que já
+        // tratam esse caso, ex.: Gestão de Clientes, Carteira).
+        criados++;
+      }
+    } catch (e) {
+      erros.push({ empresa: emp.nome_empresa, motivo: e.message });
+    }
+  }
+
+  return { totalNaAcessorias: empresas.length, criados, atualizados, semRegimeReconhecido, erros };
+}
+
+/** POST /api/data/clientes/importar-acessorias — dispara a sincronização manualmente (botão "Atualizar agora"). */
+router.post('/clientes/importar-acessorias', requireAdmin, async (req, res) => {
+  try {
+    const resultado = await sincronizarAcessorias({ userId: req.user.id });
+    await registrarLog(
+      req.user.id, req.user.name, 'importar', 'gestao',
+      `Sincronização Acessórias: ${resultado.criados} criado(s), ${resultado.atualizados} atualizado(s)`, req
+    );
+    res.json(resultado);
+  } catch (e) {
+    console.error('[acessorias] importar falhou:', e);
+    res.status(500).json({ error: 'Falha ao sincronizar com Acessórias: ' + e.message });
+  }
 });
 
 // ── INSATISFAÇÕES ─────────────────────────────────────────────────────────────
@@ -2231,3 +2311,4 @@ module.exports = router;
 
 module.exports.publicRouter = publicRouter;
 module.exports.registrarLog = registrarLog;
+module.exports.sincronizarAcessorias = sincronizarAcessorias;
