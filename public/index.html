@@ -395,9 +395,27 @@
               <option value="na_media">Na média</option>
               <option value="abaixo">Abaixo da média</option>
             </select>
+            <select id="gc-status-filter" onchange="Gestao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="ativo" selected>Só ativas</option>
+              <option value="todos">Ativas e inativas</option>
+              <option value="encerrado">Só inativas</option>
+            </select>
+            <select id="gc-solicitacao-filter" onchange="Gestao.loadGrid()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todas as solicitações</option>
+              <option>Baixa de empresa</option>
+              <option>Cliente vindo de outro contador</option>
+              <option>Constituição de empresa</option>
+              <option>Saída de empresa</option>
+              <option>Transformação de empresa</option>
+              <option>Outro</option>
+            </select>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--gray-600);cursor:pointer">
               <input type="checkbox" id="gc-inadimplente-filter" onchange="Gestao.loadGrid()" />
               Só inadimplentes crônicos
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--gray-600);cursor:pointer">
+              <input type="checkbox" id="gc-churn-filter" onchange="Gestao.loadGrid()" />
+              Só possíveis churns
             </label>
             <div id="gc-ticket-medio" style="margin-left:8px;padding:6px 14px;border-radius:6px;background:#f0f9f4;border:1px solid #c6f6d5;font-size:13px;color:var(--g800,#1a4233)">
               <strong>Ticket Médio:</strong> <span id="gc-ticket-medio-valor">—</span>
@@ -467,7 +485,9 @@
               </div>
               <div class="field" id="gc-data-entrada-wrap" hidden><label>Data de Entrada do Cliente <span class="req">*</span></label><input id="gc-data-entrada" type="date" /></div>
               <div class="field" id="gc-data-saida-wrap" hidden><label>Data de Encerramento</label><input id="gc-data-saida" type="date" /></div>
-              <div class="field" id="gc-motivo-saida-wrap" hidden><label>Motivo da Saída</label><input id="gc-motivo-saida" type="text" placeholder="Descreva o motivo" /></div>
+              <div class="field" id="gc-motivo-saida-wrap" hidden><label>Motivo do Churn <span class="req">*</span> <a href="#" onclick="Gestao.gerenciarMotivosChurn();return false" style="font-size:11px;font-weight:400;color:var(--g500)">(gerenciar lista)</a></label>
+                <select id="gc-motivo-saida"><option value="">Selecione</option></select>
+              </div>
             </div>
             <button class="btn btn-primary btn-save" id="btn-gc-save">Salvar Gestão</button>
           </div>

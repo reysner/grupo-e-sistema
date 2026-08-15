@@ -108,6 +108,28 @@ async function listarEmpresasAtivas({ token, limitePaginas = 500 } = {}) {
 }
 
 /**
+ * Busca UMA empresa específica pelo CNPJ/CPF (usado ao resolver uma
+ * notificação de churn — pega o `ClienteAte` real, em vez de usar "hoje"
+ * como data de saída). CNPJ vai direto na URL, sem encodar a barra — a API
+ * retorna 404 se `/` virar `%2F` (confirmado testando).
+ *
+ * @returns {object|null} { status: 'Ativa'|'Inativa', clienteAte: 'AAAA-MM-DD'|null } ou null se não achar/der erro.
+ */
+async function buscarEmpresaPorCnpj(cnpj, token) {
+  if (!cnpj || !token) return null;
+  try {
+    const url = `${BASE_URL}/companies/${cnpj}`;
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!resp.ok) return null;
+    const empresa = await resp.json();
+    if (!empresa || !empresa.Status) return null;
+    return { status: empresa.Status, clienteAte: normalizarData(empresa.ClienteAte) };
+  } catch (e) {
+    return null; // falha na busca não pode travar a resolução do churn — quem chama usa "hoje" como fallback
+  }
+}
+
+/**
  * Traduz uma empresa da API pro formato de `clientes` daqui — SEM honorário
  * de propósito (ver comentário no topo do arquivo). `acessorias_id` é
  * guardado pra re-sincronizar sem depender só do CNPJ (evita duplicar se o
@@ -131,4 +153,4 @@ function empresaParaCliente(empresa) {
   };
 }
 
-module.exports = { listarEmpresasAtivas, normalizarRegime, normalizarData, fantasiaUtilizavel, derivarApelido, empresaParaCliente };
+module.exports = { listarEmpresasAtivas, buscarEmpresaPorCnpj, normalizarRegime, normalizarData, fantasiaUtilizavel, derivarApelido, empresaParaCliente };

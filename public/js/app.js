@@ -1091,6 +1091,11 @@ const App = (() => {
       if (isEntrada && !Util.val('gc-data-entrada')) {
         App.Toast.err('Data de Entrada é obrigatória.'); return;
       }
+      // Motivo do Churn só é obrigatório em "Saída de empresa" — "Baixa de
+      // empresa" não pede (não é churn de verdade, ver gcToggleOutros).
+      if (gcSol === 'Saída de empresa' && !Util.val('gc-motivo-saida')) {
+        App.Toast.err('Motivo do Churn é obrigatório para Saída de empresa.'); return;
+      }
       const token = localStorage.getItem('ge_token');
       // Se é entrada, registra automaticamente na carteira
       if (isEntrada && Util.val('gc-honorario')) {
@@ -1552,12 +1557,16 @@ function gcToggleOutros() {
     const el = document.getElementById(id);
     if (el) { el.style.display = isEntrada ? 'none' : 'flex'; el.hidden = isEntrada; }
   });
-  // Campos de SAÍDA
+  // Campos de SAÍDA — Data de Encerramento vale pras duas (baixa e saída),
+  // mas Motivo do Churn só faz sentido em "Saída de empresa": "Baixa" é o
+  // empresário encerrando o CNPJ por motivos diversos, nem sempre ligado à
+  // contabilidade — não é churn de verdade (pedido do Reysner).
   const isSaida = sol==='Saída de empresa' || sol==='Baixa de empresa';
-  ['gc-data-saida-wrap','gc-motivo-saida-wrap'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) { el.style.display = isSaida ? 'flex' : 'none'; el.hidden = !isSaida; }
-  });
+  const dataSaidaWrap = document.getElementById('gc-data-saida-wrap');
+  if (dataSaidaWrap) { dataSaidaWrap.style.display = isSaida ? 'flex' : 'none'; dataSaidaWrap.hidden = !isSaida; }
+  const isChurn = sol==='Saída de empresa';
+  const motivoChurnWrap = document.getElementById('gc-motivo-saida-wrap');
+  if (motivoChurnWrap) { motivoChurnWrap.style.display = isChurn ? 'flex' : 'none'; motivoChurnWrap.hidden = !isChurn; }
 }
 
 // ── Insatisfação — cascade Area → Tipo ───────────────────────────────────────
@@ -1717,13 +1726,13 @@ const Notificacoes = (() => {
       const icon = icons[n.tipo] || icons.default;
       const bg = n.lida ? '' : 'background:#f0fff4;';
       const dt = new Date(n.created_at).toLocaleString('pt-BR');
-      const dataAttrs = 'data-modulo="' + (n.link_modulo||'') + '" data-id="' + n.id + '" onclick="Notificacoes.clicar(this)"';
+      const dataAttrs = 'data-modulo="' + (n.link_modulo||'') + '" data-id="' + n.id + '" data-tipo="' + n.tipo + '" data-cliente-id="' + (n.cliente_id||'') + '" onclick="Notificacoes.clicar(this)"';
       return '<div style="' + bg + 'padding:12px 16px;border-bottom:1px solid var(--gray-100);cursor:pointer" ' + dataAttrs + '>' +
         '<div style="display:flex;gap:10px;align-items:flex-start">' +
           '<span style="font-size:18px;flex-shrink:0">' + icon + '</span>' +
           '<div style="min-width:0">' +
             '<div style="font-size:13px;font-weight:' + (n.lida ? '400' : '600') + ';color:var(--g800)">' + n.titulo + '</div>' +
-            '<div style="font-size:12px;color:var(--gray-500);margin-top:2px">' + n.mensagem + '</div>' +
+            '<div class="notif-msg" style="font-size:12px;color:var(--gray-500);margin-top:2px">' + n.mensagem + '</div>' +
             '<div style="font-size:11px;color:var(--gray-400);margin-top:4px">' + dt + '</div>' +
           '</div>' +
         '</div>' +
@@ -1784,10 +1793,89 @@ const Notificacoes = (() => {
   function clicar(el) {
     const modulo = el.dataset.modulo;
     const id = el.dataset.id;
+    const tipo = el.dataset.tipo;
+    const clienteId = el.dataset.clienteId;
+    // Notificação de churn abre o resolvedor (Baixa/Saída) em vez de só
+    // navegar — pedido do Reysner: resolver ali mesmo, sem procurar o
+    // cliente na mão. Se não tiver cliente_id (notificação antiga, de
+    // antes dessa mudança), cai no comportamento padrão (navega).
+    if (tipo === 'churn_acessorias' && clienteId) {
+      const panel = document.getElementById('notif-panel');
+      if (panel) panel.hidden = true;
+      _open = false;
+      abrirResolverChurn(clienteId, id, el.querySelector('.notif-msg')?.textContent || '');
+      return;
+    }
     if (modulo) irPara(modulo, id);
     else marcarLida(id);
   }
-  return { checar, toggle, marcarLida, marcarTodasLidas, irPara, clicar, criar, iniciar };
+
+  /** Modal "resolver churn": Baixa (encerra direto) ou Saída (pede motivo do dropdown gerenciável). */
+  async function abrirResolverChurn(clienteId, notifId, mensagem) {
+    App.Modal.open('📉 Possível baixa/saída no Acessórias',
+      `<div style="display:grid;gap:14px">
+        <p style="font-size:13px;color:var(--gray-600);margin:0">${mensagem || 'Essa empresa não aparece mais como ativa no Acessórias.'}</p>
+        <p style="font-size:13px;font-weight:600;margin:0">O que aconteceu?</p>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-ghost" style="flex:1" onclick="Notificacoes._resolverBaixa('${clienteId}','${notifId}')">Foi baixa de empresa</button>
+          <button class="btn btn-primary" style="flex:1" onclick="Notificacoes._mostrarMotivoSaida('${clienteId}','${notifId}')">Foi saída (churn)</button>
+        </div>
+        <div id="churn-motivo-wrap" hidden>
+          <label style="font-size:12px;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px">Motivo do Churn</label>
+          <select id="churn-motivo-select" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;margin-top:6px"><option value="">Carregando...</option></select>
+          <button class="btn btn-primary" style="width:100%;margin-top:10px" onclick="Notificacoes._resolverSaida('${clienteId}','${notifId}')">Confirmar saída</button>
+        </div>
+      </div>`,
+      () => App.Modal.close(), { noFooter: true });
+  }
+
+  async function _mostrarMotivoSaida(clienteId, notifId) {
+    const wrap = document.getElementById('churn-motivo-wrap');
+    if (wrap) { wrap.hidden = false; wrap.style.display = 'block'; }
+    const sel = document.getElementById('churn-motivo-select');
+    if (!sel) return;
+    try {
+      const res = await fetch('/api/motivos-churn?ativo=true', { headers: { Authorization: 'Bearer ' + _tk() } });
+      const { motivos } = await res.json();
+      sel.innerHTML = '<option value="">Selecione</option>' + (motivos || []).map(m => `<option value="${m.nome}">${m.nome}</option>`).join('');
+    } catch (e) {
+      sel.innerHTML = '<option value="">Erro ao carregar</option>';
+    }
+  }
+
+  async function _resolverBaixa(clienteId, notifId) {
+    await _resolverChurn(clienteId, notifId, 'baixa', null);
+  }
+
+  async function _resolverSaida(clienteId, notifId) {
+    const motivo = document.getElementById('churn-motivo-select')?.value;
+    if (!motivo) { App.Toast.err('Selecione o Motivo do Churn.'); return; }
+    await _resolverChurn(clienteId, notifId, 'saida', motivo);
+  }
+
+  async function _resolverChurn(clienteId, notifId, tipo, motivoChurn) {
+    try {
+      const res = await fetch(`/api/data/clientes/${clienteId}/resolver-churn`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+        body: JSON.stringify({ tipo, motivoChurn, notificacaoId: notifId }),
+      });
+      if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || 'Erro ao resolver.'); }
+      App.Modal.close();
+      App.Toast.ok('Cliente encerrado — registro atualizado na Carteira e em Gestão de Clientes.');
+      await checar();
+      // Se as telas de Carteira/Gestão estiverem carregadas, atualiza a grade também.
+      window.Carteira?.loadGrid?.();
+      window.Gestao?.loadGrid?.();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
+  }
+
+  return {
+    checar, toggle, marcarLida, marcarTodasLidas, irPara, clicar, criar, iniciar,
+    _resolverBaixa, _resolverSaida, _mostrarMotivoSaida,
+  };
 })();
 
 window.Notificacoes = Notificacoes;
@@ -3607,13 +3695,115 @@ const Gestao = (() => {
     }
   }
 
+  // ── Motivos de Churn (dropdown de "Motivo do Churn", só em Saída de empresa) ─
+  // Mesmo padrão de Unidades acima — lista gerenciável em vez de texto livre,
+  // pra dar uma visão real de quais são os principais motivos (pedido do
+  // Reysner: "posso criar vários que é pelo mesmo motivo e não ter uma ideia
+  // exata"). Vem com uma lista inicial de sugestões (seed no backend).
+  async function _carregarMotivosChurnSelect() {
+    const sel = document.getElementById('gc-motivo-saida');
+    if (!sel) return;
+    try {
+      const res = await fetch('/api/motivos-churn?ativo=true', { headers: { Authorization: `Bearer ${_token()}` } });
+      if (!res || !res.ok) return;
+      const { motivos } = await res.json();
+      const atual = sel.value;
+      sel.innerHTML = '<option value="">Selecione</option>' +
+        (motivos || []).map(m => `<option value="${m.nome}">${m.nome}</option>`).join('');
+      sel.value = atual;
+    } catch (e) {
+      console.error('[Gestao] _carregarMotivosChurnSelect()', e);
+    }
+  }
+
+  async function gerenciarMotivosChurn() {
+    try {
+      const res = await fetch('/api/motivos-churn', { headers: { Authorization: `Bearer ${_token()}` } });
+      if (!res || !res.ok) { App.Toast.err('Erro ao carregar motivos.'); return; }
+      const { motivos } = await res.json();
+      _renderMotivosChurnModal(motivos || []);
+    } catch (e) {
+      App.Toast.err('Erro ao carregar motivos.');
+    }
+  }
+
+  function _renderMotivosChurnModal(lista) {
+    const linhas = lista.map(m => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-100)">
+        <span style="${m.ativo ? '' : 'color:var(--gray-400);text-decoration:line-through'}">${m.nome}</span>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="Gestao._toggleMotivoChurn('${m.id}', ${!m.ativo})">${m.ativo ? 'Desativar' : 'Reativar'}</button>
+          <button class="btn btn-sm" style="background:none;border:none;color:#e53e3e;cursor:pointer" onclick="Gestao._excluirMotivoChurn('${m.id}')" title="Excluir de vez">🗑</button>
+        </div>
+      </div>`).join('') || '<p style="color:var(--gray-400);font-size:13px;padding:12px 0">Nenhum motivo cadastrado ainda.</p>';
+
+    App.Modal.open('⚙️ Gerenciar Motivos de Churn',
+      `<div style="display:flex;gap:8px;margin-bottom:16px">
+        <input id="motivo-churn-novo-nome" type="text" placeholder="Motivo (ex: Preço alto)" style="flex:1;padding:8px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px">
+        <button class="btn btn-sm" onclick="Gestao._criarMotivoChurn()">+ Adicionar</button>
+      </div>
+      <div style="max-height:320px;overflow-y:auto">${linhas}</div>`,
+      () => App.Modal.close(), { noFooter: true });
+  }
+
+  async function _criarMotivoChurn() {
+    const input = document.getElementById('motivo-churn-novo-nome');
+    const nome = (input?.value || '').trim();
+    if (!nome) { App.Toast.err('Digite um nome.'); return; }
+    try {
+      const res = await fetch('/api/motivos-churn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${_token()}` },
+        body: JSON.stringify({ nome }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao criar.');
+      App.Toast.ok('Motivo adicionado!');
+      await gerenciarMotivosChurn();
+      await _carregarMotivosChurnSelect();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
+  }
+
+  async function _toggleMotivoChurn(id, ativo) {
+    try {
+      const res = await fetch(`/api/motivos-churn/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${_token()}` },
+        body: JSON.stringify({ ativo }),
+      });
+      if (!res.ok) throw new Error('Erro ao atualizar.');
+      await gerenciarMotivosChurn();
+      await _carregarMotivosChurnSelect();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
+  }
+
+  async function _excluirMotivoChurn(id) {
+    if (!confirm('Excluir esse motivo de vez? Registros antigos continuam mostrando o nome, só não aparece mais na lista.')) return;
+    try {
+      const res = await fetch(`/api/motivos-churn/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${_token()}` } });
+      if (!res.ok) throw new Error('Erro ao excluir.');
+      App.Toast.ok('Motivo excluído.');
+      await gerenciarMotivosChurn();
+      await _carregarMotivosChurnSelect();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
+  }
+
   function _filterData(data) {
     const ano = document.getElementById('gc-ano-filter')?.value || 'todos';
     const mes = document.getElementById('gc-mes-filter')?.value || 'todos';
     const grupo = document.getElementById('gc-grupo-filter')?.value || 'todos';
     const unidade = document.getElementById('gc-unidade-filter')?.value || 'todos';
     const faixa = document.getElementById('gc-faixa-filter')?.value || 'todos';
+    const status = document.getElementById('gc-status-filter')?.value || 'todos';
+    const solicitacao = document.getElementById('gc-solicitacao-filter')?.value || 'todos';
     const soInadimplente = document.getElementById('gc-inadimplente-filter')?.checked || false;
+    const soChurn = document.getElementById('gc-churn-filter')?.checked || false;
     return data.filter(r => {
       const d = new Date(r.created_at);
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
@@ -3621,7 +3811,19 @@ const Gestao = (() => {
       if (grupo !== 'todos' && r.grupo_empresas !== grupo) return false;
       if (unidade !== 'todos' && r.unidade !== unidade) return false;
       if (faixa !== 'todos' && r.faixa !== faixa) return false;
+      // status_cliente vem null quando a empresa da linha de Gestão nunca
+      // teve (ou não tem mais) um cliente correspondente na Carteira —
+      // trata como "inativa" pro filtro, já que não está na base ativa.
+      if (status === 'ativo' && r.status_cliente !== 'ativo') return false;
+      if (status === 'encerrado' && r.status_cliente === 'ativo') return false;
+      if (solicitacao !== 'todos' && r.solicitacao !== solicitacao) return false;
       if (soInadimplente && !r.inadimplente_cronico) return false;
+      // Churn = sinal automático (sumiu do Acessórias) OU solicitação manual
+      // "Saída de empresa" — especificamente o cliente saindo DO ESCRITÓRIO.
+      // "Baixa de empresa" NÃO conta: é o empresário encerrando o CNPJ dele
+      // por motivos diversos, nem sempre ligado à contabilidade (pedido do
+      // Reysner: "churn é pra buscar entender os maiores índices de saída").
+      if (soChurn && !r.possivel_churn && r.solicitacao !== 'Saída de empresa') return false;
 
       return true;
     });
@@ -3639,12 +3841,13 @@ const Gestao = (() => {
       const lixeira = App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Gestao.excluir('${r.id}')" title="Excluir">🗑</button>` : '';
       const faixaTag = r.faixa ? `<span style="font-size:11px;font-weight:700;color:${_FAIXA_COR[r.faixa]}">${_FAIXA_LABEL[r.faixa]}</span>` : '<span style="color:var(--gray-400)">—</span>';
       const inadimplenteTag = r.inadimplente_cronico ? ' 🔴' : '';
+      const churnTag = r.possivel_churn ? ' <span title="Sumiu da lista de ativos do Acessórias">📉</span>' : '';
       return `<tr>
         <td style="font-size:12px;color:var(--gray-500)">${d}</td>
         <td>${r.analista}</td>
         <td style="font-size:11px;color:var(--gray-400);font-weight:600">${r.codigo||'—'}</td>
         <td style="font-size:12px">${r.cnpj||'—'}</td>
-        <td style="font-weight:600">${r.empresa}${inadimplenteTag}</td>
+        <td style="font-weight:600">${r.empresa}${inadimplenteTag}${churnTag}</td>
         <td>${r.solicitacao}</td>
         <td>${r.canal||'—'}</td>
         <td style="font-size:12px">${r.grupo_empresas || '—'}</td>
@@ -3671,6 +3874,7 @@ const Gestao = (() => {
     _populateYearFilter(_allData);
     await _carregarGruposSelect();
     await _carregarUnidadesSelect();
+    await _carregarMotivosChurnSelect();
     // Se um filtro de Unidade estiver selecionado, mostra o ticket médio
     // daquela unidade específica (ex.: só as ~100 empresas da Escritorial
     // Soluções); senão mostra a média geral da Carteira.
@@ -3987,6 +4191,7 @@ const Gestao = (() => {
     loadGrid, exportCSV, exportPDF, limpar, excluir, _onScroll, importarPlanilha,
     gerenciarGrupos, _criarGrupo, _toggleGrupo, _excluirGrupo,
     gerenciarUnidades, _criarUnidade, _toggleUnidade, _excluirUnidade,
+    gerenciarMotivosChurn, _criarMotivoChurn, _toggleMotivoChurn, _excluirMotivoChurn,
     sincronizarAcessorias,
   };
 })();

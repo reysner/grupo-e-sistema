@@ -82,9 +82,13 @@ router.get('/gestao', async (req, res) => {
     const result = await pool.query(`
       SELECT g.*,
         c.id AS cliente_id, c.grupo_empresas, c.inadimplente_cronico, c.unidade,
+        c.status AS status_cliente, c.alerta_baixa_notificado_em,
         (SELECT valor FROM honorarios h WHERE h.cliente_id = c.id ORDER BY data_vigencia DESC LIMIT 1) AS honorario_atual
       FROM gestao_clientes g
-      LEFT JOIN clientes c ON c.cnpj = g.cnpj AND c.status = 'ativo'
+      LEFT JOIN LATERAL (
+        SELECT * FROM clientes c2 WHERE c2.cnpj = g.cnpj
+        ORDER BY (c2.status = 'ativo') DESC, c2.created_at DESC LIMIT 1
+      ) c ON true
       WHERE 1=1 ${pf}
       ORDER BY g.empresa ASC`);
 
@@ -117,6 +121,7 @@ router.get('/gestao', async (req, res) => {
       ...r,
       honorario_atual: r.honorario_atual != null ? parseFloat(r.honorario_atual) : null,
       faixa: classificarFaixa(r.honorario_atual != null ? parseFloat(r.honorario_atual) : null, ticketMedio),
+      possivel_churn: r.alerta_baixa_notificado_em != null,
     }));
 
     res.json({
@@ -493,6 +498,9 @@ async function detectarPossiveisChurns(empresasAtivasNaAcessorias) {
     lida BOOLEAN DEFAULT false, link_modulo TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`).catch(() => {});
+  // cliente_id: pra notificação de churn abrir direto o resolvedor
+  // (Baixa/Saída) sem precisar procurar o cliente na Carteira na mão.
+  await pool.query(`ALTER TABLE notificacoes ADD COLUMN IF NOT EXISTS cliente_id UUID`).catch(() => {});
 
   const nossosAtivos = await pool.query(
     `SELECT id, nome_empresa, cnpj, acessorias_id FROM clientes
@@ -510,9 +518,9 @@ async function detectarPossiveisChurns(empresasAtivasNaAcessorias) {
   for (const cliente of nossosAtivos.rows) {
     if (idsAtivosNaAcessorias.has(cliente.acessorias_id)) continue;
     await pool.query(
-      `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo)
-       VALUES ('churn_acessorias', 'Possível baixa/saída no Acessórias', $1, 'carteira')`,
-      [`${cliente.nome_empresa} (CNPJ ${cliente.cnpj}) não aparece mais como ativa no Acessórias — confirme a saída e registre o motivo do churn na Carteira.`]
+      `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id)
+       VALUES ('churn_acessorias', 'Possível baixa/saída no Acessórias', $1, 'carteira', $2)`,
+      [`${cliente.nome_empresa} (CNPJ ${cliente.cnpj}) não aparece mais como ativa no Acessórias — clique pra confirmar se foi baixa ou saída.`, cliente.id]
     );
     await pool.query(`UPDATE clientes SET alerta_baixa_notificado_em = NOW() WHERE id = $1`, [cliente.id]);
     notificados++;
@@ -970,6 +978,81 @@ router.patch('/clientes/:id/encerrar', requireAdmin, async (req, res) => {
     );
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao encerrar cliente.' }); }
+});
+
+/**
+ * PATCH /api/data/clientes/:id/resolver-churn — resolve a notificação de
+ * "possível baixa/saída no Acessórias" (pedido do Reysner, fluxo completo):
+ * clica na notificação, escolhe se foi Baixa ou Saída, confirma:
+ *   - Baixa: encerra o cliente com motivo_saida = "Baixa de empresa" — não
+ *     pede motivo do churn (não é churn de verdade, empresário fechou o
+ *     CNPJ por motivo diverso).
+ *   - Saída: exige `motivoChurn` (vindo da lista gerenciável de Motivos de
+ *     Churn) e encerra o cliente com esse motivo.
+ * Nos dois casos: encerra o cliente (sai de "ativas" na Carteira e em
+ * Gestão de Clientes, que reflete o status via o mesmo cliente), cria um
+ * registro em Gestão de Clientes documentando o evento (mesmo padrão de
+ * quando alguém preenche isso manualmente) e marca a notificação como lida.
+ */
+router.patch('/clientes/:id/resolver-churn', requireAdmin, async (req, res) => {
+  try {
+    const { tipo, motivoChurn, notificacaoId } = req.body;
+    if (tipo !== 'baixa' && tipo !== 'saida') {
+      return res.status(400).json({ error: 'tipo precisa ser "baixa" ou "saida".' });
+    }
+    if (tipo === 'saida' && !motivoChurn) {
+      return res.status(400).json({ error: 'Motivo do Churn é obrigatório para Saída de empresa.' });
+    }
+    // Idempotente — já roda em sincronizarAcessorias(), mas garante aqui
+    // também pro caso desse endpoint ser chamado antes de qualquer sync.
+    await pool.query(`ALTER TABLE gestao_clientes ALTER COLUMN data_sol DROP NOT NULL`).catch(() => {});
+    await pool.query(`ALTER TABLE gestao_clientes ALTER COLUMN competencia DROP NOT NULL`).catch(() => {});
+
+    const { rows } = await pool.query(`SELECT * FROM clientes WHERE id = $1`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    const cliente = rows[0];
+
+    const solicitacao = tipo === 'baixa' ? 'Baixa de empresa' : 'Saída de empresa';
+    const motivo = tipo === 'baixa' ? 'Baixa de empresa' : motivoChurn;
+    const hoje = new Date().toISOString().slice(0, 10);
+
+    // Pedido do Reysner: pegar a data real de saída ("Cliente até") direto
+    // do Acessórias em vez de usar "hoje" — a Acessórias já sabe quando o
+    // cliente saiu de verdade. Se a busca falhar por qualquer motivo (token
+    // não configurado, empresa não encontrada, API fora do ar), cai pra
+    // "hoje" — nunca trava a resolução do churn por causa disso.
+    let dataSaida = hoje;
+    const token = process.env.ACESSORIAS_API_TOKEN;
+    if (token && cliente.cnpj) {
+      const empresaAcessorias = await acessoriasClient.buscarEmpresaPorCnpj(cliente.cnpj, token);
+      if (empresaAcessorias?.clienteAte) dataSaida = empresaAcessorias.clienteAte;
+    }
+
+    await pool.query(
+      `UPDATE clientes SET status='encerrado', data_saida=$1, motivo_saida=$2 WHERE id=$3`,
+      [dataSaida, motivo, cliente.id]
+    );
+    await pool.query(
+      `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, data_evento)
+       VALUES ($1,'saida',$2,$3)`,
+      [cliente.id, motivo, dataSaida]
+    );
+    // Espelha em Gestão de Clientes, mesmo padrão de quando isso é
+    // preenchido manualmente pelo formulário — só os campos que são dela.
+    await pool.query(
+      `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario)
+       VALUES ($1,$2,$3,$4,$5,$6,NULL,NULL,'Outro',$7,$8,$9)`,
+      [uuidv4(), req.user.id, req.user.name, solicitacao, cliente.cnpj, cliente.nome_empresa, motivo, cliente.codigo, cliente.regime_tributario]
+    );
+    if (notificacaoId) {
+      await pool.query(`UPDATE notificacoes SET lida = true WHERE id = $1`, [notificacaoId]);
+    }
+    await registrarLog(req.user.id, req.user.name, 'encerrar', 'carteira', `Resolveu churn (${solicitacao}): ${cliente.nome_empresa} — ${motivo}`, req);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[resolver-churn] falhou:', err);
+    res.status(500).json({ error: 'Erro ao resolver churn.' });
+  }
 });
 
 router.post('/clientes/:id/honorario', requireAdmin, async (req, res) => {

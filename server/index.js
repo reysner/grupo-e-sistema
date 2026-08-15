@@ -64,6 +64,7 @@ app.use('/api/cs',     require('./cs/routes'));    // Sucesso do Cliente — rad
 app.use('/api/analistas', require('./routes/analistas'));  // lista de analistas p/ dropdowns
 app.use('/api/grupos-empresas', require('./routes/grupos-empresas'));  // lista de grupos de empresas p/ dropdown
 app.use('/api/unidades', require('./routes/unidades'));  // lista de unidades (Escritorial Contadores/Soluções) p/ dropdown
+app.use('/api/motivos-churn', require('./routes/motivos-churn'));  // lista de motivos de churn p/ dropdown (só em "Saída de empresa")
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
