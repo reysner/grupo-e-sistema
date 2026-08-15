@@ -3935,6 +3935,7 @@ const Gestao = (() => {
         <div><p style="font-size:24px;font-weight:800;color:#38a169;margin:0">${r.criados}</p><p style="color:var(--gray-500);font-size:12px;margin:0">cliente(s) novo(s)</p></div>
         <div><p style="font-size:24px;font-weight:800;color:var(--g700);margin:0">${r.atualizados}</p><p style="color:var(--gray-500);font-size:12px;margin:0">atualizado(s)</p></div>
         <div><p style="font-size:24px;font-weight:800;color:var(--gray-400);margin:0">${r.totalNaAcessorias}</p><p style="color:var(--gray-500);font-size:12px;margin:0">ativos no Acessórias</p></div>
+        ${r.gestaoCompletados ? `<div><p style="font-size:24px;font-weight:800;color:#3182ce;margin:0">${r.gestaoCompletados}</p><p style="color:var(--gray-500);font-size:12px;margin:0">Gestão completada</p></div>` : ''}
       </div>
       <p style="font-size:12px;color:var(--gray-500);margin:0 0 14px">Honorário não foi trazido de propósito — clientes novos ficam com honorário pendente pra você preencher. ${r.semRegimeReconhecido ? `${r.semRegimeReconhecido} empresa(s) vieram com um regime tributário que não reconheci — revise manualmente.` : ''}</p>
       ${listaErros ? `<div><p style="font-weight:700;color:#e53e3e;font-size:13px;margin-bottom:6px">❌ Não importados (${r.erros.length})</p><ul style="font-size:12px;color:var(--gray-600);padding-left:18px;max-height:160px;overflow:auto">${listaErros}</ul></div>` : ''}

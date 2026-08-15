@@ -369,7 +369,7 @@ async function sincronizarAcessorias({ userId = null } = {}) {
   }
 
   const empresas = await acessoriasClient.listarEmpresasAtivas({ token });
-  let criados = 0, atualizados = 0, semRegimeReconhecido = 0, semGestaoRegistrada = 0;
+  let criados = 0, atualizados = 0, semRegimeReconhecido = 0, semGestaoRegistrada = 0, gestaoCompletados = 0;
   const erros = [];
   const hoje = new Date().toISOString().slice(0, 10);
   const competenciaAtual = hoje.slice(0, 7);
@@ -393,6 +393,26 @@ async function sincronizarAcessorias({ userId = null } = {}) {
           [emp.nome_empresa, emp.regime_tributario, emp.codigo, emp.acessorias_id, existente.rows[0].id]
         );
         atualizados++;
+
+        // Pedido do Reysner: completar Registro de Gestão pra quem já está
+        // na Carteira (ex.: os importados antes de essa mirror existir) mas
+        // ainda não tem uma linha lá — sem duplicar quem já tem ("só o
+        // excedente"), e sem chamar a API de novo, só reaproveitando o que
+        // já veio nesta mesma sincronização.
+        const jaTemGestao = await pool.query(`SELECT 1 FROM gestao_clientes WHERE cnpj = $1 LIMIT 1`, [emp.cnpj]);
+        if (!jaTemGestao.rows.length) {
+          if (userIdEfetivo) {
+            await pool.query(
+              `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario)
+               VALUES ($1,$2,$3,'Cliente vindo de outro contador',$4,$5,$6,$7,'Outro',$8,$9,$10)`,
+              [uuidv4(), userIdEfetivo, userNomeEfetivo, emp.cnpj, emp.nome_empresa, hoje, competenciaAtual,
+               'Registro completado a partir da Carteira (cliente já existia sem essa linha)', emp.codigo, emp.regime_tributario]
+            );
+            gestaoCompletados++;
+          } else {
+            semGestaoRegistrada++;
+          }
+        }
       } else {
         const clienteId = uuidv4();
         await pool.query(
@@ -422,7 +442,7 @@ async function sincronizarAcessorias({ userId = null } = {}) {
     }
   }
 
-  return { totalNaAcessorias: empresas.length, criados, atualizados, semRegimeReconhecido, semGestaoRegistrada, erros };
+  return { totalNaAcessorias: empresas.length, criados, atualizados, gestaoCompletados, semRegimeReconhecido, semGestaoRegistrada, erros };
 }
 
 /** POST /api/data/clientes/importar-acessorias — dispara a sincronização manualmente (botão "Atualizar agora"). */
