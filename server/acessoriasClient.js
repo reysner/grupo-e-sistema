@@ -44,6 +44,30 @@ function normalizarData(data) {
   return data;
 }
 
+/**
+ * `Fantasia` às vezes vem mascarado como "********" (mesmo campo aparece
+ * mascarado na própria tela do Acessórias — parece ser permissão restrita
+ * do token, não um bug daqui). Nesses casos não dá pra usar.
+ */
+function fantasiaUtilizavel(fantasia) {
+  const f = String(fantasia || '').trim();
+  if (!f || /^\*+$/.test(f)) return null;
+  return f;
+}
+
+/**
+ * A API não expõe o campo "Apelido e-Contínuo" do Acessórias (confirmado
+ * testando com todos os parâmetros da documentação — não vem em nenhuma
+ * resposta). Pedido do Reysner: quando `Fantasia` vier mascarado/vazio,
+ * aproxima o Apelido derivando da Razão Social — troca "&" por " E ", que é
+ * exatamente o padrão que ele mostrou (ex.: "M&F PARTICIPACOES LTDA" vira
+ * "M E F PARTICIPACOES LTDA", igual "B&L" vira "B E L").
+ */
+function derivarApelido(razaoSocial) {
+  if (!razaoSocial) return null;
+  return String(razaoSocial).replace(/&/g, ' E ').replace(/\s+/g, ' ').trim();
+}
+
 async function buscarPagina(pagina, token) {
   const url = `${BASE_URL}/companies/ListAll?ativa=S&Pagina=${pagina}`;
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
@@ -88,11 +112,11 @@ function empresaParaCliente(empresa) {
     acessorias_id: String(empresa.ID || ''),
     codigo: empresa.ID != null ? String(empresa.ID) : null, // pedido do Reysner: usar o ID do Acessórias como código
     cnpj: empresa.Identificador || null,
-    nome_empresa: empresa.Fantasia || empresa.Razao || null,
+    nome_empresa: fantasiaUtilizavel(empresa.Fantasia) || derivarApelido(empresa.Razao) || empresa.Razao || null,
     regime_tributario: normalizarRegime(empresa.Regime),
     regime_tributario_bruto: empresa.Regime || null, // pra revisão de quem não mapeou
     data_entrada: normalizarData(empresa.ClienteDesde) || normalizarData(empresa.DataDoCadastro),
   };
 }
 
-module.exports = { listarEmpresasAtivas, normalizarRegime, normalizarData, empresaParaCliente };
+module.exports = { listarEmpresasAtivas, normalizarRegime, normalizarData, fantasiaUtilizavel, derivarApelido, empresaParaCliente };
