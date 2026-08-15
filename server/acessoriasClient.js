@@ -75,7 +75,11 @@ function derivarApelido(razaoSocial) {
 }
 
 async function buscarPagina(pagina, token) {
-  const url = `${BASE_URL}/companies/ListAll?ativa=S&Pagina=${pagina}`;
+  // `registrationData` é obrigatório aqui — sem ele a API não devolve o
+  // campo `Regime` (nem `GrupoDeEmpresas`), e todo regime_tributario sai
+  // null (bug real, presente desde a 1ª sincronização — só ficou óbvio
+  // quando um sync reportou 622 de 622 empresas "sem regime reconhecido").
+  const url = `${BASE_URL}/companies/ListAll?ativa=S&Pagina=${pagina}&registrationData`;
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (resp.status === 429) {
     // Estourou o rate limit mesmo com o espaçamento — espera um pouco mais e tenta 1x.
