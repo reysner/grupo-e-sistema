@@ -339,8 +339,13 @@ router.post('/gestao/importar', requireAdmin, async (req, res) => {
  * já linkar quem foi cadastrado manualmente antes de existir essa integração.
  * NUNCA mexe em honorário de cliente existente — só cria/atualiza dados
  * cadastrais. Usada tanto pelo endpoint manual (com `userId` de quem
- * clicou) quanto pelo job automático em index.js (sem usuário logado —
- * por isso `userId` é opcional e a coluna vira nullable abaixo).
+ * clicou) quanto pelo job automático em index.js (sem usuário logado — por
+ * isso busca um admin de fallback pra assinar os registros automáticos).
+ *
+ * Pedido do Reysner: cada cliente novo criado aqui também gera uma linha
+ * em `gestao_clientes` (aparece no "Registro de Gestão" igual uma entrada
+ * manual), preenchendo SÓ os campos que são de Gestão de Clientes mesmo —
+ * não inventa honorário nem nada que pertença só à Carteira.
  */
 async function sincronizarAcessorias({ userId = null } = {}) {
   const token = process.env.ACESSORIAS_API_TOKEN;
@@ -352,9 +357,22 @@ async function sincronizarAcessorias({ userId = null } = {}) {
   // automático não tem usuário logado, então a coluna precisa aceitar null.
   await pool.query(`ALTER TABLE clientes ALTER COLUMN user_id DROP NOT NULL`).catch(() => {});
 
+  // gestao_clientes.user_id é NOT NULL (referencia users) — sem usuário
+  // logado (job automático), assina com o admin mais antigo cadastrado.
+  let userIdEfetivo = userId;
+  let userNomeEfetivo = 'Sincronização automática';
+  if (!userIdEfetivo) {
+    const admin = await pool.query(
+      `SELECT id, name FROM users WHERE role = 'administrador' ORDER BY created_at ASC LIMIT 1`
+    );
+    if (admin.rows.length) { userIdEfetivo = admin.rows[0].id; userNomeEfetivo = admin.rows[0].name; }
+  }
+
   const empresas = await acessoriasClient.listarEmpresasAtivas({ token });
-  let criados = 0, atualizados = 0, semRegimeReconhecido = 0;
+  let criados = 0, atualizados = 0, semRegimeReconhecido = 0, semGestaoRegistrada = 0;
   const erros = [];
+  const hoje = new Date().toISOString().slice(0, 10);
+  const competenciaAtual = hoje.slice(0, 7);
 
   for (const emp of empresas) {
     if (!emp.cnpj) { erros.push({ empresa: emp.nome_empresa, motivo: 'Sem CNPJ/CPF na Acessórias.' }); continue; }
@@ -369,28 +387,42 @@ async function sincronizarAcessorias({ userId = null } = {}) {
           `UPDATE clientes SET
              nome_empresa = COALESCE($1, nome_empresa),
              regime_tributario = COALESCE($2, regime_tributario),
-             acessorias_id = $3
-           WHERE id = $4`,
-          [emp.nome_empresa, emp.regime_tributario, emp.acessorias_id, existente.rows[0].id]
+             codigo = COALESCE(codigo, $3),
+             acessorias_id = $4
+           WHERE id = $5`,
+          [emp.nome_empresa, emp.regime_tributario, emp.codigo, emp.acessorias_id, existente.rows[0].id]
         );
         atualizados++;
       } else {
+        const clienteId = uuidv4();
         await pool.query(
-          `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada, acessorias_id, status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,'ativo')`,
-          [uuidv4(), userId, emp.cnpj, emp.nome_empresa, emp.regime_tributario, emp.data_entrada, emp.acessorias_id]
+          `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada, acessorias_id, codigo, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ativo')`,
+          [clienteId, userIdEfetivo, emp.cnpj, emp.nome_empresa, emp.regime_tributario, emp.data_entrada, emp.acessorias_id, emp.codigo]
         );
         // Sem INSERT em `honorarios` de propósito — cliente fica com
         // honorário pendente (honorario_atual sai null nas telas que já
         // tratam esse caso, ex.: Gestão de Clientes, Carteira).
         criados++;
+
+        // Espelha em Registro de Gestão — só os campos que são dela.
+        if (userIdEfetivo) {
+          await pool.query(
+            `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario)
+             VALUES ($1,$2,$3,'Cliente vindo de outro contador',$4,$5,$6,$7,'Outro',$8,$9,$10)`,
+            [uuidv4(), userIdEfetivo, userNomeEfetivo, emp.cnpj, emp.nome_empresa, hoje, competenciaAtual,
+             'Importado automaticamente do Sistema Acessórias', emp.codigo, emp.regime_tributario]
+          );
+        } else {
+          semGestaoRegistrada++;
+        }
       }
     } catch (e) {
       erros.push({ empresa: emp.nome_empresa, motivo: e.message });
     }
   }
 
-  return { totalNaAcessorias: empresas.length, criados, atualizados, semRegimeReconhecido, erros };
+  return { totalNaAcessorias: empresas.length, criados, atualizados, semRegimeReconhecido, semGestaoRegistrada, erros };
 }
 
 /** POST /api/data/clientes/importar-acessorias — dispara a sincronização manualmente (botão "Atualizar agora"). */
@@ -744,7 +776,7 @@ router.get('/clientes', requireAuth, async (req, res) => {
       FROM clientes c`;
     const params = [];
     if (status && status !== 'todos') { q += ` WHERE c.status = $1`; params.push(status); }
-    q += ` ORDER BY c.created_at DESC`;
+    q += ` ORDER BY c.nome_empresa ASC`;
     const result = await pool.query(q, params);
     res.json({ data: result.rows });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao buscar clientes.' }); }
@@ -800,6 +832,33 @@ router.get('/clientes/:id', requireAuth, async (req, res) => {
       `SELECT * FROM eventos_clientes WHERE cliente_id = $1 ORDER BY data_evento DESC`, [req.params.id]);
     res.json({ cliente: rows[0], honorarios: honorarios.rows, eventos: eventos.rows });
   } catch (err) { res.status(500).json({ error: 'Erro ao buscar cliente.' }); }
+});
+
+/**
+ * PATCH /api/data/clientes/:id — edita dados CADASTRAIS do cliente (nome,
+ * CNPJ, código, regime, origem, grupo, unidade, data de entrada). Não mexe
+ * em honorário (isso é só por POST /clientes/:id/honorario, que mantém
+ * histórico) nem em status (isso é só por /encerrar). Pedido do Reysner:
+ * botão "Editar" na Carteira, do lado do "$+".
+ */
+router.patch('/clientes/:id', requireAdmin, async (req, res) => {
+  try {
+    const { nome_empresa, cnpj, codigo, regime_tributario, origem, grupo_empresas, unidade, data_entrada } = req.body;
+    if (!nome_empresa || !cnpj) return res.status(400).json({ error: 'Nome da empresa e CNPJ são obrigatórios.' });
+    const { rows } = await pool.query(
+      `UPDATE clientes SET
+         nome_empresa = $1, cnpj = $2, codigo = $3, regime_tributario = $4,
+         origem = $5, grupo_empresas = $6, unidade = $7,
+         data_entrada = COALESCE($8, data_entrada)
+       WHERE id = $9
+       RETURNING id`,
+      [nome_empresa, cnpj, codigo || null, regime_tributario || null,
+       origem || null, grupo_empresas || null, unidade || null, data_entrada || null, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    await registrarLog(req.user.id, req.user.name, 'editar', 'carteira', `Editou cadastro: ${nome_empresa}`, req);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao editar cliente.' }); }
 });
 
 router.patch('/clientes/:id/encerrar', requireAdmin, async (req, res) => {

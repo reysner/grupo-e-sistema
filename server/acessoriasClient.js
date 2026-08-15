@@ -86,6 +86,7 @@ async function listarEmpresasAtivas({ token, limitePaginas = 500 } = {}) {
 function empresaParaCliente(empresa) {
   return {
     acessorias_id: String(empresa.ID || ''),
+    codigo: empresa.ID != null ? String(empresa.ID) : null, // pedido do Reysner: usar o ID do Acessórias como código
     cnpj: empresa.Identificador || null,
     nome_empresa: empresa.Fantasia || empresa.Razao || null,
     regime_tributario: normalizarRegime(empresa.Regime),

@@ -88,6 +88,16 @@ const App = (() => {
       const p = Math.min(Math.max(1, page), pages);
       return { items: data.slice((p-1)*perPage, p*perPage), page: p, pages, total, perPage };
     },
+    /** Status pra grade de rolagem infinita (substitui os botões numerados por um texto simples). */
+    renderInfiniteStatus(containerId, shown, total) {
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      el.innerHTML = '<div style="text-align:center;padding:10px 0;font-size:12px;color:var(--gray-400)">' +
+        (total === 0 ? 'Nenhum registro encontrado.'
+          : shown < total ? `Mostrando ${shown} de ${total} — role a tabela pra carregar mais`
+          : `Mostrando todos os ${total} registro${total !== 1 ? 's' : ''}`) +
+        '</div>';
+    },
     renderPagination(containerId, page, pages, total, onGoFn) {
       const el = document.getElementById(containerId);
       if (!el) return;
@@ -2680,8 +2690,10 @@ window.Pesquisas = Pesquisas;
 const Carteira = (() => {
   let _clientes = [];
   let _page = 1;
+  let _shown = 20; // rolagem infinita: quantas linhas já estão renderizadas
   function _token() { return localStorage.getItem('ge_token') || ''; }
   function _fmt(v) { return 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function _esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
   function _tempo(dataEntrada, dataSaida) {
     const start = new Date(dataEntrada);
     const end = dataSaida ? new Date(dataSaida) : new Date();
@@ -2760,6 +2772,7 @@ const Carteira = (() => {
         <td>${statusBadge}</td>
         <td style="white-space:nowrap">
           <button class="btn btn-ghost btn-sm" onclick="Carteira.verFicha('${c.id}')">Ver ficha</button>
+          ${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:var(--gray-500);font-size:14px;padding:2px 6px" onclick="Carteira.editarCliente('${c.id}')" title="Editar cadastro">✏️</button>` : ''}
           ${c.status==='ativo' && App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#1D9E75;font-size:14px;padding:2px 6px" onclick="Carteira.atualizarHonorario('${c.id}')" title="Atualizar honorário">$ +</button>` : ''}
           ${App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Carteira.excluir('${c.id}')" title="Excluir">🗑</button>` : ''}
         </td>
@@ -2818,12 +2831,25 @@ const Carteira = (() => {
     filtrar();
   }
 
-  function filtrar() {
-    _page = 1;
+  /** Rolagem infinita: renderiza os primeiros `_shown` do filtro atual + status embaixo. */
+  function _aplicarFiltro() {
     const f = _dadosFiltrados();
-    const pg = App.Util.paginate(f, _page, 20);
-    _renderGrid(pg.items);
-    App.Util.renderPagination('cart-pagination', pg.page, pg.pages, pg.total, 'Carteira.goPage');
+    _renderGrid(f.slice(0, _shown));
+    App.Util.renderInfiniteStatus('cart-pagination', Math.min(_shown, f.length), f.length);
+  }
+
+  function filtrar() {
+    _shown = 20;
+    document.getElementById('cart-scroll-wrap')?.scrollTo({ top: 0 });
+    _aplicarFiltro();
+  }
+
+  /** Chamado pelo onscroll da caixa da tabela — carrega mais 20 quando chega perto do fim. */
+  function _onScroll(el) {
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) {
+      const total = _dadosFiltrados().length;
+      if (_shown < total) { _shown += 20; _aplicarFiltro(); }
+    }
   }
 
   function exportCSV() {
@@ -2959,6 +2985,55 @@ const Carteira = (() => {
     } else { App.Toast.err('Erro ao atualizar honorário.'); }
   }
 
+  const _REGIMES = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'MEI', 'Sem fins lucrativos'];
+  const _ORIGENS = ['Indicação', 'Google', 'Instagram', 'LinkedIn', 'WhatsApp', 'Parceiro', 'Evento', 'Site', 'Tráfego Pago', 'Prospecção Ativa', 'Outro'];
+
+  async function editarCliente(id) {
+    const res = await fetch(`/api/data/clientes/${id}`, { headers: { Authorization: `Bearer ${_token()}` } });
+    if (!res || !res.ok) { App.Toast.err('Erro ao carregar cliente.'); return; }
+    const { cliente: c } = await res.json();
+    const opts = (lista, atual) => `<option value="">Selecione</option>` + lista.map(o => `<option ${o===atual?'selected':''}>${o}</option>`).join('');
+    App.Modal.open(`Editar cadastro — ${c.nome_empresa}`, `
+      <div style="display:grid;gap:12px">
+        <div class="field"><label>Nome da empresa <span class="req">*</span></label><input id="ec-nome" type="text" value="${_esc(c.nome_empresa||'')}" /></div>
+        <div class="field"><label>CNPJ <span class="req">*</span></label><input id="ec-cnpj" type="text" value="${_esc(c.cnpj||'')}" oninput="App.Util.maskCNPJ(this)" maxlength="18" /></div>
+        <div class="field"><label>Código</label><input id="ec-codigo" type="text" value="${_esc(c.codigo||'')}" /></div>
+        <div class="field"><label>Regime Tributário</label><select id="ec-regime">${opts(_REGIMES, c.regime_tributario)}</select></div>
+        <div class="field"><label>Origem</label><select id="ec-origem">${opts(_ORIGENS, c.origem)}</select></div>
+        <div class="field"><label>Grupo de Empresas</label><input id="ec-grupo" type="text" value="${_esc(c.grupo_empresas||'')}" /></div>
+        <div class="field"><label>Unidade</label><input id="ec-unidade" type="text" value="${_esc(c.unidade||'')}" /></div>
+        <div class="field"><label>Data de Entrada</label><input id="ec-data" type="date" value="${c.data_entrada ? String(c.data_entrada).slice(0,10) : ''}" /></div>
+        <button class="btn btn-primary" onclick="Carteira.salvarEdicaoCliente('${id}')">Salvar</button>
+      </div>
+    `);
+  }
+
+  async function salvarEdicaoCliente(id) {
+    const nome_empresa = document.getElementById('ec-nome')?.value?.trim();
+    const cnpj = document.getElementById('ec-cnpj')?.value?.trim();
+    if (!nome_empresa || !cnpj) { App.Toast.err('Nome da empresa e CNPJ são obrigatórios.'); return; }
+    const body = {
+      nome_empresa, cnpj,
+      codigo: document.getElementById('ec-codigo')?.value?.trim() || null,
+      regime_tributario: document.getElementById('ec-regime')?.value || null,
+      origem: document.getElementById('ec-origem')?.value || null,
+      grupo_empresas: document.getElementById('ec-grupo')?.value?.trim() || null,
+      unidade: document.getElementById('ec-unidade')?.value?.trim() || null,
+      data_entrada: document.getElementById('ec-data')?.value || null,
+    };
+    const res = await fetch(`/api/data/clientes/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_token()}` },
+      body: JSON.stringify(body),
+    });
+    if (res && res.ok) {
+      App.Modal.close(); App.Toast.ok('Cadastro atualizado!'); await load();
+    } else {
+      const err = await res?.json().catch(() => ({}));
+      App.Toast.err(err?.error || 'Erro ao salvar edição.');
+    }
+  }
+
   async function verFicha(id) {
     const res = await fetch(`/api/data/clientes/${id}`, {
       headers: { 'Authorization': `Bearer ${_token()}` }
@@ -3005,7 +3080,7 @@ const Carteira = (() => {
   }
 
   function goPage(p) { _page = p; const f = _dadosFiltrados(); const pg = App.Util.paginate(f, p, 20); _renderGrid(pg.items); App.Util.renderPagination('cart-pagination', pg.page, pg.pages, pg.total, 'Carteira.goPage'); }
-  return { load, loadDashboard, loadGrid, filtrar, goPage, atualizarHonorario, salvarHonorario, verFicha, exportCSV, exportPDF, limpar, excluir };
+  return { load, loadDashboard, loadGrid, filtrar, goPage, _onScroll, atualizarHonorario, salvarHonorario, verFicha, editarCliente, salvarEdicaoCliente, exportCSV, exportPDF, limpar, excluir };
 })();
 
 window.Carteira = Carteira;
@@ -3275,6 +3350,7 @@ window.Atendimento = Atendimento;
 const Gestao = (() => {
   let _allData = [];
   let _page = 1;
+  let _shown = 20; // rolagem infinita: quantas linhas já estão renderizadas
   function _token() { return localStorage.getItem('ge_token') || ''; }
 
   function _populateYearFilter(data) {
@@ -3598,10 +3674,24 @@ const Gestao = (() => {
         valorEl.textContent = ticketMedio ? 'R$ ' + Number(ticketMedio).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—';
       }
     }
-    const _filtered = _filterData(_allData);
-    const _paged = App.Util.paginate(_filtered, _page);
-    _renderGrid(_paged.items);
-    App.Util.renderPagination('gc-pagination', _paged.page, _paged.pages, _paged.total, 'Gestao.goPage');
+    _shown = 20;
+    document.getElementById('gc-scroll-wrap')?.scrollTo({ top: 0 });
+    _aplicarFiltro();
+  }
+
+  /** Rolagem infinita: renderiza os primeiros `_shown` do filtro atual + status embaixo. */
+  function _aplicarFiltro() {
+    const f = _filterData(_allData);
+    _renderGrid(f.slice(0, _shown));
+    App.Util.renderInfiniteStatus('gc-pagination', Math.min(_shown, f.length), f.length);
+  }
+
+  /** Chamado pelo onscroll da caixa da tabela — carrega mais 20 quando chega perto do fim. */
+  function _onScroll(el) {
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) {
+      const total = _filterData(_allData).length;
+      if (_shown < total) { _shown += 20; _aplicarFiltro(); }
+    }
   }
 
   function exportCSV() {
@@ -3701,7 +3791,6 @@ const Gestao = (() => {
     } else { App.Toast.err('Erro ao excluir.'); }
   }
 
-  function goPage(p) { _page = p; const f = _filterData(_allData); const pg = App.Util.paginate(f, p); _renderGrid(pg.items); App.Util.renderPagination('gc-pagination', pg.page, pg.pages, pg.total, 'Gestao.goPage'); }
 
   // ── Importação em massa (planilha .xlsx/.csv) ───────────────────────────────
   // Nunca pergunta sobre abrir ticket — isso é só do fluxo manual (ver Forms.gestao()).
@@ -3880,7 +3969,7 @@ const Gestao = (() => {
   }
 
   return {
-    loadGrid, exportCSV, exportPDF, limpar, excluir, goPage, importarPlanilha,
+    loadGrid, exportCSV, exportPDF, limpar, excluir, _onScroll, importarPlanilha,
     gerenciarGrupos, _criarGrupo, _toggleGrupo, _excluirGrupo,
     gerenciarUnidades, _criarUnidade, _toggleUnidade, _excluirUnidade,
     sincronizarAcessorias,
