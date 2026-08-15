@@ -3631,7 +3631,7 @@ const Gestao = (() => {
     const tbody = document.getElementById('gc-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(r => {
@@ -3647,15 +3647,6 @@ const Gestao = (() => {
         <td style="font-weight:600">${r.empresa}${inadimplenteTag}</td>
         <td>${r.solicitacao}</td>
         <td>${r.canal||'—'}</td>
-        <td style="font-size:12px;color:var(--gray-500)">${r.data_sol ? new Date(r.data_sol).toLocaleDateString('pt-BR') : '—'}</td>
-        <td style="font-size:12px;color:var(--gray-500)">${(() => {
-          const c = r.competencia;
-          if (!c) return '—';
-          const m = String(c).match(/^(\d{4})-(\d{2})/);
-          if (m) return m[2] + '/' + m[1];
-          const d = new Date(c);
-          return isNaN(d.getTime()) ? String(c) : d.toLocaleDateString('pt-BR');
-        })()}</td>
         <td style="font-size:12px">${r.grupo_empresas || '—'}</td>
         <td style="font-size:12px">${r.unidade || '—'}</td>
         <td style="font-size:12px">${r.honorario_atual != null ? 'R$ ' + Number(r.honorario_atual).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—'}</td>
@@ -3667,12 +3658,12 @@ const Gestao = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('gc-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
     const res = await fetch('/api/data/gestao?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data, ticketMedio, ticketMedioPorUnidade } = await res.json();
