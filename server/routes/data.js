@@ -387,6 +387,16 @@ async function sincronizarAcessorias({ userId = null } = {}) {
      ) AND (data_sol IS NOT NULL OR competencia IS NOT NULL)
   `).catch(() => {});
 
+  // Notificação de cliente novo — garante a tabela/coluna aqui também (não
+  // só em detectarPossiveisChurns, que só roda DEPOIS do loop abaixo).
+  await pool.query(`CREATE TABLE IF NOT EXISTS notificacoes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tipo TEXT NOT NULL, titulo TEXT NOT NULL, mensagem TEXT NOT NULL,
+    lida BOOLEAN DEFAULT false, link_modulo TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`).catch(() => {});
+  await pool.query(`ALTER TABLE notificacoes ADD COLUMN IF NOT EXISTS cliente_id UUID`).catch(() => {});
+
   // gestao_clientes.user_id é NOT NULL (referencia users) — sem usuário
   // logado (job automático), assina com o admin mais antigo cadastrado.
   let userIdEfetivo = userId;
@@ -465,6 +475,17 @@ async function sincronizarAcessorias({ userId = null } = {}) {
         } else {
           semGestaoRegistrada++;
         }
+
+        // Notifica — pedido do Reysner: nem todo cliente novo vem completo
+        // do Acessórias (falta classificar o tipo de entrada de verdade —
+        // Constituição/Cliente vindo de outro contador/Transformação — e
+        // preencher honorário/origem, que a gente nunca traz de lá). Clicar
+        // na notificação abre o resolvedor (ver /completar-entrada).
+        await pool.query(
+          `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id)
+           VALUES ('novo_cliente_acessorias', 'Novo cliente no Acessórias', $1, 'gestao', $2)`,
+          [`${emp.nome_empresa} (CNPJ ${emp.cnpj}) apareceu como ativa no Acessórias — classifique o tipo de entrada e complete honorário/origem.`, clienteId]
+        );
       }
     } catch (e) {
       erros.push({ empresa: emp.nome_empresa, motivo: e.message });
@@ -1038,11 +1059,16 @@ router.patch('/clientes/:id/resolver-churn', requireAdmin, async (req, res) => {
       [cliente.id, motivo, dataSaida]
     );
     // Espelha em Gestão de Clientes, mesmo padrão de quando isso é
-    // preenchido manualmente pelo formulário — só os campos que são dela.
+    // preenchido manualmente pelo formulário. Diferente da ENTRADA (onde o
+    // Reysner pediu pra tirar Data da Solicitação/Competência), o
+    // formulário EXIGE esses dois campos pra Saída/Baixa de empresa — usa
+    // a data real de saída (já buscada acima) em vez de deixar null, senão
+    // esse registro fica "incompleto" comparado ao que o formulário exige.
     await pool.query(
       `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario)
-       VALUES ($1,$2,$3,$4,$5,$6,NULL,NULL,'Outro',$7,$8,$9)`,
-      [uuidv4(), req.user.id, req.user.name, solicitacao, cliente.cnpj, cliente.nome_empresa, motivo, cliente.codigo, cliente.regime_tributario]
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Outro',$9,$10,$11)`,
+      [uuidv4(), req.user.id, req.user.name, solicitacao, cliente.cnpj, cliente.nome_empresa,
+       dataSaida, dataSaida.slice(0, 7), motivo, cliente.codigo, cliente.regime_tributario]
     );
     if (notificacaoId) {
       await pool.query(`UPDATE notificacoes SET lida = true WHERE id = $1`, [notificacaoId]);
@@ -1052,6 +1078,72 @@ router.patch('/clientes/:id/resolver-churn', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[resolver-churn] falhou:', err);
     res.status(500).json({ error: 'Erro ao resolver churn.' });
+  }
+});
+
+/**
+ * PATCH /api/data/clientes/:id/completar-entrada — resolve a notificação de
+ * "novo cliente no Acessórias" (pedido do Reysner): nem todo cliente novo
+ * vem completo de lá — falta classificar o TIPO de entrada de verdade
+ * (Constituição de empresa / Cliente vindo de outro contador /
+ * Transformação de empresa — a sincronização sempre usa "Cliente vindo de
+ * outro contador" como valor genérico, porque não dá pra saber qual é o
+ * certo automaticamente) e preencher Honorário Inicial e Origem, que a
+ * gente nunca traz do Acessórias de propósito.
+ *
+ * Atualiza a linha de Gestão de Clientes já criada na sincronização (em vez
+ * de criar uma segunda) — troca a solicitação genérica pela real escolhida
+ * aqui.
+ */
+router.patch('/clientes/:id/completar-entrada', requireAdmin, async (req, res) => {
+  try {
+    const { tipoEntrada, honorarioInicial, origem, dataEntrada, notificacaoId } = req.body;
+    if (!SOLICITACOES_ENTRADA.includes(tipoEntrada)) {
+      return res.status(400).json({ error: 'Tipo de entrada inválido.' });
+    }
+    const honorarioNum = parseFloat(honorarioInicial);
+    if (!honorarioNum || honorarioNum <= 0) {
+      return res.status(400).json({ error: 'Honorário Inicial é obrigatório.' });
+    }
+
+    const { rows } = await pool.query(`SELECT * FROM clientes WHERE id = $1`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    const cliente = rows[0];
+    const dataVigencia = dataEntrada || cliente.data_entrada || new Date().toISOString().slice(0, 10);
+
+    await pool.query(
+      `UPDATE clientes SET tipo_entrada = $1, origem = COALESCE($2, origem), data_entrada = COALESCE($3, data_entrada) WHERE id = $4`,
+      [tipoEntrada, origem || null, dataEntrada || null, cliente.id]
+    );
+    await pool.query(
+      `INSERT INTO honorarios (cliente_id, valor, data_vigencia, obs) VALUES ($1,$2,$3,'Honorário inicial (completado via notificação)')`,
+      [cliente.id, honorarioNum, dataVigencia]
+    );
+    await pool.query(
+      `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, valor_novo, data_evento) VALUES ($1,'entrada',$2,$3,$4)`,
+      [cliente.id, `Entrada — ${cliente.nome_empresa}`, honorarioNum, dataVigencia]
+    );
+    // Troca a solicitação genérica pela real na linha de Gestão já criada
+    // (não cria uma segunda linha pra mesma entrada). UPDATE não aceita
+    // ORDER BY/LIMIT direto no Postgres — por isso a subquery.
+    await pool.query(
+      `UPDATE gestao_clientes SET solicitacao = $1
+        WHERE id = (
+          SELECT id FROM gestao_clientes
+           WHERE cnpj = $2 AND solicitacao = 'Cliente vindo de outro contador'
+             AND motivo IN ('Importado automaticamente do Sistema Acessórias', 'Registro completado a partir da Carteira (cliente já existia sem essa linha)')
+           ORDER BY created_at DESC LIMIT 1
+        )`,
+      [tipoEntrada, cliente.cnpj]
+    );
+    if (notificacaoId) {
+      await pool.query(`UPDATE notificacoes SET lida = true WHERE id = $1`, [notificacaoId]);
+    }
+    await registrarLog(req.user.id, req.user.name, 'editar', 'carteira', `Completou entrada (${tipoEntrada}): ${cliente.nome_empresa}`, req);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[completar-entrada] falhou:', err);
+    res.status(500).json({ error: 'Erro ao completar entrada.' });
   }
 });
 

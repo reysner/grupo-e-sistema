@@ -1721,7 +1721,7 @@ const Notificacoes = (() => {
       list.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:13px;padding:20px">Sem notificações</p>';
       return;
     }
-    const icons = { insatisfacao_alta: '🚨', reajuste: '⚠️', novo_cliente: '🎉', pesquisa: '📊', churn_acessorias: '📉', default: '🔔' };
+    const icons = { insatisfacao_alta: '🚨', reajuste: '⚠️', novo_cliente: '🎉', novo_cliente_acessorias: '🆕', pesquisa: '📊', churn_acessorias: '📉', default: '🔔' };
     list.innerHTML = data.map(function(n) {
       const icon = icons[n.tipo] || icons.default;
       const bg = n.lida ? '' : 'background:#f0fff4;';
@@ -1806,6 +1806,17 @@ const Notificacoes = (() => {
       abrirResolverChurn(clienteId, id, el.querySelector('.notif-msg')?.textContent || '');
       return;
     }
+    // Notificação de cliente novo abre o resolvedor de entrada — mesmo
+    // espírito: nem todo cliente novo vem completo do Acessórias (falta
+    // classificar Constituição/Cliente vindo de outro contador/
+    // Transformação e preencher honorário/origem).
+    if (tipo === 'novo_cliente_acessorias' && clienteId) {
+      const panel = document.getElementById('notif-panel');
+      if (panel) panel.hidden = true;
+      _open = false;
+      abrirCompletarEntrada(clienteId, id, el.querySelector('.notif-msg')?.textContent || '');
+      return;
+    }
     if (modulo) irPara(modulo, id);
     else marcarLida(id);
   }
@@ -1872,9 +1883,66 @@ const Notificacoes = (() => {
     }
   }
 
+  const _ORIGENS_CLIENTE = ['Indicação', 'Google', 'Instagram', 'LinkedIn', 'WhatsApp', 'Parceiro', 'Evento', 'Site', 'Tráfego Pago', 'Prospecção Ativa', 'Outro'];
+
+  /** Modal "completar entrada": classifica o tipo real (Constituição/Cliente vindo/Transformação) + honorário/origem, que o Acessórias nunca traz. */
+  async function abrirCompletarEntrada(clienteId, notifId, mensagem) {
+    let dataEntradaAtual = '';
+    try {
+      const res = await fetch(`/api/data/clientes/${clienteId}`, { headers: { Authorization: 'Bearer ' + _tk() } });
+      if (res.ok) { const { cliente } = await res.json(); dataEntradaAtual = cliente.data_entrada ? String(cliente.data_entrada).slice(0, 10) : ''; }
+    } catch (e) {}
+    const opts = _ORIGENS_CLIENTE.map(o => `<option>${o}</option>`).join('');
+    App.Modal.open('🆕 Novo cliente no Acessórias',
+      `<div style="display:grid;gap:12px">
+        <p style="font-size:13px;color:var(--gray-600);margin:0">${mensagem || 'Essa empresa apareceu como ativa no Acessórias.'}</p>
+        <div class="field"><label>Tipo de Entrada <span class="req">*</span></label>
+          <select id="entrada-tipo">
+            <option value="">Selecione</option>
+            <option>Constituição de empresa</option>
+            <option>Cliente vindo de outro contador</option>
+            <option>Transformação de empresa</option>
+          </select>
+        </div>
+        <div class="field"><label>Honorário Inicial (R$) <span class="req">*</span></label><input id="entrada-honorario" type="number" min="0" step="0.01" placeholder="0,00" /></div>
+        <div class="field"><label>Origem do Cliente</label><select id="entrada-origem"><option value="">Selecione</option>${opts}</select></div>
+        <div class="field"><label>Data de Entrada</label><input id="entrada-data" type="date" value="${dataEntradaAtual}" /></div>
+        <button class="btn btn-primary" onclick="Notificacoes._salvarCompletarEntrada('${clienteId}','${notifId}')">Salvar</button>
+      </div>`,
+      () => App.Modal.close(), { noFooter: true });
+  }
+
+  async function _salvarCompletarEntrada(clienteId, notifId) {
+    const tipoEntrada = document.getElementById('entrada-tipo')?.value;
+    const honorarioInicial = document.getElementById('entrada-honorario')?.value;
+    if (!tipoEntrada) { App.Toast.err('Selecione o Tipo de Entrada.'); return; }
+    if (!honorarioInicial || parseFloat(honorarioInicial) <= 0) { App.Toast.err('Honorário Inicial é obrigatório.'); return; }
+    try {
+      const res = await fetch(`/api/data/clientes/${clienteId}/completar-entrada`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+        body: JSON.stringify({
+          tipoEntrada, honorarioInicial,
+          origem: document.getElementById('entrada-origem')?.value || null,
+          dataEntrada: document.getElementById('entrada-data')?.value || null,
+          notificacaoId: notifId,
+        }),
+      });
+      if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || 'Erro ao salvar.'); }
+      App.Modal.close();
+      App.Toast.ok('Entrada completada — Carteira e Gestão de Clientes atualizados.');
+      await checar();
+      window.Carteira?.loadGrid?.();
+      window.Gestao?.loadGrid?.();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
+  }
+
   return {
     checar, toggle, marcarLida, marcarTodasLidas, irPara, clicar, criar, iniciar,
     _resolverBaixa, _resolverSaida, _mostrarMotivoSaida,
+    _salvarCompletarEntrada,
   };
 })();
 
