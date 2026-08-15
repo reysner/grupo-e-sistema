@@ -320,6 +320,15 @@ function detectarSinalChurn(texto) {
  * Thais: "toda e qualquer mensagem de insatisfação, desespero, desrespeito,
  * erros, juros por multa, e similares acusem nele"). Por isso aceita
  * palavras soltas também, não só frases de várias palavras.
+ *
+ * Ampliada (pedido do Reysner: "infinitas possibilidades de captação de
+ * erros e insatisfação") com mais categorias: demora/atraso explícito,
+ * ameaça de ação legal/exposição pública, comparação negativa com
+ * contador/contabilidade anterior, além de mais sinônimos nas categorias
+ * que já existiam. Mesmo espírito de sempre: lista calibrada com
+ * português real de reclamação de cliente, sem IA — o painel "Palavras
+ * mais frequentes" do motor de motivo mostra o caminho de como continuar
+ * calibrando com exemplo real em vez de adivinhar.
  */
 const PALAVRAS_INSATISFACAO = [
   // ── Insatisfação / decepção genérica ────────────────────────────────────
@@ -327,25 +336,61 @@ const PALAVRAS_INSATISFACAO = [
   'decepcionado', 'decepcionada', 'frustrado', 'frustrada', 'revoltado', 'revoltada',
   'indignado', 'indignada', 'irritado', 'irritada', 'chateado', 'chateada',
   'magoado', 'magoada', 'incomodado', 'incomodada',
+  // variações e formas coloquiais de dizer a mesma coisa
+  'nao satisfeito', 'nao satisfeita', 'nao estou satisfeito', 'nao estou satisfeita',
+  'pouco satisfeito', 'pouco satisfeita', 'muito chateado', 'muito chateada',
+  'super chateado', 'super chateada', 'bravo com isso', 'brava com isso',
+  'de saco cheio disso', 'enchendo o saco', 'no limite da paciencia',
+  'ate quando isso', 'quando isso vai parar', 'isso nao pode continuar assim',
+  'cansei desse tipo de coisa', 'to decepcionado', 'to decepcionada',
+  'to muito chateado', 'to muito chateada', 'nao da mais pra confiar',
   // ── Desespero ────────────────────────────────────────────────────────────
   'desesperado', 'desesperada', 'desespero', 'em panico', 'desesperador',
   'nao aguento', 'socorro', 'situacao critica', 'desesperante',
+  'urgente urgente', 'muito urgente', 'extremamente urgente',
+  'nao sei mais o que fazer', 'ja nao sei o que fazer', 'to desesperado',
+  'to desesperada', 'aflito', 'aflita', 'apavorado', 'apavorada',
   // ── Desrespeito / maus-tratos ────────────────────────────────────────────
   'desrespeito', 'desrespeitado', 'desrespeitada', 'falta de respeito',
   'mal educado', 'mal educada', 'grosseiro', 'grosseira', 'humilhado', 'humilhada',
   'me tratou mal', 'fui mal tratado', 'fui mal tratada', 'sem educacao',
+  'fui ignorado', 'fui ignorada', 'me ignoraram', 'ninguem me responde',
+  'ninguem me da atencao', 'tratamento ruim', 'mal atendido', 'mal atendida',
+  'atendida com grosseria', 'atendido com grosseria', 'sem consideracao',
+  'falta de consideracao', 'falta de atencao', 'zero de atencao',
   // ── Erros (reclamação, não frase composta) ──────────────────────────────
   'erro grave', 'erro gravissimo', 'muitos erros', 'cheio de erros', 'errado de novo',
   'errado outra vez', 'errado mais uma vez', 'sempre errado', 'calculado errado',
   'guias erradas', 'guia errada', 'calculo errado', 'valor errado',
+  'erro feio', 'outro erro', 'mais um erro', 'esse erro de novo',
+  'toda vez um erro', 'nunca acertam', 'nao acertam nunca', 'sempre tem algo errado',
+  'algo sempre errado', 'nunca fazem certo', 'nao fazem certo nunca',
+  // ── Demora / atraso (reclamação recorrente, não frase de churn) ─────────
+  'demora demais', 'demora muito', 'demora um absurdo', 'demora exagerada',
+  'sempre atrasado', 'sempre atrasa', 'atraso constante', 'atraso de novo',
+  'atrasado de novo', 'sempre em atraso', 'muito tempo esperando',
+  'esperando ha dias', 'esperando ha semanas', 'nao aguento esperar mais',
+  'demorou demais', 'demorou muito tempo',
   // ── Juros / multa (prejuízo financeiro por erro do escritório) ─────────
   'juros e multa', 'juros por causa', 'multa por causa', 'multa por erro',
   'juros por erro', 'paguei multa', 'tive que pagar multa', 'gerou multa',
   'gerou juros', 'me cobraram multa', 'quem vai pagar', 'quem vai arcar',
   'vou ter que pagar', 'prejuizo financeiro', 'tive prejuizo', 'multa indevida',
+  'me prejudicou', 'me prejudicaram', 'causou prejuizo', 'causaram prejuizo',
+  'perdi dinheiro por causa', 'perdi dinheiro com isso', 'vou ter que arcar',
+  'vou ter que pagar por erro', 'nao e justo eu pagar', 'nao vou pagar por erro de voces',
+  'quem se responsabiliza', 'quem assume esse prejuizo', 'quem arca com o prejuizo',
   // ── Absurdo / inaceitável / descaso ─────────────────────────────────────
   'absurdo', 'inaceitavel', 'inadmissivel', 'descaso', 'incompetencia', 'incompetente',
-  'vergonha', 'lamentavel', 'decepcao total',
+  'vergonha', 'lamentavel', 'decepcao total', 'uma falta de respeito isso',
+  // ── Ameaça de ação legal / exposição pública ─────────────────────────────
+  'vou processar', 'vou entrar com processo', 'vou na justica', 'meu advogado vai',
+  'vou acionar meu advogado', 'vou denunciar', 'vou expor isso', 'vou postar isso',
+  'vou avisar todo mundo', 'vou fazer todo mundo saber', 'vou avisar outros clientes',
+  // ── Comparação negativa (contador/contabilidade anterior era melhor) ────
+  'meu contador antigo era melhor', 'a contabilidade anterior era melhor',
+  'nunca tive esse problema antes', 'com o contador anterior nao acontecia isso',
+  'com a contabilidade anterior nao tinha isso',
 ];
 
 /**
