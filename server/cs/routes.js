@@ -1026,14 +1026,9 @@ router.get('/afastamento', requireAuth, requireAdmin, async (req, res) => {
       dias_desde_entrada: diasEntre(r.data_entrada),
     }));
 
-    // Mais afastado primeiro: sem_historico junto (ordenado por tempo de
-    // Carteira, já que não há conversa pra medir), depois os com contato
-    // registrado, do maior gap pro menor.
-    data.sort((a, b) => {
-      if (a.sem_historico !== b.sem_historico) return a.sem_historico ? -1 : 1;
-      if (a.sem_historico) return (b.dias_desde_entrada || 0) - (a.dias_desde_entrada || 0);
-      return (b.dias_sem_contato || 0) - (a.dias_sem_contato || 0);
-    });
+    // Pedido do Reysner: ordem alfabética por empresa (antes era mais
+    // afastado primeiro — sem_historico junto, depois maior gap de dias).
+    data.sort((a, b) => (a.empresa || '').localeCompare(b.empresa || '', 'pt-BR'));
 
     res.json({ data, total: data.length });
   } catch (e) {

@@ -2712,7 +2712,9 @@ router.get('/churn', requireAdmin, async (req, res) => {
       return { id: c.id, cnpj: c.cnpj, empresa: c.nome_empresa, codigo: c.codigo, regime_tributario: c.regime_tributario, score, nivel, motivos };
     });
 
-    resultado.sort((a, b) => b.score - a.score);
+    // Pedido do Reysner: ordem alfabética por empresa (antes era por score,
+    // maior risco primeiro).
+    resultado.sort((a, b) => (a.empresa || '').localeCompare(b.empresa || '', 'pt-BR'));
     res.json({ data: resultado });
   } catch (err) {
     console.error('Churn error:', err);
