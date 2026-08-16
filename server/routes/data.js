@@ -582,6 +582,126 @@ router.post('/clientes/importar-acessorias', requireAdmin, async (req, res) => {
   }
 });
 
+/**
+ * Palpite (baixa|saida|null) a partir do motivo de cancelamento BRUTO do
+ * Acessórias — achado do Reysner: lá só existem 2 valores, "Baixada" (não
+ * é churn de verdade) e "Transferência por conveniência" (churn de verdade
+ * — foi pra outro contador). Só entra no TEXTO da notificação como dica;
+ * quem confirma de vez é sempre humano, ver PATCH /clientes/:id/resolver-churn.
+ */
+function palpiteTipoChurn(motivoBruto) {
+  const m = String(motivoBruto || '').toLowerCase();
+  if (!m) return null;
+  if (m.includes('transferencia') || m.includes('transferência')) return 'saida';
+  if (m.includes('baixa')) return 'baixa';
+  return null;
+}
+
+/**
+ * POST /api/data/clientes/importar-baixas-acessorias — pedido do Reysner:
+ * "trazer todas as empresas inativas do Acessórias desde 01/11/2024
+ * (Cliente até) como notificação pra lançar como baixa ou saída e ter
+ * ideia dos principais motivos dos churns". Reaproveita o MESMO tipo de
+ * notificação ('churn_acessorias') e o MESMO fluxo de resolução já
+ * existente (PATCH /clientes/:id/resolver-churn, aberto pelo sininho) —
+ * nada novo no front pra resolver, só pra disparar a busca.
+ *
+ * Diferente do drift-detection automático de sincronizarAcessorias() (que
+ * só pega quem JÁ era 'ativo' aqui e sumiu de lá), isso também traz
+ * empresas que NUNCA chegaram a entrar na Carteira — já estavam inativas
+ * no Acessórias antes dessa integração existir. Pra essas, cria o cliente
+ * como 'ativo' (mesmo já não sendo, de fato) só como placeholder pendente
+ * de resolução — assim que a notificação é resolvida, vira 'encerrado' com
+ * a data e o motivo reais, igual qualquer outro fluxo de churn.
+ *
+ * `dryRun: true` só calcula os números, sem escrever nada — usado pelo
+ * botão pra mostrar uma prévia antes de aplicar de verdade.
+ */
+router.post('/clientes/importar-baixas-acessorias', requireAdmin, async (req, res) => {
+  try {
+    const token = process.env.ACESSORIAS_API_TOKEN;
+    if (!token) return res.status(500).json({ error: 'ACESSORIAS_API_TOKEN não configurado.' });
+    const desde = (req.body && req.body.desde) || '2024-11-01';
+    const dryRun = !!(req.body && req.body.dryRun);
+
+    const inativas = await acessoriasClient.listarEmpresasInativasDesde({ token, desde });
+
+    let jaEncerrados = 0, jaNotificados = 0, novosClientes = 0, novasNotificacoes = 0, semCnpj = 0;
+    const erros = [];
+
+    for (const emp of inativas) {
+      if (!emp.cnpj) { semCnpj++; continue; }
+      try {
+        const existente = await pool.query(
+          `SELECT id, status FROM clientes WHERE acessorias_id = $1 OR cnpj = $2 LIMIT 1`,
+          [emp.acessorias_id, emp.cnpj]
+        );
+
+        let clienteId, jaEraAtivo;
+        if (existente.rows.length) {
+          if (existente.rows[0].status === 'encerrado') { jaEncerrados++; continue; }
+          clienteId = existente.rows[0].id;
+          jaEraAtivo = true;
+        } else {
+          jaEraAtivo = false;
+          if (!dryRun) {
+            clienteId = uuidv4();
+            await pool.query(
+              `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada, acessorias_id, codigo, status)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ativo')`,
+              [clienteId, req.user.id, emp.cnpj, emp.nome_empresa, emp.regime_tributario, emp.data_entrada, emp.acessorias_id, emp.codigo]
+            );
+          }
+          novosClientes++;
+        }
+
+        // Evita duplicar notificação — só checa quando o cliente já existia
+        // (cliente novo nunca teve notificação antes).
+        const jaTemNotif = jaEraAtivo
+          ? await pool.query(
+              `SELECT 1 FROM notificacoes WHERE cliente_id = $1 AND tipo = 'churn_acessorias' AND lida = false LIMIT 1`,
+              [clienteId]
+            )
+          : { rows: [] };
+        if (jaTemNotif.rows.length) { jaNotificados++; continue; }
+
+        novasNotificacoes++;
+        if (!dryRun) {
+          const palpite = palpiteTipoChurn(emp.motivoCancelamentoBruto);
+          const palpiteTexto = palpite === 'baixa'
+            ? ' (Acessórias registrou como Baixada.)'
+            : palpite === 'saida'
+            ? ' (Acessórias registrou como Transferência por conveniência — provável Saída/churn real.)'
+            : '';
+          await pool.query(
+            `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id)
+             VALUES ('churn_acessorias', 'Baixa/saída no Acessórias', $1, 'carteira', $2)`,
+            [`${emp.nome_empresa} (CNPJ ${emp.cnpj}) está inativa no Acessórias desde ${emp.clienteAte} — clique pra confirmar se foi baixa ou saída.${palpiteTexto}`, clienteId]
+          );
+          await pool.query(`UPDATE clientes SET alerta_baixa_notificado_em = NOW() WHERE id = $1`, [clienteId]);
+        }
+      } catch (e) {
+        erros.push({ empresa: emp.nome_empresa, motivo: e.message });
+      }
+    }
+
+    if (!dryRun) {
+      await registrarLog(
+        req.user.id, req.user.name, 'importar', 'carteira',
+        `Baixas do Acessórias desde ${desde}: ${novasNotificacoes} notificação(ões), ${novosClientes} cliente(s) novo(s) criado(s)`, req
+      );
+    }
+
+    res.json({
+      desde, totalInativasDesde: inativas.length, semCnpj,
+      jaEncerrados, jaNotificados, novosClientes, novasNotificacoes, erros, dryRun,
+    });
+  } catch (e) {
+    console.error('[importar-baixas-acessorias] falhou:', e);
+    res.status(500).json({ error: 'Falha ao buscar baixas no Acessórias: ' + e.message });
+  }
+});
+
 // ── INSATISFAÇÕES ─────────────────────────────────────────────────────────────
 router.get('/insatisfacoes', async (req, res) => {
   try {

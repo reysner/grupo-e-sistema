@@ -147,6 +147,61 @@ async function listarEmpresasAtivas({ token, limitePaginas = 500 } = {}) {
   return todas.map(empresaParaCliente);
 }
 
+/** Mesma paginação de `buscarPagina`, mas pras INATIVAS (`ativa=N`) — usado
+ * pra achar baixas/saídas históricas no Acessórias (ver `listarEmpresasInativasDesde`). */
+async function buscarPaginaInativas(pagina, token) {
+  const url = `${BASE_URL}/companies/ListAll?ativa=N&Pagina=${pagina}&registrationData`;
+  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (resp.status === 429) {
+    await new Promise(r => setTimeout(r, 5000));
+    return buscarPaginaInativas(pagina, token);
+  }
+  if (!resp.ok) {
+    throw new Error(`Acessórias respondeu ${resp.status} na página ${pagina} (inativas)`);
+  }
+  const dados = await resp.json();
+  return Array.isArray(dados) ? dados : [];
+}
+
+/**
+ * Traduz uma empresa INATIVA da API pro formato usado ao criar a notificação
+ * de baixa/saída — inclui `clienteAte` (data em que deixou de ser cliente,
+ * usada pro filtro `desde` e como data de saída sugerida) e o motivo de
+ * cancelamento BRUTO do Acessórias (só como referência no texto da
+ * notificação — quem decide Baixa/Saída e o motivo de churn daqui é
+ * sempre humano, ver PATCH /clientes/:id/resolver-churn).
+ */
+function empresaInativaParaCandidato(empresa) {
+  return {
+    ...empresaParaCliente(empresa),
+    clienteAte: normalizarData(empresa.ClienteAte),
+    motivoCancelamentoBruto: empresa.MotivoDeCancelamento || empresa.MotivoCancelamento || empresa.Motivo || null,
+  };
+}
+
+/**
+ * Busca TODAS as empresas INATIVAS no Acessórias cujo "Cliente até" seja
+ * `>= desde` (AAAA-MM-DD) — pedido do Reysner: "trazer todas as empresas
+ * inativas do Acessórias desde 01/11/2024 (Cliente até) como notificação
+ * pra lançar como baixa ou saída". Pagina por TODAS as inativas (a API não
+ * filtra por data) e filtra aqui — pode ser um histórico grande, por isso
+ * o mesmo espaçamento de 700ms entre páginas e a mesma trava de segurança.
+ */
+async function listarEmpresasInativasDesde({ token, desde, limitePaginas = 500 } = {}) {
+  if (!token) throw new Error('ACESSORIAS_API_TOKEN não configurado.');
+  const todas = [];
+  for (let pagina = 1; pagina <= limitePaginas; pagina++) {
+    const lote = await buscarPaginaInativas(pagina, token);
+    if (!lote.length) break;
+    todas.push(...lote);
+    if (lote.length < 20) break;
+    if (pagina < limitePaginas) await new Promise(r => setTimeout(r, ESPACAMENTO_MS));
+  }
+  return todas
+    .map(empresaInativaParaCandidato)
+    .filter(c => c.clienteAte && (!desde || c.clienteAte >= desde));
+}
+
 /**
  * Busca UMA empresa específica pelo CNPJ/CPF (usado ao resolver uma
  * notificação de churn — pega o `ClienteAte` real, em vez de usar "hoje"
@@ -193,4 +248,8 @@ function empresaParaCliente(empresa) {
   };
 }
 
-module.exports = { listarEmpresasAtivas, buscarEmpresaPorCnpj, normalizarRegime, normalizarRegimeComFallback, normalizarData, fantasiaUtilizavel, derivarApelido, empresaParaCliente };
+module.exports = {
+  listarEmpresasAtivas, buscarEmpresaPorCnpj, normalizarRegime, normalizarRegimeComFallback,
+  normalizarData, fantasiaUtilizavel, derivarApelido, empresaParaCliente,
+  listarEmpresasInativasDesde, empresaInativaParaCandidato,
+};

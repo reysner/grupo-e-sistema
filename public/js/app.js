@@ -4374,12 +4374,94 @@ const Gestao = (() => {
     }
   }
 
+  /**
+   * "📉 Buscar Baixas do Acessórias" — pedido do Reysner: trazer todas as
+   * empresas INATIVAS no Acessórias desde uma data (Cliente até) como
+   * notificação de baixa/saída, pra revisar uma por uma (mesmo sininho e
+   * mesmo fluxo de resolver-churn já usados pro drift-detection
+   * automático). Fluxo em 2 passos no mesmo modal: 1) "Buscar prévia"
+   * (dryRun, não escreve nada) mostra os números; 2) "Aplicar" cria de
+   * verdade as notificações (e os clientes que faltarem).
+   */
+  function buscarBaixasAcessorias() {
+    if (!App.Auth.isAdmin()) { App.Toast.err('Restrito a administradores.'); return; }
+    App.Modal.open('📉 Buscar Baixas do Acessórias', `
+      <div style="display:grid;gap:14px">
+        <p style="color:var(--gray-600);font-size:13px;margin:0">
+          Busca no Acessórias todas as empresas <strong>inativas</strong> com "Cliente até" a partir da data abaixo e cria uma notificação de baixa/saída pra cada uma — mesmo sininho e mesmo fluxo já usado hoje (clique na notificação pra decidir Baixa ou Saída e o motivo do churn). Empresas já encerradas aqui ou já notificadas antes são puladas automaticamente.
+        </p>
+        <div class="field"><label>Cliente até (a partir de) <span class="req">*</span></label><input id="baixas-desde" type="date" value="2024-11-01" /></div>
+        <div id="baixas-preview" style="background:var(--g100);border:1px solid var(--g200);border-radius:8px;padding:12px 16px;font-size:13px;color:var(--g800)">
+          Clique em "Buscar prévia" pra ver quantas notificações seriam criadas — nada é aplicado ainda.
+        </div>
+      </div>
+    `, () => Gestao._buscarPreviaBaixasAcessorias());
+    const btn = document.getElementById('modal-confirm');
+    if (btn) btn.textContent = 'Buscar prévia';
+  }
+
+  async function _buscarPreviaBaixasAcessorias() {
+    const desde = document.getElementById('baixas-desde')?.value;
+    if (!desde) { App.Toast.err('Informe a data.'); return; }
+    const preview = document.getElementById('baixas-preview');
+    const btn = document.getElementById('modal-confirm');
+    if (btn) { btn.disabled = true; btn.textContent = 'Buscando...'; }
+    if (preview) preview.textContent = 'Consultando o Acessórias — pode levar um tempo dependendo do histórico...';
+    try {
+      const res = await fetch('/api/data/clientes/importar-baixas-acessorias', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_token()}` },
+        body: JSON.stringify({ desde, dryRun: true }),
+      });
+      const r = await res.json();
+      if (!res.ok) throw new Error(r?.error || 'Erro ao buscar prévia.');
+      if (preview) {
+        preview.innerHTML = `
+          <strong>${r.totalInativasDesde}</strong> empresa(s) inativa(s) no Acessórias desde ${new Date(desde+'T00:00:00').toLocaleDateString('pt-BR')}.<br/>
+          <strong style="color:#38a169">${r.novasNotificacoes}</strong> notificação(ões) nova(s) seriam criadas
+          (${r.novosClientes} empresa(s) ainda não estavam na Carteira).<br/>
+          <span style="color:var(--gray-500)">${r.jaEncerrados} já encerrada(s) aqui, ${r.jaNotificados} já notificada(s) antes — ignoradas.</span>
+          ${r.semCnpj ? `<br/><span style="color:#d69e2e">${r.semCnpj} sem CNPJ no Acessórias — ignoradas.</span>` : ''}
+        `;
+      }
+      if (btn) {
+        btn.disabled = r.novasNotificacoes === 0;
+        btn.textContent = r.novasNotificacoes > 0 ? `Aplicar — criar ${r.novasNotificacoes} notificação(ões)` : 'Nada a aplicar';
+        btn.onclick = () => Gestao._aplicarBaixasAcessorias();
+      }
+    } catch (e) {
+      if (preview) preview.innerHTML = `<span style="color:#e53e3e">${_esc(e.message)}</span>`;
+      if (btn) { btn.disabled = false; btn.textContent = 'Tentar de novo'; }
+    }
+  }
+
+  async function _aplicarBaixasAcessorias() {
+    const desde = document.getElementById('baixas-desde')?.value;
+    const btn = document.getElementById('modal-confirm');
+    if (btn) { btn.disabled = true; btn.textContent = 'Aplicando...'; }
+    try {
+      const res = await fetch('/api/data/clientes/importar-baixas-acessorias', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_token()}` },
+        body: JSON.stringify({ desde, dryRun: false }),
+      });
+      const r = await res.json();
+      if (!res.ok) throw new Error(r?.error || 'Erro ao aplicar.');
+      App.Modal.close();
+      App.Toast.ok(`${r.novasNotificacoes} notificação(ões) de baixa/saída criada(s) — confira o sininho.`);
+      if (window.Notificacoes) Notificacoes.checar();
+    } catch (e) {
+      App.Toast.err('Erro ao aplicar: ' + e.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Tentar de novo'; }
+    }
+  }
+
   return {
     loadGrid, exportCSV, exportPDF, limpar, excluir, _onScroll, importarPlanilha, verFicha,
     gerenciarGrupos, _criarGrupo, _toggleGrupo, _excluirGrupo,
     gerenciarUnidades, _criarUnidade, _toggleUnidade, _excluirUnidade,
     gerenciarMotivosChurn, _criarMotivoChurn, _toggleMotivoChurn, _excluirMotivoChurn,
-    sincronizarAcessorias,
+    sincronizarAcessorias, buscarBaixasAcessorias, _buscarPreviaBaixasAcessorias, _aplicarBaixasAcessorias,
   };
 })();
 
