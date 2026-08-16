@@ -865,10 +865,12 @@ router.get('/motivos', requireAuth, requireAdmin, async (req, res) => {
         SELECT cm.ticket_id, cm.texto, cm.hora,
                ROW_NUMBER() OVER (PARTITION BY cm.ticket_id ORDER BY cm.hora ASC) AS rn,
                ct.zappy_id, ct.empresa_texto, ct.telefone, ct.departamento,
-               ct.abertura, cv.empresa_nome, cv.cnpj, cv.tipo AS vinculo_tipo
+               ct.abertura, cv.empresa_nome, cv.cnpj, cv.tipo AS vinculo_tipo,
+               cli.codigo
           FROM cs_mensagens cm
           JOIN cs_tickets ct ON ct.id = cm.ticket_id
           LEFT JOIN cs_vinculos cv ON cv.id = ct.vinculo_id
+          LEFT JOIN clientes cli ON cli.id::text = cv.cliente_id
          WHERE cm.remetente = 'cliente'
            AND ct.abertura >= NOW() - ($1 || ' days')::interval
            AND cm.texto IS NOT NULL AND cm.texto <> ''
@@ -903,7 +905,7 @@ router.get('/motivos', requireAuth, requireAdmin, async (req, res) => {
       const chaveEmpresa = meta.empresa_nome || meta.empresa_texto || meta.telefone || meta.ticket_id;
       if (!porEmpresa.has(chaveEmpresa)) {
         porEmpresa.set(chaveEmpresa, {
-          empresa, cnpj: meta.cnpj || null, vinculado: meta.vinculo_tipo === 'cliente',
+          empresa, cnpj: meta.cnpj || null, codigo: meta.codigo || null, vinculado: meta.vinculo_tipo === 'cliente',
           totalTickets: 0, porMotivo: {}, detalhes: [],
         });
       }

@@ -6823,7 +6823,13 @@ window.Tickets = Tickets;
       }
     },
 
+    /** Muda de filtro (dropdown "Mostrar a partir de") — sempre volta pra página 1. */
     filtrarAfastamento() {
+      AnaliseInteligente._renderAfastamentoPage(1);
+    },
+
+    /** Paginação numerada (mesmo padrão de Atendimento) — pedido do Reysner. */
+    _renderAfastamentoPage(p) {
       const tbody = document.getElementById('afastamento-tbody');
       if (!tbody) return;
       const minDias = parseInt(document.getElementById('afast-dias-filter')?.value || '0', 10);
@@ -6831,9 +6837,11 @@ window.Tickets = Tickets;
       const filtrados = todos.filter(c => c.sem_historico || (c.dias_sem_contato || 0) >= minDias);
       if (!filtrados.length) {
         tbody.innerHTML = '<tr><td colspan="9" style="color:var(--gray-400)">Nenhum cliente nessa faixa de afastamento.</td></tr>';
+        App.Util.renderPagination('afastamento-pagination', 1, 1, 0, 'AnaliseInteligente._renderAfastamentoPage');
         return;
       }
-      tbody.innerHTML = filtrados.map(c => {
+      const pg = App.Util.paginate(filtrados, p, 25);
+      tbody.innerHTML = pg.items.map(c => {
         const ultimo = c.ultimo_contato ? new Date(c.ultimo_contato).toLocaleDateString('pt-BR') : '—';
         const dias = c.sem_historico
           ? '<span style="color:var(--gray-400);font-size:12px">sem histórico</span>'
@@ -6850,6 +6858,7 @@ window.Tickets = Tickets;
           <td><button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.tratarAfastamento('${c.cliente_id}')">✔ Tratar</button></td>
         </tr>`;
       }).join('');
+      App.Util.renderPagination('afastamento-pagination', pg.page, pg.pages, pg.total, 'AnaliseInteligente._renderAfastamentoPage');
     },
 
     /**
@@ -6907,7 +6916,7 @@ window.Tickets = Tickets;
       const palavrasEl = document.getElementById('motivos-palavras-outros');
       const submotivosTbody = document.getElementById('motivos-submotivos-tbody');
       if (!tbody) return;
-      tbody.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400)">Carregando...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400)">Carregando...</td></tr>';
       if (resumoEl) resumoEl.innerHTML = '';
       if (legendaEl) legendaEl.innerHTML = '';
       if (palavrasEl) palavrasEl.innerHTML = '';
@@ -6965,7 +6974,7 @@ window.Tickets = Tickets;
         }
 
         if (!data || !data.length) {
-          tbody.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400)">Nenhum ticket classificado nos últimos 180 dias.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400)">Nenhum ticket classificado nos últimos 180 dias.</td></tr>';
         } else {
           tbody.innerHTML = data.map((c, idx) => {
             const nomeVinculo = c.vinculado
@@ -6980,7 +6989,9 @@ window.Tickets = Tickets;
               }).join('');
             const barra = `<div style="display:flex;height:16px;width:100%;border-radius:4px;overflow:hidden;background:var(--gray-100)">${segmentos}</div>`;
             return `<tr id="motivo-row-${idx}">
+              <td style="font-size:11px;color:var(--gray-400);font-weight:600">${esc(c.codigo || '—')}</td>
               <td style="font-weight:600">${nomeVinculo}</td>
+              <td style="font-size:12px;color:var(--gray-500)">${esc(c.cnpj || '—')}</td>
               <td>${c.totalTickets}</td>
               <td>${barra}</td>
               <td style="font-size:12px"><span style="background:var(--g100);color:var(--g700);padding:2px 8px;border-radius:10px;font-weight:600">${esc(c.motivoPrincipal || '—')}</span></td>
@@ -7000,7 +7011,7 @@ window.Tickets = Tickets;
           }
         }
       } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="5" style="color:var(--danger)">Não foi possível analisar os motivos agora.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="color:var(--danger)">Não foi possível analisar os motivos agora.</td></tr>';
         // Sem isso, essa tabela também ficava presa em "Carregando..." pra
         // sempre quando a busca falhasse (mesmo problema do Dashboard).
         if (submotivosTbody) submotivosTbody.innerHTML = '<tr><td colspan="3" style="color:var(--danger)">Não foi possível carregar. Tente atualizar a página.</td></tr>';
@@ -7053,7 +7064,7 @@ window.Tickets = Tickets;
       const resumoMotivos = Object.entries(item?.porMotivo || {})
         .sort((a, b) => b[1] - a[1])
         .map(([m, n]) => `${esc(m)}: ${n}`).join(' · ');
-      const html = `<tr id="motivo-detalhe-${idx}"><td colspan="5" style="background:var(--gray-50);padding:10px 16px">
+      const html = `<tr id="motivo-detalhe-${idx}"><td colspan="7" style="background:var(--gray-50);padding:10px 16px">
         <div style="font-size:12px;font-weight:600;color:var(--gray-600);margin-bottom:6px">Resumo: ${resumoMotivos}</div>
         ${linhas}
       </td></tr>`;
@@ -7135,30 +7146,42 @@ window.Tickets = Tickets;
         const res = await fetch('/api/data/churn', { headers: authHeaders() });
         if (!res.ok) throw new Error('Falha ao buscar.');
         const { data } = await res.json();
-        if (!data || !data.length) {
-          tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Nenhum cliente ativo cadastrado na Carteira ainda.</td></tr>';
-          return;
-        }
-        const cores = {
-          vermelho: { bg: '#fff5f5', fg: '#e53e3e', label: 'Alto risco' },
-          amarelo:  { bg: '#fffbeb', fg: '#d69e2e', label: 'Atenção' },
-          verde:    { bg: '#f0fff4', fg: '#38a169', label: 'Baixo risco' },
-        };
-        tbody.innerHTML = data.map(c => {
-          const cor = cores[c.nivel] || cores.verde;
-          const motivos = (c.motivos || []).length ? c.motivos.join('; ') : 'Nenhum sinal de risco identificado.';
-          return `<tr>
-            <td style="font-size:11px;color:var(--gray-400);font-weight:600">${esc(c.codigo || '—')}</td>
-            <td style="font-weight:600">${esc(c.empresa)}</td>
-            <td style="font-size:12px;color:var(--gray-500)">${esc(c.cnpj)}</td>
-            <td style="font-size:12px">${esc(c.regime_tributario || '—')}</td>
-            <td><span style="background:${cor.bg};color:${cor.fg};padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700">${cor.label} (${c.score})</span></td>
-            <td style="font-size:12px;color:var(--gray-600)">${esc(motivos)}</td>
-          </tr>`;
-        }).join('');
+        AnaliseInteligente._churnData = data || [];
+        AnaliseInteligente._renderChurnPage(1);
       } catch (e) {
         tbody.innerHTML = '<tr><td colspan="6" style="color:var(--danger)">Não foi possível calcular o risco de cancelamento agora.</td></tr>';
       }
+    },
+
+    /** Paginação numerada (mesmo padrão de Atendimento) — pedido do Reysner. */
+    _renderChurnPage(p) {
+      const tbody = document.getElementById('churn-tbody');
+      if (!tbody) return;
+      const todos = AnaliseInteligente._churnData || [];
+      if (!todos.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Nenhum cliente ativo cadastrado na Carteira ainda.</td></tr>';
+        App.Util.renderPagination('churn-pagination', 1, 1, 0, 'AnaliseInteligente._renderChurnPage');
+        return;
+      }
+      const cores = {
+        vermelho: { bg: '#fff5f5', fg: '#e53e3e', label: 'Alto risco' },
+        amarelo:  { bg: '#fffbeb', fg: '#d69e2e', label: 'Atenção' },
+        verde:    { bg: '#f0fff4', fg: '#38a169', label: 'Baixo risco' },
+      };
+      const pg = App.Util.paginate(todos, p, 25);
+      tbody.innerHTML = pg.items.map(c => {
+        const cor = cores[c.nivel] || cores.verde;
+        const motivos = (c.motivos || []).length ? c.motivos.join('; ') : 'Nenhum sinal de risco identificado.';
+        return `<tr>
+          <td style="font-size:11px;color:var(--gray-400);font-weight:600">${esc(c.codigo || '—')}</td>
+          <td style="font-weight:600">${esc(c.empresa)}</td>
+          <td style="font-size:12px;color:var(--gray-500)">${esc(c.cnpj)}</td>
+          <td style="font-size:12px">${esc(c.regime_tributario || '—')}</td>
+          <td><span style="background:${cor.bg};color:${cor.fg};padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700">${cor.label} (${c.score})</span></td>
+          <td style="font-size:12px;color:var(--gray-600)">${esc(motivos)}</td>
+        </tr>`;
+      }).join('');
+      App.Util.renderPagination('churn-pagination', pg.page, pg.pages, pg.total, 'AnaliseInteligente._renderChurnPage');
     },
 
     async carregarSentimento() {
