@@ -438,7 +438,7 @@ async function sincronizarAcessorias({ userId = null } = {}) {
         // ainda não tem uma linha lá — sem duplicar quem já tem ("só o
         // excedente"), e sem chamar a API de novo, só reaproveitando o que
         // já veio nesta mesma sincronização.
-        const jaTemGestao = await pool.query(`SELECT 1 FROM gestao_clientes WHERE cnpj = $1 LIMIT 1`, [emp.cnpj]);
+        const jaTemGestao = await pool.query(`SELECT id FROM gestao_clientes WHERE cnpj = $1 LIMIT 1`, [emp.cnpj]);
         if (!jaTemGestao.rows.length) {
           if (userIdEfetivo) {
             await pool.query(
@@ -451,6 +451,24 @@ async function sincronizarAcessorias({ userId = null } = {}) {
           } else {
             semGestaoRegistrada++;
           }
+        } else {
+          // Achado pelo Reysner: linha de Gestão já existia (de antes do
+          // fix do regime_tributario/registrationData) e nunca foi
+          // atualizada — só a Carteira era corrigida aqui. Sem isso, a
+          // coluna "Regime" ficava sempre "—" em Empresas mesmo já
+          // resolvido na Carteira. Regime usa a MESMA prioridade da
+          // Carteira (COALESCE(novo, existente) — valor novo da Acessórias
+          // sempre vence quando vier preenchido), pra Empresas continuar
+          // acompanhando se o regime mudar lá no futuro, não só preencher
+          // uma vez e travar. Código continua existente-primeiro (mesma
+          // regra de sempre, só preenche se estava vazio).
+          await pool.query(
+            `UPDATE gestao_clientes SET
+               regime_tributario = COALESCE($1, regime_tributario),
+               codigo = COALESCE(codigo, $2)
+             WHERE id = $3`,
+            [emp.regime_tributario, emp.codigo, jaTemGestao.rows[0].id]
+          );
         }
       } else {
         const clienteId = uuidv4();
@@ -704,7 +722,7 @@ router.get('/dashboard', async (req, res) => {
 
     const [
       atEmpresa, atDepto, atAnalista, atDemanda,
-      gcTipo, gcCanal,
+      gcTipo, gcCanal, gcMotivoChurn,
       insGrav, insArea, insTipo, insEmpresa,
       nps, csat, ces,
     ] = await Promise.all([
@@ -714,6 +732,9 @@ router.get('/dashboard', async (req, res) => {
       safe(() => groupBy('atendimentos', 'demanda', 8, af + " AND demanda IS NOT NULL AND demanda != ''")),
       safe(() => groupBy('gestao_clientes', 'solicitacao', 8)),
       safe(() => groupBy('gestao_clientes', 'canal', 8)),
+      // Principais motivos de churn — só "Saída de empresa" (não "Baixa",
+      // que não é churn de verdade, ver detectarPossiveisChurns acima).
+      safe(() => groupBy('gestao_clientes', 'motivo', 10, "AND solicitacao = 'Saída de empresa' AND motivo IS NOT NULL AND motivo != ''")),
       safe(() => groupBy('insatisfacoes', 'gravidade', 5)),
       safe(() => groupBy('insatisfacoes', 'area', 8)),
       safe(() => groupBy('insatisfacoes', 'tipo', 10)),
@@ -744,7 +765,7 @@ router.get('/dashboard', async (req, res) => {
     // Versões COMPLETAS (sem limite) para exportações
     const [
       fEmpresa, fDepto, fAnalista, fDemanda,
-      fGcTipo, fGcCanal,
+      fGcTipo, fGcCanal, fGcMotivoChurn,
       fInsGrav, fInsArea, fInsTipo, fInsEmpresa,
     ] = await Promise.all([
       safe(() => groupByFull('atendimentos', 'empresa', af)),
@@ -753,6 +774,7 @@ router.get('/dashboard', async (req, res) => {
       safe(() => groupByFull('atendimentos', 'demanda', af + " AND demanda IS NOT NULL AND demanda != ''")),
       safe(() => groupByFull('gestao_clientes', 'solicitacao')),
       safe(() => groupByFull('gestao_clientes', 'canal')),
+      safe(() => groupByFull('gestao_clientes', 'motivo', "AND solicitacao = 'Saída de empresa' AND motivo IS NOT NULL AND motivo != ''")),
       safe(() => groupByFull('insatisfacoes', 'gravidade')),
       safe(() => groupByFull('insatisfacoes', 'area')),
       safe(() => groupByFull('insatisfacoes', 'tipo')),
@@ -762,13 +784,13 @@ router.get('/dashboard', async (req, res) => {
     res.json({
       charts: {
         atEmpresa, atDepto, atAnalista: atAnalista, atDemanda,
-        gcTipo, gcCanal,
+        gcTipo, gcCanal, gcMotivoChurn,
         insGrav, insArea, insTipo, insEmpresa,
         npsEvolucao: npsEvolucao.rows,
       },
       chartsFull: {
         atEmpresa: fEmpresa, atDepto: fDepto, atAnalista: fAnalista, atDemanda: fDemanda,
-        gcTipo: fGcTipo, gcCanal: fGcCanal,
+        gcTipo: fGcTipo, gcCanal: fGcCanal, gcMotivoChurn: fGcMotivoChurn,
         insGrav: fInsGrav, insArea: fInsArea, insTipo: fInsTipo, insEmpresa: fInsEmpresa,
         npsEvolucao: npsEvolucao.rows,
       },

@@ -438,6 +438,7 @@ const App = (() => {
       // ── GESTÃO ───────────────────────────────────────────────────────────────
       Dashboard.renderChart('c-gestao', 'doughnut', c.gcTipo,  'Solicitação');
       Dashboard.renderChart('c-canal',  'pie',      c.gcCanal, 'Canal');
+      Dashboard.renderChart('c-churn-motivos', 'bar', c.gcMotivoChurn, 'Motivo', {indexAxis:'y'});
 
       // ── INSATISFAÇÃO ─────────────────────────────────────────────────────────
       Dashboard.renderChart('c-ins-area',   'bar',      c.insArea,    'Área');
@@ -891,6 +892,7 @@ const App = (() => {
       csv += sep + '=== GESTÃO DE CLIENTES ===';
       csv += sep + section('Por tipo de solicitação', c.gcTipo);
       csv += sep + section('Canal da solicitação', c.gcCanal);
+      csv += sep + section('Principais motivos de churn', c.gcMotivoChurn);
       csv += sep + '=== INSATISFAÇÃO ===';
       csv += sep + section('Por área', c.insArea);
       csv += sep + section('Por tipo', c.insTipo);
@@ -983,6 +985,7 @@ const App = (() => {
           <div class="grid2">
             ${table('Por tipo de solicitação', c.gcTipo)}
             ${table('Canal da solicitação', c.gcCanal)}
+            ${table('Principais motivos de churn', c.gcMotivoChurn)}
           </div>
         </div>
 
