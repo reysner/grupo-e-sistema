@@ -2643,7 +2643,7 @@ router.get('/sentimento', requireAdmin, async (req, res) => {
 router.get('/churn', requireAdmin, async (req, res) => {
   try {
     const [clientesR, honorariosR, pesquisasR, insatisfacoesR, sensiveisR, recuperacoesR] = await Promise.all([
-      pool.query(`SELECT id, cnpj, nome_empresa FROM clientes WHERE status = 'ativo'`),
+      pool.query(`SELECT id, cnpj, nome_empresa, codigo, regime_tributario FROM clientes WHERE status = 'ativo'`),
       pool.query(`SELECT cliente_id, MAX(data_vigencia) as ultimo FROM honorarios GROUP BY cliente_id`),
       pool.query(`SELECT cnpj, nps, csat, ces, pontos, created_at FROM pesquisas ORDER BY created_at DESC`),
       pool.query(`SELECT cnpj, gravidade, created_at FROM insatisfacoes WHERE created_at >= NOW() - INTERVAL '90 days'`),
@@ -2709,7 +2709,7 @@ router.get('/churn', requireAdmin, async (req, res) => {
 
       score = Math.min(score, 100);
       const nivel = score >= 60 ? 'vermelho' : score >= 30 ? 'amarelo' : 'verde';
-      return { id: c.id, cnpj: c.cnpj, empresa: c.nome_empresa, score, nivel, motivos };
+      return { id: c.id, cnpj: c.cnpj, empresa: c.nome_empresa, codigo: c.codigo, regime_tributario: c.regime_tributario, score, nivel, motivos };
     });
 
     resultado.sort((a, b) => b.score - a.score);

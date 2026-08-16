@@ -989,7 +989,7 @@ router.get('/afastamento', requireAuth, requireAdmin, async (req, res) => {
     )`).catch(() => {});
 
     const { rows } = await pool.query(`
-      SELECT c.id AS cliente_id, c.nome_empresa, c.cnpj, c.grupo_empresas, c.unidade,
+      SELECT c.id AS cliente_id, c.nome_empresa, c.cnpj, c.codigo, c.regime_tributario, c.grupo_empresas, c.unidade,
              c.data_entrada, v.id AS vinculo_id,
              ultima.hora AS ultimo_contato
         FROM clientes c
@@ -1015,6 +1015,8 @@ router.get('/afastamento', requireAuth, requireAdmin, async (req, res) => {
       cliente_id: r.cliente_id,
       empresa: r.nome_empresa,
       cnpj: r.cnpj,
+      codigo: r.codigo,
+      regime_tributario: r.regime_tributario,
       grupo_empresas: r.grupo_empresas,
       unidade: r.unidade,
       vinculado: !!r.vinculo_id,

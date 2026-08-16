@@ -6755,7 +6755,7 @@ window.Tickets = Tickets;
     async carregarAfastamento() {
       const tbody = document.getElementById('afastamento-tbody');
       if (!tbody) return;
-      tbody.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400)">Carregando...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="color:var(--gray-400)">Carregando...</td></tr>';
       try {
         const res = await fetch('/api/cs/afastamento', { headers: authHeaders() });
         if (!res.ok) throw new Error('Falha ao buscar.');
@@ -6763,7 +6763,7 @@ window.Tickets = Tickets;
         AnaliseInteligente._afastamentoData = data || [];
         AnaliseInteligente.filtrarAfastamento();
       } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="7" style="color:var(--danger)">Não foi possível calcular o afastamento agora.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="color:var(--danger)">Não foi possível calcular o afastamento agora.</td></tr>';
       }
     },
 
@@ -6774,7 +6774,7 @@ window.Tickets = Tickets;
       const todos = AnaliseInteligente._afastamentoData || [];
       const filtrados = todos.filter(c => c.sem_historico || (c.dias_sem_contato || 0) >= minDias);
       if (!filtrados.length) {
-        tbody.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400)">Nenhum cliente nessa faixa de afastamento.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="color:var(--gray-400)">Nenhum cliente nessa faixa de afastamento.</td></tr>';
         return;
       }
       tbody.innerHTML = filtrados.map(c => {
@@ -6783,8 +6783,10 @@ window.Tickets = Tickets;
           ? '<span style="color:var(--gray-400);font-size:12px">sem histórico</span>'
           : `<span style="font-weight:700;color:${c.dias_sem_contato >= 90 ? '#e53e3e' : c.dias_sem_contato >= 60 ? '#dd6b20' : 'var(--gray-700)'}">${c.dias_sem_contato} dias</span>`;
         return `<tr>
+          <td style="font-size:11px;color:var(--gray-400);font-weight:600">${esc(c.codigo || '—')}</td>
           <td style="font-weight:600">${esc(c.empresa || '—')}</td>
           <td style="font-size:12px;color:var(--gray-500)">${esc(c.cnpj || '—')}</td>
+          <td style="font-size:12px">${esc(c.regime_tributario || '—')}</td>
           <td style="font-size:12px">${esc(c.grupo_empresas || '—')}</td>
           <td style="font-size:12px">${esc(c.unidade || '—')}</td>
           <td style="font-size:12px;color:var(--gray-500)">${ultimo}</td>
@@ -7072,13 +7074,13 @@ window.Tickets = Tickets;
     async carregarChurn() {
       const tbody = document.getElementById('churn-tbody');
       if (!tbody) return;
-      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--gray-400)">Carregando...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Carregando...</td></tr>';
       try {
         const res = await fetch('/api/data/churn', { headers: authHeaders() });
         if (!res.ok) throw new Error('Falha ao buscar.');
         const { data } = await res.json();
         if (!data || !data.length) {
-          tbody.innerHTML = '<tr><td colspan="4" style="color:var(--gray-400)">Nenhum cliente ativo cadastrado na Carteira ainda.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Nenhum cliente ativo cadastrado na Carteira ainda.</td></tr>';
           return;
         }
         const cores = {
@@ -7090,14 +7092,16 @@ window.Tickets = Tickets;
           const cor = cores[c.nivel] || cores.verde;
           const motivos = (c.motivos || []).length ? c.motivos.join('; ') : 'Nenhum sinal de risco identificado.';
           return `<tr>
+            <td style="font-size:11px;color:var(--gray-400);font-weight:600">${esc(c.codigo || '—')}</td>
             <td style="font-weight:600">${esc(c.empresa)}</td>
             <td style="font-size:12px;color:var(--gray-500)">${esc(c.cnpj)}</td>
+            <td style="font-size:12px">${esc(c.regime_tributario || '—')}</td>
             <td><span style="background:${cor.bg};color:${cor.fg};padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700">${cor.label} (${c.score})</span></td>
             <td style="font-size:12px;color:var(--gray-600)">${esc(motivos)}</td>
           </tr>`;
         }).join('');
       } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--danger)">Não foi possível calcular o risco de cancelamento agora.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--danger)">Não foi possível calcular o risco de cancelamento agora.</td></tr>';
       }
     },
 
