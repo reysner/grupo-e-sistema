@@ -31,7 +31,7 @@ const router = express.Router();
 const { obterPool } = require('./pool');
 const { ingerirTickets, executarCargaRetroativa, recalcularSlaTodos } = require('./ingestao');
 const { criarClienteZappy } = require('./zappyClient');
-const { listarPendentes, confirmarVinculo } = require('./vinculos');
+const { listarPendentes, confirmarVinculo, recalcularSugestoes } = require('./vinculos');
 const { detectarSinalChurn, detectarInsatisfacao, classificarMotivoConversa, palavrasFrequentes } = require('./slaEngine');
 
 // Trava simples pra não deixar disparar 2 backfills ao mesmo tempo (ex.: duplo clique).
@@ -1162,6 +1162,25 @@ router.get('/vinculos/pendentes', requireAuth, async (req, res) => {
     res.json({ vinculos });
   } catch (e) {
     console.error('[cs] GET /vinculos/pendentes falhou:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * POST /api/cs/vinculos/recalcular — recalcula a sugestão (empresa +
+ * cliente_id) de todo vínculo ainda pendente, usando a Carteira ATUAL.
+ * Pedido do Reysner: fila de 874 pendentes veio toda sem sugestão porque foi
+ * criada com a Carteira vazia — ver comentário em recalcularSugestoes() no
+ * vinculos.js. Não confirma nada sozinho, só pré-preenche pra acelerar a
+ * revisão manual.
+ */
+router.post('/vinculos/recalcular', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const resultado = await recalcularSugestoes(pool);
+    res.json(resultado);
+  } catch (e) {
+    console.error('[cs] POST /vinculos/recalcular falhou:', e);
     res.status(500).json({ error: e.message });
   }
 });

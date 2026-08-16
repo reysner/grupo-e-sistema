@@ -1065,7 +1065,10 @@
 <div id="hist-container"></div>
           <hr style="margin:32px 0;border:none;border-top:1px solid var(--gray-200)">
 
-<h3 style="margin-bottom:12px">Vínculos Pendentes de Confirmação</h3>
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:4px">
+  <h3 style="margin:0">Vínculos Pendentes de Confirmação</h3>
+  <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.recalcularSugestoesVinculos()" title="Recalcula a sugestão de empresa/cliente de cada pendente usando a Carteira atual">🔄 Recalcular sugestões</button>
+</div>
 <p style="color:var(--gray-500);font-size:13px;margin-bottom:12px">
   Números de telefone que apareceram em tickets e ainda não foram confirmados
   como cliente, fornecedor, interno ou software.

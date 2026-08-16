@@ -86,4 +86,45 @@ async function listarPendentes(pool) {
   return rows;
 }
 
-module.exports = { carregarClientes, garantirVinculo, confirmarVinculo, listarPendentes };
+/**
+ * Recalcula a sugestão (cliente_id/empresa_nome/cnpj/confianca) de TODO
+ * vínculo ainda 'pendente', usando a Carteira ATUAL. Achado do Reysner: a
+ * fila de 874 pendentes foi criada quando a Carteira ainda estava vazia
+ * (antes da integração com o Acessórias) — `garantirVinculo` só calcula a
+ * sugestão UMA VEZ, na criação (`ON CONFLICT DO UPDATE SET updated_at =
+ * NOW()` não recalcula nada), então nenhum desses 874 tem cliente_id
+ * sugerido até hoje, mesmo a Carteira já tendo 622 empresas reais. Sem
+ * cliente_id, mesmo confirmando manualmente o nome na tela, o vínculo NÃO
+ * casa com a Carteira (Afastamento, etc. continuam mostrando "não
+ * vinculado") — ver confirmarVinculoLinha no app.js, que sempre manda
+ * `clienteId: original.cliente_id`.
+ *
+ * Não confirma nada sozinho (tipo continua 'pendente') — só preenche a
+ * sugestão pra quem for revisar a fila não precisar digitar o nome de cada
+ * empresa na mão, e pro clique de "Confirmar" já linkar certo.
+ *
+ * `contato.nome` usa `empresa_nome` guardado (que, pra quem nunca teve
+ * sugestão, é o nome bruto do contato do Zappy — ver garantirVinculo).
+ */
+async function recalcularSugestoes(pool) {
+  const clientes = await carregarClientes(pool);
+  const { rows: pendentes } = await pool.query(
+    `SELECT id, telefone, empresa_nome FROM cs_vinculos WHERE tipo = 'pendente'`
+  );
+
+  let atualizados = 0, semMatch = 0;
+  for (const v of pendentes) {
+    const sugestao = sugerirVinculo({ nome: v.empresa_nome, telefone: v.telefone }, clientes);
+    const melhor = sugestao.sugestoes[0] || null;
+    if (!melhor) { semMatch++; continue; }
+    await pool.query(
+      `UPDATE cs_vinculos SET cliente_id = $1, empresa_nome = $2, cnpj = $3, confianca = $4, updated_at = NOW()
+        WHERE id = $5 AND tipo = 'pendente'`,
+      [String(melhor.cliente_id), melhor.nome_empresa, melhor.cnpj, melhor.confianca, v.id]
+    );
+    atualizados++;
+  }
+  return { total: pendentes.length, atualizados, semMatch };
+}
+
+module.exports = { carregarClientes, garantirVinculo, confirmarVinculo, listarPendentes, recalcularSugestoes };

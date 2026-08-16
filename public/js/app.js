@@ -6552,6 +6552,32 @@ window.Tickets = Tickets;
       }
     },
 
+    /**
+     * "🔄 Recalcular sugestões" — a fila de pendentes foi criada quando a
+     * Carteira ainda estava vazia, então nenhuma linha tem empresa/cliente
+     * sugerido até hoje (mesmo a Carteira já tendo 622 empresas reais).
+     * Reprocessa tudo contra a Carteira atual — não confirma nada sozinho,
+     * só pré-preenche a sugestão pra acelerar a revisão manual.
+     */
+    async recalcularSugestoesVinculos() {
+      if (window.App && App.Toast) App.Toast.ok('Recalculando sugestões contra a Carteira atual — pode levar alguns segundos...');
+      try {
+        const resp = await fetch('/api/cs/vinculos/recalcular', {
+          method: 'POST',
+          headers: SucessoCliente._authHeaders(),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        if (window.App && App.Toast) {
+          App.Toast.ok(`Sugestões recalculadas: ${data.atualizados} de ${data.total} agora têm uma empresa sugerida (${data.semMatch} sem correspondência clara).`);
+        }
+        await SucessoCliente.carregarVinculosPendentes();
+      } catch (e) {
+        if (window.App && App.Toast) App.Toast.err('Falha ao recalcular sugestões: ' + e.message);
+        console.error('[SucessoCliente] recalcularSugestoesVinculos()', e);
+      }
+    },
+
     // Mesmo padrão usado nos outros módulos do app.js (ex.: linha "const _tk = () => localStorage.getItem('ge_token') || '';")
     _authHeaders() {
       const token = localStorage.getItem('ge_token') || '';
