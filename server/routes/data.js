@@ -646,10 +646,19 @@ router.post('/clientes/importar-baixas-acessorias', requireAdmin, async (req, re
           jaEraAtivo = false;
           if (!dryRun) {
             clienteId = uuidv4();
+            // status='encerrado' direto, não 'ativo' — achado do Reysner:
+            // diferente do drift-detection (onde o cliente ERA ativo até
+            // agora, cabe deixar 'ativo' pendente de resolução), aqui já
+            // SABEMOS que a empresa está inativa desde `clienteAte` — contar
+            // como ativa infla "Clientes ativos" à toa (622 virou 756 na
+            // 1ª rodada). motivo_saida fica um placeholder óbvio; quem
+            // resolve a notificação sobrescreve com o valor real escolhido
+            // (resolver-churn não checa status antes de sobrescrever).
             await pool.query(
-              `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada, acessorias_id, codigo, status)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ativo')`,
-              [clienteId, req.user.id, emp.cnpj, emp.nome_empresa, emp.regime_tributario, emp.data_entrada, emp.acessorias_id, emp.codigo]
+              `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada, acessorias_id, codigo, status, data_saida, motivo_saida)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'encerrado',$9,$10)`,
+              [clienteId, req.user.id, emp.cnpj, emp.nome_empresa, emp.regime_tributario, emp.data_entrada, emp.acessorias_id, emp.codigo,
+               emp.clienteAte, 'Pendente de revisão — baixa/saída detectada no Acessórias']
             );
           }
           novosClientes++;
@@ -699,6 +708,56 @@ router.post('/clientes/importar-baixas-acessorias', requireAdmin, async (req, re
   } catch (e) {
     console.error('[importar-baixas-acessorias] falhou:', e);
     res.status(500).json({ error: 'Falha ao buscar baixas no Acessórias: ' + e.message });
+  }
+});
+
+/**
+ * POST /api/data/clientes/corrigir-baixas-acessorias-status — correção
+ * pontual: a 1ª rodada de importar-baixas-acessorias (antes do fix acima)
+ * criou os 134 clientes novos como status='ativo', inflando "Clientes
+ * Ativos" de 622 pra 756 (achado do Reysner, comparando Dashboard x
+ * Carteira). Acha esses 134 pela notificação que só ELES têm (tipo +
+ * título exclusivos desse fluxo, ainda não lida) e corrige pra
+ * 'encerrado', com a data real (extraída do texto da própria notificação)
+ * — nunca mexe em quem já foi resolvido (status != 'ativo' fica de fora).
+ * Idempotente: rodar de novo não faz nada se já não sobrar ninguém 'ativo'
+ * nesse grupo.
+ */
+router.post('/clientes/corrigir-baixas-acessorias-status', requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT n.cliente_id, n.mensagem
+        FROM notificacoes n
+        JOIN clientes c ON c.id = n.cliente_id
+       WHERE n.tipo = 'churn_acessorias'
+         AND n.titulo = 'Baixa/saída no Acessórias'
+         AND n.lida = false
+         AND c.status = 'ativo'
+    `);
+
+    let corrigidos = 0;
+    const semData = [];
+    for (const r of rows) {
+      const m = r.mensagem.match(/está inativa no Acessórias desde (\d{4}-\d{2}-\d{2})/);
+      const dataSaida = m ? m[1] : null;
+      if (!dataSaida) { semData.push(r.cliente_id); continue; }
+      await pool.query(
+        `UPDATE clientes SET status = 'encerrado', data_saida = $1,
+           motivo_saida = COALESCE(motivo_saida, 'Pendente de revisão — baixa/saída detectada no Acessórias')
+         WHERE id = $2 AND status = 'ativo'`,
+        [dataSaida, r.cliente_id]
+      );
+      corrigidos++;
+    }
+
+    await registrarLog(
+      req.user.id, req.user.name, 'editar', 'carteira',
+      `Corrigiu status de ${corrigidos} cliente(s) de baixa/saída do Acessórias (ativo → encerrado)`, req
+    );
+    res.json({ encontrados: rows.length, corrigidos, semData });
+  } catch (e) {
+    console.error('[corrigir-baixas-acessorias-status] falhou:', e);
+    res.status(500).json({ error: e.message });
   }
 });
 
