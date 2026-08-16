@@ -3261,7 +3261,91 @@ const Carteira = (() => {
   }
 
   function goPage(p) { _page = p; const f = _dadosFiltrados(); const pg = App.Util.paginate(f, p, 20); _renderGrid(pg.items); App.Util.renderPagination('cart-pagination', pg.page, pg.pages, pg.total, 'Carteira.goPage'); }
-  return { load, loadDashboard, loadGrid, filtrar, goPage, _onScroll, atualizarHonorario, salvarHonorario, verFicha, editarCliente, salvarEdicaoCliente, exportCSV, exportPDF, limpar, excluir };
+
+  // ── Reajuste em Massa ──────────────────────────────────────────────────
+  // Pedido do Reysner: um campo pra definir uma porcentagem e aplicar pra
+  // toda a carteira de uma vez. Só considera ativos com honorário > 0
+  // (mesma regra do backend — R$ 0,00 é "honorário pendente", não entra).
+  function _alvosReajuste() {
+    return _clientes.filter(c => c.status === 'ativo' && parseFloat(c.honorario_atual || 0) > 0);
+  }
+
+  function _previewReajusteHTML(pct) {
+    const alvos = _alvosReajuste();
+    const totalAtual = alvos.reduce((s, c) => s + parseFloat(c.honorario_atual || 0), 0);
+    if (!pct) {
+      return `<strong>${alvos.length}</strong> cliente(s) ativo(s) com honorário cadastrado.<br/>Total atual: <strong>${_fmt(totalAtual)}</strong>`;
+    }
+    const totalNovo = alvos.reduce((s, c) => s + Math.round(parseFloat(c.honorario_atual || 0) * (1 + pct / 100) * 100) / 100, 0);
+    const delta = totalNovo - totalAtual;
+    const cor = delta >= 0 ? '#38a169' : '#e53e3e';
+    return `<strong>${alvos.length}</strong> cliente(s) ativo(s) com honorário cadastrado.<br/>
+      Total atual: <strong>${_fmt(totalAtual)}</strong> → Total novo: <strong>${_fmt(totalNovo)}</strong>
+      <span style="color:${cor}"> (${delta >= 0 ? '+' : ''}${_fmt(delta)}/mês)</span>`;
+  }
+
+  function _atualizarPreviewReajuste() {
+    const pct = parseFloat(String(document.getElementById('reaj-pct')?.value || '').replace(',', '.'));
+    const preview = document.getElementById('reaj-preview');
+    if (preview) preview.innerHTML = _previewReajusteHTML(isNaN(pct) ? 0 : pct);
+  }
+
+  function abrirReajusteEmMassa() {
+    const hoje = new Date().toISOString().slice(0, 10);
+    App.Modal.open('📊 Reajuste em Massa', `
+      <div style="display:grid;gap:14px">
+        <p style="color:var(--gray-600);font-size:13px;margin:0">
+          Aplica um reajuste percentual ao honorário de todos os clientes <strong>ativos</strong> com honorário cadastrado.
+          Honorário pendente (R$ 0,00) não é afetado. Cria um novo registro de honorário por cliente — o histórico anterior não é apagado.
+        </p>
+        <div class="field"><label>Percentual de reajuste (%) <span class="req">*</span></label>
+          <input id="reaj-pct" type="number" step="0.01" placeholder="Ex.: 8 para +8%, -5 para -5%" oninput="Carteira._atualizarPreviewReajuste()" />
+        </div>
+        <div class="field"><label>Data de Vigência <span class="req">*</span></label><input id="reaj-data" type="date" value="${hoje}" /></div>
+        <div class="field"><label>Observação</label><input id="reaj-obs" type="text" placeholder="Ex.: Reajuste anual 2026" /></div>
+        <div id="reaj-preview" style="background:var(--g100);border:1px solid var(--g200);border-radius:8px;padding:12px 16px;font-size:13px;color:var(--g800);line-height:1.6">
+          ${_previewReajusteHTML(0)}
+        </div>
+      </div>
+    `, () => Carteira._aplicarReajusteEmMassa());
+  }
+
+  async function _aplicarReajusteEmMassa() {
+    const pctRaw = document.getElementById('reaj-pct')?.value;
+    const pct = parseFloat(String(pctRaw || '').replace(',', '.'));
+    const data_vigencia = document.getElementById('reaj-data')?.value;
+    const obs = document.getElementById('reaj-obs')?.value?.trim() || null;
+    if (!pctRaw || isNaN(pct) || pct === 0) { App.Toast.err('Informe um percentual diferente de zero.'); return; }
+    if (!data_vigencia) { App.Toast.err('Data de vigência é obrigatória.'); return; }
+
+    const btn = document.getElementById('modal-confirm');
+    if (btn) { btn.disabled = true; btn.textContent = 'Aplicando...'; }
+    try {
+      const res = await fetch('/api/data/clientes/reajuste-em-massa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_token()}` },
+        body: JSON.stringify({ percentual: pct, data_vigencia, obs }),
+      });
+      const r = await res.json().catch(() => ({}));
+      if (res.ok) {
+        App.Modal.close();
+        App.Toast.ok(`Reajuste aplicado: ${r.afetados} cliente(s) — ${_fmt(r.totalAnterior)} → ${_fmt(r.totalNovo)}`);
+        await load();
+      } else {
+        App.Toast.err(r?.error || 'Erro ao aplicar reajuste em massa.');
+      }
+    } catch (e) {
+      App.Toast.err('Erro ao aplicar reajuste em massa.');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Confirmar'; }
+    }
+  }
+
+  return {
+    load, loadDashboard, loadGrid, filtrar, goPage, _onScroll, atualizarHonorario, salvarHonorario,
+    verFicha, editarCliente, salvarEdicaoCliente, exportCSV, exportPDF, limpar, excluir,
+    abrirReajusteEmMassa, _atualizarPreviewReajuste, _aplicarReajusteEmMassa,
+  };
 })();
 
 window.Carteira = Carteira;

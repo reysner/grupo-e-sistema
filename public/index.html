@@ -751,6 +751,7 @@
               <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option><option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option><option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option><option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
             </select>
             <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm admin-only" onclick="Carteira.abrirReajusteEmMassa()">📊 Reajuste em Massa</button>
               <button class="btn btn-ghost btn-sm" onclick="Carteira.exportCSV()">⬇ Exportar CSV</button>
               <button class="btn btn-ghost btn-sm" onclick="Carteira.exportPDF()">🖨 Exportar PDF</button>
               <button class="btn btn-sm admin-only" onclick="Carteira.limpar()" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7">🗑 Limpar Registros</button>

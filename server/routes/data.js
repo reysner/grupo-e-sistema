@@ -1191,6 +1191,69 @@ router.post('/clientes/:id/honorario', requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro ao atualizar honorário.' }); }
 });
 
+/**
+ * POST /api/data/clientes/reajuste-em-massa — aplica um reajuste percentual
+ * ao honorário de TODOS os clientes ativos com honorário cadastrado. Pedido
+ * do Reysner: um campo pra definir uma porcentagem e aplicar pra toda a
+ * carteira de uma vez, em vez de cliente por cliente.
+ *
+ * Mesmo padrão do reajuste individual (POST /clientes/:id/honorario): cria
+ * uma NOVA linha em `honorarios` (mantém histórico intacto, nunca sobrescreve
+ * o valor anterior) + um evento 'reajuste' em `eventos_clientes`, por cliente
+ * afetado. Clientes com honorário zerado/pendente são pulados de propósito —
+ * X% de R$ 0,00 continua R$ 0,00, e criar um registro assim só poluiria o
+ * histórico à toa (esses clientes ficam sinalizados como "honorário
+ * pendente" nas telas que já tratam esse caso, não é isso que este endpoint
+ * resolve). Também só considera clientes ATIVOS — encerrado não tem
+ * honorário a reajustar.
+ */
+router.post('/clientes/reajuste-em-massa', requireAdmin, async (req, res) => {
+  try {
+    const { percentual, data_vigencia, obs } = req.body;
+    const pct = parseFloat(String(percentual).replace(',', '.'));
+    if (!pct || isNaN(pct)) return res.status(400).json({ error: 'Percentual é obrigatório e não pode ser zero.' });
+    if (!data_vigencia) return res.status(400).json({ error: 'Data de vigência é obrigatória.' });
+
+    const { rows: alvos } = await pool.query(`
+      SELECT c.id, h.valor AS honorario_atual
+      FROM clientes c
+      JOIN LATERAL (
+        SELECT valor FROM honorarios h2 WHERE h2.cliente_id = c.id ORDER BY data_vigencia DESC LIMIT 1
+      ) h ON true
+      WHERE c.status = 'ativo' AND h.valor > 0
+    `);
+
+    const observacao = (obs && obs.trim()) || `Reajuste em massa (${pct > 0 ? '+' : ''}${pct}%)`;
+    let totalAnterior = 0, totalNovo = 0;
+    for (const alvo of alvos) {
+      const valorAnterior = parseFloat(alvo.honorario_atual);
+      const valorNovo = Math.round(valorAnterior * (1 + pct / 100) * 100) / 100;
+      totalAnterior += valorAnterior;
+      totalNovo += valorNovo;
+      await pool.query(
+        `INSERT INTO honorarios (cliente_id, valor, data_vigencia, obs) VALUES ($1,$2,$3,$4)`,
+        [alvo.id, valorNovo, data_vigencia, observacao]
+      );
+      await pool.query(
+        `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, valor_anterior, valor_novo, data_evento)
+         VALUES ($1,'reajuste',$2,$3,$4,$5)`,
+        [alvo.id, observacao, valorAnterior, valorNovo, data_vigencia]
+      );
+    }
+
+    await registrarLog(
+      req.user.id, req.user.name, 'editar', 'carteira',
+      `Reajuste em massa: ${pct > 0 ? '+' : ''}${pct}% em ${alvos.length} cliente(s) (R$ ${totalAnterior.toFixed(2)} → R$ ${totalNovo.toFixed(2)})`,
+      req
+    );
+
+    res.json({ ok: true, afetados: alvos.length, totalAnterior, totalNovo });
+  } catch (err) {
+    console.error('[reajuste-em-massa] falhou:', err);
+    res.status(500).json({ error: 'Erro ao aplicar reajuste em massa.' });
+  }
+});
+
 router.get('/carteira/dashboard', requireAuth, async (req, res) => {
   try {
     // MRR = soma dos honorários vigentes de clientes ativos
