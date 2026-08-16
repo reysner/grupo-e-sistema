@@ -2911,7 +2911,7 @@ const Carteira = (() => {
     const tbody = document.getElementById('cart-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum cliente encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum cliente encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(c => {
@@ -2941,6 +2941,7 @@ const Carteira = (() => {
         <td style="font-size:11px;color:var(--gray-400);font-weight:600">${c.codigo||'—'}</td>
         <td style="font-weight:600">${c.nome_empresa}${reajusteAlert}</td>
         <td style="font-size:12px;color:var(--gray-500)">${c.cnpj}</td>
+        <td style="font-size:12px">${c.regime_tributario || '—'}</td>
         <td style="font-weight:600;color:var(--g700)">${_fmt(hon)}</td>
         <td>${_fmt(rec)}</td>
         <td style="font-size:12px;color:var(--gray-500)">${_tempo(c.data_entrada, c.data_saida)}</td>
@@ -2982,12 +2983,12 @@ const Carteira = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('cart-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr>';
     const res = await fetch('/api/data/clientes?status=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#e53e3e;padding:32px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#e53e3e;padding:32px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data } = await res.json();
@@ -3901,7 +3902,7 @@ const Gestao = (() => {
     const tbody = document.getElementById('gc-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(r => {
@@ -3918,6 +3919,7 @@ const Gestao = (() => {
         <td style="font-weight:600">${r.empresa}${inadimplenteTag}${churnTag}</td>
         <td>${r.solicitacao}</td>
         <td>${r.canal||'—'}</td>
+        <td style="font-size:12px">${r.regime_tributario || '—'}</td>
         <td style="font-size:12px">${r.grupo_empresas || '—'}</td>
         <td style="font-size:12px">${r.unidade || '—'}</td>
         <td style="font-size:12px">${r.honorario_atual != null ? 'R$ ' + Number(r.honorario_atual).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—'}</td>
@@ -3929,12 +3931,12 @@ const Gestao = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('gc-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
     const res = await fetch('/api/data/gestao?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data, ticketMedio, ticketMedioPorUnidade } = await res.json();
