@@ -3989,41 +3989,71 @@ const Gestao = (() => {
     const tbody = document.getElementById('gc-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(r => {
-      const d = new Date(r.created_at).toLocaleString('pt-BR');
       const lixeira = App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Gestao.excluir('${r.id}')" title="Excluir">🗑</button>` : '';
       const faixaTag = r.faixa ? `<span style="font-size:11px;font-weight:700;color:${_FAIXA_COR[r.faixa]}">${_FAIXA_LABEL[r.faixa]}</span>` : '<span style="color:var(--gray-400)">—</span>';
       const inadimplenteTag = r.inadimplente_cronico ? ' 🔴' : '';
       const churnTag = r.possivel_churn ? ' <span title="Sumiu da lista de ativos do Acessórias">📉</span>' : '';
       return `<tr>
-        <td style="font-size:12px;color:var(--gray-500)">${d}</td>
-        <td>${r.analista}</td>
         <td style="font-size:11px;color:var(--gray-400);font-weight:600">${r.codigo||'—'}</td>
-        <td style="font-size:12px">${r.cnpj||'—'}</td>
         <td style="font-weight:600">${r.empresa}${inadimplenteTag}${churnTag}</td>
-        <td>${r.solicitacao}</td>
-        <td>${r.canal||'—'}</td>
+        <td style="font-size:12px">${r.cnpj||'—'}</td>
         <td style="font-size:12px">${r.regime_tributario || '—'}</td>
+        <td>${r.solicitacao}</td>
         <td style="font-size:12px">${r.grupo_empresas || '—'}</td>
         <td style="font-size:12px">${r.unidade || '—'}</td>
         <td style="font-size:12px">${r.honorario_atual != null ? 'R$ ' + Number(r.honorario_atual).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—'}</td>
         <td>${faixaTag}</td>
-        <td>${lixeira}</td></tr>`;
+        <td style="white-space:nowrap">
+          <button class="btn btn-ghost btn-sm" onclick="Gestao.verFicha('${r.id}')">Ver ficha</button>
+          ${lixeira}
+        </td></tr>`;
     }).join('');
+  }
+
+  /**
+   * "Ver ficha" — pedido do Reysner: tirar Data/Analista/Canal da grade
+   * (fica poluída) e mostrar num botão, mesmo padrão do "Ver ficha" da
+   * Carteira. Como esses 3 campos (+ tudo mais) já vêm no payload de
+   * /gestao usado pra montar a grade, não precisa de outra chamada — só
+   * acha o registro em `_allData` pelo id.
+   */
+  function verFicha(id) {
+    const r = (_allData || []).find(x => x.id === id);
+    if (!r) { App.Toast.err('Registro não encontrado.'); return; }
+    const d = r.created_at ? new Date(r.created_at).toLocaleString('pt-BR') : '—';
+    const hon = r.honorario_atual != null ? 'R$ ' + Number(r.honorario_atual).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—';
+    const faixa = r.faixa ? _FAIXA_LABEL[r.faixa] : '—';
+    App.Modal.open(`Ficha — ${_esc(r.empresa)}`, `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
+        <div><strong>Data:</strong> ${d}</div>
+        <div><strong>Analista:</strong> ${_esc(r.analista||'—')}</div>
+        <div><strong>Código:</strong> ${_esc(r.codigo||'—')}</div>
+        <div><strong>CNPJ:</strong> ${_esc(r.cnpj||'—')}</div>
+        <div><strong>Regime:</strong> ${_esc(r.regime_tributario||'—')}</div>
+        <div><strong>Solicitação:</strong> ${_esc(r.solicitacao||'—')}</div>
+        <div><strong>Canal:</strong> ${_esc(r.canal||'—')}</div>
+        <div><strong>Grupo:</strong> ${_esc(r.grupo_empresas||'—')}</div>
+        <div><strong>Unidade:</strong> ${_esc(r.unidade||'—')}</div>
+        <div><strong>Honorário:</strong> ${hon}</div>
+        <div><strong>Faixa:</strong> ${faixa}</div>
+        ${r.motivo ? `<div style="grid-column:1/-1"><strong>Motivo:</strong> ${_esc(r.motivo)}</div>` : ''}
+      </div>
+    `, () => App.Modal.close(), { noFooter: true });
   }
 
   async function loadGrid() {
     const tbody = document.getElementById('gc-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
     const res = await fetch('/api/data/gestao?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data, ticketMedio, ticketMedioPorUnidade } = await res.json();
@@ -4345,7 +4375,7 @@ const Gestao = (() => {
   }
 
   return {
-    loadGrid, exportCSV, exportPDF, limpar, excluir, _onScroll, importarPlanilha,
+    loadGrid, exportCSV, exportPDF, limpar, excluir, _onScroll, importarPlanilha, verFicha,
     gerenciarGrupos, _criarGrupo, _toggleGrupo, _excluirGrupo,
     gerenciarUnidades, _criarUnidade, _toggleUnidade, _excluirUnidade,
     gerenciarMotivosChurn, _criarMotivoChurn, _toggleMotivoChurn, _excluirMotivoChurn,
