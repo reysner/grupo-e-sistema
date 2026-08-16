@@ -56,23 +56,11 @@ router.post('/forgot-password', async (req, res) => {
   }
 });
 
-// GET /api/auth/testar-email  -> DIAGNÓSTICO: tenta enviar um e-mail e devolve o resultado direto
-// Remover depois que o envio estiver funcionando.
-router.get('/testar-email', async (req, res) => {
-  const destino = req.query.para;
-  if (!destino) return res.json({ ok: false, erro: 'Use ?para=email@dominio.com' });
-  const cfg = {
-    GMAIL_USER: process.env.GMAIL_USER || '(não definido)',
-    GMAIL_APP_PASS_definido: process.env.GMAIL_APP_PASS ? 'sim (' + process.env.GMAIL_APP_PASS.length + ' caracteres)' : 'NÃO DEFINIDO',
-    APP_URL: process.env.APP_URL || '(não definido)',
-  };
-  try {
-    await enviarEmailRecuperacao(destino, 'Teste', 'token-de-teste-123');
-    res.json({ ok: true, mensagem: 'E-mail enviado com sucesso para ' + destino, config: cfg });
-  } catch (e) {
-    res.json({ ok: false, erro: e.message, codigo: e.code || null, config: cfg });
-  }
-});
+// Removido: GET /api/auth/testar-email — era uma rota de diagnóstico deixada
+// pública sem querer (achado na auditoria: qualquer um podia mandar e-mail
+// de verdade pela conta Gmail do sistema pra qualquer destinatário, sem
+// login). O envio de e-mail já está confirmado funcionando pelo fluxo real
+// de recuperação de senha — não precisa mais dessa rota de teste.
 
 // GET /api/auth/reset-valido?token=...  -> confere se o token é válido (para a página de reset)
 router.get('/reset-valido', async (req, res) => {

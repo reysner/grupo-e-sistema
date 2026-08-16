@@ -1,11 +1,32 @@
 'use strict';
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { pool } = require('./db');
 
-const ACCESS_SECRET  = process.env.JWT_SECRET        || 'ge_access_secret_change_me';
-const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'ge_refresh_secret_change_me';
+// Achado na auditoria: antes, sem JWT_SECRET/JWT_REFRESH_SECRET configuradas
+// no Render, o sistema caía silenciosamente pra uma string fixa e visível a
+// qualquer um com acesso ao código no GitHub ('ge_access_secret_change_me')
+// — dava pra forjar um login de administrador sabendo só isso. Mesmo
+// cuidado que já existe pro ADMIN_PASS (recusa criar admin sem senha
+// configurada), adaptado aqui pra não derrubar o servidor: se a variável
+// não estiver definida, gera um segredo ALEATÓRIO a cada boot (nunca
+// previsível) e avisa bem alto no log — sessões existentes são invalidadas
+// a cada reinício nesse caso, mas ninguém consegue mais adivinhar o segredo.
+function segredoOuAleatorio(nomeVar) {
+  const valor = process.env[nomeVar];
+  if (valor) return valor;
+  console.error(
+    `⚠️  ${nomeVar} não configurada — usando um valor aleatório gerado neste boot ` +
+    `(todas as sessões serão invalidadas a cada reinício do servidor até isso ser corrigido). ` +
+    `Configure ${nomeVar} no Render → Environment com um valor fixo e aleatório.`
+  );
+  return crypto.randomBytes(48).toString('hex');
+}
+
+const ACCESS_SECRET  = segredoOuAleatorio('JWT_SECRET');
+const REFRESH_SECRET = segredoOuAleatorio('JWT_REFRESH_SECRET');
 const ACCESS_TTL     = '2h';
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
