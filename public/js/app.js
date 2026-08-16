@@ -6973,32 +6973,7 @@ window.Tickets = Tickets;
             </span>`).join('');
         }
 
-        if (!data || !data.length) {
-          tbody.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400)">Nenhum ticket classificado nos últimos 180 dias.</td></tr>';
-        } else {
-          tbody.innerHTML = data.map((c, idx) => {
-            const nomeVinculo = c.vinculado
-              ? esc(c.empresa)
-              : `${esc(c.empresa)} <span style="color:var(--gray-400);font-size:11px">(não vinculado)</span>`;
-            // Barra empilhada: um <span> por motivo, largura proporcional ao total do cliente.
-            const segmentos = Object.entries(c.porMotivo || {})
-              .sort((a, b) => b[1] - a[1])
-              .map(([label, n]) => {
-                const pct = c.totalTickets ? (n / c.totalTickets * 100) : 0;
-                return `<span title="${esc(label)}: ${n}" style="display:inline-block;height:100%;width:${pct}%;background:${AnaliseInteligente._corMotivo(label)}"></span>`;
-              }).join('');
-            const barra = `<div style="display:flex;height:16px;width:100%;border-radius:4px;overflow:hidden;background:var(--gray-100)">${segmentos}</div>`;
-            return `<tr id="motivo-row-${idx}">
-              <td style="font-size:11px;color:var(--gray-400);font-weight:600">${esc(c.codigo || '—')}</td>
-              <td style="font-weight:600">${nomeVinculo}</td>
-              <td style="font-size:12px;color:var(--gray-500)">${esc(c.cnpj || '—')}</td>
-              <td>${c.totalTickets}</td>
-              <td>${barra}</td>
-              <td style="font-size:12px"><span style="background:var(--g100);color:var(--g700);padding:2px 8px;border-radius:10px;font-weight:600">${esc(c.motivoPrincipal || '—')}</span></td>
-              <td><a href="#" onclick="AnaliseInteligente.toggleMotivoDetalhe(${idx});return false" style="cursor:pointer;text-decoration:underline;font-weight:600">Ver tickets <span id="motivo-seta-${idx}">▾</span></a></td>
-            </tr>`;
-          }).join('');
-        }
+        AnaliseInteligente._renderMotivosPage(1);
 
         // ── Palavras mais frequentes em "Outros" ──────────────────────────
         if (palavrasEl) {
@@ -7016,6 +6991,50 @@ window.Tickets = Tickets;
         // sempre quando a busca falhasse (mesmo problema do Dashboard).
         if (submotivosTbody) submotivosTbody.innerHTML = '<tr><td colspan="3" style="color:var(--danger)">Não foi possível carregar. Tente atualizar a página.</td></tr>';
       }
+    },
+
+    /**
+     * Paginação numerada (mesmo padrão de Atendimento/Churn/Afastamento) —
+     * pedido do Reysner. `idx` usado no "Ver tickets"/toggleMotivoDetalhe
+     * continua sendo o índice REAL em `_motivosData` (offset da página +
+     * índice local), não o índice dentro da página — senão o detalhe
+     * expandido abriria a empresa errada a partir da página 2.
+     */
+    _renderMotivosPage(p) {
+      const tbody = document.getElementById('motivos-cliente-tbody');
+      if (!tbody) return;
+      const data = AnaliseInteligente._motivosData || [];
+      if (!data.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400)">Nenhum ticket classificado nos últimos 180 dias.</td></tr>';
+        App.Util.renderPagination('motivos-cliente-pagination', 1, 1, 0, 'AnaliseInteligente._renderMotivosPage');
+        return;
+      }
+      const pg = App.Util.paginate(data, p, 25);
+      const offset = (pg.page - 1) * pg.perPage;
+      tbody.innerHTML = pg.items.map((c, localIdx) => {
+        const idx = offset + localIdx;
+        const nomeVinculo = c.vinculado
+          ? esc(c.empresa)
+          : `${esc(c.empresa)} <span style="color:var(--gray-400);font-size:11px">(não vinculado)</span>`;
+        // Barra empilhada: um <span> por motivo, largura proporcional ao total do cliente.
+        const segmentos = Object.entries(c.porMotivo || {})
+          .sort((a, b) => b[1] - a[1])
+          .map(([label, n]) => {
+            const pct = c.totalTickets ? (n / c.totalTickets * 100) : 0;
+            return `<span title="${esc(label)}: ${n}" style="display:inline-block;height:100%;width:${pct}%;background:${AnaliseInteligente._corMotivo(label)}"></span>`;
+          }).join('');
+        const barra = `<div style="display:flex;height:16px;width:100%;border-radius:4px;overflow:hidden;background:var(--gray-100)">${segmentos}</div>`;
+        return `<tr id="motivo-row-${idx}">
+          <td style="font-size:11px;color:var(--gray-400);font-weight:600">${esc(c.codigo || '—')}</td>
+          <td style="font-weight:600">${nomeVinculo}</td>
+          <td style="font-size:12px;color:var(--gray-500)">${esc(c.cnpj || '—')}</td>
+          <td>${c.totalTickets}</td>
+          <td>${barra}</td>
+          <td style="font-size:12px"><span style="background:var(--g100);color:var(--g700);padding:2px 8px;border-radius:10px;font-weight:600">${esc(c.motivoPrincipal || '—')}</span></td>
+          <td><a href="#" onclick="AnaliseInteligente.toggleMotivoDetalhe(${idx});return false" style="cursor:pointer;text-decoration:underline;font-weight:600">Ver tickets <span id="motivo-seta-${idx}">▾</span></a></td>
+        </tr>`;
+      }).join('');
+      App.Util.renderPagination('motivos-cliente-pagination', pg.page, pg.pages, pg.total, 'AnaliseInteligente._renderMotivosPage');
     },
 
     /** Exporta o ranking de solicitações específicas (motivo + submotivo) em CSV — o "relatório sobre essas situações" pedido pela Thais. */
