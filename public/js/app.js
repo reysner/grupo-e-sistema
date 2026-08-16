@@ -7146,7 +7146,11 @@ window.Tickets = Tickets;
         const res = await fetch('/api/data/churn', { headers: authHeaders() });
         if (!res.ok) throw new Error('Falha ao buscar.');
         const { data } = await res.json();
-        AnaliseInteligente._churnData = data || [];
+        // Nome próprio (_riscoChurnData) — "_churnData" já é usado por
+        // carregarChurnConversas() (painel "Possíveis Churns — Conversas do
+        // Zappy") logo acima; reaproveitar o mesmo nome fazia um sobrescrever
+        // o outro sempre que as duas listas carregavam juntas (mesma página).
+        AnaliseInteligente._riscoChurnData = data || [];
         AnaliseInteligente._renderChurnPage(1);
       } catch (e) {
         tbody.innerHTML = '<tr><td colspan="6" style="color:var(--danger)">Não foi possível calcular o risco de cancelamento agora.</td></tr>';
@@ -7157,7 +7161,7 @@ window.Tickets = Tickets;
     _renderChurnPage(p) {
       const tbody = document.getElementById('churn-tbody');
       if (!tbody) return;
-      const todos = AnaliseInteligente._churnData || [];
+      const todos = AnaliseInteligente._riscoChurnData || [];
       if (!todos.length) {
         tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Nenhum cliente ativo cadastrado na Carteira ainda.</td></tr>';
         App.Util.renderPagination('churn-pagination', 1, 1, 0, 'AnaliseInteligente._renderChurnPage');
