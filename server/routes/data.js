@@ -764,6 +764,12 @@ router.post('/clientes/corrigir-baixas-acessorias-status', requireAdmin, async (
 // ── INSATISFAÇÕES ─────────────────────────────────────────────────────────────
 router.get('/insatisfacoes', async (req, res) => {
   try {
+    // Achado na auditoria: insatisfação registrada não tinha como ser
+    // marcada como resolvida (só apagar, perdendo o histórico). Migração
+    // aqui no GET (não só no POST) pra já aparecer em quem já tinha
+    // registro antes dessa coluna existir — Postgres aplica o DEFAULT nas
+    // linhas existentes também, não só nas novas.
+    await pool.query(`ALTER TABLE insatisfacoes ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'aberta'`).catch(()=>{});
     const pf = periodFilter(req.query.period);
     const result = await pool.query(`SELECT * FROM insatisfacoes WHERE 1=1 ${pf} ORDER BY created_at DESC`);
     res.json({ data: result.rows });
@@ -778,13 +784,37 @@ router.post('/insatisfacoes', async (req, res) => {
     // Auto-migrate columns
     await pool.query(`ALTER TABLE insatisfacoes ADD COLUMN IF NOT EXISTS area TEXT`).catch(()=>{});
     await pool.query(`ALTER TABLE insatisfacoes ADD COLUMN IF NOT EXISTS tipo TEXT`).catch(()=>{});
+    await pool.query(`ALTER TABLE insatisfacoes ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'aberta'`).catch(()=>{});
     const id = uuidv4();
     await pool.query(
-      `INSERT INTO insatisfacoes (id, user_id, analista, cliente, cnpj, empresa, reclamado, reclamacao, gravidade, area, tipo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      `INSERT INTO insatisfacoes (id, user_id, analista, cliente, cnpj, empresa, reclamado, reclamacao, gravidade, area, tipo, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'aberta')`,
       [id, req.user.id, analista, cliente, cnpj, empresa, reclamado || null, reclamacao, gravidade, area||null, tipo||null]
     );
     res.status(201).json({ id });
   } catch (err) { res.status(500).json({ error: 'Erro.' }); }
+});
+
+/**
+ * PATCH /api/data/insatisfacoes/:id/status — pedido do Reysner (auditoria):
+ * insatisfação passa a ter um ciclo de vida (aberta → em andamento →
+ * resolvida) em vez de só "registrada ou apagada". Sem requireAdmin de
+ * propósito — mesmo padrão de PATCH /pesquisas/:id/tratado, qualquer
+ * analista logado pode atualizar o status de uma insatisfação que está
+ * tratando.
+ */
+router.patch('/insatisfacoes/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['aberta', 'em_andamento', 'resolvida'].includes(status))
+      return res.status(400).json({ error: 'Status inválido.' });
+    await pool.query(`ALTER TABLE insatisfacoes ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'aberta'`).catch(()=>{});
+    const { rows } = await pool.query(
+      `UPDATE insatisfacoes SET status = $1 WHERE id = $2 RETURNING id, status`,
+      [status, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Insatisfação não encontrada.' });
+    res.json({ ok: true, status: rows[0].status });
+  } catch (err) { res.status(500).json({ error: 'Erro ao atualizar status.' }); }
 });
 
 // ── CLIENTES SENSÍVEIS ────────────────────────────────────────────────────────
@@ -838,6 +868,7 @@ router.post('/pesquisas', async (req, res) => {
 // ── RECUPERAÇÕES ──────────────────────────────────────────────────────────────
 router.get('/recuperacoes', async (req, res) => {
   try {
+    await pool.query(`ALTER TABLE recuperacoes ADD COLUMN IF NOT EXISTS insatisfacao_id UUID`).catch(()=>{});
     const pf = periodFilter(req.query.period);
     const result = await pool.query(`SELECT * FROM recuperacoes WHERE 1=1 ${pf} ORDER BY created_at DESC`);
     res.json({ data: result.rows });
@@ -846,13 +877,19 @@ router.get('/recuperacoes', async (req, res) => {
 
 router.post('/recuperacoes', async (req, res) => {
   try {
-    const { analista, cliente, cnpj, empresa, demonstrou, gravidade } = req.body;
+    const { analista, cliente, cnpj, empresa, demonstrou, gravidade, insatisfacao_id } = req.body;
     if (!analista || !cliente || !cnpj || !empresa || !demonstrou || !gravidade)
       return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
+    // insatisfacao_id (opcional) — pedido do Reysner (auditoria): vínculo
+    // entre a ação de recuperação e a insatisfação que ela está resolvendo.
+    // FK lógica, mesmo padrão já usado em cs_vinculos.cliente_id — sem
+    // constraint de banco, só pra não travar se um dia a insatisfação for
+    // apagada.
+    await pool.query(`ALTER TABLE recuperacoes ADD COLUMN IF NOT EXISTS insatisfacao_id UUID`).catch(()=>{});
     const id = uuidv4();
     await pool.query(
-      `INSERT INTO recuperacoes (id, user_id, analista, cliente, cnpj, empresa, demonstrou, gravidade) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [id, req.user.id, analista, cliente, cnpj, empresa, demonstrou, gravidade]
+      `INSERT INTO recuperacoes (id, user_id, analista, cliente, cnpj, empresa, demonstrou, gravidade, insatisfacao_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [id, req.user.id, analista, cliente, cnpj, empresa, demonstrou, gravidade, insatisfacao_id || null]
     );
     res.status(201).json({ id });
   } catch (err) { res.status(500).json({ error: 'Erro.' }); }

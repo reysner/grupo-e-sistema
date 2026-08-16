@@ -1261,8 +1261,10 @@ const App = (() => {
         analista: Util.val('rc-analista'), cliente: Util.val('rc-cliente'),
         cnpj: Util.val('rc-cnpj'), empresa: Util.val('rc-empresa'),
         demonstrou: Util.val('rc-demonstrou'), gravidade: Util.val('rc-gravidade'),
+        insatisfacao_id: Util.val('rc-insatisfacao') || null,
       }, ['rc-analista','rc-cliente','rc-cnpj','rc-empresa','rc-demonstrou'], 'Recuperação registrada!');
       document.getElementById('rc-gravidade').value='';
+      document.getElementById('rc-insatisfacao').value='';
       Recuperacao.loadGrid();
     },
   };
@@ -4482,6 +4484,29 @@ const Recuperacao = (() => {
       anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>${a}</option>`).join('');
   }
 
+  /**
+   * Popula "Insatisfação relacionada" (opcional) com as insatisfações AINDA
+   * NÃO resolvidas — pedido do Reysner (auditoria): dar um jeito de ligar
+   * uma ação de recuperação à insatisfação que ela está resolvendo, em vez
+   * de dois formulários soltos sem relação nenhuma.
+   */
+  async function _carregarInsatisfacoesSelect() {
+    const sel = document.getElementById('rc-insatisfacao');
+    if (!sel) return;
+    try {
+      const res = await fetch('/api/data/insatisfacoes?period=todos', { headers: { Authorization: `Bearer ${_token()}` } });
+      if (!res || !res.ok) return;
+      const { data } = await res.json();
+      const abertas = (data || []).filter(r => (r.status || 'aberta') !== 'resolvida');
+      sel.innerHTML = '<option value="">Nenhuma / não relacionada a uma insatisfação registrada</option>' +
+        abertas.map(r => {
+          const d = new Date(r.created_at).toLocaleDateString('pt-BR');
+          const resumo = (r.reclamacao || '').slice(0, 60) + ((r.reclamacao||'').length > 60 ? '…' : '');
+          return `<option value="${r.id}">${d} — ${r.empresa} — ${resumo}</option>`;
+        }).join('');
+    } catch (e) { /* select fica só com a opção "nenhuma" se der erro */ }
+  }
+
   function _filterData(data) {
     const ano = document.getElementById('rc-ano-filter')?.value || 'todos';
     const mes = document.getElementById('rc-mes-filter')?.value || 'todos';
@@ -4529,6 +4554,7 @@ const Recuperacao = (() => {
     const { data } = await res.json();
     _allData = data || [];
     _populateYearFilter(_allData);
+    _carregarInsatisfacoesSelect();
     const _filtered = _filterData(_allData);
     const _paged = App.Util.paginate(_filtered, _page);
     _renderGrid(_paged.items);
@@ -4645,29 +4671,48 @@ const Insatisfacao = (() => {
       anos.map(a=>`<option value="${a}" ${String(a)===cur?'selected':''}>${a}</option>`).join('');
   }
 
+  const _STATUS_LABEL = { aberta: 'Aberta', em_andamento: 'Em andamento', resolvida: 'Resolvida' };
+  const _STATUS_COR = { aberta: '#e53e3e', em_andamento: '#d69e2e', resolvida: '#38a169' };
+
   function _filterData(data) {
     const ano = document.getElementById('in-ano-filter')?.value || 'todos';
     const mes = document.getElementById('in-mes-filter')?.value || 'todos';
+    const status = document.getElementById('in-status-filter')?.value || 'todos';
     return data.filter(r => {
       const d = new Date(r.created_at);
       if (ano !== 'todos' && d.getFullYear() !== Number(ano)) return false;
       if (mes !== 'todos' && String(d.getMonth()+1).padStart(2,'0') !== mes) return false;
-
+      if (status !== 'todos' && (r.status || 'aberta') !== status) return false;
       return true;
     });
+  }
+
+  /** Reaplica os filtros sem bater no servidor de novo — chamado pelo filtro de Status. */
+  function filtrar() {
+    _page = 1;
+    const _filtered = _filterData(_allData);
+    const _paged = App.Util.paginate(_filtered, _page);
+    _renderGrid(_paged.items);
+    App.Util.renderPagination('in-pagination', _paged.page, _paged.pages, _paged.total, 'Insatisfacao.goPage');
   }
 
   function _renderGrid(data) {
     const tbody = document.getElementById('in-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--gray-400);padding:24px">Nenhum registro encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(r => {
       const d = new Date(r.created_at).toLocaleString('pt-BR');
       const lixeira = App.Auth.isAdmin() ? `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 6px" onclick="Insatisfacao.excluir('${r.id}')" title="Excluir">🗑</button>` : '';
       const gc={'Muito Alta':'#e53e3e','Alta':'#dd6b20','Média':'#d69e2e','Baixa':'#38a169','Muito Baixa':'#2b6cb0'}[r.gravidade]||'#718096';
+      const status = r.status || 'aberta';
+      const statusSelect = `<select onchange="Insatisfacao.alterarStatus('${r.id}', this.value)" style="border:1px solid var(--gray-200);border-radius:6px;padding:3px 6px;font-size:11px;font-weight:700;color:${_STATUS_COR[status]};background:${_STATUS_COR[status]}15">
+        <option value="aberta" ${status==='aberta'?'selected':''}>Aberta</option>
+        <option value="em_andamento" ${status==='em_andamento'?'selected':''}>Em andamento</option>
+        <option value="resolvida" ${status==='resolvida'?'selected':''}>Resolvida</option>
+      </select>`;
       return `<tr>
         <td style="font-size:12px;color:var(--gray-500)">${d}</td>
         <td>${r.analista}</td><td style="font-weight:600">${r.cliente}</td>
@@ -4677,24 +4722,56 @@ const Insatisfacao = (() => {
         <td style="font-size:12px;color:var(--gray-500)">${r.area||'—'}</td>
         <td style="font-size:12px;color:var(--gray-500)">${r.tipo||'—'}</td>
         <td style="font-size:12px;color:var(--gray-500);max-width:150px;word-break:break-word">${r.reclamacao}</td>
+        <td>${statusSelect}</td>
         <td>${lixeira}</td></tr>`;
     }).join('');
+  }
+
+  /** Aviso de insatisfações abertas/em andamento há mais de 7 dias — pedido do Reysner (auditoria). */
+  function _atualizarAlertaAbertas(data) {
+    const el = document.getElementById('in-alert-abertas');
+    if (!el) return;
+    const seteDiasMs = 7 * 24 * 60 * 60 * 1000;
+    const agora = Date.now();
+    const antigas = data.filter(r => (r.status || 'aberta') !== 'resolvida' && (agora - new Date(r.created_at).getTime()) > seteDiasMs);
+    el.hidden = antigas.length === 0;
+    el.textContent = antigas.length > 0
+      ? `⚠️ ${antigas.length} insatisfação${antigas.length!==1?'ões':''} aberta${antigas.length!==1?'s':''} ou em andamento há mais de 7 dias sem resolução`
+      : '';
+  }
+
+  async function alterarStatus(id, status) {
+    const res = await fetch(`/api/data/insatisfacoes/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${_token()}` },
+      body: JSON.stringify({ status }),
+    });
+    if (res && res.ok) {
+      const item = _allData.find(r => r.id === id);
+      if (item) item.status = status;
+      _atualizarAlertaAbertas(_allData);
+      App.Toast.ok('Status atualizado!');
+    } else {
+      App.Toast.err('Erro ao atualizar status.');
+      loadGrid();
+    }
   }
 
   async function loadGrid() {
     const tbody = document.getElementById('in-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
     const res = await fetch('/api/data/insatisfacoes?period=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data } = await res.json();
     _allData = data || [];
     _populateYearFilter(_allData);
+    _atualizarAlertaAbertas(_allData);
     const _filtered = _filterData(_allData);
     const _paged = App.Util.paginate(_filtered, _page);
     _renderGrid(_paged.items);
@@ -4704,12 +4781,13 @@ const Insatisfacao = (() => {
   function exportCSV() {
     const data = _filterData(_allData);
     if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const cols = ['created_at', 'analista', 'cliente', 'cnpj', 'empresa', 'reclamado', 'gravidade', 'reclamacao'];
-    const labels = {'created_at':'Data','analista':'Analista','cliente':'Cliente','cnpj':'CNPJ','empresa':'Empresa','reclamado':'Reclamado','gravidade':'Gravidade','reclamacao':'Reclamação'};
+    const cols = ['created_at', 'analista', 'cliente', 'cnpj', 'empresa', 'reclamado', 'gravidade', 'reclamacao', 'status'];
+    const labels = {'created_at':'Data','analista':'Analista','cliente':'Cliente','cnpj':'CNPJ','empresa':'Empresa','reclamado':'Reclamado','gravidade':'Gravidade','reclamacao':'Reclamação','status':'Status'};
     const header = cols.map(c=>labels[c]||c).join(';');
     const rows = data.map(r => cols.map(c => {
       let v = r[c] ?? '';
       if (c==='created_at') v = new Date(v).toLocaleString('pt-BR');
+      if (c==='status') v = _STATUS_LABEL[v] || v || 'Aberta';
       return `"${String(v).replace(/"/g,'""')}"`;
     }).join(';'));
     const csv = [header,...rows].join('\n');
@@ -4791,7 +4869,7 @@ const Insatisfacao = (() => {
   }
 
   function goPage(p) { _page = p; const f = _filterData(_allData); const pg = App.Util.paginate(f, p); _renderGrid(pg.items); App.Util.renderPagination('in-pagination', pg.page, pg.pages, pg.total, 'Insatisfacao.goPage'); }
-  return { loadGrid, exportCSV, exportPDF, limpar, excluir, goPage };
+  return { loadGrid, exportCSV, exportPDF, limpar, excluir, goPage, filtrar, alterarStatus };
 })();
 
 window.Insatisfacao = Insatisfacao;

@@ -523,6 +523,12 @@
               <option value="todos">Todos os meses</option>
               <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option><option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option><option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option><option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
             </select>
+            <select id="in-status-filter" onchange="Insatisfacao.filtrar()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;background:#fff;cursor:pointer">
+              <option value="todos">Todos os status</option>
+              <option value="aberta">Aberta</option>
+              <option value="em_andamento">Em andamento</option>
+              <option value="resolvida">Resolvida</option>
+            </select>
             <div style="margin-left:auto;display:flex;gap:8px">
               <button class="btn btn-ghost btn-sm" onclick="Insatisfacao.exportCSV()">⬇ Exportar CSV</button>
               <button class="btn btn-ghost btn-sm" onclick="Insatisfacao.exportPDF()">🖨 Exportar PDF</button>
@@ -570,13 +576,14 @@
           <!-- GRADE DE REGISTROS -->
           <div class="form-card" style="margin-top:20px">
             <h2 class="form-title">Registros de Insatisfação</h2><div class="form-accent"></div>
-            <div class="table-wrap">
+            <div id="in-alert-abertas" hidden style="background:#fffbeb;border:1px solid #f6e05e;border-radius:8px;padding:10px 16px;margin-top:14px;font-size:13px;color:#b7791f;font-weight:500"></div>
+            <div class="table-wrap" style="margin-top:14px">
               <table class="data-table" id="in-grid">
                 <thead><tr>
                   <th>Data</th><th>Analista</th><th>Cliente</th><th>CNPJ</th>
-                  <th>Empresa</th><th>Reclamado</th><th>Gravidade</th><th>Área</th><th>Tipo</th><th>Reclamação</th><th></th>
+                  <th>Empresa</th><th>Reclamado</th><th>Gravidade</th><th>Área</th><th>Tipo</th><th>Reclamação</th><th>Status</th><th></th>
                 </tr></thead>
-                <tbody id="in-tbody"><tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
+                <tbody id="in-tbody"><tr><td colspan="12" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
               </table>
               <div id="in-pagination"></div>
             </div>
@@ -710,6 +717,9 @@
               <div class="field"><label>Empresa <span class="req">*</span></label><input id="rc-empresa" type="text" placeholder="Digite a empresa" /></div>
               <div class="field"><label>Gravidade <span class="req">*</span></label>
                 <select id="rc-gravidade"><option value="">Selecione</option><option>Muito Alta</option><option>Alta</option><option>Média</option><option>Baixa</option><option>Muito Baixa</option></select>
+              </div>
+              <div class="field"><label>Insatisfação relacionada <small class="opt">(opcional)</small></label>
+                <select id="rc-insatisfacao"><option value="">Nenhuma / não relacionada a uma insatisfação registrada</option></select>
               </div>
               <div class="field span2"><label>O que o cliente demonstrou após a solução? <span class="req">*</span></label><textarea id="rc-demonstrou" placeholder="Descreva a reação do cliente"></textarea></div>
             </div>
