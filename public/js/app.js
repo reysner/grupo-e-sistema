@@ -600,7 +600,14 @@ const App = (() => {
         }
         if (resMotivos && resMotivos.ok) {
           const dM = await resMotivos.json();
-          Dashboard.renderChart('cs-dash-motivos', 'bar', dM.porMotivo || [], 'Motivo', { indexAxis: 'y' });
+          // Pedido do Reysner: esconder "Outros / Não identificado" (não é
+          // um motivo de verdade, é só quem ainda não caiu em nenhuma
+          // categoria) e "Quer Falar com Alguém Específico" (não diz o
+          // assunto, só que pediram uma pessoa) desse gráfico — só filtro
+          // aqui na exibição, o backend continua calculando tudo igual.
+          const OCULTOS_GRAFICO_MOTIVOS = ['Outros / Não identificado', 'Quer Falar com Alguém Específico'];
+          const motivosVisiveis = (dM.porMotivo || []).filter(m => !OCULTOS_GRAFICO_MOTIVOS.includes(m.label));
+          Dashboard.renderChart('cs-dash-motivos', 'bar', motivosVisiveis, 'Motivo', { indexAxis: 'y' });
           Dashboard.renderTabelaSubmotivos(dM.porSubmotivo || []);
         } else {
           // Sem isso, a tabela ficava presa em "Carregando..." pra sempre
