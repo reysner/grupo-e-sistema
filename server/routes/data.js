@@ -1302,17 +1302,25 @@ router.patch('/clientes/:id/resolver-churn', requireAdmin, async (req, res) => {
     // formulário EXIGE esses dois campos pra Saída/Baixa de empresa — usa
     // a data real de saída (já buscada acima) em vez de deixar null, senão
     // esse registro fica "incompleto" comparado ao que o formulário exige.
+    const gestaoId = uuidv4();
     await pool.query(
       `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Outro',$9,$10,$11)`,
-      [uuidv4(), req.user.id, req.user.name, solicitacao, cliente.cnpj, cliente.nome_empresa,
+      [gestaoId, req.user.id, req.user.name, solicitacao, cliente.cnpj, cliente.nome_empresa,
        dataSaida, dataSaida.slice(0, 7), motivo, cliente.codigo, cliente.regime_tributario]
     );
     if (notificacaoId) {
       await pool.query(`UPDATE notificacoes SET lida = true WHERE id = $1`, [notificacaoId]);
     }
     await registrarLog(req.user.id, req.user.name, 'encerrar', 'carteira', `Resolveu churn (${solicitacao}): ${cliente.nome_empresa} — ${motivo}`, req);
-    res.json({ ok: true });
+    // Devolve os dados que o front precisa pra oferecer "Abrir Ticket
+    // Contábil" também aqui — pedido do Reysner: o fluxo manual (Forms.
+    // gestao()) já faz esse convite, o fluxo pela notificação não fazia.
+    res.json({
+      ok: true,
+      empresa: cliente.nome_empresa, cnpj: cliente.cnpj, regime: cliente.regime_tributario,
+      codigo: cliente.codigo, solicitacao, motivo, dataSaida, gestaoId,
+    });
   } catch (err) {
     console.error('[resolver-churn] falhou:', err);
     res.status(500).json({ error: 'Erro ao resolver churn.' });

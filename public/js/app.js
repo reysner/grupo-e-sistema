@@ -1883,13 +1883,25 @@ const Notificacoes = (() => {
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
         body: JSON.stringify({ tipo, motivoChurn, notificacaoId: notifId }),
       });
-      if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || 'Erro ao resolver.'); }
+      const dados = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(dados.error || 'Erro ao resolver.');
       App.Modal.close();
       App.Toast.ok('Cliente encerrado — registro atualizado na Carteira e em Gestão de Clientes.');
       await checar();
       // Se as telas de Carteira/Gestão estiverem carregadas, atualiza a grade também.
       window.Carteira?.loadGrid?.();
       window.Gestao?.loadGrid?.();
+      // Pedido do Reysner: mesmo convite de "Abrir Ticket Contábil" que já
+      // existe no fluxo manual (Forms.gestao()) — antes só acontecia lá,
+      // não aqui pela notificação. resolver-churn já é admin-only no
+      // backend, então quem chega até aqui sempre pode abrir ticket.
+      if (App.Auth.isAdmin()) {
+        setTimeout(() => window.Tickets?.perguntarAbrirTicket(
+          dados.solicitacao, dados.regime, dados.empresa, dados.cnpj,
+          { analista: '', codigo: dados.codigo || '', motivo: dados.motivo || '', data_encerramento: dados.dataSaida || '' },
+          dados.gestaoId || null
+        ), 400);
+      }
     } catch (e) {
       App.Toast.err(e.message);
     }
