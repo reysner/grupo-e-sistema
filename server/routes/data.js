@@ -1707,11 +1707,16 @@ router.get('/cac/dashboard', requireAuth, async (req, res) => {
     const melhorCanal = invResult.rows[0]?.canal || '—';
     const maiorInv = invResult.rows[0]?.val_canal || 0;
 
-    // Clientes adquiridos no período (entradas na Carteira naquele mês)
-    let cliQ = `SELECT COUNT(*) as n FROM clientes`;
+    // Clientes adquiridos no período (entradas na Carteira naquele mês).
+    // Decisão do Reysner: só conta quem está ATIVO hoje — antes contava
+    // todo mundo que já entrou (inclusive quem já saiu depois), e isso
+    // ficou visível quando importamos 134 baixas históricas do Acessórias
+    // (622 ativos virou 756 aqui, igual ao card de Clientes Ativos da
+    // Carteira antes da correção).
+    let cliQ = `SELECT COUNT(*) as n FROM clientes WHERE status = 'ativo'`;
     let cliParams = [];
     if (mes && mes !== 'todos') {
-      cliQ += ` WHERE TO_CHAR(data_entrada,'YYYY-MM') = $1`;
+      cliQ += ` AND TO_CHAR(data_entrada,'YYYY-MM') = $1`;
       cliParams.push(mes);
     }
     const cliResult = await pool.query(cliQ, cliParams);
