@@ -426,7 +426,12 @@
               <a class="btn btn-ghost btn-sm admin-only" href="/modelos/modelo_importacao_gestao_clientes.xlsx" download="modelo_importacao_gestao_clientes.xlsx">📥 Baixar Modelo</a>
               <button class="btn btn-ghost btn-sm admin-only" onclick="document.getElementById('gc-import-file').click()">📤 Importar Planilha</button>
               <button class="btn btn-ghost btn-sm admin-only" id="btn-sync-acessorias" onclick="Gestao.sincronizarAcessorias()">🔄 Importar do Acessórias</button>
-              <button class="btn btn-ghost btn-sm admin-only" onclick="Gestao.buscarBaixasAcessorias()">📉 Buscar Baixas do Acessórias</button>
+              <!-- "📉 Buscar Baixas do Acessórias" escondido a pedido do Reysner — já
+                   cumpriu o propósito (importou as 134 baixas históricas desde
+                   01/11/2024). Função Gestao.buscarBaixasAcessorias() e a rota
+                   POST /api/data/clientes/importar-baixas-acessorias continuam
+                   existindo, só não tem mais botão — se precisar rodar de novo
+                   (outra data de corte, por exemplo), é só voltar esse botão. -->
               <button class="btn btn-ghost btn-sm" onclick="Gestao.exportCSV()">⬇ Exportar CSV</button>
               <button class="btn btn-ghost btn-sm" onclick="Gestao.exportPDF()">🖨 Exportar PDF</button>
               <button class="btn btn-sm admin-only" onclick="Gestao.limpar()" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7">🗑 Limpar Registros</button>
