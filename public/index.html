@@ -1010,7 +1010,10 @@
             <div style="display:flex;gap:12px;align-items:flex-end;margin:16px 0;flex-wrap:wrap">
               <div class="field" style="min-width:180px"><label>Mês de referência</label><input id="gam-mes-lanc" type="month" /></div>
               <button class="btn btn-primary btn-sm" onclick="Gamificacao.loadFormLancamento()">Carregar colaboradores</button>
+              <button class="btn btn-ghost btn-sm" onclick="Gamificacao.abrirAutoPreencher()">🔄 Auto-preencher (Zappy)</button>
+              <button class="btn btn-ghost btn-sm" onclick="Gamificacao.abrirMapaQualificacao()">🏷️ Mapa de Qualificação</button>
             </div>
+            <p style="font-size:11.5px;color:var(--gray-400);margin:-6px 0 4px">Modelo Atualizado: puxa a média mensal direto do Zappy em vez de digitar — precisa vincular cada colaborador a um usuário do Zappy em "Gerenciar Colaboradores".</p>
             <div id="gam-lancamento-grid"></div>
           </div>
 

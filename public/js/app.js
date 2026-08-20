@@ -5634,12 +5634,129 @@ const Gamificacao = (() => {
     return _colaboradores.map(c => {
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-100)">' +
         '<span style="font-weight:600;' + (!c.ativo ? 'opacity:.5;text-decoration:line-through' : '') + '">' + c.nome + '</span>' +
-        '<div style="display:flex;gap:6px">' +
+        '<div style="display:flex;gap:6px;align-items:center">' +
+          '<button class="btn btn-sm" style="background:' + (c.zappy_user_id?'#f0fff4':'#f7fafc') + ';color:' + (c.zappy_user_id?'#38a169':'var(--gray-400)') + ';border:1px solid ' + (c.zappy_user_id?'#c6f6d5':'var(--gray-200)') + ';font-size:11px" data-id="' + c.id + '" onclick="Gamificacao.vincularZappy(this.dataset.id)">' + (c.zappy_user_id ? '🔗 Zappy' : '🔗 Vincular') + '</button>' +
           '<button class="btn btn-sm" style="background:' + (c.ativo?'#fff5f5':'#f0fff4') + ';color:' + (c.ativo?'#e53e3e':'#38a169') + ';border:1px solid ' + (c.ativo?'#fed7d7':'#c6f6d5') + ';font-size:11px" data-id="' + c.id + '" data-ativo="' + c.ativo + '" onclick="Gamificacao.toggleColaborador(this.dataset.id)">' + (c.ativo ? 'Desativar' : 'Ativar') + '</button>' +
           '<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:14px" data-id="' + c.id + '" onclick="Gamificacao.excluirColaborador(this.dataset.id)">🗑</button>' +
         '</div>' +
       '</div>';
     }).join('');
+  }
+
+  // ── Vínculo com usuário do Zappy (pra puxar a nota automaticamente) ────────
+  async function vincularZappy(colabId) {
+    const res = await fetch('/api/data/gam/usuarios-zappy', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { App.Toast.err('Erro ao buscar usuários do Zappy.'); return; }
+    const { data } = await res.json();
+    const colab = _colaboradores.find(c => c.id === colabId);
+    const opcoes = '<option value="">— nenhum —</option>' + data.map(u =>
+      '<option value="' + u.id + '" ' + (colab && colab.zappy_user_id === u.id ? 'selected' : '') + '>' + u.nome + '</option>'
+    ).join('');
+    App.Modal.open('Vincular ao Zappy', '<div style="display:grid;gap:14px">' +
+      '<p style="font-size:13px;color:var(--gray-500)">Liga "' + (colab ? colab.nome : '') + '" a um usuário do Zappy, pra puxar a média mensal automaticamente em "Auto-preencher (Zappy)".</p>' +
+      '<div class="field"><label>Usuário do Zappy</label><select id="gam-zappy-select">' + opcoes + '</select></div>' +
+      '<button class="btn btn-primary" data-id="' + colabId + '" onclick="Gamificacao.salvarVinculoZappy(this.dataset.id)">Salvar</button>' +
+    '</div>');
+  }
+
+  async function salvarVinculoZappy(colabId) {
+    const sel = document.getElementById('gam-zappy-select');
+    const zappy_user_id = sel && sel.value ? sel.value : null;
+    const res = await fetch('/api/data/gam/colaboradores/' + colabId + '/zappy', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ zappy_user_id })
+    });
+    if (res && res.ok) {
+      const { data } = await res.json();
+      const colab = _colaboradores.find(c => c.id === colabId);
+      if (colab) colab.zappy_user_id = data.zappy_user_id;
+      App.Modal.close();
+      App.Toast.ok('Vínculo atualizado.');
+      abrirColaboradores();
+    } else App.Toast.err('Erro ao salvar vínculo.');
+  }
+
+  // ── Mapa de qualificação (rótulo do Zappy -> nota 0-5) ─────────────────────
+  async function abrirMapaQualificacao() {
+    const res = await fetch('/api/data/gam/qualificacao-mapa', { headers: { Authorization: 'Bearer ' + _tk() } });
+    const { data } = res && res.ok ? await res.json() : { data: [] };
+    const linhas = (data || []).map(m =>
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--gray-100)">' +
+        '<span style="font-weight:600">' + m.chave + (m.nota == null ? ' <span style="color:#e53e3e;font-size:11px;font-weight:400">(sem nota)</span>' : '') + '</span>' +
+        '<input type="number" min="0" max="5" step="0.5" value="' + (m.nota ?? '') + '" data-chave="' + String(m.chave).replace(/"/g, '&quot;') + '" class="gam-mapa-input" style="width:80px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px" />' +
+      '</div>'
+    ).join('');
+    App.Modal.open('Mapa de Qualificação (Zappy → Nota)', '<div style="display:grid;gap:14px">' +
+      '<p style="font-size:13px;color:var(--gray-500)">Cada rótulo que o Zappy usa pra avaliação precisa de uma nota de 0 a 5 pra entrar no cálculo automático. Rótulo sem nota fica de fora do cálculo. Rótulos novos aparecem sozinhos aqui depois que "Auto-preencher (Zappy)" rodar pela primeira vez.</p>' +
+      (data && data.length
+        ? '<div style="display:grid;gap:4px;max-height:320px;overflow-y:auto">' + linhas + '</div>'
+        : '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum rótulo descoberto ainda. Abra "Auto-preencher (Zappy)" pelo menos uma vez.</p>') +
+      (data && data.length ? '<button class="btn btn-primary" onclick="Gamificacao.salvarMapaQualificacao()">Salvar</button>' : '') +
+    '</div>');
+  }
+
+  async function salvarMapaQualificacao() {
+    const inputs = document.querySelectorAll('.gam-mapa-input');
+    let salvos = 0;
+    for (const inp of inputs) {
+      const chave = inp.dataset.chave;
+      const valor = inp.value;
+      const res = await fetch('/api/data/gam/qualificacao-mapa', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+        body: JSON.stringify({ chave, nota: valor === '' ? null : parseFloat(valor) })
+      });
+      if (res && res.ok) salvos++;
+    }
+    App.Modal.close();
+    App.Toast.ok(salvos + ' rótulo(s) salvo(s).');
+  }
+
+  // ── Auto-preencher a nota do mês a partir do Zappy (com prévia) ────────────
+  async function abrirAutoPreencher() {
+    const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
+    App.Modal.open('Auto-preencher notas do mês (Zappy)', '<div style="display:grid;gap:14px">' +
+      '<p style="font-size:13px;color:var(--gray-500)">Calcula a média mensal automaticamente a partir das qualificações do Zappy, para ' + _mesLabel(mes) + '. Só afeta colaboradores ativos vinculados a um usuário do Zappy — nada é gravado até você clicar em "Aplicar".</p>' +
+      '<div id="gam-auto-preview" style="min-height:60px;display:flex;align-items:center;justify-content:center;color:var(--gray-400)">Calculando prévia...</div>' +
+    '</div>');
+
+    const res = await fetch('/api/data/gam/notas/auto-preencher', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ mes, dryRun: true })
+    });
+    const box = document.getElementById('gam-auto-preview');
+    if (!box) return;
+    if (!res || !res.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao calcular prévia.</p>'; return; }
+    const { resultados, rotulosNovos, aviso } = await res.json();
+    if (aviso) { box.innerHTML = '<p style="color:var(--gray-500)">' + aviso + '</p>'; return; }
+
+    let html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Colaborador</th><th>Média calculada</th><th>Avaliações</th></tr></thead><tbody>' +
+      resultados.map(r => r.erro
+        ? '<tr><td>' + r.nome + '</td><td colspan="2" style="color:#e53e3e;font-size:12px">' + r.erro + '</td></tr>'
+        : '<tr><td>' + r.nome + '</td><td>' + (r.media_individual ?? '—') + '</td><td>' + r.avaliacoes + '</td></tr>'
+      ).join('') + '</tbody></table></div>';
+
+    if (rotulosNovos && rotulosNovos.length) {
+      html += '<p style="color:#c9a227;font-size:12.5px;margin-top:10px">⚠️ Rótulo(s) novo(s) sem nota mapeada (ignorados no cálculo agora): ' + rotulosNovos.join(', ') + '. Configure em "Mapa de Qualificação" e rode de novo.</p>';
+    }
+    html += '<button class="btn btn-primary" style="margin-top:14px" data-mes="' + mes + '" onclick="Gamificacao.confirmarAutoPreencher(this.dataset.mes)">✅ Aplicar essas notas</button>';
+    box.innerHTML = html;
+  }
+
+  async function confirmarAutoPreencher(mes) {
+    const res = await fetch('/api/data/gam/notas/auto-preencher', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ mes, dryRun: false })
+    });
+    if (res && res.ok) {
+      App.Modal.close();
+      App.Toast.ok('Notas de ' + _mesLabel(mes) + ' auto-preenchidas!');
+      await _populateMesFilter();
+      await loadNotas();
+    } else App.Toast.err('Erro ao aplicar.');
   }
 
   async function adicionarColaborador() {
@@ -5698,6 +5815,9 @@ const Gamificacao = (() => {
     loadFormLancamento, salvarLote,
     abrirConfig, salvarConfig, toggleConsolidado,
     abrirColaboradores, adicionarColaborador, toggleColaborador, excluirColaborador,
+    vincularZappy, salvarVinculoZappy,
+    abrirMapaQualificacao, salvarMapaQualificacao,
+    abrirAutoPreencher, confirmarAutoPreencher,
   };
 })();
 

@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../db');
 const { requireAuth, requireAdmin } = require('../auth');
 const acessoriasClient = require('../acessoriasClient');
+const { criarClienteZappy } = require('../cs/zappyClient');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -2376,6 +2377,24 @@ async function ensureGamTables() {
   // (1 = mostrar, 0 = ocultar); default ligado, pra não mudar o comportamento
   // de quem nunca mexeu nisso.
   await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('mostrar_consolidado', 1) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
+
+  // ── Automação da nota mensal via Zappy (Modelo Atualizado — fase 1) ────────
+  // A API pública do Zappy não dá nota por ticket (ver nota em zappyClient.js),
+  // só um agregado por rótulo de "qualificação" no período — dá pra automatizar
+  // a MÉDIA MENSAL que hoje é digitada à mão, mas não o detalhe por ticket.
+  // `zappy_user_id` liga um colaborador da Gamificação ao userId do Zappy
+  // (nomes podem divergir — "Reysner" x "Resyner" já foi problema real no
+  // dropdown de Analista Procurado). `gam_qualificacao_mapa` traduz cada
+  // rótulo que o Zappy usa (desconhecido até a 1ª chamada real) pra uma nota
+  // 0-5 — fica null até o admin calibrar, e enquanto null aquele rótulo é
+  // ignorado do cálculo (nunca inventa nota pra rótulo não mapeado).
+  await pool.query(`ALTER TABLE gam_colaboradores ADD COLUMN IF NOT EXISTS zappy_user_id TEXT`).catch(()=>{});
+  await pool.query(`CREATE TABLE IF NOT EXISTS gam_qualificacao_mapa (
+    chave TEXT PRIMARY KEY,
+    nota NUMERIC(3,2),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`).catch(()=>{});
 }
 
 async function getPesoMinimo() {
@@ -2508,6 +2527,152 @@ router.delete('/gam/notas/:id', requireAdmin, async (req, res) => {
     await pool.query(`DELETE FROM gam_notas WHERE id = $1`, [req.params.id]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+// ── Automação da nota mensal via Zappy — "Modelo Atualizado" fase 1 ─────────
+// Só automatiza a MÉDIA MENSAL agregada (o que hoje é digitado à mão em
+// /gam/notas). Nota por ticket individual não existe na API pública do
+// Zappy — ver nota em cs/zappyClient.js.
+
+// Lista os usuários do Zappy, pra popular o dropdown "vincular ao Zappy"
+// na lista de colaboradores (evita digitar o ID na mão).
+router.get('/gam/usuarios-zappy', requireAdmin, async (req, res) => {
+  try {
+    const zappyClient = criarClienteZappy();
+    const usuarios = await zappyClient.listarUsuarios();
+    res.json({ data: usuarios.map(u => ({ id: String(u.id), nome: u.name })) });
+  } catch (err) {
+    console.error('[gam] usuarios-zappy falhou:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Liga/desliga o vínculo de um colaborador da Gamificação com um usuário do
+// Zappy — sem esse vínculo, o auto-preenchimento pula o colaborador (não dá
+// pra adivinhar por nome, já teve caso real de nome digitado diferente).
+router.patch('/gam/colaboradores/:id/zappy', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { zappy_user_id } = req.body;
+    const { rows } = await pool.query(
+      `UPDATE gam_colaboradores SET zappy_user_id = $2 WHERE id = $1 RETURNING *`,
+      [req.params.id, zappy_user_id || null]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Não encontrado.' });
+    res.json({ ok: true, data: rows[0] });
+  } catch (err) { res.status(500).json({ error: 'Erro ao vincular ao Zappy.' }); }
+});
+
+// Mapa "rótulo do Zappy" -> nota 0-5. Os rótulos reais só aparecem depois da
+// 1ª chamada de verdade à API (o Swagger não documenta os valores) — por
+// isso o preview abaixo AUTO-CADASTRA rótulo novo com nota=null, e o admin
+// calibra aqui. Rótulo com nota null fica de fora do cálculo (ver preview).
+router.get('/gam/qualificacao-mapa', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { rows } = await pool.query(`SELECT * FROM gam_qualificacao_mapa ORDER BY chave ASC`);
+    res.json({ data: rows });
+  } catch (err) { res.status(500).json({ error: 'Erro ao listar mapa de qualificação.' }); }
+});
+
+router.patch('/gam/qualificacao-mapa', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { chave, nota } = req.body;
+    if (!chave) return res.status(400).json({ error: 'Chave obrigatória.' });
+    if (nota != null && (nota < 0 || nota > 5)) return res.status(400).json({ error: 'Nota deve estar entre 0 e 5.' });
+    await pool.query(
+      `INSERT INTO gam_qualificacao_mapa (chave, nota, updated_at) VALUES ($1,$2,NOW())
+       ON CONFLICT (chave) DO UPDATE SET nota = $2, updated_at = NOW()`,
+      [chave, nota ?? null]
+    );
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao salvar mapa de qualificação.' }); }
+});
+
+/** Calcula {startDate, endDate} (AAAA-MM-DD) do mês inteiro a partir de "AAAA-MM". */
+function faixaDoMes(mes) {
+  const [ano, m] = mes.split('-').map(Number);
+  const inicio = new Date(Date.UTC(ano, m - 1, 1));
+  const fim = new Date(Date.UTC(ano, m, 0)); // dia 0 do mês seguinte = último dia deste mês
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  return { startDate: fmt(inicio), endDate: fmt(fim) };
+}
+
+// Monta a prévia/aplica o auto-preenchimento das notas do mês, para todo
+// colaborador ATIVO com zappy_user_id vinculado. dryRun=true (default) só
+// calcula e devolve, sem gravar — mesmo padrão de prévia usado no Reajuste
+// em Massa e na importação de baixas do Acessórias.
+router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { mes, dryRun = true } = req.body;
+    if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+
+    const { rows: colaboradores } = await pool.query(
+      `SELECT id, nome, zappy_user_id FROM gam_colaboradores WHERE ativo = true AND zappy_user_id IS NOT NULL ORDER BY nome ASC`
+    );
+    if (!colaboradores.length) {
+      return res.json({ ok: true, dryRun: !!dryRun, resultados: [], aviso: 'Nenhum colaborador ativo vinculado a um usuário do Zappy ainda.' });
+    }
+
+    const { rows: mapaRows } = await pool.query(`SELECT chave, nota FROM gam_qualificacao_mapa`);
+    const mapa = Object.fromEntries(mapaRows.map(r => [r.chave, r.nota != null ? parseFloat(r.nota) : null]));
+
+    const { startDate, endDate } = faixaDoMes(mes);
+    const zappyClient = criarClienteZappy();
+    const resultados = [];
+    const rotulosNovos = new Set();
+
+    for (const c of colaboradores) {
+      let qualificacoes = [];
+      try {
+        qualificacoes = await zappyClient.buscarTicketsPorQualificacao({ startDate, endDate, userIds: [c.zappy_user_id] });
+      } catch (e) {
+        resultados.push({ colaborador_id: c.id, nome: c.nome, erro: e.message });
+        continue;
+      }
+
+      let somaPonderada = 0, avaliacoes = 0;
+      const detalhamento = [];
+      for (const q of qualificacoes) {
+        const chave = q.qualificacao;
+        const total = parseInt(q.totalTickets) || 0;
+        if (!total) continue;
+        if (!(chave in mapa)) {
+          // Rótulo nunca visto — cadastra com nota null pra aparecer na tela
+          // de calibração, e ignora essa contagem do cálculo por enquanto.
+          await pool.query(`INSERT INTO gam_qualificacao_mapa (chave, nota) VALUES ($1, NULL) ON CONFLICT (chave) DO NOTHING`, [chave]);
+          mapa[chave] = null;
+          rotulosNovos.add(chave);
+        }
+        const nota = mapa[chave];
+        detalhamento.push({ qualificacao: chave, totalTickets: total, nota });
+        if (nota != null) {
+          somaPonderada += nota * total;
+          avaliacoes += total;
+        }
+      }
+
+      const media_individual = avaliacoes > 0 ? Number((somaPonderada / avaliacoes).toFixed(2)) : null;
+      resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes, detalhamento });
+
+      if (!dryRun && media_individual != null && avaliacoes > 0) {
+        await pool.query(
+          `INSERT INTO gam_notas (colaborador_id, mes, media_individual, avaliacoes, lancado_por)
+           VALUES ($1,$2,$3,$4,$5)
+           ON CONFLICT (colaborador_id, mes)
+           DO UPDATE SET media_individual=$3, avaliacoes=$4, lancado_por=$5, updated_at=NOW()`,
+          [c.id, mes, media_individual, avaliacoes, `Automático (Zappy) — ${req.user.name}`]
+        );
+      }
+    }
+
+    res.json({ ok: true, dryRun: !!dryRun, mes, resultados, rotulosNovos: [...rotulosNovos] });
+  } catch (err) {
+    console.error('[gam] auto-preencher falhou:', err);
+    res.status(500).json({ error: err.message || 'Erro ao auto-preencher notas.' });
+  }
 });
 
 

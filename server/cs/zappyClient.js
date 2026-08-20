@@ -23,11 +23,18 @@
  *   GET  /api/contacts/:id                   -> Contact { id, name, number, tags, ... }
  *   GET  /api/queues?page=&pageSize=         -> { queues: [{id, name, color}] }
  *   GET  /api/users?page=&pageSize=          -> { users: [{id, name, email, ...}] }
+ *   GET  /api/dashboard/tickets-por-qualificacao?startDate=&endDate=&userIds[]=
+ *        -> [{ qualificacao, totalTickets, tmaSegundos, tmaFormatado }, ...]
+ *        Única aproximação de "nota do cliente" na API pública — mas AGREGADA
+ *        por rótulo/período (ex.: quantos tickets do analista X caíram em
+ *        "Ótimo" no mês), não por ticket individual (ver PENDÊNCIA abaixo).
  *
  * Autenticação: Authorization: Bearer <ZAPPY_TOKEN> (scheme "bearer" confirmado no swagger).
  *
- * NÃO CONFIRMADO / NÃO EXISTE na API pública: avaliação (rate) do
- * atendimento e histórico de transferência de fila com timestamp exato.
+ * NÃO CONFIRMADO / NÃO EXISTE na API pública: avaliação (rate) POR TICKET
+ * e histórico de transferência de fila com timestamp exato — confirmado
+ * checando o schema completo do objeto Ticket (sem esses campos) e a lista
+ * inteira de endpoints (sem GET de histórico de transferência, sem webhook).
  * Isso limita um pouco os relógios 2 (transferência) e a nota de
  * satisfação do PRD — ver nota na Continuidade.
  *
@@ -163,9 +170,25 @@ function criarClienteZappy(opts = {}) {
     return resp.users || [];
   }
 
+  /**
+   * GET /api/dashboard/tickets-por-qualificacao?startDate=&endDate=&userIds[]=
+   * Único lugar da API pública que aproxima uma "nota do cliente" — mas
+   * AGREGADO (quantos tickets caíram em cada rótulo de qualificação no
+   * período), não por ticket individual. Usado pra automatizar a MÉDIA
+   * MENSAL por analista (Gamificação), não pra nota por ticket (isso
+   * continua indisponível — ver nota no topo do arquivo).
+   * @returns {Array<{qualificacao:string, totalTickets:number, tmaSegundos:number, tmaFormatado:string}>}
+   */
+  async function buscarTicketsPorQualificacao({ startDate, endDate, userIds = [] } = {}) {
+    const qs = new URLSearchParams({ startDate, endDate });
+    for (const id of userIds) qs.append('userIds[]', String(id));
+    const resp = await chamar(`/api/dashboard/tickets-por-qualificacao?${qs.toString()}`);
+    return Array.isArray(resp) ? resp : (resp.data || []);
+  }
+
   return {
     obterTicket, obterMensagens, listarTickets, obterContato, listarFilas, listarUsuarios,
-    listarMensagensRecentes,
+    listarMensagensRecentes, buscarTicketsPorQualificacao,
   };
 }
 
