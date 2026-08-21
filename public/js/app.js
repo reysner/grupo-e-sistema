@@ -1513,6 +1513,10 @@ const App = (() => {
       // Esconde rodapé se opts.noFooter = true
       const footer = document.getElementById('modal-footer');
       if (footer) footer.hidden = !!(opts && opts.noFooter);
+      // Variante larga (opts.wide = true) — pra conteúdo com tabela que fica
+      // espremido nos 440px padrão do modal (ver .modal-box.wide no CSS).
+      const box = document.querySelector('#modal-backdrop .modal-box');
+      if (box) box.classList.toggle('wide', !!(opts && opts.wide));
       document.getElementById('modal-backdrop').hidden   = false;
     },
     close() {
@@ -5693,7 +5697,7 @@ const Gamificacao = (() => {
         ? '<div style="display:grid;gap:4px;max-height:320px;overflow-y:auto">' + linhas + '</div>'
         : '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum rótulo descoberto ainda. Abra "Auto-preencher (Zappy)" pelo menos uma vez.</p>') +
       (data && data.length ? '<button class="btn btn-primary" onclick="Gamificacao.salvarMapaQualificacao()">Salvar</button>' : '') +
-    '</div>');
+    '</div>', null, { wide: true });
   }
 
   async function salvarMapaQualificacao() {
@@ -5719,7 +5723,7 @@ const Gamificacao = (() => {
     App.Modal.open('Auto-preencher notas do mês (Zappy)', '<div style="display:grid;gap:14px">' +
       '<p style="font-size:13px;color:var(--gray-500)">Calcula a média mensal automaticamente a partir das qualificações do Zappy, para ' + _mesLabel(mes) + '. Só afeta colaboradores ativos vinculados a um usuário do Zappy — nada é gravado até você clicar em "Aplicar".</p>' +
       '<div id="gam-auto-preview" style="min-height:60px;display:flex;align-items:center;justify-content:center;color:var(--gray-400)">Calculando prévia...</div>' +
-    '</div>');
+    '</div>', null, { wide: true });
 
     const res = await fetch('/api/data/gam/notas/auto-preencher', {
       method: 'POST',
@@ -5751,7 +5755,7 @@ const Gamificacao = (() => {
     App.Modal.open('Revisar notas baixas — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
       '<p style="font-size:13px;color:var(--gray-500)">Tickets com nota do cliente abaixo de 5. Marca "Devida" se o problema foi real no atendimento (conta normalmente), ou "Indevida" se a nota não reflete a qualidade do atendimento (ex.: interação robótica/IA) — aí ela sai do cálculo da nota mensal. A nota é atribuída só a quem encerrou o atendimento — quem só transferiu não é afetado por essa revisão.</p>' +
       '<div id="gam-revisao-lista">Carregando...</div>' +
-    '</div>');
+    '</div>', null, { wide: true });
     await _carregarRevisaoNotas(mes);
   }
 

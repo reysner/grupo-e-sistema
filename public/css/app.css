@@ -315,6 +315,9 @@ body { font-family: var(--font); background: var(--gray-50); color: var(--gray-7
   max-width: 440px;
   box-shadow: var(--shadow-lg);
 }
+/* Variante larga — pra conteúdo com tabela (ex.: Revisar notas baixas,
+   prévia do Auto-preencher) que fica espremido nos 440px padrão. */
+.modal-box.wide { max-width: 760px; }
 .modal-title { font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--g800); margin-bottom: 20px; }
 .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
 .modal-actions .btn { flex: 1; }
