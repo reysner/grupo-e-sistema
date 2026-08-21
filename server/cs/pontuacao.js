@@ -9,16 +9,24 @@
  * do swagger.json — ver nota em zappyClient.js).
  *
  * Regra geral (definida pelo Reysner, ver print da "As 4 métricas de
- * pontuação"): NotaFinal = Avaliação do cliente + ajustes das métricas,
- * limitado a 5 pontos (soma simples, depois teto — não é uma cadeia onde
- * uma métrica olha o resultado da outra).
+ * pontuação"): a nota do cliente é atribuída só a quem ENCERRA o
+ * atendimento — NotaFinal = Avaliação do cliente + ajustes das métricas,
+ * limitado a 5 pontos (soma simples, depois teto). Quem só TRANSFERE não
+ * recebe a nota do cliente: o resultado dele naquele ticket é só o ajuste
+ * de velocidade puro (+2/+1/−1), sem nota nem teto de 5 envolvidos.
  *
  * Um ticket pode gerar ATÉ 2 linhas de pontuação — uma pra quem transferiu
- * (só métrica 1) e uma pra quem recebeu/resolveu sozinho (métricas 1+2+4) —
- * porque cada papel ajusta a PRÓPRIA nota de forma independente.
+ * (só o ajuste de velocidade, avulso) e uma pra quem recebeu/resolveu
+ * sozinho (nota do cliente + métricas 1+2+4, capada em 5).
  *
  * SUPOSIÇÕES ASSUMIDAS (sem dado real pra confirmar ainda — avisar o
  * Reysner e ajustar se a calibração real mostrar outra coisa):
+ *   - Média mensal (auto-preencher em data.js): tira uma média simples de
+ *     TODAS as linhas do analista no mês, misturando notas 0-5 (papel
+ *     recebeu/unico) com os pontos avulsos de velocidade de quem só
+ *     transferiu (-1 a +2). Pra quem faz só um papel no mês isso não muda
+ *     nada; pra quem faz os dois, a média mistura as duas escalas — avaliar
+ *     se isso precisa virar dois números separados quando tiver dado real.
  *   - Métrica 2 (/Finalizar): olha a ÚLTIMA mensagem do escritório antes do
  *     encerramento do ticket.
  *   - Métrica 4 (reabertura): usa `encerramento` do ticket como o instante
@@ -104,6 +112,9 @@ function calcularPontosTicket(ticket, mensagens = []) {
   const foiTransferido = !!ticket.transferencia && !!ticket.analista_anterior;
 
   // ── Papel "transferiu" — só métrica 1 (velocidade até transferir) ────────
+  // A nota do cliente é atribuída só a quem ENCERRA o atendimento — quem só
+  // transfere não recebe a nota, o resultado dele é só o ajuste de
+  // velocidade puro (+2/+1/−1), sem nota_cliente somada nem teto de 5.
   if (foiTransferido) {
     const relTransf = porTipo('transferencia'); // aceite -> transferência
     const ajusteVelocidade = tierVelocidade(relTransf ? relTransf.minutos_uteis : null);
@@ -114,7 +125,7 @@ function calcularPontosTicket(ticket, mensagens = []) {
       ajusteVelocidade: ajusteVelocidade ?? 0,
       ajusteFinalizar: 0,
       ajusteReabertura: 0,
-      notaFinal: clamp(notaCliente + (ajusteVelocidade ?? 0), 0, 5),
+      notaFinal: ajusteVelocidade ?? 0,
     });
   }
 
