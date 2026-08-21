@@ -31,12 +31,16 @@
  *
  * Autenticação: Authorization: Bearer <ZAPPY_TOKEN> (scheme "bearer" confirmado no swagger).
  *
- * NÃO CONFIRMADO / NÃO EXISTE na API pública: avaliação (rate) POR TICKET
- * e histórico de transferência de fila com timestamp exato — confirmado
- * checando o schema completo do objeto Ticket (sem esses campos) e a lista
- * inteira de endpoints (sem GET de histórico de transferência, sem webhook).
- * Isso limita um pouco os relógios 2 (transferência) e a nota de
- * satisfação do PRD — ver nota na Continuidade.
+ * IMPORTANTE — o swagger.json É INCOMPLETO: o schema documentado do
+ * `Ticket` lista só um subconjunto dos campos reais (confirmado batendo
+ * com a resposta de verdade de GET /api/tickets/:id via /api/cs/diagnostico
+ * em 20/08/2026). Nota do cliente por ticket EXISTE, no campo `rate`
+ * (confirmado pelo suporte do Zappy) — não documentado no swagger, mas
+ * presente na resposta real. Ainda SEM webhook para o evento de avaliação
+ * (confirmado com o suporte) — só aparece quando a ingestão periódica
+ * re-busca o ticket. Histórico de transferência de fila com timestamp
+ * exato continua sem confirmação — a API tem um array `metas` (também
+ * fora do swagger) que pode ter esse histórico; a ver.
  *
  * Configuração via variáveis de ambiente (Render → Environment):
  *   ZAPPY_BASE_URL  ex.: https://api-escritorial.zapcontabil.chat  (SEM /api no final)

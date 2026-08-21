@@ -5732,10 +5732,10 @@ const Gamificacao = (() => {
     const { resultados, rotulosNovos, aviso } = await res.json();
     if (aviso) { box.innerHTML = '<p style="color:var(--gray-500)">' + aviso + '</p>'; return; }
 
-    let html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Colaborador</th><th>Média calculada</th><th>Avaliações</th></tr></thead><tbody>' +
+    let html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Colaborador</th><th>Média calculada</th><th>Avaliações</th><th>Fonte</th></tr></thead><tbody>' +
       resultados.map(r => r.erro
-        ? '<tr><td>' + r.nome + '</td><td colspan="2" style="color:#e53e3e;font-size:12px">' + r.erro + '</td></tr>'
-        : '<tr><td>' + r.nome + '</td><td>' + (r.media_individual ?? '—') + '</td><td>' + r.avaliacoes + '</td></tr>'
+        ? '<tr><td>' + r.nome + '</td><td colspan="3" style="color:#e53e3e;font-size:12px">' + r.erro + '</td></tr>'
+        : '<tr><td>' + r.nome + '</td><td>' + (r.media_individual ?? '—') + '</td><td>' + r.avaliacoes + '</td><td style="font-size:11px;color:var(--gray-400)">' + (r.fonte === 'tickets' ? 'Tickets (real)' : 'Qualificação (agregado)') + '</td></tr>'
       ).join('') + '</tbody></table></div>';
 
     if (rotulosNovos && rotulosNovos.length) {
@@ -5743,6 +5743,49 @@ const Gamificacao = (() => {
     }
     html += '<button class="btn btn-primary" style="margin-top:14px" data-mes="' + mes + '" onclick="Gamificacao.confirmarAutoPreencher(this.dataset.mes)">✅ Aplicar essas notas</button>';
     box.innerHTML = html;
+  }
+
+  // ── Revisão de nota baixa (Ticket / Cliente / Nota) ─────────────────────────
+  async function abrirRevisaoNotas() {
+    const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
+    App.Modal.open('Revisar notas baixas — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
+      '<p style="font-size:13px;color:var(--gray-500)">Tickets com nota do cliente abaixo de 5. Marca "Devida" se o problema foi real no atendimento (conta normalmente), ou "Indevida" se a nota não reflete a qualidade do atendimento (ex.: interação robótica/IA) — aí ela sai do cálculo da nota mensal.</p>' +
+      '<div id="gam-revisao-lista">Carregando...</div>' +
+    '</div>');
+    await _carregarRevisaoNotas(mes);
+  }
+
+  async function _carregarRevisaoNotas(mes) {
+    const box = document.getElementById('gam-revisao-lista');
+    if (!box) return;
+    const res = await fetch('/api/data/gam/tickets-revisao?mes=' + mes, { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao carregar.</p>'; return; }
+    const { data } = await res.json();
+    if (!data.length) { box.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhuma nota baixa pendente de revisão em ' + _mesLabel(mes) + '.</p>'; return; }
+    box.innerHTML = '<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">' +
+      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Nota</th><th>Analista</th><th></th></tr></thead><tbody>' +
+      data.map(r => `<tr data-id="${r.id}">` +
+        `<td>#${r.zappy_id}</td>` +
+        `<td>${r.empresa_texto || '—'}</td>` +
+        `<td style="font-weight:700">${r.nota_cliente}</td>` +
+        `<td>${r.analista || '—'}</td>` +
+        `<td style="white-space:nowrap">` +
+          `<button class="btn btn-sm" style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisao('${r.id}','devida','${mes}')">Devida</button> ` +
+          `<button class="btn btn-sm" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisao('${r.id}','indevida','${mes}')">Indevida</button>` +
+        `</td></tr>`
+      ).join('') + '</tbody></table></div>';
+  }
+
+  async function marcarRevisao(id, status, mes) {
+    const res = await fetch('/api/data/gam/tickets-revisao/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ status_revisao: status })
+    });
+    if (res && res.ok) {
+      App.Toast.ok('Marcado como ' + status + '.');
+      await _carregarRevisaoNotas(mes);
+    } else App.Toast.err('Erro ao salvar.');
   }
 
   async function confirmarAutoPreencher(mes) {
@@ -5818,6 +5861,7 @@ const Gamificacao = (() => {
     vincularZappy, salvarVinculoZappy,
     abrirMapaQualificacao, salvarMapaQualificacao,
     abrirAutoPreencher, confirmarAutoPreencher,
+    abrirRevisaoNotas, marcarRevisao,
   };
 })();
 

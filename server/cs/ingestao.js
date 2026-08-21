@@ -16,6 +16,7 @@
 const { traduzirTicket } = require('./tradutorZappy');
 const { calcularSLA, calcularTrocas } = require('./slaEngine');
 const { garantirVinculo } = require('./vinculos');
+const { ensurePontuacaoSchema, recalcularPontosPendentes } = require('./pontuacao');
 
 const CHAVE_DATA_INICIO = 'ingestao_data_inicio';
 const CHAVE_ULTIMA_EXECUCAO = 'ingestao_ultima_execucao';
@@ -70,14 +71,18 @@ function primeiraHoraPorTipo(eventos, tipo) {
  */
 async function resolverHoraTransferencia(pool, zappyId, analistaNovo, agora) {
   const { rows } = await pool.query(
-    `SELECT analista, transferencia FROM cs_tickets WHERE zappy_id = $1`,
+    `SELECT analista, analista_id, analista_anterior, analista_anterior_id, transferencia FROM cs_tickets WHERE zappy_id = $1`,
     [zappyId]
   );
   if (!rows.length) return null;
   const existente = rows[0];
-  if (existente.transferencia) return existente.transferencia;
+  if (existente.transferencia) {
+    // Já detectado antes — mantém tudo fixo (hora e quem transferiu), não
+    // "anda" a cada nova execução nem troca de dono a cada re-transferência.
+    return { hora: existente.transferencia, analistaAnterior: existente.analista_anterior, analistaAnteriorId: existente.analista_anterior_id };
+  }
   if (existente.analista && analistaNovo && analistaNovo !== existente.analista) {
-    return agora.toISOString();
+    return { hora: agora.toISOString(), analistaAnterior: existente.analista, analistaAnteriorId: existente.analista_id };
   }
   return null;
 }
@@ -104,6 +109,9 @@ function montarLinhaTicket(generico, sla, vinculo, trocas = null, trocasPosTrans
     vinculo_id: vinculo ? vinculo.id : null,
     departamento: generico.departamento,
     analista: generico.analista,
+    analista_id: generico.analista_id || null,
+    analista_anterior: generico.analista_anterior || null,
+    analista_anterior_id: generico.analista_anterior_id || null,
     status: generico.status,
     abertura: primeiraHoraPorTipo(generico.eventos, 'abertura'),
     aceite: primeiraHoraPorTipo(generico.eventos, 'aceite'),
@@ -127,8 +135,8 @@ async function persistirTicket(pool, linha, mensagens) {
     `INSERT INTO cs_tickets (
        zappy_id, telefone, empresa_texto, vinculo_id, departamento, analista, status,
        abertura, aceite, transferencia, encerramento, nota_avaliacao, sla, em_risco,
-       pior_status, calculado_em
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, NOW())
+       pior_status, analista_id, analista_anterior, analista_anterior_id, calculado_em
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18, NOW())
      ON CONFLICT (zappy_id) DO UPDATE SET
        telefone = EXCLUDED.telefone,
        empresa_texto = EXCLUDED.empresa_texto,
@@ -144,6 +152,9 @@ async function persistirTicket(pool, linha, mensagens) {
        sla = EXCLUDED.sla,
        em_risco = EXCLUDED.em_risco,
        pior_status = EXCLUDED.pior_status,
+       analista_id = EXCLUDED.analista_id,
+       analista_anterior = EXCLUDED.analista_anterior,
+       analista_anterior_id = EXCLUDED.analista_anterior_id,
        calculado_em = NOW(),
        updated_at = NOW()
      RETURNING id`,
@@ -151,7 +162,7 @@ async function persistirTicket(pool, linha, mensagens) {
       linha.zappy_id, linha.telefone, linha.empresa_texto, linha.vinculo_id,
       linha.departamento, linha.analista, linha.status, linha.abertura, linha.aceite,
       linha.transferencia, linha.encerramento, linha.nota_avaliacao, linha.sla,
-      linha.em_risco, linha.pior_status,
+      linha.em_risco, linha.pior_status, linha.analista_id, linha.analista_anterior, linha.analista_anterior_id,
     ]
   );
   const ticketId = rows[0].id;
@@ -209,6 +220,7 @@ async function descobrirTicketsComAtividade(zappyClient, dateFrom, maxPaginas) {
  * @returns {{processados: number, ignoradosPreDataInicio: number, erros: Array, ticketsComAtividade: number}}
  */
 async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPaginas = 100, dateFromForcado = null }) {
+  await ensurePontuacaoSchema(pool);
   const dataInicio = await obterDataInicio(pool);
   const ultimaExecucao = await obterUltimaExecucao(pool);
   // Um dia de folga pra trás, pra não perder mensagem que chegou perto da virada do dia
@@ -266,8 +278,11 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
       const generico = traduzirTicket(ticketZappy, mensagensZappy, contexto);
 
       // Transferência detectada por diferença entre coletas (ver resolverHoraTransferencia acima).
-      const horaTransferencia = await resolverHoraTransferencia(pool, generico.zappy_id, generico.analista, agora);
+      const transferenciaInfo = await resolverHoraTransferencia(pool, generico.zappy_id, generico.analista, agora);
+      const horaTransferencia = transferenciaInfo ? transferenciaInfo.hora : null;
       if (horaTransferencia) generico.eventos.push({ tipo: 'transferencia', hora: horaTransferencia });
+      generico.analista_anterior = transferenciaInfo ? transferenciaInfo.analistaAnterior : null;
+      generico.analista_anterior_id = transferenciaInfo ? transferenciaInfo.analistaAnteriorId : null;
 
       const sla = calcularSLA(generico, agora);
       const trocas = calcularTrocas(generico.mensagens, agora);
@@ -304,7 +319,19 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
     console.error('[CS] preencherTrocasPendentes falhou (ingestão normal seguiu OK):', e.message);
   }
 
-  return { processados, ignoradosPreDataInicio, erros, ticketsComAtividade: ticketIds.length, trocasPreenchidas };
+  // Pontuação automática da Gamificação (Modelo Atualizado) — calcula/atualiza
+  // gam_tickets_pontos pra tickets que já têm nota do cliente (`rate`) e ainda
+  // não foram pontuados. Mesmo espírito de preencherTrocasPendentes: lote
+  // pequeno a cada ciclo, sem chamar o Zappy de novo, falha isolada não
+  // derruba a ingestão normal.
+  let pontuacao = { candidatos: 0, processados: 0 };
+  try {
+    pontuacao = await recalcularPontosPendentes(pool, { limite: 100 });
+  } catch (e) {
+    console.error('[CS] recalcularPontosPendentes falhou (ingestão normal seguiu OK):', e.message);
+  }
+
+  return { processados, ignoradosPreDataInicio, erros, ticketsComAtividade: ticketIds.length, trocasPreenchidas, pontuacao };
 }
 
 /**

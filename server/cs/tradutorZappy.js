@@ -6,9 +6,16 @@
  * swagger.json — ver zappyClient.js) no formato genérico que a máquina
  * dos 5 relógios (slaEngine.js) entende.
  *
- * Estrutura real (API pública, NÃO a interna do site — ver zappyClient.js):
+ * Estrutura real (API pública, NÃO a interna do site — ver zappyClient.js).
+ * O swagger.json só documenta um SUBCONJUNTO dos campos — a resposta real
+ * de GET /api/tickets/:id tem bem mais coisa (confirmado em 20/08/2026 via
+ * /api/cs/diagnostico), incluindo o que este tradutor de fato usa:
  *   Ticket:   { id, status, userId, contactId, queueId, whatsappId,
- *               unreadMessages, lastMessage, isGroup, createdAt, updatedAt }
+ *               unreadMessages, lastMessage, isGroup, createdAt, updatedAt,
+ *               rate (nota do cliente 1-5, fora do swagger — ver zappyClient.js),
+ *               metas: [{ type, value, userId, createdAt }, ...] (fora do
+ *               swagger — histórico de eventos tipo 'acceptTicket', ainda
+ *               não totalmente mapeado) }
  *   Mensagem: { id, createdAt, updatedAt, body, mediaUrl, mediaType,
  *               fromMe, ack, read, ticketId, contactId, ... }
  *
@@ -123,8 +130,16 @@ function traduzirTicket(ticketZappy, mensagensZappy = [], contexto = {}) {
     departamento: contexto.filaNome || null,
     queue_id: ticketZappy.queueId ?? null,
     analista: contexto.analistaNome || null,
+    analista_id: ticketZappy.userId != null ? String(ticketZappy.userId) : null,
     status: ticketZappy.status || null,
-    nota_avaliacao: null, // não disponível na API pública (ver nota no topo do arquivo)
+    // CONFIRMADO com o suporte do Zappy (20/08/2026): GET /api/tickets/:id
+    // devolve um campo `rate` com a avaliação do cliente — não documentado
+    // no swagger.json (que só lista um subconjunto dos campos reais), mas
+    // presente na resposta de verdade (visto em /api/cs/diagnostico). Não
+    // existe webhook ainda — só aparece quando a ingestão periódica
+    // re-busca o ticket (dispara quando o cliente manda mensagem nova,
+    // ex.: respondendo a pesquisa — ver descobrirTicketsComAtividade).
+    nota_avaliacao: ticketZappy.rate != null ? Number(ticketZappy.rate) : null,
     eventos,
     mensagens,
   };

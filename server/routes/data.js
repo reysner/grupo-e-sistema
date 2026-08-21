@@ -5,6 +5,7 @@ const { pool } = require('../db');
 const { requireAuth, requireAdmin } = require('../auth');
 const acessoriasClient = require('../acessoriasClient');
 const { criarClienteZappy } = require('../cs/zappyClient');
+const { ensurePontuacaoSchema } = require('../cs/pontuacao');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -2606,6 +2607,7 @@ function faixaDoMes(mes) {
 router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
   try {
     await ensureGamTables();
+    await ensurePontuacaoSchema(pool);
     const { mes, dryRun = true } = req.body;
     if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
 
@@ -2625,6 +2627,32 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
     const rotulosNovos = new Set();
 
     for (const c of colaboradores) {
+      // Fonte 1 (preferida): nota real por ticket, já com métricas 1/2/4
+      // aplicadas e notas indevidas excluídas (gam_tickets_pontos — ver
+      // cs/pontuacao.js). Só cai pro agregado de qualificação (fonte 2) se
+      // ainda não tiver ticket pontuado pra esse colaborador nesse mês.
+      const { rows: pontosRows } = await pool.query(
+        `SELECT nota_final FROM gam_tickets_pontos WHERE mes = $1 AND analista_id = $2 AND status_revisao != 'indevida'`,
+        [mes, c.zappy_user_id]
+      );
+      if (pontosRows.length) {
+        const soma = pontosRows.reduce((s, r) => s + parseFloat(r.nota_final), 0);
+        const media_individual = Number((soma / pontosRows.length).toFixed(2));
+        resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes: pontosRows.length, fonte: 'tickets' });
+        if (!dryRun) {
+          await pool.query(
+            `INSERT INTO gam_notas (colaborador_id, mes, media_individual, avaliacoes, lancado_por)
+             VALUES ($1,$2,$3,$4,$5)
+             ON CONFLICT (colaborador_id, mes)
+             DO UPDATE SET media_individual=$3, avaliacoes=$4, lancado_por=$5, updated_at=NOW()`,
+            [c.id, mes, media_individual, pontosRows.length, `Automático (tickets Zappy) — ${req.user.name}`]
+          );
+        }
+        continue;
+      }
+
+      // Fonte 2 (reforço): agregado por rótulo de qualificação — usado
+      // enquanto ainda não há ticket pontuado pra esse colaborador/mês.
       let qualificacoes = [];
       try {
         qualificacoes = await zappyClient.buscarTicketsPorQualificacao({ startDate, endDate, userIds: [c.zappy_user_id] });
@@ -2655,7 +2683,7 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
       }
 
       const media_individual = avaliacoes > 0 ? Number((somaPonderada / avaliacoes).toFixed(2)) : null;
-      resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes, detalhamento });
+      resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes, detalhamento, fonte: 'qualificacao' });
 
       if (!dryRun && media_individual != null && avaliacoes > 0) {
         await pool.query(
@@ -2672,6 +2700,49 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[gam] auto-preencher falhou:', err);
     res.status(500).json({ error: err.message || 'Erro ao auto-preencher notas.' });
+  }
+});
+
+// ── Revisão de nota baixa (Modelo Atualizado) — só admin ───────────────────
+// Tela simples: Ticket / Cliente / Nota. Todo ticket com nota do cliente
+// abaixo de 5 fica "pendente" até alguém marcar devida (conta normalmente)
+// ou indevida (some do cálculo da nota mensal — ver auto-preencher acima).
+router.get('/gam/tickets-revisao', requireAdmin, async (req, res) => {
+  try {
+    await ensurePontuacaoSchema(pool);
+    const { mes } = req.query;
+    if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+    const { rows } = await pool.query(
+      `SELECT p.id, p.papel, p.analista, p.nota_cliente, p.nota_final, p.status_revisao,
+              t.zappy_id, t.empresa_texto, t.encerramento
+       FROM gam_tickets_pontos p
+       JOIN cs_tickets t ON t.id = p.ticket_id
+       WHERE p.mes = $1 AND p.nota_cliente < 5 AND p.status_revisao = 'pendente'
+       ORDER BY t.encerramento DESC NULLS LAST`,
+      [mes]
+    );
+    res.json({ data: rows });
+  } catch (err) {
+    console.error('[gam] tickets-revisao falhou:', err);
+    res.status(500).json({ error: 'Erro ao listar tickets para revisão.' });
+  }
+});
+
+router.patch('/gam/tickets-revisao/:id', requireAdmin, async (req, res) => {
+  try {
+    const { status_revisao } = req.body;
+    if (!['devida', 'indevida'].includes(status_revisao)) {
+      return res.status(400).json({ error: 'status_revisao deve ser "devida" ou "indevida".' });
+    }
+    const { rows } = await pool.query(
+      `UPDATE gam_tickets_pontos SET status_revisao = $2, revisado_por = $3, revisado_em = NOW() WHERE id = $1 RETURNING *`,
+      [req.params.id, status_revisao, req.user.name]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Não encontrado.' });
+    res.json({ ok: true, data: rows[0] });
+  } catch (err) {
+    console.error('[gam] PATCH tickets-revisao falhou:', err);
+    res.status(500).json({ error: 'Erro ao salvar revisão.' });
   }
 });
 
