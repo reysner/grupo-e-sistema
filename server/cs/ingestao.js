@@ -16,7 +16,7 @@
 const { traduzirTicket } = require('./tradutorZappy');
 const { calcularSLA, calcularTrocas } = require('./slaEngine');
 const { garantirVinculo } = require('./vinculos');
-const { ensurePontuacaoSchema, recalcularPontosPendentes } = require('./pontuacao');
+const { ensurePontuacaoSchema, recalcularPontosPendentes, persistirPontosTicket } = require('./pontuacao');
 
 const CHAVE_DATA_INICIO = 'ingestao_data_inicio';
 const CHAVE_ULTIMA_EXECUCAO = 'ingestao_ultima_execucao';
@@ -487,6 +487,56 @@ async function executarCargaRetroativa({ zappyClient, pool, dias = 90, agora = n
   return ingerirTickets({ zappyClient, pool, agora, maxPaginas, dateFromForcado: paraDataAPI(dataEfetiva) });
 }
 
+/**
+ * Atualiza a nota (rate) de tickets JÁ CONHECIDOS que fecharam há poucos
+ * dias mas ainda estão sem avaliação — mais leve e confiável que o backfill
+ * de 90 dias (que depende de descobrir atividade via /api/messages, varrendo
+ * milhares de mensagens). Aqui é direto: já sabemos o zappy_id de cada
+ * ticket candidato (está em cs_tickets), então só rebusca CADA UM
+ * individualmente em GET /api/tickets/:id pra ver se o cliente avaliou
+ * desde a última vez. O cliente pode demorar horas/dias pra responder a
+ * pesquisa, então um ticket fechado ontem (D-1) pode não ter nota hoje e
+ * ganhar amanhã — por isso essa função roda todo dia (ver rodarAtualizacaoNotasCS
+ * em index.js), sempre olhando os últimos `dias`, não só o D-1 exato.
+ *
+ * @param {object} deps
+ * @param {object} deps.zappyClient
+ * @param {object} deps.pool
+ * @param {number} [deps.dias]    quantos dias pra trás olhar (default 5 —
+ *   cobre o D-1 pedido pelo Reysner com uma folga pra cliente que demora a responder)
+ * @param {number} [deps.limite]  trava de segurança de quantos tickets rebusca por vez
+ * @returns {{candidatos: number, atualizados: number, erros: Array}}
+ */
+async function atualizarNotasPendentes({ zappyClient, pool, dias = 5, limite = 500 }) {
+  const cutoff = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
+  const { rows: candidatos } = await pool.query(
+    `SELECT id, zappy_id FROM cs_tickets
+     WHERE status = 'closed' AND nota_avaliacao IS NULL
+       AND encerramento IS NOT NULL AND encerramento >= $1
+     ORDER BY encerramento DESC
+     LIMIT $2`,
+    [cutoff.toISOString(), limite]
+  );
+
+  let atualizados = 0;
+  const erros = [];
+  for (const c of candidatos) {
+    try {
+      const ticketZappy = await zappyClient.obterTicket(c.zappy_id);
+      if (ticketZappy.rate == null) continue; // cliente ainda não avaliou — tenta de novo amanhã
+      await pool.query(
+        `UPDATE cs_tickets SET nota_avaliacao = $1, updated_at = NOW() WHERE id = $2`,
+        [Number(ticketZappy.rate), c.id]
+      );
+      await persistirPontosTicket(pool, c.id); // pontua na hora, não espera o próximo ciclo de ingestão
+      atualizados++;
+    } catch (e) {
+      erros.push({ zappyId: c.zappy_id, erro: e.message });
+    }
+  }
+  return { candidatos: candidatos.length, atualizados, erros };
+}
+
 // ── Execução direta: `node server/cs/ingestao.js` ───────────────────────────
 if (require.main === module) {
   (async () => {
@@ -513,4 +563,5 @@ module.exports = {
   preencherTrocasPendentes,
   resolverHoraTransferencia,
   recalcularSlaTodos,
+  atualizarNotasPendentes,
 };

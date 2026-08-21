@@ -1054,6 +1054,7 @@
       <button class="btn btn-sm" onclick="SucessoCliente.ingerirAgora()">🔄 Atualizar agora</button>
       <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.recalcularSLA()" title="Reprocessa o SLA de todos os tickets já salvos com a fórmula mais recente, sem buscar nada novo no Zappy">🔁 Recalcular SLA</button>
       <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.iniciarBackfill()" title="Rebusca os tickets com atividade nos últimos 90 dias — usa pra pegar nota (rate) e pontuação da Gamificação de tickets que fecharam sem mensagem nova depois">📥 Carregar últimos 90 dias</button>
+      <button class="btn btn-ghost btn-sm" onclick="SucessoCliente.atualizarNotas()" title="Rebusca só a nota (rate) de tickets já conhecidos, fechados nos últimos dias, que ainda estão sem avaliação — mais rápido que os 90 dias, roda sozinho todo dia também">⭐ Atualizar notas pendentes</button>
     </div>
   </div>
   <div id="radar-diagnostico"></div>

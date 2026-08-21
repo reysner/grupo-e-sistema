@@ -154,6 +154,23 @@ initDB().then(async () => {
     };
     setInterval(rodarIngestaoCS, 5 * 60 * 1000); // a cada 5 min
     rodarIngestaoCS(); // já roda uma vez ao subir
+
+    // Gamificação — atualização diária das notas (rate) de tickets fechados
+    // recentemente que ainda estavam sem avaliação (o cliente pode demorar
+    // pra responder a pesquisa). Pedido do Reysner: em vez de varrer 90 dias
+    // toda vez, vai "colhendo D-1" — todo dia rebusca só quem fechou nos
+    // últimos dias e segue sem nota. Mais leve que o /backfill manual.
+    const { atualizarNotasPendentes } = require('./cs/ingestao');
+    const rodarAtualizacaoNotasCS = async () => {
+      try {
+        const resultado = await atualizarNotasPendentes({ zappyClient: criarClienteZappy(), pool, dias: 5 });
+        console.log('[CS] Atualização diária de notas:', resultado);
+      } catch (e) {
+        console.error('[CS] Falha na atualização diária de notas:', e.message);
+      }
+    };
+    setInterval(rodarAtualizacaoNotasCS, 24 * 60 * 60 * 1000); // 1x por dia
+    rodarAtualizacaoNotasCS(); // já roda uma vez ao subir
   }
 
   // Carteira — sincronização automática diária com o Sistema Acessórias

@@ -29,7 +29,7 @@
 const express = require('express');
 const router = express.Router();
 const { obterPool } = require('./pool');
-const { ingerirTickets, executarCargaRetroativa, recalcularSlaTodos } = require('./ingestao');
+const { ingerirTickets, executarCargaRetroativa, recalcularSlaTodos, atualizarNotasPendentes } = require('./ingestao');
 const { criarClienteZappy } = require('./zappyClient');
 const { listarPendentes, confirmarVinculo, recalcularSugestoes } = require('./vinculos');
 const { detectarSinalChurn, detectarInsatisfacao, classificarMotivoConversa, palavrasFrequentes } = require('./slaEngine');
@@ -38,6 +38,8 @@ const { detectarSinalChurn, detectarInsatisfacao, classificarMotivoConversa, pal
 let backfillEmAndamento = false;
 // Idem, mas pro recálculo de SLA (ver POST /recalcular-sla abaixo).
 let recalculoSlaEmAndamento = false;
+// Idem, mas pra atualização de notas pendentes (ver POST /atualizar-notas abaixo).
+let atualizacaoNotasEmAndamento = false;
 
 let requireAuth, requireAdmin;
 try {
@@ -193,6 +195,36 @@ router.post('/backfill', requireAuth, requireAdmin, async (req, res) => {
     console.error('[CS] Backfill falhou:', e);
   } finally {
     backfillEmAndamento = false;
+  }
+});
+
+/**
+ * POST /api/cs/atualizar-notas?dias=5 — rebusca a nota (rate) de tickets já
+ * conhecidos, fechados nos últimos `dias` dias, que ainda estão sem
+ * avaliação — mais leve e confiável que o /backfill de 90 dias (que precisa
+ * descobrir atividade via /api/messages, varrendo milhares de mensagens).
+ * Aqui é direto: já sabemos o zappy_id de cada candidato, só rebusca cada
+ * ticket individualmente. Pensado pra rodar todo dia sozinho (D-1) — ver
+ * rodarAtualizacaoNotasCS em index.js — mas também dá pra disparar na mão.
+ * Roda em segundo plano como o /backfill.
+ */
+router.post('/atualizar-notas', requireAuth, requireAdmin, async (req, res) => {
+  if (atualizacaoNotasEmAndamento) {
+    return res.status(409).json({ error: 'Já existe uma atualização de notas em andamento. Aguarde terminar.' });
+  }
+  const dias = Math.max(1, Math.min(60, parseInt(req.query.dias, 10) || 5));
+  atualizacaoNotasEmAndamento = true;
+  res.json({ ok: true, dias, mensagem: `Atualização de notas dos últimos ${dias} dias iniciada em segundo plano.` });
+
+  try {
+    const pool = obterPool();
+    const zappyClient = criarClienteZappy();
+    const resultado = await atualizarNotasPendentes({ zappyClient, pool, dias });
+    console.log('[CS] Atualização de notas concluída:', resultado);
+  } catch (e) {
+    console.error('[CS] Atualização de notas falhou:', e);
+  } finally {
+    atualizacaoNotasEmAndamento = false;
   }
 });
 

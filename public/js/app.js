@@ -6375,6 +6375,24 @@ window.Tickets = Tickets;
     },
 
     /**
+     * Botão "Atualizar notas pendentes" — rebusca só a nota (rate) de
+     * tickets já conhecidos, fechados nos últimos dias, que ainda estão sem
+     * avaliação. Mais leve que o backfill de 90 dias; roda sozinho todo dia
+     * também (ver rodarAtualizacaoNotasCS em index.js).
+     */
+    async atualizarNotas() {
+      try {
+        const resp = await fetch('/api/cs/atualizar-notas?dias=5', { method: 'POST', headers: SucessoCliente._authHeaders() });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+        if (window.App && App.Toast) App.Toast.ok(data.mensagem || 'Atualização de notas iniciada.');
+      } catch (e) {
+        if (window.App && App.Toast) App.Toast.err('Falha ao atualizar notas: ' + e.message);
+        console.error('[SucessoCliente] atualizarNotas()', e);
+      }
+    },
+
+    /**
      * Botão "Recalcular SLA" — reprocessa os relógios de TODOS os tickets já
      * salvos com a fórmula ATUAL do motor (server/cs/slaEngine.js), sem
      * chamar o Zappy de novo. Necessário porque o Dashboard só LÊ o que já
