@@ -2631,8 +2631,15 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
       // aplicadas e notas indevidas excluídas (gam_tickets_pontos — ver
       // cs/pontuacao.js). Só cai pro agregado de qualificação (fonte 2) se
       // ainda não tiver ticket pontuado pra esse colaborador nesse mês.
+      // A nota do cliente é atribuída só a quem ENCERROU o ticket — a
+      // revisão de nota baixa (devida/indevida) só afeta o cálculo de quem
+      // encerrou. Quem só transferiu (papel='transferiu') não é dono da
+      // nota, então conta sempre, independente da revisão.
       const { rows: pontosRows } = await pool.query(
-        `SELECT nota_final FROM gam_tickets_pontos WHERE mes = $1 AND analista_id = $2 AND status_revisao != 'indevida'`,
+        `SELECT p.nota_final FROM gam_tickets_pontos p
+         JOIN cs_tickets t ON t.id = p.ticket_id
+         WHERE p.mes = $1 AND p.analista_id = $2
+           AND (p.papel = 'transferiu' OR COALESCE(t.revisao_nota_status, 'pendente') != 'indevida')`,
         [mes, c.zappy_user_id]
       );
       if (pontosRows.length) {
@@ -2707,18 +2714,21 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
 // Tela simples: Ticket / Cliente / Nota. Todo ticket com nota do cliente
 // abaixo de 5 fica "pendente" até alguém marcar devida (conta normalmente)
 // ou indevida (some do cálculo da nota mensal — ver auto-preencher acima).
+// Por TICKET, não por papel: a nota do cliente é atribuída só a quem
+// encerrou o atendimento — revisar afeta só o cálculo de quem encerrou,
+// quem transferiu não é dono da nota e conta sempre (ver auto-preencher acima).
 router.get('/gam/tickets-revisao', requireAdmin, async (req, res) => {
   try {
     await ensurePontuacaoSchema(pool);
     const { mes } = req.query;
     if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
     const { rows } = await pool.query(
-      `SELECT p.id, p.papel, p.analista, p.nota_cliente, p.nota_final, p.status_revisao,
-              t.zappy_id, t.empresa_texto, t.encerramento
-       FROM gam_tickets_pontos p
-       JOIN cs_tickets t ON t.id = p.ticket_id
-       WHERE p.mes = $1 AND p.nota_cliente < 5 AND p.status_revisao = 'pendente'
-       ORDER BY t.encerramento DESC NULLS LAST`,
+      `SELECT id, zappy_id, empresa_texto, analista, nota_avaliacao AS nota_cliente, encerramento
+       FROM cs_tickets
+       WHERE nota_avaliacao IS NOT NULL AND nota_avaliacao < 5
+         AND COALESCE(revisao_nota_status, 'pendente') = 'pendente'
+         AND TO_CHAR(COALESCE(encerramento, abertura), 'YYYY-MM') = $1
+       ORDER BY encerramento DESC NULLS LAST`,
       [mes]
     );
     res.json({ data: rows });
@@ -2735,7 +2745,7 @@ router.patch('/gam/tickets-revisao/:id', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'status_revisao deve ser "devida" ou "indevida".' });
     }
     const { rows } = await pool.query(
-      `UPDATE gam_tickets_pontos SET status_revisao = $2, revisado_por = $3, revisado_em = NOW() WHERE id = $1 RETURNING *`,
+      `UPDATE cs_tickets SET revisao_nota_status = $2, revisao_nota_por = $3, revisao_nota_em = NOW() WHERE id = $1 RETURNING id`,
       [req.params.id, status_revisao, req.user.name]
     );
     if (!rows.length) return res.status(404).json({ error: 'Não encontrado.' });

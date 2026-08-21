@@ -159,6 +159,15 @@ async function ensurePontuacaoSchema(pool) {
   await pool.query(`ALTER TABLE cs_tickets ADD COLUMN IF NOT EXISTS analista_id TEXT`).catch(()=>{});
   await pool.query(`ALTER TABLE cs_tickets ADD COLUMN IF NOT EXISTS analista_anterior TEXT`).catch(()=>{});
   await pool.query(`ALTER TABLE cs_tickets ADD COLUMN IF NOT EXISTS analista_anterior_id TEXT`).catch(()=>{});
+  // Revisão de nota baixa é do TICKET, não de cada papel — a nota do cliente
+  // é atribuída só a quem ENCERROU o atendimento (não a quem transferiu).
+  // Fica em cs_tickets (não em gam_tickets_pontos) porque é uma propriedade
+  // do ticket; quem calcula os pontos filtra por papel na hora de aplicar
+  // (ver auto-preencher em data.js: só o papel 'recebeu'/'unico' é afetado
+  // pela revisão — 'transferiu' conta sempre, não é dono da nota).
+  await pool.query(`ALTER TABLE cs_tickets ADD COLUMN IF NOT EXISTS revisao_nota_status TEXT DEFAULT 'pendente'`).catch(()=>{});
+  await pool.query(`ALTER TABLE cs_tickets ADD COLUMN IF NOT EXISTS revisao_nota_por TEXT`).catch(()=>{});
+  await pool.query(`ALTER TABLE cs_tickets ADD COLUMN IF NOT EXISTS revisao_nota_em TIMESTAMPTZ`).catch(()=>{});
   await pool.query(`CREATE TABLE IF NOT EXISTS gam_tickets_pontos (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ticket_id UUID NOT NULL REFERENCES cs_tickets(id) ON DELETE CASCADE,
@@ -171,9 +180,6 @@ async function ensurePontuacaoSchema(pool) {
     ajuste_finalizar NUMERIC(3,1) DEFAULT 0,
     ajuste_reabertura NUMERIC(3,1) DEFAULT 0,
     nota_final NUMERIC(3,2) NOT NULL,
-    status_revisao TEXT NOT NULL DEFAULT 'pendente' CHECK (status_revisao IN ('pendente','devida','indevida')),
-    revisado_por TEXT,
-    revisado_em TIMESTAMPTZ,
     calculado_em TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (ticket_id, papel)
   )`).catch(()=>{});

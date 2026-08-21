@@ -5749,7 +5749,7 @@ const Gamificacao = (() => {
   async function abrirRevisaoNotas() {
     const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
     App.Modal.open('Revisar notas baixas — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
-      '<p style="font-size:13px;color:var(--gray-500)">Tickets com nota do cliente abaixo de 5. Marca "Devida" se o problema foi real no atendimento (conta normalmente), ou "Indevida" se a nota não reflete a qualidade do atendimento (ex.: interação robótica/IA) — aí ela sai do cálculo da nota mensal.</p>' +
+      '<p style="font-size:13px;color:var(--gray-500)">Tickets com nota do cliente abaixo de 5. Marca "Devida" se o problema foi real no atendimento (conta normalmente), ou "Indevida" se a nota não reflete a qualidade do atendimento (ex.: interação robótica/IA) — aí ela sai do cálculo da nota mensal. A nota é atribuída só a quem encerrou o atendimento — quem só transferiu não é afetado por essa revisão.</p>' +
       '<div id="gam-revisao-lista">Carregando...</div>' +
     '</div>');
     await _carregarRevisaoNotas(mes);
