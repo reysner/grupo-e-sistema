@@ -2631,28 +2631,40 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
       // aplicadas e notas indevidas excluídas (gam_tickets_pontos — ver
       // cs/pontuacao.js). Só cai pro agregado de qualificação (fonte 2) se
       // ainda não tiver ticket pontuado pra esse colaborador nesse mês.
-      // A nota do cliente é atribuída só a quem ENCERROU o ticket — a
-      // revisão de nota baixa (devida/indevida) só afeta o cálculo de quem
-      // encerrou. Quem só transferiu (papel='transferiu') não é dono da
-      // nota, então conta sempre, independente da revisão.
-      const { rows: pontosRows } = await pool.query(
+      //
+      // Nota do cliente é atribuída só a quem ENCERROU (papel
+      // recebeu/unico) — é essa média que vira a nota do mês, e a revisão
+      // de nota baixa só afeta essas linhas. Quem só TRANSFERIU não gera
+      // nota própria: os ajustes de velocidade dele viram um bônus que fica
+      // "banco" até ele encerrar pelo menos 1 ticket com nota real no mês —
+      // só aí o bônus soma na média (capado em 5). Sem nenhuma nota real,
+      // fica sem nota mesmo com bônus acumulado (mesmo comportamento de
+      // "sem avaliação" que já existe pro resto do sistema).
+      const { rows: notasRows } = await pool.query(
         `SELECT p.nota_final FROM gam_tickets_pontos p
          JOIN cs_tickets t ON t.id = p.ticket_id
-         WHERE p.mes = $1 AND p.analista_id = $2
-           AND (p.papel = 'transferiu' OR COALESCE(t.revisao_nota_status, 'pendente') != 'indevida')`,
+         WHERE p.mes = $1 AND p.analista_id = $2 AND p.papel IN ('recebeu','unico')
+           AND COALESCE(t.revisao_nota_status, 'pendente') != 'indevida'`,
         [mes, c.zappy_user_id]
       );
-      if (pontosRows.length) {
-        const soma = pontosRows.reduce((s, r) => s + parseFloat(r.nota_final), 0);
-        const media_individual = Number((soma / pontosRows.length).toFixed(2));
-        resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes: pontosRows.length, fonte: 'tickets' });
+      if (notasRows.length) {
+        const { rows: bonusRows } = await pool.query(
+          `SELECT COALESCE(SUM(ajuste_velocidade), 0) AS bonus FROM gam_tickets_pontos
+           WHERE mes = $1 AND analista_id = $2 AND papel = 'transferiu'`,
+          [mes, c.zappy_user_id]
+        );
+        const bonusTransferencia = parseFloat(bonusRows[0]?.bonus || 0);
+        const somaBase = notasRows.reduce((s, r) => s + parseFloat(r.nota_final), 0);
+        const mediaBase = somaBase / notasRows.length;
+        const media_individual = Number(Math.max(0, Math.min(5, mediaBase + bonusTransferencia)).toFixed(2));
+        resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes: notasRows.length, bonusTransferencia, fonte: 'tickets' });
         if (!dryRun) {
           await pool.query(
             `INSERT INTO gam_notas (colaborador_id, mes, media_individual, avaliacoes, lancado_por)
              VALUES ($1,$2,$3,$4,$5)
              ON CONFLICT (colaborador_id, mes)
              DO UPDATE SET media_individual=$3, avaliacoes=$4, lancado_por=$5, updated_at=NOW()`,
-            [c.id, mes, media_individual, pontosRows.length, `Automático (tickets Zappy) — ${req.user.name}`]
+            [c.id, mes, media_individual, notasRows.length, `Automático (tickets Zappy) — ${req.user.name}`]
           );
         }
         continue;

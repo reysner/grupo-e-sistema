@@ -19,14 +19,17 @@
  * (só o ajuste de velocidade, avulso) e uma pra quem recebeu/resolveu
  * sozinho (nota do cliente + métricas 1+2+4, capada em 5).
  *
+ * Média mensal (ver auto-preencher em data.js): só conta pontos de quem
+ * TRANSFERIU se o analista também tiver pelo menos 1 nota real de cliente
+ * (papel recebeu/unico) no mês — aí soma o bônus acumulado de velocidade na
+ * média das notas, capado em 5. Sem nenhuma nota real, o bônus de
+ * transferência fica "banco" e o analista continua sem nota nesse mês
+ * (mesmo comportamento de "sem avaliação" que já existe pro resto do
+ * sistema) — combinado com o Reysner: "o analista não teve avaliações, mas
+ * transferiu rapidamente, permanece sem nota".
+ *
  * SUPOSIÇÕES ASSUMIDAS (sem dado real pra confirmar ainda — avisar o
  * Reysner e ajustar se a calibração real mostrar outra coisa):
- *   - Média mensal (auto-preencher em data.js): tira uma média simples de
- *     TODAS as linhas do analista no mês, misturando notas 0-5 (papel
- *     recebeu/unico) com os pontos avulsos de velocidade de quem só
- *     transferiu (-1 a +2). Pra quem faz só um papel no mês isso não muda
- *     nada; pra quem faz os dois, a média mistura as duas escalas — avaliar
- *     se isso precisa virar dois números separados quando tiver dado real.
  *   - Métrica 2 (/Finalizar): olha a ÚLTIMA mensagem do escritório antes do
  *     encerramento do ticket.
  *   - Métrica 4 (reabertura): usa `encerramento` do ticket como o instante
