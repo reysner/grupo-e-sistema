@@ -2704,14 +2704,29 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
       const media_individual = avaliacoes > 0 ? Number((somaPonderada / avaliacoes).toFixed(2)) : null;
       resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes, detalhamento, fonte: 'qualificacao' });
 
-      if (!dryRun && media_individual != null && avaliacoes > 0) {
-        await pool.query(
-          `INSERT INTO gam_notas (colaborador_id, mes, media_individual, avaliacoes, lancado_por)
-           VALUES ($1,$2,$3,$4,$5)
-           ON CONFLICT (colaborador_id, mes)
-           DO UPDATE SET media_individual=$3, avaliacoes=$4, lancado_por=$5, updated_at=NOW()`,
-          [c.id, mes, media_individual, avaliacoes, `Automático (Zappy) — ${req.user.name}`]
-        );
+      if (!dryRun) {
+        if (media_individual != null && avaliacoes > 0) {
+          await pool.query(
+            `INSERT INTO gam_notas (colaborador_id, mes, media_individual, avaliacoes, lancado_por)
+             VALUES ($1,$2,$3,$4,$5)
+             ON CONFLICT (colaborador_id, mes)
+             DO UPDATE SET media_individual=$3, avaliacoes=$4, lancado_por=$5, updated_at=NOW()`,
+            [c.id, mes, media_individual, avaliacoes, `Automático (Zappy) — ${req.user.name}`]
+          );
+        } else {
+          // Sem nota nenhuma (nem tickets, nem qualificação) — grava
+          // avaliacoes=0 mesmo assim, senão o colaborador some da consulta
+          // do ranking (INNER JOIN em gam_notas) e nunca recebe a "menor
+          // nota do grupo" — regra que já existe pro Modelo Inicial e o
+          // Reysner confirmou que vale igual pro Modelo Atualizado.
+          await pool.query(
+            `INSERT INTO gam_notas (colaborador_id, mes, media_individual, avaliacoes, lancado_por)
+             VALUES ($1,$2,0,0,$3)
+             ON CONFLICT (colaborador_id, mes)
+             DO UPDATE SET media_individual=0, avaliacoes=0, lancado_por=$3, updated_at=NOW()`,
+            [c.id, mes, `Automático (Zappy) — ${req.user.name}`]
+          );
+        }
       }
     }
 
