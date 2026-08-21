@@ -79,6 +79,12 @@ app.get('/gamificacao', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'gamificacao.html'));
 });
 
+// ── Regras da Liga do Atendimento — como a nota de cada um é calculada,
+// explicado pros analistas (sem login, mesmo espírito da página do ranking).
+app.get('/gamificacao/regras', (req, res) => {
+  res.sendFile(path.join(PUBLIC, 'gamificacao-regras.html'));
+});
+
 // ── Página do contábil (login próprio) ────────────────────────────────────────
 app.get('/contabil', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'contabil.html'));

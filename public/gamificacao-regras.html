@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Como funciona a pontuação — Liga do Atendimento</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet" />
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    :root{
+      --green:#1a4233;--green-light:#2a6e4a;--green-pale:#e8f4ef;
+      --gold:#f5c518;--gold-dark:#c9a000;
+      --gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;
+      --gray-400:#94a3b8;--gray-600:#475569;--gray-800:#1e293b;
+      --good-bg:#e6f7ee;--good-fg:#1d8a4e;
+      --warn-bg:#fff6dd;--warn-fg:#a3790b;
+      --bad-bg:#fdecec;--bad-fg:#c0362c;
+      --neu-bg:#eef1f4;--neu-fg:#64748b;
+      --white:#fff;--radius:16px;--radius-sm:10px;
+      --shadow:0 4px 24px rgba(0,0,0,.08);--shadow-lg:0 12px 48px rgba(0,0,0,.14);
+    }
+    body{font-family:'Inter',sans-serif;background:linear-gradient(180deg,#fdf6e3 0%,#fff 100%);color:var(--gray-800);min-height:100vh}
+
+    .header{background:var(--green);padding:24px 20px 44px;text-align:center;position:relative;overflow:hidden}
+    .header::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 20% 20%,rgba(245,197,24,.15) 0%,transparent 50%),radial-gradient(circle at 80% 80%,rgba(245,197,24,.1) 0%,transparent 50%)}
+    .header-inner{position:relative;z-index:1;max-width:680px;margin:0 auto}
+    .back-link{display:inline-flex;align-items:center;gap:6px;color:rgba(255,255,255,.75);font-size:12.5px;font-weight:600;text-decoration:none;margin-bottom:16px}
+    .back-link:hover{color:#fff}
+    h1{font-family:'Plus Jakarta Sans',sans-serif;font-size:26px;font-weight:800;color:var(--white);letter-spacing:-.5px;margin-bottom:8px}
+    .tagline{color:rgba(255,255,255,.7);font-size:13.5px;max-width:480px;margin:0 auto;line-height:1.5}
+
+    .container{max-width:680px;margin:-24px auto 0;padding:0 16px 60px;position:relative;z-index:2}
+
+    .stage-head{display:flex;align-items:flex-start;gap:12px;margin:36px 0 14px}
+    .stage-head:first-of-type{margin-top:28px}
+    .stage-num{background:var(--green);color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0}
+    .stage-head h2{font-family:'Plus Jakarta Sans',sans-serif;font-size:17px;font-weight:800;color:var(--green)}
+    .stage-head p{font-size:12.5px;color:var(--gray-400);margin-top:2px}
+
+    .card{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;margin-bottom:14px}
+    .card-title{display:flex;align-items:center;gap:8px;font-size:14.5px;font-weight:800;color:var(--gray-800);margin-bottom:10px}
+    .card-sub{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--gray-400);margin:12px 0 4px}
+    .card-sub:first-of-type{margin-top:0}
+    .card-note{font-size:11.5px;color:var(--gray-400);margin:0 0 10px;line-height:1.5}
+    .card-foot{font-size:11px;color:var(--gray-400);font-style:italic;margin-top:10px;line-height:1.5}
+
+    .rowline{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--gray-100);font-size:13px}
+    .rowline:first-of-type{border-top:none}
+    .pill{flex-shrink:0;font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px}
+    .pill.good{background:var(--good-bg);color:var(--good-fg)}
+    .pill.warn{background:var(--warn-bg);color:var(--warn-fg)}
+    .pill.bad{background:var(--bad-bg);color:var(--bad-fg)}
+    .pill.neu{background:var(--neu-bg);color:var(--neu-fg)}
+    .pill.gold{background:var(--gold-dark);color:#fff}
+
+    .quote-box{background:var(--good-bg);border-radius:10px;padding:10px 14px;font-size:12px;font-style:italic;color:var(--gray-600);margin:8px 0 10px;line-height:1.5}
+
+    .rule-banner{background:var(--green);color:#fff;border-radius:var(--radius);padding:20px 22px;margin:18px 0 10px}
+    .rule-banner .label{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;opacity:.75;margin-bottom:6px}
+    .rule-banner .formula{font-size:15.5px;font-weight:800;margin-bottom:6px}
+    .rule-banner .cap{font-size:12.5px;opacity:.85}
+    .rule-banner .cap b{color:var(--gold)}
+    .rule-examples{margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.18)}
+    .rule-examples .label{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;opacity:.75;margin-bottom:8px}
+    .rule-examples ul{list-style:none;font-size:12.5px;line-height:1.9}
+
+    .formula-box{background:var(--green-pale);color:var(--green);border-radius:10px;padding:12px 14px;font-family:Georgia,serif;font-size:12.5px;text-align:center;margin:2px 0 10px;line-height:1.5}
+
+    .grade-row{display:flex;gap:6px;margin:4px 0 2px}
+    .grade-cell{flex:1;text-align:center;border-radius:8px;padding:9px 2px}
+    .grade-cell .n{font-weight:800;font-size:15px;display:block}
+    .grade-cell .p{font-size:9.5px;margin-top:1px;display:block}
+    .grade-5{background:var(--good-bg);color:var(--good-fg)}
+    .grade-4{background:#eef7e8;color:var(--good-fg)}
+    .grade-3{background:var(--warn-bg);color:var(--warn-fg)}
+    .grade-2{background:#fdf1e6;color:var(--bad-fg)}
+    .grade-1{background:var(--bad-bg);color:var(--bad-fg)}
+
+    .info-note{display:flex;gap:7px;align-items:flex-start;background:var(--green-pale);color:var(--green);border-radius:8px;padding:9px 11px;font-size:11px;line-height:1.5;margin-top:10px}
+
+    .transp-card{background:linear-gradient(160deg,#fff9e0,#fdf0bd);border:1.5px solid var(--gold);border-radius:var(--radius);padding:18px 20px;margin-bottom:14px}
+    .transp-card .card-title{color:var(--gold-dark)}
+
+    .footer-msg{text-align:center;padding:24px 16px 0;color:var(--gray-400);font-size:12px;line-height:1.6}
+    .footer-msg a{color:var(--green-light);font-weight:700;text-decoration:none}
+
+    @media(max-width:480px){
+      h1{font-size:21px}
+      .card{padding:15px 16px}
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-inner">
+      <a href="/gamificacao" class="back-link">← Voltar pro ranking</a>
+      <h1>🏆 Como funciona a pontuação</h1>
+      <div class="tagline">A nota de cada atendimento é calculada automaticamente, com base no que o próprio cliente avalia e em como o ticket foi tratado — sem achismo, sem ninguém decidindo na mão quem fica bem ou mal na fila.</div>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <div class="stage-head">
+      <span class="stage-num">1</span>
+      <div><h2>Nota do ticket — automática</h2><p>Calculada assim que o cliente responde a pesquisa de satisfação do Zappy</p></div>
+    </div>
+
+    <div class="card">
+      <p class="card-title">⚡ Tempo de 1ª Resposta</p>
+      <p class="card-sub">Quem transferiu o atendimento</p>
+      <div class="rowline"><span>Transferiu em até 30 min</span><span class="pill good">+2</span></div>
+      <div class="rowline"><span>Transferiu entre 30 min e 1h</span><span class="pill warn">+1</span></div>
+      <div class="rowline"><span>Transferiu depois de 1h</span><span class="pill bad">−1</span></div>
+      <p class="card-sub">Quem recebeu o atendimento</p>
+      <div class="rowline"><span>Iniciou em até 30 min</span><span class="pill good">+2</span></div>
+      <div class="rowline"><span>Iniciou entre 30 min e 1h</span><span class="pill warn">+1</span></div>
+      <div class="rowline"><span>Iniciou depois de 1h</span><span class="pill bad">−1</span></div>
+      <div class="info-note">ℹ️ A nota do cliente é sempre de quem <b>encerra</b> o atendimento. Quem só transfere não fica com nota nenhuma sozinho — os pontos de velocidade dele ficam guardados e só entram na conta quando ele também encerrar pelo menos 1 atendimento com nota real no mês (capado em 5). Sem nenhuma nota real no mês, esses pontos não valem nada sozinhos.</div>
+    </div>
+
+    <div class="card">
+      <p class="card-title">✅ Uso correto do /Finalizar</p>
+      <p class="card-note">Vale pra quem encerrou o atendimento. Conta se a mensagem de encerramento foi enviada corretamente, por exemplo:</p>
+      <div class="quote-box">"Estou finalizando o atendimento. Fico à disposição para qualquer dúvida ou nova solicitação 😊✨"</div>
+      <div class="rowline"><span>Nota do cliente já é 5</span><span class="pill good">mantém</span></div>
+      <div class="rowline"><span>Nota do cliente é menor que 5</span><span class="pill good">+1</span></div>
+      <div class="rowline"><span>Não encerrou com a mensagem correta</span><span class="pill neu">neutro</span></div>
+      <p class="card-foot">"Neutro" quer dizer que não soma nem desconta nada.</p>
+    </div>
+
+    <div class="card">
+      <p class="card-title">😊 Avaliação do Cliente</p>
+      <p class="card-note">A nota que o cliente dá na pesquisa é a base de tudo — os pontos das outras métricas são somados em cima dela.</p>
+      <div class="grade-row">
+        <div class="grade-cell grade-5"><span class="n">5</span><span class="p">ótimo</span></div>
+        <div class="grade-cell grade-4"><span class="n">4</span><span class="p">bom</span></div>
+        <div class="grade-cell grade-3"><span class="n">3</span><span class="p">regular</span></div>
+        <div class="grade-cell grade-2"><span class="n">2</span><span class="p">ruim</span></div>
+        <div class="grade-cell grade-1"><span class="n">1</span><span class="p">péssimo</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="card-title">🔒 Ticket sem reabertura</p>
+      <p class="card-note">Depois que o Zappy manda a pesquisa de avaliação, o ticket fica 30 minutos aguardando a resposta do cliente.</p>
+      <div class="rowline"><span>Cliente avalia e não volta a chamar</span><span class="pill good">sem alteração</span></div>
+      <div class="rowline"><span>Cliente volta a chamar sem avaliar, nesses 30 min</span><span class="pill bad">−1</span></div>
+      <p class="card-foot">O objetivo é não deixar o ticket preso num limbo bem na hora que o cliente deveria estar avaliando.</p>
+    </div>
+
+    <div class="rule-banner">
+      <p class="label">📋 Regra geral da nota</p>
+      <p class="formula">Nota do ticket = Avaliação do cliente + ajustes das métricas</p>
+      <p class="cap">Limite máximo: <b>5 pontos</b>. Nunca passa disso, não importa quantos bônus se somem.</p>
+      <div class="rule-examples">
+        <p class="label">Exemplos</p>
+        <ul>
+          <li>Nota 3 + respondeu em até 30 min (+2) = <b>5</b></li>
+          <li>Nota 4 + finalizou corretamente (+1) = <b>5</b></li>
+          <li>Nota 5 + qualquer bônus = continua <b>5</b></li>
+          <li>Nota 5 + reabertura no limbo (−1) = <b>4</b></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="transp-card">
+      <p class="card-title">🔍 Revisão de nota baixa</p>
+      <p class="card-note" style="color:#5a4a10">Nem toda nota baixa reflete a qualidade do atendimento de verdade — às vezes é interação automática/robótica, ou um motivo que não tem nada a ver com quem atendeu. Por isso, toda nota abaixo de 5 passa por uma revisão da liderança antes de virar ponto definitivo: se for considerada indevida, ela é desconsiderada do cálculo daquele mês — sem prejudicar ninguém por algo fora do controle do analista.</p>
+    </div>
+
+    <div class="stage-head">
+      <span class="stage-num">2</span>
+      <div><h2>Do ticket pro ranking do mês</h2><p>Como todas as notas do mês viram a posição de cada um</p></div>
+    </div>
+
+    <div class="card">
+      <p class="card-title">⚖️ Nota Final (ajuste pelo grupo)</p>
+      <p class="card-note">Sua nota do mês não é só a média dos seus tickets — ela é ajustada em relação à média do time inteiro, pra ninguém subir ou cair a posição só por ter tido poucos atendimentos avaliados naquele mês.</p>
+      <div class="formula-box">Nota Final = (sua média × seus atendimentos + média do time × 10) / (seus atendimentos + 10)</div>
+      <p class="card-foot">Na prática: quanto mais atendimentos avaliados você tiver, mais sua nota final se aproxima da sua média real. Com poucos atendimentos, ela puxa um pouco mais pra média do time — pra não te derrubar (ou te elevar) demais por causa de uma amostra pequena.</p>
+    </div>
+
+    <div class="card">
+      <p class="card-title">🚫 Sem nenhuma avaliação no mês</p>
+      <div class="rowline"><span>Nota atribuída</span><span class="pill neu">a menor nota final do grupo</span></div>
+      <p class="card-foot">Não é zero — evita punir quem simplesmente não teve ticket avaliado naquele mês.</p>
+    </div>
+
+    <div class="card">
+      <p class="card-title">🥇 Critério de desempate</p>
+      <div class="rowline"><span>1º</span><span>Maior nota final</span></div>
+      <div class="rowline"><span>2º</span><span>Mais atendimentos avaliados</span></div>
+      <div class="rowline"><span>3º</span><span>Maior média individual</span></div>
+      <div class="rowline"><span>4º</span><span>Ordem alfabética</span></div>
+    </div>
+
+    <div class="card">
+      <p class="card-title">📅 Consolidado do ano</p>
+      <p class="card-note" style="margin-bottom:0">É a média das suas notas finais de cada mês lançado no ano — quanto mais meses consistentes, melhor sua posição no consolidado.</p>
+    </div>
+
+    <div class="footer-msg">
+      Alguma dúvida sobre como sua nota foi calculada? Fala com a liderança.<br>
+      <a href="/gamificacao">← Voltar pro ranking</a>
+    </div>
+
+  </div>
+
+</body>
+</html>
