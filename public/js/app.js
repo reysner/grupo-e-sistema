@@ -5753,7 +5753,7 @@ const Gamificacao = (() => {
   async function abrirRevisaoNotas() {
     const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
     App.Modal.open('Revisar notas baixas — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
-      '<p style="font-size:13px;color:var(--gray-500)">Tickets com nota do cliente abaixo de 5. Marca "Devida" se o problema foi real no atendimento (conta normalmente), ou "Indevida" se a nota não reflete a qualidade do atendimento (ex.: interação robótica/IA) — aí ela sai do cálculo da nota mensal. A nota é atribuída só a quem encerrou o atendimento — quem só transferiu não é afetado por essa revisão.</p>' +
+      '<p style="font-size:13px;color:var(--gray-500)">Tickets com nota do cliente abaixo de 5, e também tickets com nota 5 cujo contato pode ser alguém da própria equipe (nome bate com um usuário do Zappy — possível avaliação combinada). Marca "Devida" se a nota reflete a realidade (conta normalmente), ou "Indevida" se não reflete (ex.: interação robótica/IA, ou avaliação de colega) — aí ela sai do cálculo da nota mensal. A nota é atribuída só a quem encerrou o atendimento — quem só transferiu não é afetado por essa revisão.</p>' +
       '<div id="gam-revisao-lista">Carregando...</div>' +
     '</div>', null, { wide: true });
     await _carregarRevisaoNotas(mes);
@@ -5767,12 +5767,13 @@ const Gamificacao = (() => {
     const { data } = await res.json();
     if (!data.length) { box.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhuma nota baixa pendente de revisão em ' + _mesLabel(mes) + '.</p>'; return; }
     box.innerHTML = '<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">' +
-      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Nota</th><th>Analista</th><th></th></tr></thead><tbody>' +
+      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Nota</th><th>Analista</th><th>Motivo</th><th></th></tr></thead><tbody>' +
       data.map(r => `<tr data-id="${r.id}">` +
         `<td>#${r.zappy_id}</td>` +
         `<td>${r.empresa_texto || '—'}</td>` +
         `<td style="font-weight:700">${r.nota_cliente}</td>` +
         `<td>${r.analista || '—'}</td>` +
+        `<td>${r.nota_baixa ? '<span style="font-size:11px;color:var(--gray-400)">Nota baixa</span>' : '<span style="font-size:11px;color:#c9a227;font-weight:700">⚠️ Contato pode ser da equipe</span>'}</td>` +
         `<td style="white-space:nowrap">` +
           `<button class="btn btn-sm" style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisao('${r.id}','devida','${mes}')">Devida</button> ` +
           `<button class="btn btn-sm" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisao('${r.id}','indevida','${mes}')">Indevida</button>` +

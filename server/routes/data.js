@@ -2744,19 +2744,49 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
 // Por TICKET, não por papel: a nota do cliente é atribuída só a quem
 // encerrou o atendimento — revisar afeta só o cálculo de quem encerrou,
 // quem transferiu não é dono da nota e conta sempre (ver auto-preencher acima).
+//
+// Também entra na fila quem tem nota 5 mas o CONTATO do ticket parece ser
+// alguém da própria equipe (bate com um nome de usuário do Zappy) — achado
+// real do Reysner: um colega pode avaliar o colega pra inflar a nota
+// (ex.: contato "Suporte Hands Financeiro 2", ou nomes de diretoria tipo
+// Josiane/Denisa/Eduardo/Thais aparecendo como "cliente"). Isso não prova
+// fraude sozinho (pode ser nome coincidente), só bota na fila pra alguém olhar.
 router.get('/gam/tickets-revisao', requireAdmin, async (req, res) => {
   try {
     await ensurePontuacaoSchema(pool);
     const { mes } = req.query;
     if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+
+    let padroesInternos = [];
+    try {
+      const zappyClient = criarClienteZappy();
+      const usuarios = await zappyClient.listarUsuarios();
+      padroesInternos = [...new Set(
+        usuarios
+          .map(u => (u.name || '').split(/[-,]/)[0].trim()) // "Eduardo - Diretor..." -> "Eduardo"
+          .filter(n => n.length >= 3)
+      )].map(n => '%' + n + '%');
+    } catch (e) {
+      console.error('[gam] tickets-revisao: falha ao buscar usuários do Zappy pra checar contato interno (segue só com notas baixas):', e.message);
+    }
+
+    const params = [mes];
+    let condicaoInterno = '';
+    if (padroesInternos.length) {
+      params.push(padroesInternos);
+      condicaoInterno = ` OR empresa_texto ILIKE ANY($${params.length})`;
+    }
+
     const { rows } = await pool.query(
-      `SELECT id, zappy_id, empresa_texto, analista, nota_avaliacao AS nota_cliente, encerramento
+      `SELECT id, zappy_id, empresa_texto, analista, nota_avaliacao AS nota_cliente, encerramento,
+              (nota_avaliacao < 5) AS nota_baixa
        FROM cs_tickets
-       WHERE nota_avaliacao IS NOT NULL AND nota_avaliacao < 5
+       WHERE nota_avaliacao IS NOT NULL
          AND COALESCE(revisao_nota_status, 'pendente') = 'pendente'
          AND TO_CHAR(COALESCE(encerramento, abertura), 'YYYY-MM') = $1
+         AND (nota_avaliacao < 5${condicaoInterno})
        ORDER BY encerramento DESC NULLS LAST`,
-      [mes]
+      params
     );
     res.json({ data: rows });
   } catch (err) {
