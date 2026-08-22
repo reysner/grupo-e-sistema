@@ -2604,29 +2604,33 @@ function faixaDoMes(mes) {
 // colaborador ATIVO com zappy_user_id vinculado. dryRun=true (default) só
 // calcula e devolve, sem gravar — mesmo padrão de prévia usado no Reajuste
 // em Massa e na importação de baixas do Acessórias.
-router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
-  try {
-    await ensureGamTables();
-    await ensurePontuacaoSchema(pool);
-    const { mes, dryRun = true } = req.body;
-    if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+/**
+ * Núcleo do auto-preenchimento — extraído da rota pra ser reaproveitado
+ * pelo job automático diário (ver rodarAutoPreencherDiario em index.js),
+ * sem duplicar a lógica. `lancadoPor` vai pro campo lancado_por de
+ * gam_notas (identifica se foi um admin manual ou o job automático).
+ */
+async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automático (Zappy)' } = {}) {
+  await ensureGamTables();
+  await ensurePontuacaoSchema(pool);
+  if (!mes || !/^\d{4}-\d{2}$/.test(mes)) throw new Error('Informe "mes" no formato AAAA-MM.');
 
-    const { rows: colaboradores } = await pool.query(
-      `SELECT id, nome, zappy_user_id FROM gam_colaboradores WHERE ativo = true AND zappy_user_id IS NOT NULL ORDER BY nome ASC`
-    );
-    if (!colaboradores.length) {
-      return res.json({ ok: true, dryRun: !!dryRun, resultados: [], aviso: 'Nenhum colaborador ativo vinculado a um usuário do Zappy ainda.' });
-    }
+  const { rows: colaboradores } = await pool.query(
+    `SELECT id, nome, zappy_user_id FROM gam_colaboradores WHERE ativo = true AND zappy_user_id IS NOT NULL ORDER BY nome ASC`
+  );
+  if (!colaboradores.length) {
+    return { dryRun: !!dryRun, mes, resultados: [], rotulosNovos: [], aviso: 'Nenhum colaborador ativo vinculado a um usuário do Zappy ainda.' };
+  }
 
-    const { rows: mapaRows } = await pool.query(`SELECT chave, nota FROM gam_qualificacao_mapa`);
-    const mapa = Object.fromEntries(mapaRows.map(r => [r.chave, r.nota != null ? parseFloat(r.nota) : null]));
+  const { rows: mapaRows } = await pool.query(`SELECT chave, nota FROM gam_qualificacao_mapa`);
+  const mapa = Object.fromEntries(mapaRows.map(r => [r.chave, r.nota != null ? parseFloat(r.nota) : null]));
 
-    const { startDate, endDate } = faixaDoMes(mes);
-    const zappyClient = criarClienteZappy();
-    const resultados = [];
-    const rotulosNovos = new Set();
+  const { startDate, endDate } = faixaDoMes(mes);
+  const zappyClient = criarClienteZappy();
+  const resultados = [];
+  const rotulosNovos = new Set();
 
-    for (const c of colaboradores) {
+  for (const c of colaboradores) {
       // Fonte 1 (preferida): nota real por ticket, já com métricas 1/2/4
       // aplicadas e notas indevidas excluídas (gam_tickets_pontos — ver
       // cs/pontuacao.js). Só cai pro agregado de qualificação (fonte 2) se
@@ -2672,7 +2676,7 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
              VALUES ($1,$2,$3,$4,$5)
              ON CONFLICT (colaborador_id, mes)
              DO UPDATE SET media_individual=$3, avaliacoes=$4, lancado_por=$5, updated_at=NOW()`,
-            [c.id, mes, media_individual, notasRows.length, `Automático (tickets Zappy) — ${req.user.name}`]
+            [c.id, mes, media_individual, notasRows.length, `Automático (tickets Zappy) — ${lancadoPor}`]
           );
         }
         continue;
@@ -2719,7 +2723,7 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
              VALUES ($1,$2,$3,$4,$5)
              ON CONFLICT (colaborador_id, mes)
              DO UPDATE SET media_individual=$3, avaliacoes=$4, lancado_por=$5, updated_at=NOW()`,
-            [c.id, mes, media_individual, avaliacoes, `Automático (Zappy) — ${req.user.name}`]
+            [c.id, mes, media_individual, avaliacoes, `Automático (Zappy) — ${lancadoPor}`]
           );
         } else {
           // Sem nota nenhuma (nem tickets, nem qualificação) — grava
@@ -2732,13 +2736,20 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
              VALUES ($1,$2,0,0,$3)
              ON CONFLICT (colaborador_id, mes)
              DO UPDATE SET media_individual=0, avaliacoes=0, lancado_por=$3, updated_at=NOW()`,
-            [c.id, mes, `Automático (Zappy) — ${req.user.name}`]
+            [c.id, mes, `Automático (Zappy) — ${lancadoPor}`]
           );
         }
       }
-    }
+  }
 
-    res.json({ ok: true, dryRun: !!dryRun, mes, resultados, rotulosNovos: [...rotulosNovos] });
+  return { dryRun: !!dryRun, mes, resultados, rotulosNovos: [...rotulosNovos] };
+}
+
+router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
+  try {
+    const { mes, dryRun = true } = req.body;
+    const resultado = await executarAutoPreencher(mes, { dryRun, lancadoPor: req.user.name });
+    res.json({ ok: true, ...resultado });
   } catch (err) {
     console.error('[gam] auto-preencher falhou:', err);
     res.status(500).json({ error: err.message || 'Erro ao auto-preencher notas.' });
@@ -3300,3 +3311,4 @@ module.exports = router;
 module.exports.publicRouter = publicRouter;
 module.exports.registrarLog = registrarLog;
 module.exports.sincronizarAcessorias = sincronizarAcessorias;
+module.exports.executarAutoPreencher = executarAutoPreencher;

@@ -167,12 +167,27 @@ initDB().then(async () => {
     // toda vez, vai "colhendo D-1" — todo dia rebusca só quem fechou nos
     // últimos dias e segue sem nota. Mais leve que o /backfill manual.
     const { atualizarNotasPendentes } = require('./cs/ingestao');
+    const { executarAutoPreencher } = require('./routes/data');
     const rodarAtualizacaoNotasCS = async () => {
       try {
         const resultado = await atualizarNotasPendentes({ zappyClient: criarClienteZappy(), pool, dias: 5 });
         console.log('[CS] Atualização diária de notas:', resultado);
       } catch (e) {
         console.error('[CS] Falha na atualização diária de notas:', e.message);
+      }
+
+      // Gamificação — aplica o ranking do mês atual automaticamente, sempre
+      // DEPOIS da atualização de notas acima (pra usar o dado mais fresco
+      // possível). Pedido do Reysner: ranking sempre em dia, sem precisar
+      // clicar em "Aplicar". Autocorrige sozinho no dia seguinte se alguém
+      // revisar uma nota (devida/indevida) depois que isso já rodou — nunca
+      // mexe em meses anteriores, só no mês corrente no momento em que roda.
+      try {
+        const mesAtual = new Date().toISOString().slice(0, 7);
+        const resultado = await executarAutoPreencher(mesAtual, { dryRun: false, lancadoPor: 'job diário' });
+        console.log('[Gamificação] Auto-preencher diário aplicado:', { mes: mesAtual, colaboradores: resultado.resultados.length });
+      } catch (e) {
+        console.error('[Gamificação] Falha no auto-preencher diário:', e.message);
       }
     };
     setInterval(rodarAtualizacaoNotasCS, 24 * 60 * 60 * 1000); // 1x por dia
