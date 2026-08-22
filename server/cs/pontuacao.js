@@ -41,11 +41,16 @@
  *     encerramento do ticket.
  *   - Métrica 4 (reabertura): usa `encerramento` do ticket como o instante
  *     em que a pesquisa foi enviada (não temos o evento exato da pesquisa
- *     ainda) — se o CLIENTE mandar mensagem nos 30min seguintes e essa
- *     mensagem não for só um número de 1 a 5 (a própria nota), conta como
- *     "preso no processo" (-1). Sem reabertura = sem alteração (não dá
- *     bônus, só evita a penalidade — assim que o print definiu).
+ *     ainda) — se o CLIENTE mandar mensagem nos 30min ÚTEIS seguintes (não
+ *     corridos — respeita expediente/feriados, achado do Reysner com o
+ *     ticket #47007: fechar perto do fim do expediente não pode penalizar
+ *     mensagem que só chegaria fora do horário mesmo) e essa mensagem não
+ *     for só um número de 1 a 5 (a própria nota), conta como "preso no
+ *     processo" (-1). Sem reabertura = sem alteração (não dá bônus, só
+ *     evita a penalidade — assim que o print definiu).
  */
+const T = require('./tempoUtil');
+
 // ── Detector de finalização correta (métrica 2) ─────────────────────────────
 // Mesmo estilo de FRASES_TRANSFERENCIA/FRASES_AGUARDANDO_CLIENTE em
 // slaEngine.js — calibrado com o exemplo real dado pelo Reysner ("Estou
@@ -148,13 +153,18 @@ function calcularPontosTicket(ticket, mensagens = []) {
   const ultimaDoEscritorio = [...msgsOrdenadas].reverse().find(m => m.remetente === 'escritorio');
   const ajusteFinalizar = ultimaDoEscritorio && pareceFinalizacaoCorreta(ultimaDoEscritorio.texto) ? 1 : 0;
 
+  // Janela de 30min em TEMPO ÚTIL (respeitando expediente/feriados de
+  // Uberlândia-MG, já cadastrados em tempoUtil.js — mesma régua usada em
+  // toda métrica de SLA do sistema), não tempo corrido. Sem isso, um
+  // ticket que fecha perto do fim do expediente (ou véspera de feriado)
+  // penalizaria injustamente uma mensagem do cliente chegando fora do
+  // horário, quando ninguém do escritório poderia responder mesmo.
   let ajusteReabertura = 0;
   if (ticket.encerramento) {
-    const fimJanela = new Date(new Date(ticket.encerramento).getTime() + 30 * 60 * 1000);
     const naJanela = msgsOrdenadas.filter(m =>
       m.remetente === 'cliente' &&
       new Date(m.hora) > new Date(ticket.encerramento) &&
-      new Date(m.hora) <= fimJanela
+      T.minutosUteis(ticket.encerramento, m.hora) <= 30
     );
     const presoNoProcesso = naJanela.some(m => !pareceRespostaDeNota(m.texto));
     if (presoNoProcesso) ajusteReabertura = -1;
