@@ -2831,6 +2831,7 @@ router.get('/gam/tickets-revisao', requireAdmin, async (req, res) => {
     await ensurePontuacaoSchema(pool);
     const { mes } = req.query;
     if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+    const status = ['pendente', 'devida', 'indevida'].includes(req.query.status) ? req.query.status : 'pendente';
 
     let padroesInternos = [];
     try {
@@ -2845,7 +2846,7 @@ router.get('/gam/tickets-revisao', requireAdmin, async (req, res) => {
       console.error('[gam] tickets-revisao: falha ao buscar usuários do Zappy pra checar contato interno (segue só com notas baixas):', e.message);
     }
 
-    const params = [mes];
+    const params = [mes, status];
     let condicaoInterno = '';
     if (padroesInternos.length) {
       params.push(padroesInternos);
@@ -2854,10 +2855,11 @@ router.get('/gam/tickets-revisao', requireAdmin, async (req, res) => {
 
     const { rows } = await pool.query(
       `SELECT id, zappy_id, empresa_texto, analista, nota_avaliacao AS nota_cliente, encerramento,
+              revisao_nota_status, revisao_nota_por, revisao_nota_em,
               (nota_avaliacao < 5) AS nota_baixa
        FROM cs_tickets
        WHERE nota_avaliacao IS NOT NULL
-         AND COALESCE(revisao_nota_status, 'pendente') = 'pendente'
+         AND COALESCE(revisao_nota_status, 'pendente') = $2
          AND TO_CHAR(COALESCE(encerramento, abertura), 'YYYY-MM') = $1
          AND (nota_avaliacao < 5${condicaoInterno})
        ORDER BY encerramento DESC NULLS LAST`,

@@ -5753,43 +5753,61 @@ const Gamificacao = (() => {
   async function abrirRevisaoNotas() {
     const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
     App.Modal.open('Revisar notas baixas — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
-      '<p style="font-size:13px;color:var(--gray-500)">Tickets com nota do cliente abaixo de 5, e também tickets com nota 5 cujo contato pode ser alguém da própria equipe (nome bate com um usuário do Zappy — possível avaliação combinada). Marca "Devida" se a nota reflete a realidade (conta normalmente), ou "Indevida" se não reflete (ex.: interação robótica/IA, ou avaliação de colega) — aí ela sai do cálculo da nota mensal. A nota é atribuída só a quem encerrou o atendimento — quem só transferiu não é afetado por essa revisão.</p>' +
+      '<p style="font-size:13px;color:var(--gray-500)">Tickets com nota do cliente abaixo de 5, e também tickets com nota 5 cujo contato pode ser alguém da própria equipe (nome bate com um usuário do Zappy — possível avaliação combinada). Marca "Devida" se a nota reflete a realidade (conta normalmente), ou "Indevida" se não reflete (ex.: interação robótica/IA, ou avaliação de colega) — aí ela sai do cálculo da nota mensal. A nota é atribuída só a quem encerrou o atendimento — quem só transferiu não é afetado por essa revisão. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+        '<label style="font-size:12px;font-weight:700;color:var(--gray-500)">Mostrar:</label>' +
+        '<select id="gam-revisao-status" class="input" style="width:auto" onchange="Gamificacao._trocarStatusRevisao(\'' + mes + '\')">' +
+          '<option value="pendente">Pendentes</option>' +
+          '<option value="devida">Já marcadas como devida</option>' +
+          '<option value="indevida">Já marcadas como indevida</option>' +
+        '</select>' +
+      '</div>' +
       '<div id="gam-revisao-lista">Carregando...</div>' +
     '</div>', null, { wide: true });
-    await _carregarRevisaoNotas(mes);
+    await _carregarRevisaoNotas(mes, 'pendente');
   }
 
-  async function _carregarRevisaoNotas(mes) {
+  function _trocarStatusRevisao(mes) {
+    const status = document.getElementById('gam-revisao-status')?.value || 'pendente';
+    _carregarRevisaoNotas(mes, status);
+  }
+
+  async function _carregarRevisaoNotas(mes, status) {
     const box = document.getElementById('gam-revisao-lista');
     if (!box) return;
-    const res = await fetch('/api/data/gam/tickets-revisao?mes=' + mes, { headers: { Authorization: 'Bearer ' + _tk() } });
+    status = status || 'pendente';
+    box.innerHTML = 'Carregando...';
+    const res = await fetch('/api/data/gam/tickets-revisao?mes=' + mes + '&status=' + status, { headers: { Authorization: 'Bearer ' + _tk() } });
     if (!res || !res.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao carregar.</p>'; return; }
     const { data } = await res.json();
-    if (!data.length) { box.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhuma nota baixa pendente de revisão em ' + _mesLabel(mes) + '.</p>'; return; }
+    const rotuloVazio = status === 'pendente' ? 'Nenhuma nota baixa pendente de revisão' : 'Nenhum ticket marcado como ' + status;
+    if (!data.length) { box.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:16px">' + rotuloVazio + ' em ' + _mesLabel(mes) + '.</p>'; return; }
+    const mostrarQuem = status !== 'pendente';
     box.innerHTML = '<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">' +
-      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Nota</th><th>Analista</th><th>Motivo</th><th></th></tr></thead><tbody>' +
+      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Nota</th><th>Analista</th><th>Motivo</th>' + (mostrarQuem ? '<th>Revisado por</th>' : '') + '<th></th></tr></thead><tbody>' +
       data.map(r => `<tr data-id="${r.id}">` +
         `<td>#${r.zappy_id}</td>` +
         `<td>${r.empresa_texto || '—'}</td>` +
         `<td style="font-weight:700">${r.nota_cliente}</td>` +
         `<td>${r.analista || '—'}</td>` +
         `<td>${r.nota_baixa ? '<span style="font-size:11px;color:var(--gray-400)">Nota baixa</span>' : '<span style="font-size:11px;color:#c9a227;font-weight:700">⚠️ Contato pode ser da equipe</span>'}</td>` +
+        (mostrarQuem ? `<td style="font-size:11px;color:var(--gray-400)">${r.revisao_nota_por || '—'}${r.revisao_nota_em ? '<br>' + new Date(r.revisao_nota_em).toLocaleDateString('pt-BR') : ''}</td>` : '') +
         `<td style="white-space:nowrap">` +
-          `<button class="btn btn-sm" style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisao('${r.id}','devida','${mes}')">Devida</button> ` +
-          `<button class="btn btn-sm" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisao('${r.id}','indevida','${mes}')">Indevida</button>` +
+          `<button class="btn btn-sm" ${status === 'devida' ? 'disabled title="Já está devida"' : ''} style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisao('${r.id}','devida','${mes}','${status}')">Devida</button> ` +
+          `<button class="btn btn-sm" ${status === 'indevida' ? 'disabled title="Já está indevida"' : ''} style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisao('${r.id}','indevida','${mes}','${status}')">Indevida</button>` +
         `</td></tr>`
       ).join('') + '</tbody></table></div>';
   }
 
-  async function marcarRevisao(id, status, mes) {
+  async function marcarRevisao(id, novoStatus, mes, statusAtual) {
     const res = await fetch('/api/data/gam/tickets-revisao/' + id, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
-      body: JSON.stringify({ status_revisao: status })
+      body: JSON.stringify({ status_revisao: novoStatus })
     });
     if (res && res.ok) {
-      App.Toast.ok('Marcado como ' + status + '.');
-      await _carregarRevisaoNotas(mes);
+      App.Toast.ok('Marcado como ' + novoStatus + '.');
+      await _carregarRevisaoNotas(mes, statusAtual);
     } else App.Toast.err('Erro ao salvar.');
   }
 
@@ -6005,7 +6023,7 @@ const Gamificacao = (() => {
     vincularZappy, salvarVinculoZappy,
     abrirMapaQualificacao, salvarMapaQualificacao,
     abrirAutoPreencher, confirmarAutoPreencher,
-    abrirRevisaoNotas, marcarRevisao,
+    abrirRevisaoNotas, marcarRevisao, _trocarStatusRevisao,
     abrirRelatorioDescontos, gerarRelatorioDescontos, exportarRelatorioDescontosCSV, exportarRelatorioDescontosPDF,
     recalcularPontos,
   };
