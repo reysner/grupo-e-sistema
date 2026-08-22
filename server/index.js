@@ -168,6 +168,18 @@ initDB().then(async () => {
     // últimos dias e segue sem nota. Mais leve que o /backfill manual.
     const { atualizarNotasPendentes } = require('./cs/ingestao');
     const { executarAutoPreencher } = require('./routes/data');
+
+    // Data/hora "de verdade" no horário de Brasília, independente do TZ do
+    // servidor (Render roda em UTC por padrão) — mesma lógica do tempoUtil.js.
+    function agoraBrasilia() {
+      const partes = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Sao_Paulo', hour12: false,
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+      }).formatToParts(new Date());
+      const get = (tipo) => partes.find(p => p.type === tipo).value;
+      return { ano: get('year'), mes: get('month'), dia: get('day'), hora: Number(get('hour')), minuto: Number(get('minute')) };
+    }
+
     const rodarAtualizacaoNotasCS = async () => {
       try {
         const resultado = await atualizarNotasPendentes({ zappyClient: criarClienteZappy(), pool, dias: 5 });
@@ -181,17 +193,36 @@ initDB().then(async () => {
       // possível). Pedido do Reysner: ranking sempre em dia, sem precisar
       // clicar em "Aplicar". Autocorrige sozinho no dia seguinte se alguém
       // revisar uma nota (devida/indevida) depois que isso já rodou — nunca
-      // mexe em meses anteriores, só no mês corrente no momento em que roda.
+      // mexe em meses anteriores, só no mês corrente no momento em que roda
+      // (mês calculado no horário de Brasília, não UTC, pra não virar o mês
+      // 3h adiantado perto da virada).
       try {
-        const mesAtual = new Date().toISOString().slice(0, 7);
+        const agora = agoraBrasilia();
+        const mesAtual = `${agora.ano}-${agora.mes}`;
         const resultado = await executarAutoPreencher(mesAtual, { dryRun: false, lancadoPor: 'job diário' });
         console.log('[Gamificação] Auto-preencher diário aplicado:', { mes: mesAtual, colaboradores: resultado.resultados.length });
       } catch (e) {
         console.error('[Gamificação] Falha no auto-preencher diário:', e.message);
       }
     };
-    setInterval(rodarAtualizacaoNotasCS, 24 * 60 * 60 * 1000); // 1x por dia
-    rodarAtualizacaoNotasCS(); // já roda uma vez ao subir
+
+    // Horário fixo (03:00 de Brasília), não "24h desde que o servidor
+    // ligou" — assim o job sempre roda de madrugada, mesmo que o processo
+    // reinicie várias vezes ao longo do dia por causa de deploys. Checa a
+    // cada 5 min e dispara uma única vez por dia, na primeira checagem
+    // dentro da janela das 03:00.
+    const HORA_JOB_DIARIO = 3;
+    let ultimaExecucaoDiaria = null; // 'AAAA-MM-DD' em horário de Brasília
+    const checarAgendaDiaria = async () => {
+      const agora = agoraBrasilia();
+      const hoje = `${agora.ano}-${agora.mes}-${agora.dia}`;
+      if (agora.hora === HORA_JOB_DIARIO && ultimaExecucaoDiaria !== hoje) {
+        ultimaExecucaoDiaria = hoje;
+        await rodarAtualizacaoNotasCS();
+      }
+    };
+    setInterval(checarAgendaDiaria, 5 * 60 * 1000); // checa a cada 5 min
+    rodarAtualizacaoNotasCS(); // roda uma vez imediatamente ao subir (dado fresco logo após deploy)
   }
 
   // Carteira — sincronização automática diária com o Sistema Acessórias
