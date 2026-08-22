@@ -318,6 +318,17 @@ body { font-family: var(--font); background: var(--gray-50); color: var(--gray-7
 /* Variante larga — pra conteúdo com tabela (ex.: Revisar notas baixas,
    prévia do Auto-preencher) que fica espremido nos 440px padrão. */
 .modal-box.wide { max-width: 760px; }
+/* #modal-body normalmente vira um grid (display:grid no bodyHTML de cada
+   chamador) — por padrão um item de grid/flex tem min-width:auto, então
+   uma tabela larga em qualquer nível dentro dele EMPURRA o grid pra fora
+   em vez de rolar por dentro do .table-wrap (overflow-x:auto vira
+   inútil). min-width:0 em TODOS os descendentes (não só o filho direto —
+   o item que precisa encolher pode estar mais fundo, tipo #gam-rel-
+   resultado dentro do grid principal) faz o scroll interno funcionar de
+   verdade. Sem efeito colateral: elementos que não são item de grid/flex
+   já encolhem normalmente, isso só afeta quem dependia do min-width:auto
+   padrão indevidamente.*/
+#modal-body, #modal-body * { min-width: 0; }
 .modal-title { font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--g800); margin-bottom: 20px; }
 .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
 .modal-actions .btn { flex: 1; }
