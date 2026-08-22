@@ -90,19 +90,19 @@
       .card{padding:15px 16px}
     }
 
-    /* Telas largas: aproveita a largura em vez de ficar num miolo estreito */
+    /* Telas largas: aproveita a largura em vez de ficar num miolo estreito.
+       Usa colunas (não grid) pra fluir tipo "mural" sem deixar vão embaixo
+       de cards mais curtos ao lado de cards mais altos. */
     @media(min-width:900px){
       .header-inner{max-width:960px}
       .tagline{max-width:640px}
       .container{
         max-width:1180px;
-        display:grid;
-        grid-template-columns:1fr 1fr;
-        gap:18px 22px;
-        align-items:start;
+        column-count:2;
+        column-gap:22px;
       }
-      .stage-head,.rule-banner,.transp-card,.footer-msg{grid-column:1/-1}
-      .card{margin-bottom:0}
+      .stage-head,.rule-banner,.transp-card,.footer-msg{column-span:all}
+      .card{break-inside:avoid;-webkit-column-break-inside:avoid}
     }
     @media(min-width:1400px){
       .header-inner{max-width:1100px}
