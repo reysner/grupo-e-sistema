@@ -2759,6 +2759,26 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
 // (ex.: contato "Suporte Hands Financeiro 2", ou nomes de diretoria tipo
 // Josiane/Denisa/Eduardo/Thais aparecendo como "cliente"). Isso não prova
 // fraude sozinho (pode ser nome coincidente), só bota na fila pra alguém olhar.
+// TEMPORÁRIO — debug de por que marcar "indevida" não muda a média do
+// auto-preencher pro João. Remove depois de investigar.
+router.get('/gam/debug-pontos', requireAdmin, async (req, res) => {
+  try {
+    const { mes, zappyId } = req.query;
+    const { rows } = await pool.query(
+      `SELECT p.id, p.ticket_id, p.papel, p.analista, p.analista_id, p.mes, p.nota_cliente, p.nota_final,
+              t.zappy_id, t.revisao_nota_status, t.analista AS t_analista, t.analista_id AS t_analista_id
+       FROM gam_tickets_pontos p
+       JOIN cs_tickets t ON t.id = p.ticket_id
+       WHERE p.mes = $1 AND p.analista_id = $2
+       ORDER BY t.zappy_id`,
+      [mes, zappyId]
+    );
+    res.json({ count: rows.length, data: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/gam/tickets-revisao', requireAdmin, async (req, res) => {
   try {
     await ensurePontuacaoSchema(pool);
