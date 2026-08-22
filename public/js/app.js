@@ -5793,6 +5793,85 @@ const Gamificacao = (() => {
     } else App.Toast.err('Erro ao salvar.');
   }
 
+  // ── Relatório de descontos por colaborador (transparência) ─────────────────
+  let _relatorioDescontosData = [];
+
+  async function abrirRelatorioDescontos() {
+    const res = await fetch('/api/data/gam/colaboradores', { headers: { Authorization: 'Bearer ' + _tk() } });
+    const { data } = res && res.ok ? await res.json() : { data: [] };
+    const vinculados = (data || []).filter(c => c.zappy_user_id);
+    const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
+
+    if (!vinculados.length) {
+      App.Modal.open('Relatório de Descontos', '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum colaborador vinculado ao Zappy ainda. Vincule em "Gerenciar Colaboradores".</p>');
+      return;
+    }
+
+    App.Modal.open('Relatório de Descontos', '<div style="display:grid;gap:14px">' +
+      '<p style="font-size:13px;color:var(--gray-500)">Mostra, ticket a ticket, os descontos de métrica aplicados na nota de um colaborador — útil pra justificar quando alguém questionar a nota.</p>' +
+      '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">' +
+        '<div class="field" style="flex:1;min-width:160px"><label>Colaborador</label><select id="gam-rel-colab">' +
+          vinculados.map(c => '<option value="' + c.id + '">' + c.nome + '</option>').join('') +
+        '</select></div>' +
+        '<div class="field" style="min-width:150px"><label>Mês</label><input id="gam-rel-mes" type="month" value="' + mes + '" /></div>' +
+        '<button class="btn btn-primary btn-sm" onclick="Gamificacao.gerarRelatorioDescontos()">Gerar</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="Gamificacao.exportarRelatorioDescontosCSV()">⬇ CSV</button>' +
+      '</div>' +
+      '<div id="gam-rel-resultado"></div>' +
+    '</div>', null, { wide: true });
+  }
+
+  async function gerarRelatorioDescontos() {
+    const colaboradorId = document.getElementById('gam-rel-colab')?.value;
+    const mes = document.getElementById('gam-rel-mes')?.value;
+    const box = document.getElementById('gam-rel-resultado');
+    if (!box) return;
+    box.innerHTML = 'Carregando...';
+
+    const res = await fetch('/api/data/gam/relatorio-descontos?mes=' + mes + '&colaborador_id=' + colaboradorId, { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao gerar relatório.</p>'; return; }
+    const { colaborador, tickets, aviso } = await res.json();
+    _relatorioDescontosData = (tickets || []).map(t => ({ ...t, colaborador }));
+
+    if (aviso) { box.innerHTML = '<p style="color:var(--gray-500)">' + aviso + '</p>'; return; }
+    if (!tickets.length) { box.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum ticket pontuado pra ' + colaborador + ' em ' + _mesLabel(mes) + '.</p>'; return; }
+
+    const comDesconto = tickets.filter(t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_reabertura) < 0);
+    box.innerHTML =
+      '<p style="font-size:12.5px;color:var(--gray-500);margin:10px 0">' + comDesconto.length + ' de ' + tickets.length + ' ticket(s) com desconto de métrica esse mês.</p>' +
+      '<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">' +
+      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota Cliente</th><th>Vel.</th><th>/Finalizar</th><th>Reabertura</th><th>Nota Final</th><th>Revisão</th></tr></thead><tbody>' +
+      tickets.map(t => {
+        const temDesconto = parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_reabertura) < 0;
+        return `<tr style="${temDesconto ? 'background:#fff5f5' : ''}">` +
+          `<td>#${t.zappy_id}</td>` +
+          `<td>${t.empresa_texto || '—'}</td>` +
+          `<td>${t.papel}</td>` +
+          `<td>${t.nota_cliente ?? '—'}</td>` +
+          `<td style="${parseFloat(t.ajuste_velocidade) < 0 ? 'color:#c0362c;font-weight:700' : ''}">${t.ajuste_velocidade}</td>` +
+          `<td>${t.ajuste_finalizar}</td>` +
+          `<td style="${parseFloat(t.ajuste_reabertura) < 0 ? 'color:#c0362c;font-weight:700' : ''}">${t.ajuste_reabertura}</td>` +
+          `<td style="font-weight:700">${t.nota_final}</td>` +
+          `<td style="font-size:11px;color:var(--gray-400)">${t.revisao_nota_status || 'pendente'}</td>` +
+        `</tr>`;
+      }).join('') + '</tbody></table></div>';
+  }
+
+  function exportarRelatorioDescontosCSV() {
+    if (!_relatorioDescontosData.length) { App.Toast.err('Gere o relatório primeiro.'); return; }
+    const cols = ['colaborador', 'zappy_id', 'empresa_texto', 'papel', 'nota_cliente', 'ajuste_velocidade', 'ajuste_finalizar', 'ajuste_reabertura', 'nota_final', 'revisao_nota_status'];
+    const labels = { colaborador: 'Colaborador', zappy_id: 'Ticket', empresa_texto: 'Cliente', papel: 'Papel', nota_cliente: 'Nota Cliente', ajuste_velocidade: 'Desconto Velocidade', ajuste_finalizar: 'Ajuste Finalizar', ajuste_reabertura: 'Desconto Reabertura', nota_final: 'Nota Final', revisao_nota_status: 'Revisão' };
+    const header = cols.map(c => labels[c]).join(';');
+    const rows = _relatorioDescontosData.map(r => cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(';'));
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'relatorio_descontos_' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click(); URL.revokeObjectURL(url);
+    App.Toast.ok('CSV exportado!');
+  }
+
   async function confirmarAutoPreencher(mes) {
     const res = await fetch('/api/data/gam/notas/auto-preencher', {
       method: 'POST',
@@ -5867,6 +5946,7 @@ const Gamificacao = (() => {
     abrirMapaQualificacao, salvarMapaQualificacao,
     abrirAutoPreencher, confirmarAutoPreencher,
     abrirRevisaoNotas, marcarRevisao,
+    abrirRelatorioDescontos, gerarRelatorioDescontos, exportarRelatorioDescontosCSV,
   };
 })();
 

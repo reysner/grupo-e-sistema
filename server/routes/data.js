@@ -2745,6 +2745,38 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
   }
 });
 
+// ── Relatório de descontos por colaborador (transparência pra justificar
+// a nota quando o analista questionar) — mostra, ticket a ticket, cada
+// ajuste de métrica aplicado (velocidade/finalizar/reabertura) e o motivo.
+router.get('/gam/relatorio-descontos', requireAdmin, async (req, res) => {
+  try {
+    await ensurePontuacaoSchema(pool);
+    const { mes, colaborador_id } = req.query;
+    if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+    if (!colaborador_id) return res.status(400).json({ error: 'Informe "colaborador_id".' });
+
+    const { rows: colabRows } = await pool.query(
+      `SELECT nome, zappy_user_id FROM gam_colaboradores WHERE id = $1`, [colaborador_id]
+    );
+    if (!colabRows.length) return res.status(404).json({ error: 'Colaborador não encontrado.' });
+    if (!colabRows[0].zappy_user_id) return res.json({ colaborador: colabRows[0].nome, mes, tickets: [], aviso: 'Colaborador ainda não vinculado a um usuário do Zappy.' });
+
+    const { rows } = await pool.query(
+      `SELECT p.papel, p.nota_cliente, p.ajuste_velocidade, p.ajuste_finalizar, p.ajuste_reabertura, p.nota_final,
+              t.zappy_id, t.empresa_texto, t.encerramento, t.revisao_nota_status
+       FROM gam_tickets_pontos p
+       JOIN cs_tickets t ON t.id = p.ticket_id
+       WHERE p.mes = $1 AND p.analista_id = $2
+       ORDER BY t.encerramento DESC NULLS LAST`,
+      [mes, colabRows[0].zappy_user_id]
+    );
+    res.json({ colaborador: colabRows[0].nome, mes, tickets: rows });
+  } catch (err) {
+    console.error('[gam] relatorio-descontos falhou:', err);
+    res.status(500).json({ error: 'Erro ao gerar relatório.' });
+  }
+});
+
 // ── Revisão de nota baixa (Modelo Atualizado) — só admin ───────────────────
 // Tela simples: Ticket / Cliente / Nota. Todo ticket com nota do cliente
 // abaixo de 5 fica "pendente" até alguém marcar devida (conta normalmente)
