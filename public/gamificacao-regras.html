@@ -239,12 +239,11 @@
 
     <div class="card">
       <p class="card-title">📅 Consolidado do ano</p>
-      <p class="card-note">É a média das suas notas finais de cada mês lançado no ano — quanto mais meses consistentes, melhor sua posição no consolidado.</p>
-      <p class="card-note">Assim como a nota mensal é ajustada pelo peso mínimo de atendimentos (pra não inflar com poucos tickets avaliados), o consolidado também é ajustado — só que pelo <b>número de meses</b> de histórico, com peso mínimo de <b>3 meses</b>. Isso evita que alguém com 1 mês perfeito ultrapasse quem tem vários meses consistentes.</p>
+      <p class="card-note">É a média simples das suas notas finais de cada mês, contando <b>todos os meses do jogo desde o início</b> (não só os meses em que você tem avaliação) — quanto mais meses consistentes, melhor sua posição no consolidado.</p>
       <div class="formula-box" style="text-align:left">
-        Nota Consolidada = (sua média bruta × seus meses + média do grupo × 3) ÷ (seus meses + 3)
+        Nota Consolidada = soma das notas finais de todos os meses ÷ número de meses do jogo
       </div>
-      <p class="card-note" style="margin-bottom:0">Na prática: quanto mais meses de jogo você acumula, menos a média do grupo "puxa" sua nota, porque o peso da sua própria média cresce em relação ao peso fixo de 3. Com 1 mês, a proporção é 1:3 — a média do grupo pesa 3× mais que sua nota própria, então mesmo tendo tirado nota máxima naquele mês, sua nota consolidada fica bem puxada pra média geral. Já com 4 meses, a proporção vira 4:3 — sua própria média já pesa mais que a âncora do grupo, então a nota consolidada fica bem mais próxima da sua média real. É a mesma regra pra todo mundo: sem tratamento especial, só o tempo de histórico que muda o resultado — e ele só cresce a seu favor com o tempo.</p>
+      <p class="card-note" style="margin-bottom:0">Se você não teve nenhuma avaliação em algum mês — ou ainda nem tinha entrado no time nesse mês — esse mês entra na sua média com a <b>menor nota final do grupo naquele mês</b> (mesma regra do "sem nenhuma avaliação no mês", lá em cima). Por isso, quanto mais meses consistentes você acumula, mais forte fica sua posição no consolidado — um mês isolado muito bom não sustenta sozinho o topo do ranking por muito tempo.</p>
     </div>
 
     <div class="footer-msg">
