@@ -279,9 +279,30 @@ async function recalcularPontosPendentes(pool, { limite = 50 } = {}) {
   return { candidatos: pendentes.length, processados };
 }
 
+/**
+ * Reprocessa TODOS os tickets já pontuados de um mês com a fórmula ATUAL
+ * de calcularPontosTicket — ignora o filtro de "mudou desde a última vez"
+ * que recalcularPontosPendentes usa. Necessário sempre que a fórmula de
+ * pontuação muda (ex.: ajuste #47007 — janela de reabertura passou a usar
+ * tempo útil): sem isso, ticket já pontuado fica preso pra sempre com o
+ * valor calculado pela fórmula velha. Não mexe no `revisao_nota_status`
+ * (fica em cs_tickets, preservado pelo próprio persistirPontosTicket).
+ */
+async function recalcularPontosDoMes(pool, mes) {
+  const { rows } = await pool.query(
+    `SELECT id FROM cs_tickets WHERE nota_avaliacao IS NOT NULL AND TO_CHAR(COALESCE(encerramento, abertura), 'YYYY-MM') = $1`,
+    [mes]
+  );
+  let processados = 0;
+  for (const t of rows) {
+    processados += (await persistirPontosTicket(pool, t.id)) > 0 ? 1 : 0;
+  }
+  return { candidatos: rows.length, processados };
+}
+
 module.exports = {
   FRASES_FINALIZAR, pareceFinalizacaoCorreta, pareceRespostaDeNota,
   tierVelocidade, clamp,
   calcularPontosTicket,
-  ensurePontuacaoSchema, persistirPontosTicket, recalcularPontosPendentes,
+  ensurePontuacaoSchema, persistirPontosTicket, recalcularPontosPendentes, recalcularPontosDoMes,
 };

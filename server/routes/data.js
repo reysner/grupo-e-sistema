@@ -5,7 +5,7 @@ const { pool } = require('../db');
 const { requireAuth, requireAdmin } = require('../auth');
 const acessoriasClient = require('../acessoriasClient');
 const { criarClienteZappy } = require('../cs/zappyClient');
-const { ensurePontuacaoSchema } = require('../cs/pontuacao');
+const { ensurePontuacaoSchema, recalcularPontosDoMes } = require('../cs/pontuacao');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -2753,6 +2753,30 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[gam] auto-preencher falhou:', err);
     res.status(500).json({ error: err.message || 'Erro ao auto-preencher notas.' });
+  }
+});
+
+// Reprocessa TODOS os tickets já pontuados de um mês com a fórmula ATUAL
+// (ver recalcularPontosDoMes em cs/pontuacao.js) — necessário sempre que a
+// fórmula de pontuação muda, senão ticket já pontuado fica preso com o
+// valor calculado pela fórmula velha pra sempre. Não é automático de
+// propósito (rodar isso sem necessidade é desperdício) — botão manual.
+let recalculoPontosEmAndamento = false;
+router.post('/gam/recalcular-pontos', requireAdmin, async (req, res) => {
+  if (recalculoPontosEmAndamento) {
+    return res.status(409).json({ error: 'Já existe um recálculo em andamento. Aguarde terminar.' });
+  }
+  const { mes } = req.body;
+  if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+  recalculoPontosEmAndamento = true;
+  res.json({ ok: true, mensagem: `Recálculo de ${mes} iniciado em segundo plano.` });
+  try {
+    const resultado = await recalcularPontosDoMes(pool, mes);
+    console.log('[gam] Recálculo de pontos concluído:', mes, resultado);
+  } catch (e) {
+    console.error('[gam] Recálculo de pontos falhou:', e);
+  } finally {
+    recalculoPontosEmAndamento = false;
   }
 });
 

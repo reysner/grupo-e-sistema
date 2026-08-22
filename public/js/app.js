@@ -5926,6 +5926,26 @@ const Gamificacao = (() => {
     } else App.Toast.err('Erro ao aplicar.');
   }
 
+  async function recalcularPontos() {
+    const sugerido = document.getElementById('gam-mes-filter')?.value || _mesAtual();
+    const mes = prompt('Recalcular pontos de todos os tickets já pontuados de qual mês? (AAAA-MM)\n\nUse depois de qualquer ajuste na fórmula de pontuação (ex: correção do tempo útil na reabertura) para que tickets antigos passem a refletir a regra atual.', sugerido);
+    if (!mes) return;
+    if (!/^\d{4}-\d{2}$/.test(mes)) { App.Toast.err('Formato inválido. Use AAAA-MM.'); return; }
+    if (!confirm(`Confirma recalcular os pontos de TODOS os tickets já pontuados em ${_mesLabel(mes)}? Isso roda em segundo plano e pode levar alguns minutos.`)) return;
+    const res = await fetch('/api/data/gam/recalcular-pontos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ mes })
+    });
+    if (res && res.ok) {
+      const data = await res.json();
+      App.Toast.ok(data.mensagem || 'Recálculo iniciado em segundo plano.');
+    } else {
+      const err = await res.json().catch(() => ({}));
+      App.Toast.err(err.error || 'Erro ao iniciar recálculo.');
+    }
+  }
+
   async function adicionarColaborador() {
     const input = document.getElementById('gam-novo-nome');
     const nome = input?.value?.trim();
@@ -5987,6 +6007,7 @@ const Gamificacao = (() => {
     abrirAutoPreencher, confirmarAutoPreencher,
     abrirRevisaoNotas, marcarRevisao,
     abrirRelatorioDescontos, gerarRelatorioDescontos, exportarRelatorioDescontosCSV, exportarRelatorioDescontosPDF,
+    recalcularPontos,
   };
 })();
 
