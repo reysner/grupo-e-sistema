@@ -2315,13 +2315,35 @@ publicRouter.get('/gamificacao', async (req, res) => {
         });
       }
 
-      // Calcula média das notas finais mensais (simples: soma / quantidade de meses)
-      consolidado = Object.entries(notasFinalPorMes).map(([id, notas]) => {
-        const media = notas.reduce((s,n) => s+n, 0) / notas.length;
+      // Peso mínimo do CONSOLIDADO: mesma ideia do peso mínimo mensal (que
+      // evita nota inflada por poucos atendimentos avaliados), só que aqui
+      // aplicado a MESES de histórico. Sem isso, um analista novo com 1 mês
+      // perfeito ultrapassava quem tem vários meses quase perfeitos — a
+      // média simples não distinguia "1 mês de sorte" de "4 meses consistente".
+      const PESO_MINIMO_MESES = 3;
+
+      // Passo 1: média bruta (simples) de cada um ao longo dos meses que tem
+      const brutos = Object.entries(notasFinalPorMes).map(([id, notas]) => ({
+        id,
+        nome: nomesPorId[id],
+        media_bruta: notas.reduce((s,n) => s+n, 0) / notas.length,
+        meses_avaliados: notas.length,
+      }));
+
+      // Passo 2: média geral do grupo no consolidado — a "âncora" pra quem
+      // ainda tem pouco histórico de meses
+      const mediaGeralConsolidado = brutos.length
+        ? brutos.reduce((s,b) => s + b.media_bruta, 0) / brutos.length
+        : 0;
+
+      // Passo 3: mesma fórmula bayesiana do ranking mensal, trocando
+      // "atendimentos avaliados" por "meses de histórico"
+      consolidado = brutos.map(b => {
+        const nf = ((b.media_bruta * b.meses_avaliados) + (mediaGeralConsolidado * PESO_MINIMO_MESES)) / (b.meses_avaliados + PESO_MINIMO_MESES);
         return {
-          nome: nomesPorId[id],
-          media_geral: media.toFixed(2),
-          meses_avaliados: notas.length,
+          nome: b.nome,
+          media_geral: nf.toFixed(2),
+          meses_avaliados: b.meses_avaliados,
           total_avaliacoes: 0
         };
       }).sort((a,b) => {
