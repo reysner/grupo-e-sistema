@@ -5816,6 +5816,7 @@ const Gamificacao = (() => {
         '<div class="field" style="min-width:150px"><label>Mês</label><input id="gam-rel-mes" type="month" value="' + mes + '" /></div>' +
         '<button class="btn btn-primary btn-sm" onclick="Gamificacao.gerarRelatorioDescontos()">Gerar</button>' +
         '<button class="btn btn-ghost btn-sm" onclick="Gamificacao.exportarRelatorioDescontosCSV()">⬇ CSV</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="Gamificacao.exportarRelatorioDescontosPDF()">🖨 PDF</button>' +
       '</div>' +
       '<div id="gam-rel-resultado"></div>' +
     '</div>', null, { wide: true });
@@ -5862,6 +5863,38 @@ const Gamificacao = (() => {
           `<td style="font-size:11px;color:var(--gray-400)">${t.revisao_nota_status || 'pendente'}</td>` +
         `</tr>`;
       }).join('') + '</tbody></table></div>';
+  }
+
+  function exportarRelatorioDescontosPDF() {
+    if (!_relatorioDescontosData.length) { App.Toast.err('Gere o relatório primeiro.'); return; }
+    const colaborador = _relatorioDescontosData[0].colaborador;
+    const mes = document.getElementById('gam-rel-mes')?.value || '';
+    const comDesconto = _relatorioDescontosData.filter(t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_reabertura) < 0);
+    const titulo = `Relatório de Descontos — ${colaborador} — ${_mesLabel(mes)}`;
+    const velTexto = t => parseFloat(t.ajuste_velocidade) === 0 ? 'sem dado' : t.ajuste_velocidade;
+    const rows = _relatorioDescontosData.map(t => {
+      const temDesconto = parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_reabertura) < 0;
+      return `<tr${temDesconto ? ' style="background:#fdecec"' : ''}>` +
+        `<td>#${t.zappy_id}</td><td>${t.empresa_texto || '—'}</td><td>${t.papel}</td>` +
+        `<td>${t.nota_cliente ?? '—'}</td><td>${velTexto(t)}</td><td>${t.ajuste_finalizar}</td>` +
+        `<td>${t.ajuste_reabertura}</td><td><b>${t.nota_final}</b></td><td>${t.revisao_nota_status || 'pendente'}</td></tr>`;
+    }).join('');
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
+    <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
+    h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
+    table{width:100%;border-collapse:collapse;font-size:10px}
+    th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
+    td{padding:5px 8px;border-bottom:1px solid #eee}tr:nth-child(even) td{background:#f8f8f8}
+    @media print{body{margin:10px}}</style></head><body>
+    <h1>Grupo-E — ${titulo}</h1>
+    <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | ${comDesconto.length} de ${_relatorioDescontosData.length} ticket(s) com desconto de métrica</p>
+    <table><thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota Cliente</th><th>Vel.</th><th>/Finalizar</th><th>Reabertura</th><th>Nota Final</th><th>Revisão</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <script>window.onload=()=>{window.print();}<\/script></body></html>`;
+    const win = window.open('', '_blank');
+    if (!win) { App.Toast.err('Permita popups para exportar PDF.'); return; }
+    win.document.write(html); win.document.close();
+    App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
   }
 
   function exportarRelatorioDescontosCSV() {
@@ -5953,7 +5986,7 @@ const Gamificacao = (() => {
     abrirMapaQualificacao, salvarMapaQualificacao,
     abrirAutoPreencher, confirmarAutoPreencher,
     abrirRevisaoNotas, marcarRevisao,
-    abrirRelatorioDescontos, gerarRelatorioDescontos, exportarRelatorioDescontosCSV,
+    abrirRelatorioDescontos, gerarRelatorioDescontos, exportarRelatorioDescontosCSV, exportarRelatorioDescontosPDF,
   };
 })();
 
