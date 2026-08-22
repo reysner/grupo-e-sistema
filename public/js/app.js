@@ -5843,12 +5843,19 @@ const Gamificacao = (() => {
       '<thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota Cliente</th><th>Vel.</th><th>/Finalizar</th><th>Reabertura</th><th>Nota Final</th><th>Revisão</th></tr></thead><tbody>' +
       tickets.map(t => {
         const temDesconto = parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_reabertura) < 0;
+        // O ajuste de velocidade só existe nos tiers +2/+1/-1 — um 0.0 aqui
+        // nunca é "neutro calculado", é sempre "não tinha relógio de SLA pra
+        // medir" (ex.: ticket aberto pelo próprio escritório). Deixa isso
+        // explícito em vez de mostrar "0.0" (que parece um resultado normal).
+        const velTexto = parseFloat(t.ajuste_velocidade) === 0
+          ? '<span style="color:var(--gray-400);font-style:italic">sem dado</span>'
+          : t.ajuste_velocidade;
         return `<tr style="${temDesconto ? 'background:#fff5f5' : ''}">` +
           `<td>#${t.zappy_id}</td>` +
           `<td>${t.empresa_texto || '—'}</td>` +
           `<td>${t.papel}</td>` +
           `<td>${t.nota_cliente ?? '—'}</td>` +
-          `<td style="${parseFloat(t.ajuste_velocidade) < 0 ? 'color:#c0362c;font-weight:700' : ''}">${t.ajuste_velocidade}</td>` +
+          `<td style="${parseFloat(t.ajuste_velocidade) < 0 ? 'color:#c0362c;font-weight:700' : ''}">${velTexto}</td>` +
           `<td>${t.ajuste_finalizar}</td>` +
           `<td style="${parseFloat(t.ajuste_reabertura) < 0 ? 'color:#c0362c;font-weight:700' : ''}">${t.ajuste_reabertura}</td>` +
           `<td style="font-weight:700">${t.nota_final}</td>` +
