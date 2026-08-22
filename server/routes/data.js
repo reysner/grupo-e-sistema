@@ -2635,11 +2635,19 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
       // Nota do cliente é atribuída só a quem ENCERROU (papel
       // recebeu/unico) — é essa média que vira a nota do mês, e a revisão
       // de nota baixa só afeta essas linhas. Quem só TRANSFERIU não gera
-      // nota própria: os ajustes de velocidade dele viram um bônus que fica
-      // "banco" até ele encerrar pelo menos 1 ticket com nota real no mês —
-      // só aí o bônus soma na média (capado em 5). Sem nenhuma nota real,
-      // fica sem nota mesmo com bônus acumulado (mesmo comportamento de
-      // "sem avaliação" que já existe pro resto do sistema).
+      // nota própria: o desempenho dele nas transferências vira um ajuste
+      // que fica "banco" até ele encerrar pelo menos 1 ticket com nota real
+      // no mês — só aí o ajuste soma na média (capado em 5). Sem nenhuma
+      // nota real, fica sem nota mesmo com ajuste acumulado (mesmo
+      // comportamento de "sem avaliação" que já existe pro resto do sistema).
+      //
+      // O ajuste é a MÉDIA dos pontos de velocidade das transferências (não
+      // a soma) — combinado com o Reysner: somar tudo deixava o resultado
+      // dependente do VOLUME de transferências (quem transfere muito, mesmo
+      // que majoritariamente devagar, podia acumular um saldo negativo
+      // gigante e apagar uma nota de atendimento boa). Com a média, o
+      // ajuste sempre fica dentro da faixa de um único atendimento (-1 a
+      // +2), proporcional à real performance, não ao volume.
       const { rows: notasRows } = await pool.query(
         `SELECT p.nota_final FROM gam_tickets_pontos p
          JOIN cs_tickets t ON t.id = p.ticket_id
@@ -2649,7 +2657,7 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
       );
       if (notasRows.length) {
         const { rows: bonusRows } = await pool.query(
-          `SELECT COALESCE(SUM(ajuste_velocidade), 0) AS bonus FROM gam_tickets_pontos
+          `SELECT COALESCE(AVG(ajuste_velocidade), 0) AS bonus FROM gam_tickets_pontos
            WHERE mes = $1 AND analista_id = $2 AND papel = 'transferiu'`,
           [mes, c.zappy_user_id]
         );

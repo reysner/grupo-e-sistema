@@ -19,14 +19,21 @@
  * (só o ajuste de velocidade, avulso) e uma pra quem recebeu/resolveu
  * sozinho (nota do cliente + métricas 1+2+4, capada em 5).
  *
- * Média mensal (ver auto-preencher em data.js): só conta pontos de quem
- * TRANSFERIU se o analista também tiver pelo menos 1 nota real de cliente
- * (papel recebeu/unico) no mês — aí soma o bônus acumulado de velocidade na
- * média das notas, capado em 5. Sem nenhuma nota real, o bônus de
- * transferência fica "banco" e o analista continua sem nota nesse mês
- * (mesmo comportamento de "sem avaliação" que já existe pro resto do
- * sistema) — combinado com o Reysner: "o analista não teve avaliações, mas
- * transferiu rapidamente, permanece sem nota".
+ * Média mensal (ver auto-preencher em data.js): só conta o desempenho de
+ * quem TRANSFERIU se o analista também tiver pelo menos 1 nota real de
+ * cliente (papel recebeu/unico) no mês — aí soma a MÉDIA (não a soma) dos
+ * ajustes de velocidade das transferências na média das notas, capado em 5.
+ * É média, não soma, de propósito: somar deixava o resultado dependente do
+ * VOLUME de transferências — quem transferia muito, mesmo que
+ * majoritariamente devagar, acumulava um saldo negativo gigante capaz de
+ * apagar uma nota de atendimento boa (achado do próprio Reysner com
+ * exemplo real: 30 transferências lentas + 5 rápidas = saldo -20 na soma,
+ * mas ≈ -0.57 na média — perto da escala real de um único atendimento).
+ * Sem nenhuma nota real, o ajuste de transferência fica "banco" e o
+ * analista continua sem nota nesse mês (mesmo comportamento de "sem
+ * avaliação" que já existe pro resto do sistema) — combinado com o
+ * Reysner: "o analista não teve avaliações, mas transferiu rapidamente,
+ * permanece sem nota".
  *
  * SUPOSIÇÕES ASSUMIDAS (sem dado real pra confirmar ainda — avisar o
  * Reysner e ajustar se a calibração real mostrar outra coisa):
