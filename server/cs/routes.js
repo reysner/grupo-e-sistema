@@ -1236,4 +1236,64 @@ router.post('/vinculos/:id/confirmar', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/cs/vinculos/analise-pendentes — TEMPORÁRIO, pra investigação
+ * pontual pedida pelo Reysner: cruza cada telefone pendente com o
+ * histórico real de mensagens, pra separar quem teve atendimento humano
+ * de verdade (provável cliente) de quem nunca teve resposta humana
+ * (provável bot/marketing/sistema automatizado). Remover depois de usar.
+ */
+router.get('/vinculos/analise-pendentes', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const { rows } = await pool.query(`
+      SELECT
+        v.id, v.telefone, v.empresa_nome, v.cnpj, v.confianca,
+        COUNT(DISTINCT t.id) AS total_tickets,
+        COUNT(m.id) FILTER (WHERE m.remetente = 'cliente') AS msgs_cliente,
+        COUNT(m.id) FILTER (WHERE m.remetente = 'escritorio') AS msgs_escritorio,
+        COUNT(DISTINCT m.autor) FILTER (WHERE m.remetente = 'escritorio' AND m.autor IS NOT NULL) AS atendentes_distintos,
+        MIN(t.abertura) AS primeiro_ticket,
+        MAX(t.abertura) AS ultimo_ticket,
+        (ARRAY_AGG(m.texto ORDER BY m.hora) FILTER (WHERE m.remetente = 'cliente'))[1:3] AS amostra_msgs_cliente
+      FROM cs_vinculos v
+      LEFT JOIN cs_tickets t ON t.telefone = v.telefone
+      LEFT JOIN cs_mensagens m ON m.ticket_id = t.id
+      WHERE v.tipo = 'pendente'
+      GROUP BY v.id
+      ORDER BY total_tickets DESC
+    `);
+
+    const classificado = rows.map(r => {
+      const atendentes = parseInt(r.atendentes_distintos) || 0;
+      const msgsCliente = parseInt(r.msgs_cliente) || 0;
+      const msgsEscritorio = parseInt(r.msgs_escritorio) || 0;
+      const totalTickets = parseInt(r.total_tickets) || 0;
+
+      let categoria;
+      if (totalTickets === 0) {
+        categoria = 'sem_ticket'; // vínculo órfão, sem ticket associado hoje
+      } else if (atendentes > 0 && msgsCliente >= 1 && msgsEscritorio >= 1) {
+        categoria = 'provavel_cliente_real'; // teve troca com atendente humano
+      } else if (atendentes === 0 && msgsEscritorio === 0) {
+        categoria = 'provavel_bot_marketing'; // nunca teve resposta humana
+      } else {
+        categoria = 'indefinido'; // caso intermediário, checar manualmente
+      }
+
+      return { ...r, categoria };
+    });
+
+    const resumo = classificado.reduce((acc, r) => {
+      acc[r.categoria] = (acc[r.categoria] || 0) + 1;
+      return acc;
+    }, {});
+
+    res.json({ resumo, total: classificado.length, dados: classificado });
+  } catch (e) {
+    console.error('[cs] GET /vinculos/analise-pendentes falhou:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;
