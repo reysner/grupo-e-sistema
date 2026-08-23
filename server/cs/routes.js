@@ -682,8 +682,11 @@ router.get('/churn', requireAuth, requireAdmin, async (req, res) => {
          AND cm.texto IS NOT NULL AND cm.texto <> ''
          AND tr.id IS NULL
        ORDER BY cm.hora DESC
-       LIMIT 5000
+       LIMIT 100000
     `, [dias]);
+    // Mesmo achado/correção do endpoint de insatisfação-conversas logo abaixo:
+    // LIMIT em MENSAGENS (não em sinais detectados) cobria bem menos dias do
+    // que os "180 dias" prometidos na tela, com o volume real de mensagens.
 
     // Agrupa por empresa (vínculo confirmado > nome do contato > telefone).
     // Guarda a ocorrência mais recente nos campos de topo (compatibilidade
@@ -804,8 +807,15 @@ router.get('/insatisfacao-conversas', requireAuth, requireAdmin, async (req, res
          AND cm.texto IS NOT NULL AND cm.texto <> ''
          AND tr.id IS NULL
        ORDER BY cm.hora DESC
-       LIMIT 5000
+       LIMIT 100000
     `, [dias]);
+    // Achado do Reysner: mensagens de insatisfação reais (ex.: "muitos
+    // erros", "veio errado de novo", de 07/08) tinham sumido da tela mesmo
+    // sem nunca terem sido marcadas como tratadas. Causa: esse LIMIT estava
+    // em 5000 MENSAGENS (não 5000 batidas de palavra-chave) — com o volume
+    // real de mensagens de cliente da empresa, isso cobria só uns 8-9 dias
+    // de fato, bem menos que os "180 dias" prometidos na tela. Subiu pra
+    // 100000 pra realmente cobrir a janela de dias pedida.
 
     const MAX_LINHAS = 500;
     const data = [];
@@ -1233,37 +1243,6 @@ router.post('/vinculos/:id/confirmar', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('[cs] POST /vinculos/:id/confirmar falhou:', e);
     res.status(400).json({ error: e.message });
-  }
-});
-
-/**
- * GET /api/cs/debug-busca?q=texto — TEMPORÁRIO, pra investigar por que um
- * item sumiu de alguma lista (ex.: Insatisfação nas Conversas). Busca livre
- * por texto de mensagem OU nome de empresa/contato, sem nenhum dos filtros
- * das telas normais, pra ver o estado bruto do dado. Remover depois de usar.
- */
-router.get('/debug-busca', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const pool = obterPool();
-    const q = (req.query.q || '').trim();
-    if (!q) return res.status(400).json({ error: 'Informe ?q=' });
-    const { rows } = await pool.query(`
-      SELECT cm.id AS mensagem_id, cm.texto, cm.hora, cm.remetente,
-             ct.id AS ticket_id, ct.zappy_id, ct.empresa_texto, ct.telefone, ct.status,
-             cv.empresa_nome, cv.tipo AS vinculo_tipo,
-             tr.id AS tratamento_id, tr.tratado_por, tr.tratado_em
-        FROM cs_mensagens cm
-        JOIN cs_tickets ct ON ct.id = cm.ticket_id
-        LEFT JOIN cs_vinculos cv ON cv.id = ct.vinculo_id
-        LEFT JOIN cs_insatisfacao_tratamentos tr ON tr.mensagem_id = cm.id
-       WHERE ct.empresa_texto ILIKE $1 OR cv.empresa_nome ILIKE $1 OR cm.texto ILIKE $1
-       ORDER BY cm.hora ASC
-       LIMIT 1000
-    `, ['%' + q + '%']);
-    res.json({ total: rows.length, dados: rows });
-  } catch (e) {
-    console.error('[cs] GET /debug-busca falhou:', e);
-    res.status(500).json({ error: e.message });
   }
 });
 
