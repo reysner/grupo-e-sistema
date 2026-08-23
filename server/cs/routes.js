@@ -1237,6 +1237,37 @@ router.post('/vinculos/:id/confirmar', requireAuth, async (req, res) => {
 });
 
 /**
+ * GET /api/cs/debug-busca?q=texto — TEMPORÁRIO, pra investigar por que um
+ * item sumiu de alguma lista (ex.: Insatisfação nas Conversas). Busca livre
+ * por texto de mensagem OU nome de empresa/contato, sem nenhum dos filtros
+ * das telas normais, pra ver o estado bruto do dado. Remover depois de usar.
+ */
+router.get('/debug-busca', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const q = (req.query.q || '').trim();
+    if (!q) return res.status(400).json({ error: 'Informe ?q=' });
+    const { rows } = await pool.query(`
+      SELECT cm.id AS mensagem_id, cm.texto, cm.hora, cm.remetente,
+             ct.id AS ticket_id, ct.zappy_id, ct.empresa_texto, ct.telefone, ct.status,
+             cv.empresa_nome, cv.tipo AS vinculo_tipo,
+             tr.id AS tratamento_id, tr.tratado_por, tr.tratado_em
+        FROM cs_mensagens cm
+        JOIN cs_tickets ct ON ct.id = cm.ticket_id
+        LEFT JOIN cs_vinculos cv ON cv.id = ct.vinculo_id
+        LEFT JOIN cs_insatisfacao_tratamentos tr ON tr.mensagem_id = cm.id
+       WHERE ct.empresa_texto ILIKE $1 OR cv.empresa_nome ILIKE $1 OR cm.texto ILIKE $1
+       ORDER BY cm.hora DESC
+       LIMIT 50
+    `, ['%' + q + '%']);
+    res.json({ total: rows.length, dados: rows });
+  } catch (e) {
+    console.error('[cs] GET /debug-busca falhou:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
  * GET /api/cs/vinculos/analise-pendentes — TEMPORÁRIO, pra investigação
  * pontual pedida pelo Reysner: cruza cada telefone pendente com o
  * histórico real de mensagens, pra separar quem teve atendimento humano
