@@ -1252,7 +1252,7 @@ router.get('/vinculos/analise-pendentes', requireAuth, requireAdmin, async (req,
         COUNT(DISTINCT t.id) AS total_tickets,
         COUNT(m.id) FILTER (WHERE m.remetente = 'cliente') AS msgs_cliente,
         COUNT(m.id) FILTER (WHERE m.remetente = 'escritorio') AS msgs_escritorio,
-        COUNT(DISTINCT m.autor) FILTER (WHERE m.remetente = 'escritorio' AND m.autor IS NOT NULL) AS atendentes_distintos,
+        COUNT(m.id) FILTER (WHERE m.remetente = 'sistema') AS msgs_sistema,
         MIN(t.abertura) AS primeiro_ticket,
         MAX(t.abertura) AS ultimo_ticket,
         (ARRAY_AGG(m.texto ORDER BY m.hora) FILTER (WHERE m.remetente = 'cliente'))[1:3] AS amostra_msgs_cliente
@@ -1264,8 +1264,12 @@ router.get('/vinculos/analise-pendentes', requireAuth, requireAdmin, async (req,
       ORDER BY total_tickets DESC
     `);
 
+    // Nota: o campo cs_mensagens.autor não vem preenchido na ingestão atual
+    // (sempre NULL), então não dá pra identificar QUEM respondeu — só que
+    // o remetente foi 'escritorio' (humano/oficial) e não 'sistema'
+    // (automático) ou ausente. Por isso o critério usa msgs_escritorio, não
+    // "atendente identificado".
     const classificado = rows.map(r => {
-      const atendentes = parseInt(r.atendentes_distintos) || 0;
       const msgsCliente = parseInt(r.msgs_cliente) || 0;
       const msgsEscritorio = parseInt(r.msgs_escritorio) || 0;
       const totalTickets = parseInt(r.total_tickets) || 0;
@@ -1273,10 +1277,10 @@ router.get('/vinculos/analise-pendentes', requireAuth, requireAdmin, async (req,
       let categoria;
       if (totalTickets === 0) {
         categoria = 'sem_ticket'; // vínculo órfão, sem ticket associado hoje
-      } else if (atendentes > 0 && msgsCliente >= 1 && msgsEscritorio >= 1) {
-        categoria = 'provavel_cliente_real'; // teve troca com atendente humano
-      } else if (atendentes === 0 && msgsEscritorio === 0) {
-        categoria = 'provavel_bot_marketing'; // nunca teve resposta humana
+      } else if (msgsCliente >= 1 && msgsEscritorio >= 1) {
+        categoria = 'provavel_cliente_real'; // teve troca de verdade com o escritório
+      } else if (msgsEscritorio === 0) {
+        categoria = 'provavel_bot_marketing'; // escritório nunca respondeu
       } else {
         categoria = 'indefinido'; // caso intermediário, checar manualmente
       }
