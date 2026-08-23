@@ -79,6 +79,7 @@
   const SucessoCliente = {
     _timer: null,
     _intervaloMs: 60000, // 1 min — ~600 tickets/mês é volume baixo, não precisa ser mais agressivo
+    _histPage: 1, // página atual do "Histórico de Atendimentos" (paginação client-side)
 
     /** Chamado pelo Nav.go('sucesso-cliente') ao abrir a aba. */
     async load() {
@@ -256,7 +257,8 @@
           throw new Error('HTTP ' + resp.status + (detalhe ? ' — ' + detalhe : ''));
         }
         SucessoCliente._ultimoHistorico = data.tickets || []; // guardado p/ exportCSV/exportPDF sem refazer a chamada
-        SucessoCliente._renderHistorico(container, SucessoCliente._ultimoHistorico);
+        SucessoCliente._histPage = 1; // todo filtro novo volta pra página 1
+        SucessoCliente._renderPaginaHistorico();
       } catch (e) {
         SucessoCliente._ultimoHistorico = [];
         container.innerHTML =
@@ -264,6 +266,26 @@
           '<p style="font-family:monospace;font-size:12px;color:var(--gray-500)">' + SucessoCliente._esc(e.message) + '</p>';
         console.error('[SucessoCliente] filtrarHistorico()', e);
       }
+    },
+
+    /** Botão de página (1, 2, 3...) do "Histórico de Atendimentos" — mesmo padrão de App.Util.paginate/renderPagination usado em Atendimento/Carteira/etc. */
+    goPage(p) {
+      SucessoCliente._histPage = p;
+      SucessoCliente._renderPaginaHistorico();
+    },
+
+    /** Fatia _ultimoHistorico na página atual e desenha a tabela + os números de página. */
+    _renderPaginaHistorico() {
+      const container = document.getElementById('hist-container');
+      if (!container) return;
+      const dados = SucessoCliente._ultimoHistorico || [];
+      if (!window.App || !App.Util || !App.Util.paginate) {
+        SucessoCliente._renderHistorico(container, dados); // fallback sem paginação, se o helper não tiver carregado ainda
+        return;
+      }
+      const pg = App.Util.paginate(dados, SucessoCliente._histPage, 20);
+      SucessoCliente._renderHistorico(container, pg.items);
+      App.Util.renderPagination('hist-pagination', pg.page, pg.pages, pg.total, 'SucessoCliente.goPage');
     },
 
     // Colunas/labels compartilhadas pelos dois exports (mesmo padrão usado em
