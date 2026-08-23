@@ -1257,8 +1257,8 @@ router.get('/debug-busca', requireAuth, requireAdmin, async (req, res) => {
         LEFT JOIN cs_vinculos cv ON cv.id = ct.vinculo_id
         LEFT JOIN cs_insatisfacao_tratamentos tr ON tr.mensagem_id = cm.id
        WHERE ct.empresa_texto ILIKE $1 OR cv.empresa_nome ILIKE $1 OR cm.texto ILIKE $1
-       ORDER BY cm.hora DESC
-       LIMIT 50
+       ORDER BY cm.hora ASC
+       LIMIT 1000
     `, ['%' + q + '%']);
     res.json({ total: rows.length, dados: rows });
   } catch (e) {
