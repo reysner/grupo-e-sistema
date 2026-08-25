@@ -1196,6 +1196,19 @@ function primeiraMsgObjeto(mensagens, remetente, apos = null, inclusivo = false)
 }
 
 /**
+ * Última mensagem de um remetente ANTES de um instante — usado pelo relógio
+ * de transferência (ver calcularSLA) pra achar a última resposta real do
+ * escritório antes de repassar o ticket, em vez de sempre medir desde o
+ * aceite original.
+ */
+function ultimaMsgAntes(mensagens, remetente, antes) {
+  const lista = ordenarPorHora(
+    mensagens.filter(m => m.remetente === remetente && new Date(m.hora) < antes)
+  );
+  return lista.length ? new Date(lista[lista.length - 1].hora) : null;
+}
+
+/**
  * Calcula todos os relógios de um ticket.
  * @param {object} ticket  no formato genérico
  * @param {Date}   agora   instante de referência (default: new Date()) — para relógios ainda correndo
@@ -1257,9 +1270,19 @@ function calcularSLA(ticket, agora = new Date()) {
   const respAposAceite = respAposAceiteObj ? new Date(respAposAceiteObj.hora) : null;
   if (tAceite) {
     if (tTransferencia) {
-      // transferiu: mede aceite -> transferência (sempre vale)
-      const min = T.minutosUteis(tAceite, tTransferencia);
-      relogios.push(montar('transferencia', tAceite, tTransferencia, min, false));
+      // transferiu: mede desde a ÚLTIMA resposta do escritório antes de
+      // transferir (ou o aceite, se nunca respondeu) até a transferência.
+      // Achado do Reysner: antes disso media SEMPRE aceite -> transferência,
+      // punindo igual quem ficou horas trabalhando ativamente a demanda com
+      // o cliente e só transferiu no fim (ex.: resolveu por 2h, cliente
+      // pediu outro assunto/pessoa, aí transferiu) e quem simplesmente
+      // ignorou o ticket o tempo todo — os dois casos viravam "2h de
+      // atraso". Agora só conta o tempo realmente parado logo antes de
+      // repassar, não o atendimento real que já rolou no meio.
+      const ultimaRespostaAntes = ultimaMsgAntes(mensagens, 'escritorio', tTransferencia);
+      const inicioTransf = ultimaRespostaAntes && ultimaRespostaAntes > tAceite ? ultimaRespostaAntes : tAceite;
+      const min = T.minutosUteis(inicioTransf, tTransferencia);
+      relogios.push(montar('transferencia', inicioTransf, tTransferencia, min, false));
     } else if (!tEncerramento && !respAposAceite) {
       // aberto, aceito, ninguém respondeu ainda e não transferiu -> transferência em curso
       const min = T.minutosUteis(tAceite, agora);
