@@ -5811,6 +5811,73 @@ const Gamificacao = (() => {
     } else App.Toast.err('Erro ao salvar.');
   }
 
+  // ── Revisão de DESCONTO DE VELOCIDADE (diferente da revisão de nota) ───────
+  // Mesmo padrão da revisão de notas baixas, mas pro ajuste_velocidade em si
+  // — cobre casos como o ticket #47735 (Max transferiu pra Kelen esperando
+  // o cliente mandar o valor da NF): a nota do cliente estava certa, mas o
+  // desconto de velocidade não refletia a realidade.
+  async function abrirRevisaoVelocidade() {
+    const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
+    App.Modal.open('Revisar descontos de velocidade — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
+      '<p style="font-size:13px;color:var(--gray-500)">Tickets com desconto de velocidade (transferência ou tempo de resposta). Marca "Devida" se o desconto reflete a realidade (o analista realmente ficou parado), ou "Indevida" se não reflete (ex.: estava esperando o cliente mandar algo, como um documento ou valor) — aí o desconto sai do cálculo daquele papel específico, sem afetar o resto do ticket. Existe tanto pra quem recebeu/atendeu quanto pra quem só transferiu. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+        '<label style="font-size:12px;font-weight:700;color:var(--gray-500)">Mostrar:</label>' +
+        '<select id="gam-revisao-vel-status" class="input" style="width:auto" onchange="Gamificacao._trocarStatusRevisaoVelocidade(\'' + mes + '\')">' +
+          '<option value="pendente">Pendentes</option>' +
+          '<option value="devida">Já marcadas como devida</option>' +
+          '<option value="indevida">Já marcadas como indevida</option>' +
+        '</select>' +
+      '</div>' +
+      '<div id="gam-revisao-vel-lista">Carregando...</div>' +
+    '</div>', null, { wide: true });
+    await _carregarRevisaoVelocidade(mes, 'pendente');
+  }
+
+  function _trocarStatusRevisaoVelocidade(mes) {
+    const status = document.getElementById('gam-revisao-vel-status')?.value || 'pendente';
+    _carregarRevisaoVelocidade(mes, status);
+  }
+
+  async function _carregarRevisaoVelocidade(mes, status) {
+    const box = document.getElementById('gam-revisao-vel-lista');
+    if (!box) return;
+    status = status || 'pendente';
+    box.innerHTML = 'Carregando...';
+    const res = await fetch('/api/data/gam/tickets-revisao-velocidade?mes=' + mes + '&status=' + status, { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao carregar.</p>'; return; }
+    const { data } = await res.json();
+    const rotuloVazio = status === 'pendente' ? 'Nenhum desconto de velocidade pendente de revisão' : 'Nenhum ticket marcado como ' + status;
+    if (!data.length) { box.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:16px">' + rotuloVazio + ' em ' + _mesLabel(mes) + '.</p>'; return; }
+    const mostrarQuem = status !== 'pendente';
+    const papelLabel = { transferiu: 'Transferiu', recebeu: 'Recebeu', unico: 'Único' };
+    box.innerHTML = '<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">' +
+      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Analista</th><th>Papel</th><th>Desconto</th>' + (mostrarQuem ? '<th>Revisado por</th>' : '') + '<th></th></tr></thead><tbody>' +
+      data.map(r => `<tr data-id="${r.ticket_id}-${r.papel}">` +
+        `<td>#${r.zappy_id}</td>` +
+        `<td>${r.empresa_texto || '—'}</td>` +
+        `<td>${r.analista || '—'}</td>` +
+        `<td>${papelLabel[r.papel] || r.papel}</td>` +
+        `<td style="font-weight:700;color:#c0362c">${r.ajuste_velocidade}</td>` +
+        (mostrarQuem ? `<td style="font-size:11px;color:var(--gray-400)">${r.revisado_por || '—'}${r.revisado_em ? '<br>' + new Date(r.revisado_em).toLocaleDateString('pt-BR') : ''}</td>` : '') +
+        `<td style="white-space:nowrap">` +
+          `<button class="btn btn-sm" ${status === 'devida' ? 'disabled title="Já está devida"' : ''} style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisaoVelocidade('${r.ticket_id}','${r.papel}','devida','${mes}','${status}')">Devida</button> ` +
+          `<button class="btn btn-sm" ${status === 'indevida' ? 'disabled title="Já está indevida"' : ''} style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisaoVelocidade('${r.ticket_id}','${r.papel}','indevida','${mes}','${status}')">Indevida</button>` +
+        `</td></tr>`
+      ).join('') + '</tbody></table></div>';
+  }
+
+  async function marcarRevisaoVelocidade(ticketId, papel, novoStatus, mes, statusAtual) {
+    const res = await fetch('/api/data/gam/tickets-revisao-velocidade/' + ticketId + '/' + papel, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ status_revisao: novoStatus })
+    });
+    if (res && res.ok) {
+      App.Toast.ok('Marcado como ' + novoStatus + '.');
+      await _carregarRevisaoVelocidade(mes, statusAtual);
+    } else App.Toast.err('Erro ao salvar.');
+  }
+
   // ── Relatório de descontos por colaborador (transparência) ─────────────────
   let _relatorioDescontosData = [];
 
@@ -6024,6 +6091,7 @@ const Gamificacao = (() => {
     abrirMapaQualificacao, salvarMapaQualificacao,
     abrirAutoPreencher, confirmarAutoPreencher,
     abrirRevisaoNotas, marcarRevisao, _trocarStatusRevisao,
+    abrirRevisaoVelocidade, marcarRevisaoVelocidade, _trocarStatusRevisaoVelocidade,
     abrirRelatorioDescontos, gerarRelatorioDescontos, exportarRelatorioDescontosCSV, exportarRelatorioDescontosPDF,
     recalcularPontos,
   };

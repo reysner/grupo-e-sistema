@@ -5,7 +5,7 @@ const { pool } = require('../db');
 const { requireAuth, requireAdmin } = require('../auth');
 const acessoriasClient = require('../acessoriasClient');
 const { criarClienteZappy } = require('../cs/zappyClient');
-const { ensurePontuacaoSchema, recalcularPontosDoMes } = require('../cs/pontuacao');
+const { ensurePontuacaoSchema, recalcularPontosDoMes, clamp } = require('../cs/pontuacao');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -2407,6 +2407,30 @@ async function ensureGamTables() {
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
   )`).catch(()=>{});
+
+  // ── Revisão de DESCONTO DE VELOCIDADE (separada da revisão de nota) ───────
+  // Achado do Reysner com o ticket #47735 (Max transferiu pra Kelen): mesmo
+  // com o relógio de transferência corrigido (mede da última resposta do
+  // escritório até a transferência, não mais do aceite), ainda existem casos
+  // onde o "tempo parado" na verdade era o analista esperando o CLIENTE
+  // mandar algo (ex.: valor da NF) — o sistema não tem como saber isso só
+  // pelos horários. Por isso, igual à revisão de nota baixa (que é da NOTA
+  // do cliente, em cs_tickets), esta é a revisão do DESCONTO DE VELOCIDADE
+  // em si — por ticket+papel (não por ticket só), porque velocidade existe
+  // tanto pra quem recebeu quanto pra quem transferiu, e um mesmo ticket
+  // pode ter as duas linhas com julgamentos diferentes. Fica numa tabela
+  // separada (não em gam_tickets_pontos) de propósito — essa tabela é
+  // reescrita toda vez que os pontos são recalculados (fórmula muda,
+  // reprocessamento etc.), e uma revisão humana não pode se perder nisso.
+  await pool.query(`CREATE TABLE IF NOT EXISTS gam_velocidade_revisoes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ticket_id UUID NOT NULL REFERENCES cs_tickets(id) ON DELETE CASCADE,
+    papel TEXT NOT NULL CHECK (papel IN ('transferiu','recebeu','unico')),
+    status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente','devida','indevida')),
+    revisado_por TEXT,
+    revisado_em TIMESTAMPTZ,
+    UNIQUE (ticket_id, papel)
+  )`).catch(()=>{});
 }
 
 async function getPesoMinimo() {
@@ -2663,21 +2687,41 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
       // gigante e apagar uma nota de atendimento boa). Com a média, o
       // ajuste sempre fica dentro da faixa de um único atendimento (-1 a
       // +2), proporcional à real performance, não ao volume.
+      // Revisão de VELOCIDADE (separada da revisão de nota — ver
+      // gam_velocidade_revisoes em ensureGamTables): quando 'indevida',
+      // remove o ajuste_velocidade daquela linha em vez de descartar o
+      // ticket inteiro. Pra recebeu/unico, recalcula a nota_final sem o
+      // ajuste_velocidade (mantendo finalizar/reabertura); pra transferiu,
+      // exclui a linha inteira da média (o ajuste_velocidade É a nota_final
+      // desse papel, não tem "resto" pra manter).
       const { rows: notasRows } = await pool.query(
-        `SELECT p.nota_final FROM gam_tickets_pontos p
+        `SELECT p.nota_final, p.nota_cliente, p.ajuste_velocidade, p.ajuste_finalizar, p.ajuste_reabertura,
+                COALESCE(vr.status, 'pendente') AS vel_status
+         FROM gam_tickets_pontos p
          JOIN cs_tickets t ON t.id = p.ticket_id
+         LEFT JOIN gam_velocidade_revisoes vr ON vr.ticket_id = p.ticket_id AND vr.papel = p.papel
          WHERE p.mes = $1 AND p.analista_id = $2 AND p.papel IN ('recebeu','unico')
            AND COALESCE(t.revisao_nota_status, 'pendente') != 'indevida'`,
         [mes, c.zappy_user_id]
       );
       if (notasRows.length) {
         const { rows: bonusRows } = await pool.query(
-          `SELECT COALESCE(AVG(ajuste_velocidade), 0) AS bonus FROM gam_tickets_pontos
-           WHERE mes = $1 AND analista_id = $2 AND papel = 'transferiu'`,
+          `SELECT p.ajuste_velocidade FROM gam_tickets_pontos p
+           LEFT JOIN gam_velocidade_revisoes vr ON vr.ticket_id = p.ticket_id AND vr.papel = p.papel
+           WHERE p.mes = $1 AND p.analista_id = $2 AND p.papel = 'transferiu'
+             AND COALESCE(vr.status, 'pendente') != 'indevida'`,
           [mes, c.zappy_user_id]
         );
-        const bonusTransferencia = parseFloat(bonusRows[0]?.bonus || 0);
-        const somaBase = notasRows.reduce((s, r) => s + parseFloat(r.nota_final), 0);
+        const bonusTransferencia = bonusRows.length
+          ? bonusRows.reduce((s, r) => s + parseFloat(r.ajuste_velocidade), 0) / bonusRows.length
+          : 0;
+        const somaBase = notasRows.reduce((s, r) => {
+          if (r.vel_status === 'indevida') {
+            const semVelocidade = clamp(parseFloat(r.nota_cliente) + 0 + parseFloat(r.ajuste_finalizar) + parseFloat(r.ajuste_reabertura), 0, 5);
+            return s + semVelocidade;
+          }
+          return s + parseFloat(r.nota_final);
+        }, 0);
         const mediaBase = somaBase / notasRows.length;
         const media_individual = Number(Math.max(0, Math.min(5, mediaBase + bonusTransferencia)).toFixed(2));
         resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes: notasRows.length, bonusTransferencia, fonte: 'tickets' });
@@ -2898,6 +2942,68 @@ router.patch('/gam/tickets-revisao/:id', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[gam] PATCH tickets-revisao falhou:', err);
     res.status(500).json({ error: 'Erro ao salvar revisão.' });
+  }
+});
+
+/**
+ * GET /api/data/gam/tickets-revisao-velocidade — revisão do DESCONTO DE
+ * VELOCIDADE em si (diferente de /gam/tickets-revisao, que é sobre a NOTA
+ * do cliente). Lista linhas de gam_tickets_pontos com ajuste_velocidade
+ * negativo (o desconto), pra qualquer papel — recebeu/único/transferiu —
+ * porque um analista que só transferiu também pode ter um desconto de
+ * velocidade injusto (ex.: esperando o cliente mandar um documento).
+ */
+router.get('/gam/tickets-revisao-velocidade', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { mes } = req.query;
+    if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+    const status = ['pendente', 'devida', 'indevida'].includes(req.query.status) ? req.query.status : 'pendente';
+
+    const { rows } = await pool.query(
+      `SELECT p.ticket_id, p.papel, p.analista, p.ajuste_velocidade, p.nota_final,
+              t.zappy_id, t.empresa_texto, t.encerramento,
+              vr.status AS revisao_status, vr.revisado_por, vr.revisado_em
+         FROM gam_tickets_pontos p
+         JOIN cs_tickets t ON t.id = p.ticket_id
+         LEFT JOIN gam_velocidade_revisoes vr ON vr.ticket_id = p.ticket_id AND vr.papel = p.papel
+        WHERE p.mes = $1
+          AND p.ajuste_velocidade < 0
+          AND COALESCE(vr.status, 'pendente') = $2
+        ORDER BY t.encerramento DESC NULLS LAST`,
+      [mes, status]
+    );
+    res.json({ data: rows });
+  } catch (err) {
+    console.error('[gam] tickets-revisao-velocidade falhou:', err);
+    res.status(500).json({ error: 'Erro ao listar descontos de velocidade para revisão.' });
+  }
+});
+
+/** PATCH /api/data/gam/tickets-revisao-velocidade/:ticketId/:papel — marca devida/indevida. */
+router.patch('/gam/tickets-revisao-velocidade/:ticketId/:papel', requireAdmin, async (req, res) => {
+  try {
+    const { status_revisao } = req.body;
+    if (!['devida', 'indevida'].includes(status_revisao)) {
+      return res.status(400).json({ error: 'status_revisao deve ser "devida" ou "indevida".' });
+    }
+    const { papel } = req.params;
+    if (!['transferiu', 'recebeu', 'unico'].includes(papel)) {
+      return res.status(400).json({ error: 'papel inválido.' });
+    }
+    await ensureGamTables();
+    const { rows } = await pool.query(
+      `INSERT INTO gam_velocidade_revisoes (ticket_id, papel, status, revisado_por, revisado_em)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (ticket_id, papel) DO UPDATE SET
+         status = $3, revisado_por = $4, revisado_em = NOW()
+       RETURNING id`,
+      [req.params.ticketId, papel, status_revisao, req.user.name]
+    );
+    res.json({ ok: true, data: rows[0] });
+  } catch (err) {
+    console.error('[gam] PATCH tickets-revisao-velocidade falhou:', err);
+    res.status(500).json({ error: 'Erro ao salvar revisão de velocidade.' });
   }
 });
 

@@ -1270,17 +1270,24 @@ function calcularSLA(ticket, agora = new Date()) {
   const respAposAceite = respAposAceiteObj ? new Date(respAposAceiteObj.hora) : null;
   if (tAceite) {
     if (tTransferencia) {
-      // transferiu: mede desde a ÚLTIMA resposta do escritório antes de
-      // transferir (ou o aceite, se nunca respondeu) até a transferência.
-      // Achado do Reysner: antes disso media SEMPRE aceite -> transferência,
-      // punindo igual quem ficou horas trabalhando ativamente a demanda com
-      // o cliente e só transferiu no fim (ex.: resolveu por 2h, cliente
-      // pediu outro assunto/pessoa, aí transferiu) e quem simplesmente
-      // ignorou o ticket o tempo todo — os dois casos viravam "2h de
-      // atraso". Agora só conta o tempo realmente parado logo antes de
-      // repassar, não o atendimento real que já rolou no meio.
-      const ultimaRespostaAntes = ultimaMsgAntes(mensagens, 'escritorio', tTransferencia);
-      const inicioTransf = ultimaRespostaAntes && ultimaRespostaAntes > tAceite ? ultimaRespostaAntes : tAceite;
+      // transferiu: mede a partir do evento MAIS RECENTE antes da
+      // transferência — aceite, última mensagem do escritório OU última
+      // mensagem do CLIENTE, o que for mais tarde. Primeira correção
+      // (Reysner): media SEMPRE aceite -> transferência, punindo igual quem
+      // trabalhou ativamente por horas e só transferiu no fim, e quem
+      // simplesmente ignorou o ticket. Segunda correção (ticket #47735,
+      // Max -> Kelen): mesmo medindo só da última resposta do escritório,
+      // ainda contava como "atraso do analista" o tempo em que na verdade
+      // era O CLIENTE quem devia responder (ex.: Max pediu o valor da NF às
+      // 14:44, cliente só mandou às 15:34 — 50min que não são culpa do
+      // Max). Usar a mensagem mais recente entre as duas partes (não só a
+      // do escritório) resolve isso: se o cliente falou por último, o
+      // relógio reinicia dali — só sobra o tempo realmente parado depois
+      // que a bola voltou pro escritório.
+      const ultimaEscritorioAntes = ultimaMsgAntes(mensagens, 'escritorio', tTransferencia);
+      const ultimaClienteAntes = ultimaMsgAntes(mensagens, 'cliente', tTransferencia);
+      const candidatos = [tAceite, ultimaEscritorioAntes, ultimaClienteAntes].filter(Boolean);
+      const inicioTransf = new Date(Math.max(...candidatos.map(d => d.getTime())));
       const min = T.minutosUteis(inicioTransf, tTransferencia);
       relogios.push(montar('transferencia', inicioTransf, tTransferencia, min, false));
     } else if (!tEncerramento && !respAposAceite) {
