@@ -7396,11 +7396,12 @@ window.Tickets = Tickets;
         const res = await fetch('/api/cs/insatisfacao-conversas?dias=180', { headers: authHeaders() });
         if (!res.ok) throw new Error('Falha ao buscar.');
         const { data } = await res.json();
+        AnaliseInteligente._ultimaListaInsatisfacao = data || [];
         if (!data || !data.length) {
           tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Nenhum sinal de insatisfação encontrado nas conversas dos últimos 180 dias.</td></tr>';
           return;
         }
-        tbody.innerHTML = data.map(c => {
+        tbody.innerHTML = data.map((c, i) => {
           const dt = new Date(c.hora).toLocaleString('pt-BR');
           const nomeVinculo = c.vinculado
             ? esc(c.empresa)
@@ -7411,7 +7412,10 @@ window.Tickets = Tickets;
             <td style="font-size:12px;color:var(--gray-500)">${c.zappy_id ? '#' + esc(c.zappy_id) : '—'}</td>
             <td style="font-size:12px"><span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-weight:600">${esc(c.palavra_detectada)}</span></td>
             <td style="font-size:12px;color:var(--gray-600)">${esc((c.trecho||'').slice(0,140))}${(c.trecho||'').length>140?'...':''}</td>
-            <td><button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.tratarInsatisfacao('${c.mensagem_id}')">✔ Tratar</button></td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.abrirRegistroInsatisfacao(${i})" title="Abre o formulário de Insatisfação já preenchido com os dados dessa conversa">⚠️ Insatisfação</button>
+              <button class="btn btn-ghost btn-sm" onclick="AnaliseInteligente.tratarInsatisfacao('${c.mensagem_id}')">✔ Tratar</button>
+            </td>
           </tr>`;
         }).join('');
       } catch (e) {
@@ -7435,6 +7439,32 @@ window.Tickets = Tickets;
       } catch (e) {
         if (window.App && App.Toast) App.Toast.err('Não foi possível marcar como tratado.');
       }
+    },
+
+    /**
+     * Botão "⚠️ Insatisfação" de uma linha detectada automaticamente: leva
+     * pro módulo formal de Insatisfação (registro estruturado, com
+     * gravidade/área/tipo, pra ter controle de QUANTIDADE de reclamações e
+     * QUAIS são) já com o que dá pra saber da conversa preenchido —
+     * empresa, CNPJ (se o vínculo já identificou), analista reclamado e o
+     * trecho da mensagem como reclamação. Gravidade/Área/Tipo ficam em
+     * branco de propósito — isso exige julgamento humano, não dá pra advinhar.
+     */
+    abrirRegistroInsatisfacao(idx) {
+      const c = (AnaliseInteligente._ultimaListaInsatisfacao || [])[idx];
+      if (!c) return;
+      window.Nav.go('insatisfacao');
+      setTimeout(() => {
+        const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+        setVal('in-analista', window._currentUser?.name || '');
+        setVal('in-cliente', c.empresa || '');
+        setVal('in-empresa', c.empresa || '');
+        setVal('in-cnpj', c.cnpj || '');
+        setVal('in-reclamado', c.analista || '');
+        setVal('in-reclamacao', (c.zappy_id ? 'Ticket #' + c.zappy_id + ' — ' : '') + (c.trecho || ''));
+        document.getElementById('in-cliente')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (window.App && App.Toast) App.Toast.ok('Preenchido a partir da conversa — complete Gravidade, Área e Tipo antes de salvar.');
+      }, 150);
     },
 
     /**
