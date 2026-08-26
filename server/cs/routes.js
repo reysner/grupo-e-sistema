@@ -18,6 +18,7 @@
  *   POST /api/cs/ingerir                   -> dispara a ingestão manualmente (admin)
  *   POST /api/cs/backfill?dias=90          -> carga retroativa única, roda em segundo plano (admin)
  *   POST /api/cs/recalcular-sla            -> reprocessa o SLA de tudo que já está salvo, sem chamar o Zappy (admin)
+ *   GET  /api/cs/recalcular-sla/status     -> só leitura, não dispara nada (admin)
  *   GET  /api/cs/vinculos/pendentes        -> fila de de-para aguardando confirmação humana
  *   POST /api/cs/vinculos/:id/confirmar    -> confirma um vínculo (empresa/tipo)
  *
@@ -38,6 +39,8 @@ const { detectarSinalChurn, detectarInsatisfacao, classificarMotivoConversa, pal
 let backfillEmAndamento = false;
 // Idem, mas pro recálculo de SLA (ver POST /recalcular-sla abaixo).
 let recalculoSlaEmAndamento = false;
+// Progresso do recálculo de SLA em andamento — ver GET /recalcular-sla/status.
+let recalculoSlaProgresso = null;
 // Idem, mas pra atualização de notas pendentes (ver POST /atualizar-notas abaixo).
 let atualizacaoNotasEmAndamento = false;
 
@@ -241,20 +244,37 @@ router.post('/atualizar-notas', requireAuth, requireAdmin, async (req, res) => {
  */
 router.post('/recalcular-sla', requireAuth, requireAdmin, async (req, res) => {
   if (recalculoSlaEmAndamento) {
-    return res.status(409).json({ error: 'Já existe um recálculo de SLA em andamento. Aguarde terminar.' });
+    return res.status(409).json({ error: 'Já existe um recálculo de SLA em andamento. Aguarde terminar.', progresso: recalculoSlaProgresso });
   }
   recalculoSlaEmAndamento = true;
+  recalculoSlaProgresso = { processados: 0, total: null, iniciadoEm: new Date().toISOString(), concluidoEm: null };
   res.json({ ok: true, mensagem: 'Recálculo de SLA iniciado em segundo plano. Pode levar alguns minutos — acompanhe pelos logs do Render ou recarregue a tela daqui a pouco.' });
 
   try {
     const pool = obterPool();
-    const total = await recalcularSlaTodos(pool);
+    const total = await recalcularSlaTodos(pool, {
+      onProgress: ({ processados, total: totalGeral }) => {
+        recalculoSlaProgresso = { ...recalculoSlaProgresso, processados, total: totalGeral };
+      },
+    });
+    recalculoSlaProgresso = { ...recalculoSlaProgresso, concluidoEm: new Date().toISOString() };
     console.log('[CS] Recálculo de SLA concluído:', total, 'tickets');
   } catch (e) {
     console.error('[CS] Recálculo de SLA falhou:', e);
   } finally {
     recalculoSlaEmAndamento = false;
   }
+});
+
+/**
+ * GET /api/cs/recalcular-sla/status — SÓ LEITURA, não dispara nada. Pedido
+ * do Reysner: a única forma de saber se o recálculo (que leva mais de 1h
+ * com o volume atual) tinha terminado era chamar o POST de novo — e cada
+ * chamada feita depois dele já ter terminado disparava um recálculo NOVO
+ * sem querer, várias vezes seguidas. Esta rota só reporta o estado atual.
+ */
+router.get('/recalcular-sla/status', requireAuth, requireAdmin, (req, res) => {
+  res.json({ emAndamento: recalculoSlaEmAndamento, progresso: recalculoSlaProgresso });
 });
 
 /**

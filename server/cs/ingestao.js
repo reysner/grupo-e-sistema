@@ -397,9 +397,17 @@ async function preencherTrocasPendentes(pool, { agora = new Date(), limite = 50 
  * @param {number} [opts.loteSize]  quantos tickets por lote (default 300)
  * @returns {number} total de tickets recalculados
  */
-async function recalcularSlaTodos(pool, { agora = new Date(), loteSize = 300 } = {}) {
+async function recalcularSlaTodos(pool, { agora = new Date(), loteSize = 300, onProgress = null } = {}) {
   let totalRecalculados = 0;
   let ultimoId = '00000000-0000-0000-0000-000000000000';
+
+  // Pra status/progresso (ver GET /recalcular-sla/status) — pedido do
+  // Reysner depois de perder a conta de quantas vezes o recálculo (que leva
+  // mais de 1h com o volume atual) já tinha reiniciado sem querer, porque a
+  // única forma de checar era tentando disparar de novo.
+  const { rows: totalRows } = await pool.query(`SELECT COUNT(*)::int AS n FROM cs_tickets`);
+  const totalGeral = totalRows[0]?.n || 0;
+  if (onProgress) onProgress({ processados: 0, total: totalGeral });
 
   for (;;) {
     const { rows: lote } = await pool.query(
@@ -449,6 +457,7 @@ async function recalcularSlaTodos(pool, { agora = new Date(), loteSize = 300 } =
     }
 
     ultimoId = lote[lote.length - 1].id;
+    if (onProgress) onProgress({ processados: totalRecalculados, total: totalGeral });
   }
 
   return totalRecalculados;
