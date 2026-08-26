@@ -246,19 +246,27 @@ router.post('/recalcular-sla', requireAuth, requireAdmin, async (req, res) => {
   if (recalculoSlaEmAndamento) {
     return res.status(409).json({ error: 'Já existe um recálculo de SLA em andamento. Aguarde terminar.', progresso: recalculoSlaProgresso });
   }
+  // `mes` opcional ("AAAA-MM", no body) — limita o recálculo a um mês só.
+  // Pedido do Reysner: o recálculo de TODO o histórico (~4000 tickets)
+  // vinha travando mais de uma vez no plano gratuito antes de terminar.
+  const mes = req.body && req.body.mes ? String(req.body.mes) : null;
+  if (mes && !/^\d{4}-\d{2}$/.test(mes)) {
+    return res.status(400).json({ error: 'mes deve estar no formato AAAA-MM.' });
+  }
   recalculoSlaEmAndamento = true;
-  recalculoSlaProgresso = { processados: 0, total: null, iniciadoEm: new Date().toISOString(), concluidoEm: null };
-  res.json({ ok: true, mensagem: 'Recálculo de SLA iniciado em segundo plano. Pode levar alguns minutos — acompanhe pelos logs do Render ou recarregue a tela daqui a pouco.' });
+  recalculoSlaProgresso = { processados: 0, total: null, mes, iniciadoEm: new Date().toISOString(), concluidoEm: null };
+  res.json({ ok: true, mensagem: (mes ? `Recálculo de SLA de ${mes}` : 'Recálculo de SLA de tudo') + ' iniciado em segundo plano. Pode levar alguns minutos — acompanhe pelos logs do Render ou recarregue a tela daqui a pouco.' });
 
   try {
     const pool = obterPool();
     const total = await recalcularSlaTodos(pool, {
+      mes,
       onProgress: ({ processados, total: totalGeral }) => {
         recalculoSlaProgresso = { ...recalculoSlaProgresso, processados, total: totalGeral };
       },
     });
     recalculoSlaProgresso = { ...recalculoSlaProgresso, concluidoEm: new Date().toISOString() };
-    console.log('[CS] Recálculo de SLA concluído:', total, 'tickets');
+    console.log('[CS] Recálculo de SLA concluído:', total, 'tickets', mes ? `(mês ${mes})` : '(tudo)');
   } catch (e) {
     console.error('[CS] Recálculo de SLA falhou:', e);
   } finally {

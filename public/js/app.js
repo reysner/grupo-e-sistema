@@ -6636,14 +6636,34 @@ window.Tickets = Tickets;
      * minutos.
      */
     async recalcularSLA() {
+      // Recalcular TUDO (~4000 tickets) vinha travando mais de uma vez no
+      // plano gratuito antes de terminar — por isso agora pergunta se quer
+      // limitar a um mês (bem mais rápido e confiável) ou tudo mesmo.
+      const mes = prompt(
+        'Recalcular o SLA de qual mês? (AAAA-MM)\n\n' +
+        'Deixe em branco pra recalcular TODOS os tickets já salvos (pode levar mais de 1h ' +
+        'com o volume atual, e às vezes trava antes de terminar no plano gratuito).',
+        new Date().toISOString().slice(0, 7)
+      );
+      if (mes === null) return; // cancelou
+      if (mes && !/^\d{4}-\d{2}$/.test(mes)) {
+        if (window.App && App.Toast) App.Toast.err('Formato inválido. Use AAAA-MM, ou deixe em branco pra recalcular tudo.');
+        return;
+      }
       const ok = window.confirm(
-        'Isso vai reprocessar o SLA de TODOS os tickets já salvos, usando a fórmula mais recente ' +
-        '(sem buscar nada novo no Zappy). Útil depois de qualquer ajuste no motor de SLA.\n\n' +
+        (mes
+          ? `Isso vai reprocessar o SLA de todos os tickets de ${mes}`
+          : 'Isso vai reprocessar o SLA de TODOS os tickets já salvos') +
+        ', usando a fórmula mais recente (sem buscar nada novo no Zappy). Útil depois de qualquer ajuste no motor de SLA.\n\n' +
         'Pode levar alguns minutos rodando em segundo plano. Continuar?'
       );
       if (!ok) return;
       try {
-        const resp = await fetch('/api/cs/recalcular-sla', { method: 'POST', headers: SucessoCliente._authHeaders() });
+        const resp = await fetch('/api/cs/recalcular-sla', {
+          method: 'POST',
+          headers: { ...SucessoCliente._authHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify(mes ? { mes } : {}),
+        });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
         if (window.App && App.Toast) App.Toast.ok(data.mensagem || 'Recálculo de SLA iniciado.');

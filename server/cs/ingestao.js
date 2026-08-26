@@ -397,15 +397,31 @@ async function preencherTrocasPendentes(pool, { agora = new Date(), limite = 50 
  * @param {number} [opts.loteSize]  quantos tickets por lote (default 300)
  * @returns {number} total de tickets recalculados
  */
-async function recalcularSlaTodos(pool, { agora = new Date(), loteSize = 300, onProgress = null } = {}) {
+async function recalcularSlaTodos(pool, { agora = new Date(), loteSize = 300, onProgress = null, mes = null } = {}) {
   let totalRecalculados = 0;
   let ultimoId = '00000000-0000-0000-0000-000000000000';
+
+  // `mes` (opcional, "AAAA-MM") restringe aos tickets daquele mês (por
+  // encerramento, ou abertura se ainda não fechou) — pedido do Reysner: o
+  // recálculo de TODO o histórico (~4000 tickets) vinha travando antes de
+  // terminar, mais de uma vez, no plano gratuito do Render. Como o que
+  // importa pra Gamificação é só o mês corrente, limitar o escopo evita
+  // reprocessar meses inteiros que não vão ser usados de qualquer forma.
+  // Sem `mes`, mantém o comportamento antigo (recalcula tudo). Validado com
+  // regex (não é so-anti-injection: um valor errado aqui simplesmente não
+  // bate com TO_CHAR nenhum e o filtro vira "não recalcula nada").
+  if (mes != null && !/^\d{4}-\d{2}$/.test(mes)) throw new Error('mes deve estar no formato AAAA-MM');
+  const condicaoMes = mes ? `AND TO_CHAR(COALESCE(encerramento, abertura), 'YYYY-MM') = $1` : '';
+  const paramsMes = mes ? [mes] : [];
 
   // Pra status/progresso (ver GET /recalcular-sla/status) — pedido do
   // Reysner depois de perder a conta de quantas vezes o recálculo (que leva
   // mais de 1h com o volume atual) já tinha reiniciado sem querer, porque a
   // única forma de checar era tentando disparar de novo.
-  const { rows: totalRows } = await pool.query(`SELECT COUNT(*)::int AS n FROM cs_tickets`);
+  const { rows: totalRows } = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM cs_tickets WHERE TRUE ${condicaoMes}`,
+    paramsMes
+  );
   const totalGeral = totalRows[0]?.n || 0;
   if (onProgress) onProgress({ processados: 0, total: totalGeral });
 
@@ -413,10 +429,10 @@ async function recalcularSlaTodos(pool, { agora = new Date(), loteSize = 300, on
     const { rows: lote } = await pool.query(
       `SELECT id, zappy_id, empresa_texto, abertura, aceite, transferencia, encerramento
          FROM cs_tickets
-        WHERE id > $1
+        WHERE id > $1 ${mes ? `AND TO_CHAR(COALESCE(encerramento, abertura), 'YYYY-MM') = $3` : ''}
         ORDER BY id ASC
         LIMIT $2`,
-      [ultimoId, loteSize]
+      mes ? [ultimoId, loteSize, mes] : [ultimoId, loteSize]
     );
     if (!lote.length) break;
 
