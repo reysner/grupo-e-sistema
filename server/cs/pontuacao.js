@@ -117,6 +117,27 @@ function tierVelocidade(minutosUteis) {
 }
 
 /**
+ * Tier de ACEITE (métrica extra, só pra quem faz recepção/triagem da fila
+ * geral — controlado por gam_colaboradores.aplica_regra_aceite, hoje só a
+ * Elma): <=15min neutro (0) | >15min -1.
+ *
+ * Pedido do Reysner: o cliente chega e fica aguardando ser aceito antes de
+ * QUALQUER trabalho começar — essa espera nunca foi pontuada à parte. O
+ * relógio de transferência só começa a contar A PARTIR do aceite (mede
+ * aceite -> transferência), então alguém podia demorar muito só pra aceitar
+ * um ticket da fila sem nenhum reflexo na nota. Aplicado a quem de fato fez
+ * esse aceite original: papel "transferiu" (aceitou e depois passou pra
+ * frente) ou "unico" (aceitou e também encerrou). Papel "recebeu" nunca —
+ * quem recebe uma transferência não fez o aceite original, foi outra
+ * pessoa.
+ */
+function tierAceite(minutosUteis) {
+  if (minutosUteis == null) return null;
+  if (minutosUteis <= 15) return 0;
+  return -1;
+}
+
+/**
  * Calcula a(s) linha(s) de pontuação de UM ticket já fechado e avaliado.
  * Função PURA — recebe tudo já carregado, não faz I/O (fácil de testar).
  *
@@ -142,6 +163,18 @@ function calcularPontosTicket(ticket, mensagens = []) {
   // A nota do cliente é atribuída só a quem ENCERRA o atendimento — quem só
   // transfere não recebe a nota, o resultado dele é só o ajuste de
   // velocidade puro (+2/+1/−1), sem nota_cliente somada nem teto de 5.
+  // Métrica de ACEITE (abertura -> aceite): tempo que o cliente ficou
+  // aguardando ser aceito/iniciar o atendimento, SEMPRE atribuída a quem de
+  // fato fez esse aceite — o analista original (analista_anterior se
+  // transferido, ou o próprio analista se não). Quem só RECEBE uma
+  // transferência nunca fez esse aceite original (foi outra pessoa), então
+  // não entra aqui pra esse papel. Fica gravada sempre (todo ticket), mas só
+  // é APLICADA na média mensal de quem tiver gam_colaboradores.
+  // aplica_regra_aceite = true (ver executarAutoPreencher em routes/data.js)
+  // — hoje só a Elma, pedido do Reysner.
+  const relAceite = porTipo('aceite');
+  const ajusteAceite = tierAceite(relAceite ? relAceite.minutos_uteis : null);
+
   if (foiTransferido) {
     const relTransf = porTipo('transferencia'); // aceite -> transferência
     const ajusteVelocidade = tierVelocidade(relTransf ? relTransf.minutos_uteis : null);
@@ -152,6 +185,7 @@ function calcularPontosTicket(ticket, mensagens = []) {
       ajusteVelocidade: ajusteVelocidade ?? 0,
       ajusteFinalizar: 0,
       ajusteReabertura: 0,
+      ajusteAceite,
       notaFinal: ajusteVelocidade ?? 0,
     });
   }
@@ -189,6 +223,12 @@ function calcularPontosTicket(ticket, mensagens = []) {
     ajusteVelocidade: ajusteVelocidade2 ?? 0,
     ajusteFinalizar,
     ajusteReabertura,
+    // Só quando NÃO foi transferido (papel 'unico') esse analista é quem fez
+    // o aceite original — grava o ajuste. Quando 'recebeu' (foi transferido),
+    // o aceite original foi de OUTRA pessoa (linha "transferiu" acima), então
+    // fica null (não 0 — null é "não se aplica a esse papel", pra AVG()
+    // ignorar em vez de contar como zero).
+    ajusteAceite: foiTransferido ? null : ajusteAceite,
     notaFinal: clamp(notaCliente + (ajusteVelocidade2 ?? 0) + ajusteFinalizar + ajusteReabertura, 0, 5),
   });
 
@@ -227,6 +267,11 @@ async function ensurePontuacaoSchema(pool) {
     UNIQUE (ticket_id, papel)
   )`).catch(()=>{});
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gam_pontos_mes_analista ON gam_tickets_pontos (mes, analista_id)`).catch(()=>{});
+  // Métrica de aceite (tempo até o cliente ser aceito/atendido no aguardando)
+  // — nullable, sem default: papéis que não usam a métrica (recebeu/unico)
+  // gravam NULL, e AVG()/filtros IS NOT NULL naturalmente ignoram essas
+  // linhas. Só aplicada de fato pra colaboradores com aplica_regra_aceite=true.
+  await pool.query(`ALTER TABLE gam_tickets_pontos ADD COLUMN IF NOT EXISTS ajuste_aceite NUMERIC(3,1)`).catch(()=>{});
 }
 
 /** Calcula e grava a pontuação de UM ticket (upsert), preservando revisão humana já feita. */
@@ -251,14 +296,15 @@ async function persistirPontosTicket(pool, ticketId) {
     await pool.query(
       `INSERT INTO gam_tickets_pontos (
          ticket_id, papel, analista, analista_id, mes, nota_cliente,
-         ajuste_velocidade, ajuste_finalizar, ajuste_reabertura, nota_final, calculado_em
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
+         ajuste_velocidade, ajuste_finalizar, ajuste_reabertura, nota_final, calculado_em, ajuste_aceite
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),$11)
        ON CONFLICT (ticket_id, papel) DO UPDATE SET
          analista = $3, analista_id = $4, mes = $5, nota_cliente = $6,
          ajuste_velocidade = $7, ajuste_finalizar = $8, ajuste_reabertura = $9,
-         nota_final = $10, calculado_em = NOW()`,
+         nota_final = $10, calculado_em = NOW(), ajuste_aceite = $11`,
       [ticketId, l.papel, l.analista, l.analistaId, mes, l.notaCliente,
-       l.ajusteVelocidade, l.ajusteFinalizar, l.ajusteReabertura, l.notaFinal]
+       l.ajusteVelocidade, l.ajusteFinalizar, l.ajusteReabertura, l.notaFinal,
+       l.ajusteAceite ?? null]
     );
   }
   return linhas.length;

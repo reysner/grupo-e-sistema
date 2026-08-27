@@ -2401,6 +2401,16 @@ async function ensureGamTables() {
   // 0-5 — fica null até o admin calibrar, e enquanto null aquele rótulo é
   // ignorado do cálculo (nunca inventa nota pra rótulo não mapeado).
   await pool.query(`ALTER TABLE gam_colaboradores ADD COLUMN IF NOT EXISTS zappy_user_id TEXT`).catch(()=>{});
+
+  // ── Regra de ACEITE do aguardando (pedido do Reysner p/ a Elma) ───────────
+  // A Elma é quem recebe a chegada do cliente no Sucesso do Cliente — se o
+  // cliente fica >15min úteis aguardando ser aceito, desconta -1 (média,
+  // igual ao bônus de transferência). Configurável por colaborador (não
+  // hardcoded por nome/UUID) pra já deixar preparado caso a função mude de
+  // pessoa no futuro; hoje só a Elma tem a flag ligada.
+  await pool.query(`ALTER TABLE gam_colaboradores ADD COLUMN IF NOT EXISTS aplica_regra_aceite BOOLEAN DEFAULT false`).catch(()=>{});
+  await pool.query(`UPDATE gam_colaboradores SET aplica_regra_aceite = true WHERE nome = 'Elma' AND aplica_regra_aceite = false`).catch(()=>{});
+
   await pool.query(`CREATE TABLE IF NOT EXISTS gam_qualificacao_mapa (
     chave TEXT PRIMARY KEY,
     nota NUMERIC(3,2),
@@ -2651,7 +2661,7 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
   if (!mes || !/^\d{4}-\d{2}$/.test(mes)) throw new Error('Informe "mes" no formato AAAA-MM.');
 
   const { rows: colaboradores } = await pool.query(
-    `SELECT id, nome, zappy_user_id FROM gam_colaboradores WHERE ativo = true AND zappy_user_id IS NOT NULL ORDER BY nome ASC`
+    `SELECT id, nome, zappy_user_id, aplica_regra_aceite FROM gam_colaboradores WHERE ativo = true AND zappy_user_id IS NOT NULL ORDER BY nome ASC`
   );
   if (!colaboradores.length) {
     return { dryRun: !!dryRun, mes, resultados: [], rotulosNovos: [], aviso: 'Nenhum colaborador ativo vinculado a um usuário do Zappy ainda.' };
@@ -2715,6 +2725,28 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
         const bonusTransferencia = bonusRows.length
           ? bonusRows.reduce((s, r) => s + parseFloat(r.ajuste_velocidade), 0) / bonusRows.length
           : 0;
+
+        // Bônus/desconto de ACEITE do aguardando — só pra colaboradores com
+        // a flag ligada (hoje só a Elma). Mesma lógica de média (não soma)
+        // do bônus de transferência, pelos mesmos motivos (não punir por
+        // volume). Usa as linhas 'transferiu' e 'unico' (só quem de fato fez
+        // o aceite original tem ajuste_aceite gravado — ver cs/pontuacao.js;
+        // 'recebeu' sempre vem NULL e é naturalmente excluído pelo filtro).
+        let bonusAceite = 0;
+        if (c.aplica_regra_aceite) {
+          const { rows: aceiteRows } = await pool.query(
+            `SELECT p.ajuste_aceite FROM gam_tickets_pontos p
+             LEFT JOIN gam_velocidade_revisoes vr ON vr.ticket_id = p.ticket_id AND vr.papel = p.papel
+             WHERE p.mes = $1 AND p.analista_id = $2 AND p.papel IN ('transferiu','unico')
+               AND p.ajuste_aceite IS NOT NULL
+               AND COALESCE(vr.status, 'pendente') != 'indevida'`,
+            [mes, c.zappy_user_id]
+          );
+          if (aceiteRows.length) {
+            bonusAceite = aceiteRows.reduce((s, r) => s + parseFloat(r.ajuste_aceite), 0) / aceiteRows.length;
+          }
+        }
+
         const somaBase = notasRows.reduce((s, r) => {
           if (r.vel_status === 'indevida') {
             const semVelocidade = clamp(parseFloat(r.nota_cliente) + 0 + parseFloat(r.ajuste_finalizar) + parseFloat(r.ajuste_reabertura), 0, 5);
@@ -2723,8 +2755,8 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
           return s + parseFloat(r.nota_final);
         }, 0);
         const mediaBase = somaBase / notasRows.length;
-        const media_individual = Number(Math.max(0, Math.min(5, mediaBase + bonusTransferencia)).toFixed(2));
-        resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes: notasRows.length, bonusTransferencia, fonte: 'tickets' });
+        const media_individual = Number(Math.max(0, Math.min(5, mediaBase + bonusTransferencia + bonusAceite)).toFixed(2));
+        resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes: notasRows.length, bonusTransferencia, bonusAceite, fonte: 'tickets' });
         if (!dryRun) {
           await pool.query(
             `INSERT INTO gam_notas (colaborador_id, mes, media_individual, avaliacoes, lancado_por)
