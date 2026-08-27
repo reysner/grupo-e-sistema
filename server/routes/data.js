@@ -2884,7 +2884,7 @@ router.get('/gam/relatorio-descontos', requireAdmin, async (req, res) => {
     if (!colabRows[0].zappy_user_id) return res.json({ colaborador: colabRows[0].nome, mes, tickets: [], aviso: 'Colaborador ainda não vinculado a um usuário do Zappy.' });
 
     const { rows } = await pool.query(
-      `SELECT p.papel, p.nota_cliente, p.ajuste_velocidade, p.ajuste_finalizar, p.ajuste_reabertura, p.nota_final,
+      `SELECT p.papel, p.nota_cliente, p.ajuste_velocidade, p.ajuste_finalizar, p.ajuste_reabertura, p.ajuste_aceite, p.nota_final,
               t.zappy_id, t.empresa_texto, t.encerramento, t.revisao_nota_status
        FROM gam_tickets_pontos p
        JOIN cs_tickets t ON t.id = p.ticket_id
