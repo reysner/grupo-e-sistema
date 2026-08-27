@@ -137,19 +137,18 @@
     <div class="card">
       <p class="card-title">⚡ Tempo de 1ª Resposta</p>
       <p class="card-sub">Quem transferiu o atendimento</p>
-      <div class="rowline"><span>Transferiu em até 30 min</span><span class="pill good">+2</span></div>
-      <div class="rowline"><span>Transferiu entre 30 min e 1h</span><span class="pill warn">+1</span></div>
-      <div class="rowline"><span>Transferiu depois de 1h</span><span class="pill bad">−1</span></div>
+      <div class="rowline"><span>Transferiu em até 30 min</span><span class="pill neu">neutro</span></div>
+      <div class="rowline"><span>Transferiu depois de 30 min</span><span class="pill bad">−1</span></div>
       <p class="card-sub">Quem recebeu o atendimento</p>
-      <div class="rowline"><span>Iniciou em até 30 min</span><span class="pill good">+2</span></div>
-      <div class="rowline"><span>Iniciou entre 30 min e 1h</span><span class="pill warn">+1</span></div>
-      <div class="rowline"><span>Iniciou depois de 1h</span><span class="pill bad">−1</span></div>
+      <div class="rowline"><span>Iniciou em até 30 min</span><span class="pill neu">neutro</span></div>
+      <div class="rowline"><span>Iniciou depois de 30 min</span><span class="pill bad">−1</span></div>
+      <p class="card-foot">Responder dentro de 30 min é o esperado — não soma bônus, só evita o desconto. Passou de 30 min, desconta −1 (não importa quanto tempo passou depois disso).</p>
       <div class="info-note"><span>ℹ️</span><span>A nota do cliente é sempre de quem <b>encerra</b> o atendimento. Quem só transfere não fica com nota nenhuma sozinho — a <b>média</b> do desempenho dele nas transferências do mês (não a soma) fica guardada e só entra na conta quando ele também encerrar pelo menos 1 atendimento com nota real no mês (capado em 5). É média, não soma, pra não depender do volume de transferências — quem transfere muita coisa devagar não acumula um saldo negativo gigante. Sem nenhuma nota real no mês, essa média não vale nada sozinha.</span></div>
       <div class="formula-box" style="text-align:left">
-        <b>Exemplo prático:</b> no mês, um analista transferiu 35 tickets — 30 depois de 1h (−1 cada) e 5 em até 30 min (+2 cada).<br><br>
-        Se fosse soma, ficaria pesado demais: 30×(−1) + 5×(+2) = <b>−20</b> de uma vez.<br>
-        Por isso é <b>média</b>, não soma: (30×−1 + 5×+2) ÷ 35 ≈ <b>−0,57</b><br><br>
-        Esse analista também encerrou atendimentos no mês, com nota real média de 4,50. Nota final: 4,50 + (−0,57) = <b>3,93</b>. Se a maioria das transferências fosse rápida, essa média ficaria positiva e ajudaria a subir a nota (sempre respeitando o limite de 5).
+        <b>Exemplo prático:</b> no mês, um analista transferiu 35 tickets — 30 depois de 30 min (−1 cada) e 5 em até 30 min (neutro, 0).<br><br>
+        Se fosse soma, ficaria pesado demais: 30×(−1) + 5×0 = <b>−30</b> de uma vez.<br>
+        Por isso é <b>média</b>, não soma: (30×−1 + 5×0) ÷ 35 ≈ <b>−0,86</b><br><br>
+        Esse analista também encerrou atendimentos no mês, com nota real média de 4,50. Nota final: 4,50 + (−0,86) = <b>3,64</b>. Quanto mais transferências dentro de 30 min, mais essa média se aproxima de zero e para de puxar a nota pra baixo — mas nunca soma bônus, só evita o desconto.
       </div>
     </div>
 
@@ -190,9 +189,9 @@
       <div class="rule-examples">
         <p class="label">Exemplos</p>
         <ul>
-          <li>Nota 3 + respondeu em até 30 min (+2) = <b>5</b></li>
           <li>Nota 4 + finalizou corretamente (+1) = <b>5</b></li>
-          <li>Nota 5 + qualquer bônus = continua <b>5</b></li>
+          <li>Nota 5 + respondeu em até 30 min (neutro) = continua <b>5</b></li>
+          <li>Nota 5 + demorou mais de 30 min pra responder (−1) = <b>4</b></li>
           <li>Nota 5 + reabertura no limbo (−1) = <b>4</b></li>
         </ul>
       </div>

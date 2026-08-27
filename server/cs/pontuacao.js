@@ -96,11 +96,23 @@ function pareceRespostaDeNota(texto) {
   return /^[1-5]$/.test(t);
 }
 
-/** Tier de velocidade (métrica 1): <=30min +2 | 30-60min +1 | >60min -1. null se não há relógio pra medir. */
+/**
+ * Tier de velocidade (métrica 1): <=30min neutro (0) | >30min -1.
+ * null se não há relógio pra medir. Vale igual pra quem transferiu E pra
+ * quem recebeu/atendeu — mesma função, os dois papéis usam.
+ *
+ * Antes era <=30min +2 | 30-60min +1 | >60min -1. Achado do Reysner: com o
+ * +2, um ticket com nota do cliente 5 e resposta rápida já somava 7 antes
+ * de qualquer desconto (reabertura, etc.) — o teto de 5 do ticket
+ * "absorvia" o +2 e qualquer desconto ficava invisível no resultado, então
+ * quase todo mundo fechava o mês em 5.00 mesmo tendo descontos reais no
+ * meio do caminho. Sem bônus positivo (só neutro ou -1), um desconto real
+ * continua aparecendo na nota, porque não tem mais margem sobrando pra
+ * absorver.
+ */
 function tierVelocidade(minutosUteis) {
   if (minutosUteis == null) return null;
-  if (minutosUteis <= 30) return 2;
-  if (minutosUteis <= 60) return 1;
+  if (minutosUteis <= 30) return 0;
   return -1;
 }
 
