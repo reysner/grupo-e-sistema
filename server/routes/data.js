@@ -2441,6 +2441,24 @@ async function ensureGamTables() {
     revisado_em TIMESTAMPTZ,
     UNIQUE (ticket_id, papel)
   )`).catch(()=>{});
+
+  // ── Revisão do ACEITE do aguardando (separada da revisão de velocidade) ──
+  // Pedido do Reysner: em situações que parecem bot/marketing/envio de
+  // currículo etc. (contato não é um cliente de verdade pedindo suporte),
+  // o tempo de aceite não deveria contar pra métrica de ninguém — mesmo
+  // padrão de gam_velocidade_revisoes (ticket+papel, pendente/devida/
+  // indevida), mas em tabela própria porque é um julgamento DIFERENTE: a
+  // revisão de velocidade pergunta "o desconto reflete a realidade?"; esta
+  // pergunta "esse contato/ticket devia estar sendo contado nessa métrica?".
+  await pool.query(`CREATE TABLE IF NOT EXISTS gam_aceite_revisoes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ticket_id UUID NOT NULL REFERENCES cs_tickets(id) ON DELETE CASCADE,
+    papel TEXT NOT NULL CHECK (papel IN ('transferiu','unico')),
+    status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente','devida','indevida')),
+    revisado_por TEXT,
+    revisado_em TIMESTAMPTZ,
+    UNIQUE (ticket_id, papel)
+  )`).catch(()=>{});
 }
 
 async function getPesoMinimo() {
@@ -2732,14 +2750,18 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
         // volume). Usa as linhas 'transferiu' e 'unico' (só quem de fato fez
         // o aceite original tem ajuste_aceite gravado — ver cs/pontuacao.js;
         // 'recebeu' sempre vem NULL e é naturalmente excluído pelo filtro).
+        // gam_aceite_revisoes (separada de gam_velocidade_revisoes): exclui
+        // contatos marcados como bot/marketing/currículo etc. — "indevida"
+        // aqui não é sobre o desconto ter sido justo, é sobre o ticket nem
+        // dever entrar na amostra da métrica.
         let bonusAceite = 0;
         if (c.aplica_regra_aceite) {
           const { rows: aceiteRows } = await pool.query(
             `SELECT p.ajuste_aceite FROM gam_tickets_pontos p
-             LEFT JOIN gam_velocidade_revisoes vr ON vr.ticket_id = p.ticket_id AND vr.papel = p.papel
+             LEFT JOIN gam_aceite_revisoes ar ON ar.ticket_id = p.ticket_id AND ar.papel = p.papel
              WHERE p.mes = $1 AND p.analista_id = $2 AND p.papel IN ('transferiu','unico')
                AND p.ajuste_aceite IS NOT NULL
-               AND COALESCE(vr.status, 'pendente') != 'indevida'`,
+               AND COALESCE(ar.status, 'pendente') != 'indevida'`,
             [mes, c.zappy_user_id]
           );
           if (aceiteRows.length) {
@@ -3036,6 +3058,71 @@ router.patch('/gam/tickets-revisao-velocidade/:ticketId/:papel', requireAdmin, a
   } catch (err) {
     console.error('[gam] PATCH tickets-revisao-velocidade falhou:', err);
     res.status(500).json({ error: 'Erro ao salvar revisão de velocidade.' });
+  }
+});
+
+/**
+ * GET /api/data/gam/tickets-revisao-aceite — revisão do ACEITE do
+ * aguardando: lista linhas de gam_tickets_pontos com ajuste_aceite gravado
+ * (papel 'unico'/'transferiu', não-null) pra colaboradores com
+ * gam_colaboradores.aplica_regra_aceite = true. Pra marcar como 'indevida'
+ * contatos que parecem bot/marketing/currículo etc. — o ticket some do
+ * cálculo da média de aceite daquele colaborador, sem afetar mais nada.
+ */
+router.get('/gam/tickets-revisao-aceite', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    await ensurePontuacaoSchema(pool);
+    const { mes } = req.query;
+    if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+    const status = ['pendente', 'devida', 'indevida'].includes(req.query.status) ? req.query.status : 'pendente';
+
+    const { rows } = await pool.query(
+      `SELECT p.ticket_id, p.papel, p.analista, p.ajuste_aceite, p.nota_final,
+              t.zappy_id, t.empresa_texto, t.encerramento,
+              ar.status AS revisao_status, ar.revisado_por, ar.revisado_em
+         FROM gam_tickets_pontos p
+         JOIN cs_tickets t ON t.id = p.ticket_id
+         JOIN gam_colaboradores c ON c.zappy_user_id = p.analista_id
+         LEFT JOIN gam_aceite_revisoes ar ON ar.ticket_id = p.ticket_id AND ar.papel = p.papel
+        WHERE p.mes = $1
+          AND p.ajuste_aceite IS NOT NULL
+          AND c.aplica_regra_aceite = true
+          AND COALESCE(ar.status, 'pendente') = $2
+        ORDER BY t.encerramento DESC NULLS LAST`,
+      [mes, status]
+    );
+    res.json({ data: rows });
+  } catch (err) {
+    console.error('[gam] tickets-revisao-aceite falhou:', err);
+    res.status(500).json({ error: 'Erro ao listar aceites para revisão.' });
+  }
+});
+
+/** PATCH /api/data/gam/tickets-revisao-aceite/:ticketId/:papel — marca devida/indevida. */
+router.patch('/gam/tickets-revisao-aceite/:ticketId/:papel', requireAdmin, async (req, res) => {
+  try {
+    const { status_revisao } = req.body;
+    if (!['devida', 'indevida'].includes(status_revisao)) {
+      return res.status(400).json({ error: 'status_revisao deve ser "devida" ou "indevida".' });
+    }
+    const { papel } = req.params;
+    if (!['transferiu', 'unico'].includes(papel)) {
+      return res.status(400).json({ error: 'papel inválido.' });
+    }
+    await ensureGamTables();
+    const { rows } = await pool.query(
+      `INSERT INTO gam_aceite_revisoes (ticket_id, papel, status, revisado_por, revisado_em)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (ticket_id, papel) DO UPDATE SET
+         status = $3, revisado_por = $4, revisado_em = NOW()
+       RETURNING id`,
+      [req.params.ticketId, papel, status_revisao, req.user.name]
+    );
+    res.json({ ok: true, data: rows[0] });
+  } catch (err) {
+    console.error('[gam] PATCH tickets-revisao-aceite falhou:', err);
+    res.status(500).json({ error: 'Erro ao salvar revisão de aceite.' });
   }
 });
 

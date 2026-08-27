@@ -69,18 +69,32 @@ function traduzirMensagem(m, ticketZappy) {
 
 /**
  * Extrai eventos de SLA a partir do ticket. A API pública não dá o
- * instante exato do aceite/transferência (isso existia via `metas` na
- * API interna, que não está disponível aqui) — então:
+ * instante exato do aceite/transferência VIA SWAGGER — mas confirmado em
+ * 27/08/2026 (via /api/cs/diagnostico num ticket real, #47868, da Elma)
+ * que o campo `metas` (fora do swagger, mas presente na resposta real —
+ * mesma situação do `rate`) TEM o evento formal:
+ *   { type: 'acceptTicket', userId, value, createdAt }
+ * — exatamente quando alguém aceitou o ticket saindo do aguardando/bot, e
+ * quem foi. É isso que o próprio Zappy usa no relatório dele "Tempo médio
+ * de Aceite do Aguardando" (confirmado pelo texto do tooltip: "tempo médio
+ * que um usuário levou a aceitar um atendimento do aguardando ou bot").
+ * Muito mais preciso que o fallback antigo (1ª msg não-bot do escritório),
+ * que mede quando alguém RESPONDEU — não quando aceitou. Um atendente pode
+ * aceitar rápido e demorar pra responder (ou vice-versa), e isso mistura
+ * as duas coisas em uma só métrica.
+ *
  *   - abertura: ticket.createdAt (confirmado)
  *   - encerramento: se status='closed', usa ticket.updatedAt (aproximação
  *     razoável — normalmente é a última coisa que aconteceu no ticket)
- *   - aceite: SEM sinal direto. Fallback: 1ª mensagem do escritório
- *     já classificada como não-bot (ver ehMensagemBot) — funciona bem
- *     porque a ingestão pega a maioria dos tickets ainda 'pending'.
+ *   - aceite: preferência pro meta 'acceptTicket' (mais antigo, se houver
+ *     mais de um — mantém o sentido de "abertura -> 1º aceite"). Sem meta
+ *     (tickets mais antigos, ou se o Zappy parar de mandar isso): fallback
+ *     pra 1ª mensagem do escritório já classificada como não-bot.
  *   - transferência: NÃO DÁ pra detectar com a API pública sozinha (não
- *     existe histórico de mudança de fila com timestamp). Fica como
- *     limitação conhecida — precisaria de um diff entre execuções da
- *     ingestão (comparar queueId salvo vs. o novo) para aproximar.
+ *     existe histórico de mudança de fila com timestamp nem em `metas`,
+ *     só o aceite). Fica como limitação conhecida — precisaria de um diff
+ *     entre execuções da ingestão (comparar queueId salvo vs. o novo) para
+ *     aproximar (é isso que resolverHoraTransferencia em ingestao.js já faz).
  */
 function extrairEventos(ticketZappy, mensagens) {
   const eventos = [];
@@ -94,10 +108,17 @@ function extrairEventos(ticketZappy, mensagens) {
     eventos.push({ tipo: 'encerramento', hora: ticketZappy.updatedAt });
   }
 
-  const primEsc = mensagens
-    .filter(m => m.remetente === 'escritorio' && !m.is_bot)
-    .sort((a, b) => new Date(a.hora) - new Date(b.hora))[0];
-  if (primEsc) eventos.push({ tipo: 'aceite', hora: primEsc.hora });
+  const acceptMetas = (ticketZappy.metas || [])
+    .filter(m => m.type === 'acceptTicket' && m.createdAt)
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  if (acceptMetas.length) {
+    eventos.push({ tipo: 'aceite', hora: acceptMetas[0].createdAt });
+  } else {
+    const primEsc = mensagens
+      .filter(m => m.remetente === 'escritorio' && !m.is_bot)
+      .sort((a, b) => new Date(a.hora) - new Date(b.hora))[0];
+    if (primEsc) eventos.push({ tipo: 'aceite', hora: primEsc.hora });
+  }
 
   return eventos.sort((a, b) => new Date(a.hora) - new Date(b.hora));
 }

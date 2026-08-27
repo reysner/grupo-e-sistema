@@ -5878,6 +5878,72 @@ const Gamificacao = (() => {
     } else App.Toast.err('Erro ao salvar.');
   }
 
+  // ── Revisão do ACEITE do aguardando (separada da revisão de velocidade) ────
+  // Pedido do Reysner: contatos que parecem bot/marketing/envio de currículo
+  // etc. não deveriam contar pra métrica de tempo de aceite de ninguém — o
+  // sistema não tem como saber isso sozinho, então fica marcável na mão.
+  async function abrirRevisaoAceite() {
+    const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
+    App.Modal.open('Revisar aceite do aguardando — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
+      '<p style="font-size:13px;color:var(--gray-500)">Tickets com a métrica de tempo de aceite do aguardando (só conta pra colaboradores com a regra ligada). Marca "Devida" se é um cliente de verdade esperando atendimento, ou "Indevida" se parece bot/marketing/envio de currículo/spam — aí o ticket sai do cálculo da média de aceite, sem afetar mais nada. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+        '<label style="font-size:12px;font-weight:700;color:var(--gray-500)">Mostrar:</label>' +
+        '<select id="gam-revisao-aceite-status" class="input" style="width:auto" onchange="Gamificacao._trocarStatusRevisaoAceite(\'' + mes + '\')">' +
+          '<option value="pendente">Pendentes</option>' +
+          '<option value="devida">Já marcadas como devida</option>' +
+          '<option value="indevida">Já marcadas como indevida</option>' +
+        '</select>' +
+      '</div>' +
+      '<div id="gam-revisao-aceite-lista">Carregando...</div>' +
+    '</div>', null, { wide: true });
+    await _carregarRevisaoAceite(mes, 'pendente');
+  }
+
+  function _trocarStatusRevisaoAceite(mes) {
+    const status = document.getElementById('gam-revisao-aceite-status')?.value || 'pendente';
+    _carregarRevisaoAceite(mes, status);
+  }
+
+  async function _carregarRevisaoAceite(mes, status) {
+    const box = document.getElementById('gam-revisao-aceite-lista');
+    if (!box) return;
+    status = status || 'pendente';
+    box.innerHTML = 'Carregando...';
+    const res = await fetch('/api/data/gam/tickets-revisao-aceite?mes=' + mes + '&status=' + status, { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao carregar.</p>'; return; }
+    const { data } = await res.json();
+    const rotuloVazio = status === 'pendente' ? 'Nenhum aceite pendente de revisão' : 'Nenhum ticket marcado como ' + status;
+    if (!data.length) { box.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:16px">' + rotuloVazio + ' em ' + _mesLabel(mes) + '.</p>'; return; }
+    const mostrarQuem = status !== 'pendente';
+    const papelLabel = { transferiu: 'Transferiu', unico: 'Único' };
+    box.innerHTML = '<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">' +
+      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Analista</th><th>Papel</th><th>Aceite</th>' + (mostrarQuem ? '<th>Revisado por</th>' : '') + '<th></th></tr></thead><tbody>' +
+      data.map(r => `<tr data-id="${r.ticket_id}-${r.papel}">` +
+        `<td>#${r.zappy_id}</td>` +
+        `<td>${r.empresa_texto || '—'}</td>` +
+        `<td>${r.analista || '—'}</td>` +
+        `<td>${papelLabel[r.papel] || r.papel}</td>` +
+        `<td style="font-weight:700;color:${parseFloat(r.ajuste_aceite) < 0 ? '#c0362c' : 'var(--gray-500)'}">${r.ajuste_aceite}</td>` +
+        (mostrarQuem ? `<td style="font-size:11px;color:var(--gray-400)">${r.revisado_por || '—'}${r.revisado_em ? '<br>' + new Date(r.revisado_em).toLocaleDateString('pt-BR') : ''}</td>` : '') +
+        `<td style="white-space:nowrap">` +
+          `<button class="btn btn-sm" ${status === 'devida' ? 'disabled title="Já está devida"' : ''} style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisaoAceite('${r.ticket_id}','${r.papel}','devida','${mes}','${status}')">Devida</button> ` +
+          `<button class="btn btn-sm" ${status === 'indevida' ? 'disabled title="Já está indevida"' : ''} style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisaoAceite('${r.ticket_id}','${r.papel}','indevida','${mes}','${status}')">Indevida</button>` +
+        `</td></tr>`
+      ).join('') + '</tbody></table></div>';
+  }
+
+  async function marcarRevisaoAceite(ticketId, papel, novoStatus, mes, statusAtual) {
+    const res = await fetch('/api/data/gam/tickets-revisao-aceite/' + ticketId + '/' + papel, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ status_revisao: novoStatus })
+    });
+    if (res && res.ok) {
+      App.Toast.ok('Marcado como ' + novoStatus + '.');
+      await _carregarRevisaoAceite(mes, statusAtual);
+    } else App.Toast.err('Erro ao salvar.');
+  }
+
   // ── Relatório de descontos por colaborador (transparência) ─────────────────
   let _relatorioDescontosData = [];
 
@@ -6092,6 +6158,7 @@ const Gamificacao = (() => {
     abrirAutoPreencher, confirmarAutoPreencher,
     abrirRevisaoNotas, marcarRevisao, _trocarStatusRevisao,
     abrirRevisaoVelocidade, marcarRevisaoVelocidade, _trocarStatusRevisaoVelocidade,
+    abrirRevisaoAceite, marcarRevisaoAceite, _trocarStatusRevisaoAceite,
     abrirRelatorioDescontos, gerarRelatorioDescontos, exportarRelatorioDescontosCSV, exportarRelatorioDescontosPDF,
     recalcularPontos,
   };
