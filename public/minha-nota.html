@@ -256,18 +256,22 @@ async function carregar() {
       html += '<div class="card"><p class="empty-msg">' + t.aviso + '</p></div>';
     } else if (tickets.length) {
       html += '<div class="card"><p class="card-title">Seus atendimentos em ' + mesLabel(mes) + '</p>' +
-        '<p style="font-size:12px;color:var(--gray-400);margin-bottom:10px">Tickets marcados <b>"Indevida"</b> já foram revisados pela liderança e <b>não entram</b> na composição da sua nota acima — aparecem aqui só pra registro. Um desconto de Vel./Finalizar riscado abaixo também já foi revisado e anulado individualmente, mesmo que o ticket inteiro não esteja marcado indevida.</p>' +
+        '<p style="font-size:12px;color:var(--gray-400);margin-bottom:10px">Tickets marcados <b>"Indevida"</b> já foram revisados pela liderança e <b>não entram</b> na composição da sua nota acima — aparecem aqui só pra registro. Quando só o desconto de Vel./Finalizar foi anulado (ticket em si continua válido), o Final já aparece corrigido em <b style="color:var(--green-ok)">verde</b>.</p>' +
         '<div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota</th><th>Vel.</th><th>/Finalizar</th><th>Final</th><th>Revisão</th></tr></thead><tbody>' +
         tickets.map(tk => {
           const indevida = tk.revisao_nota_status === 'indevida';
           const velIndevida = tk.vel_revisao_status === 'indevida';
           const finalizarIndevida = tk.finalizar_revisao_status === 'indevida';
-          // Se a nota do ticket, a velocidade OU o /Finalizar foram marcados
-          // indevida, a linha inteira sai riscada — mesmo tratamento visual
-          // pra qualquer tipo de revisão que anule algo ali (pedido do
-          // Reysner, 28/08/2026: "se é indevido passe o risco completo").
-          const linhaRiscada = indevida || velIndevida || finalizarIndevida;
-          const temDesconto = !linhaRiscada && (parseFloat(tk.ajuste_velocidade) < 0 || parseFloat(tk.ajuste_finalizar) < 0);
+          // Risco completo na linha (opacidade + tachado) só quando o
+          // TICKET INTEIRO foi invalidado (nota marcada indevida — ex.
+          // "Ricardo Ceará"). Quando só o desconto de Vel./Finalizar foi
+          // revisado como indevido, o ticket em si continua válido: mostra
+          // limpo, sem risco na linha nem valores tachados — só o Final já
+          // corrigido (pedido do Reysner, 28/08/2026: "tirar os riscos,
+          // manter a nota 5 e excluir o -1 vel").
+          const linhaRiscada = indevida;
+          const temDesconto = !linhaRiscada && !velIndevida && !finalizarIndevida &&
+            (parseFloat(tk.ajuste_velocidade) < 0 || parseFloat(tk.ajuste_finalizar) < 0);
           const statusLabel = { pendente: 'Pendente', devida: 'Devida', indevida: 'Indevida — não conta' };
           const statusCor = indevida ? 'var(--gray-400)' : (tk.revisao_nota_status === 'devida' ? 'var(--green-ok)' : 'var(--gray-500)');
           // Nota 5 nunca precisa de revisão (não tem o que corrigir) — só
@@ -276,12 +280,11 @@ async function carregar() {
           // (achado do Reysner, 28/08/2026).
           const mostrarRevisao = Number(tk.nota_cliente) < 5;
           const revisaoTexto = mostrarRevisao ? (statusLabel[tk.revisao_nota_status] || tk.revisao_nota_status || '—') : '—';
-          const celulaVel = velIndevida
-            ? '<span style="text-decoration:line-through">' + tk.ajuste_velocidade + '</span> <span style="font-size:10px">(indevida)</span>'
-            : tk.ajuste_velocidade;
-          const celulaFinalizar = finalizarIndevida
-            ? '<span style="text-decoration:line-through">' + tk.ajuste_finalizar + '</span> <span style="font-size:10px">(indevida)</span>'
-            : tk.ajuste_finalizar;
+          // Desconto de Vel./Finalizar anulado: mostra 0,0 limpo (sem risco,
+          // sem valor antigo tachado) — o desconto simplesmente não existe
+          // mais pra essa linha.
+          const celulaVel = velIndevida ? '0.0' : tk.ajuste_velocidade;
+          const celulaFinalizar = finalizarIndevida ? '0.0' : tk.ajuste_finalizar;
           // "Final" sem o desconto de velocidade indevido: pra quem
           // encerrou/atendeu sozinho, a nota do ticket sem a velocidade É a
           // nota do cliente (reabertura já não entra mais na nota_final
@@ -291,7 +294,7 @@ async function carregar() {
             ? (tk.papel === 'transferiu' ? '0.00' : Number(tk.nota_cliente).toFixed(2))
             : tk.nota_final;
           const celulaFinal = velIndevida
-            ? '<span style="text-decoration:line-through">' + tk.nota_final + '</span> <b style="text-decoration:none;color:var(--green-ok)">' + finalCorrigido + '</b>'
+            ? '<b style="color:var(--green-ok)">' + finalCorrigido + '</b>'
             : tk.nota_final;
           return '<tr class="' + (temDesconto ? 'desconto' : '') + '"' + (linhaRiscada ? ' style="opacity:.55;text-decoration:line-through"' : '') + '>' +
             '<td>#' + tk.zappy_id + '</td>' +
