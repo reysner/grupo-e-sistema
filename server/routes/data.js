@@ -3143,9 +3143,15 @@ router.get('/gam/meus-tickets', async (req, res) => {
     if (!colabRows[0].zappy_user_id) return res.json({ colaborador: colabRows[0].nome, mes, tickets: [], aviso: 'Ainda não vinculado a um usuário do Zappy.' });
     const { rows } = await pool.query(
       `SELECT p.papel, p.nota_cliente, p.ajuste_velocidade, p.ajuste_finalizar, p.ajuste_aceite, p.nota_final,
-              t.zappy_id, t.empresa_texto, t.encerramento, t.revisao_nota_status
+              t.zappy_id, t.empresa_texto, t.encerramento, t.revisao_nota_status,
+              COALESCE(vr.status, 'pendente') AS vel_revisao_status,
+              COALESCE(fr.status, 'pendente') AS finalizar_revisao_status,
+              COALESCE(ar.status, 'pendente') AS aceite_revisao_status
        FROM gam_tickets_pontos p
        JOIN cs_tickets t ON t.id = p.ticket_id
+       LEFT JOIN gam_velocidade_revisoes vr ON vr.ticket_id = p.ticket_id AND vr.papel = p.papel
+       LEFT JOIN gam_finalizar_revisoes fr ON fr.ticket_id = p.ticket_id AND fr.papel = p.papel
+       LEFT JOIN gam_aceite_revisoes ar ON ar.ticket_id = p.ticket_id AND ar.papel = p.papel
        WHERE p.mes = $1 AND p.analista_id = $2
        ORDER BY t.encerramento DESC NULLS LAST`,
       [mes, colabRows[0].zappy_user_id]
