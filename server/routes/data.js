@@ -3512,6 +3512,51 @@ router.patch('/gam/tickets-revisao-finalizar/:ticketId/:papel', requireAdmin, as
   }
 });
 
+/**
+ * GET /api/data/gam/ticket-busca?zappy_id=&mes= — busca direta por número de
+ * ticket, pra usar nas 4 telas de revisão (nota/velocidade/aceite/
+ * finalizar) sem depender do ticket estar na lista de pendentes filtrada.
+ * Pedido do Reysner, 28/08/2026: às vezes o admin já sabe qual ticket quer
+ * corrigir e não quer catar na lista. Devolve o ticket (pra revisão de nota)
+ * + as linhas de gam_tickets_pontos daquele mês (pra revisão de velocidade/
+ * aceite/finalizar, uma por papel), já com o status atual de cada revisão.
+ */
+router.get('/gam/ticket-busca', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const zappyId = String(req.query.zappy_id || '').replace(/\D/g, '');
+    const { mes } = req.query;
+    if (!zappyId) return res.status(400).json({ error: 'Informe o número do ticket.' });
+    if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+
+    const { rows: ticketRows } = await pool.query(
+      `SELECT id, zappy_id, empresa_texto, encerramento, nota_avaliacao AS nota_cliente,
+              revisao_nota_status, revisao_nota_por, revisao_nota_em
+         FROM cs_tickets WHERE zappy_id = $1`,
+      [zappyId]
+    );
+    if (!ticketRows.length) return res.status(404).json({ error: 'Ticket #' + zappyId + ' não encontrado.' });
+    const ticket = ticketRows[0];
+
+    const { rows: pontos } = await pool.query(
+      `SELECT p.papel, p.analista, p.ajuste_velocidade, p.ajuste_aceite, p.ajuste_finalizar, p.nota_final,
+              vr.status AS vel_status, vr.revisado_por AS vel_por, vr.revisado_em AS vel_em,
+              ar.status AS aceite_status, ar.revisado_por AS aceite_por, ar.revisado_em AS aceite_em,
+              fr.status AS finalizar_status, fr.revisado_por AS finalizar_por, fr.revisado_em AS finalizar_em
+         FROM gam_tickets_pontos p
+         LEFT JOIN gam_velocidade_revisoes vr ON vr.ticket_id = p.ticket_id AND vr.papel = p.papel
+         LEFT JOIN gam_aceite_revisoes ar ON ar.ticket_id = p.ticket_id AND ar.papel = p.papel
+         LEFT JOIN gam_finalizar_revisoes fr ON fr.ticket_id = p.ticket_id AND fr.papel = p.papel
+        WHERE p.ticket_id = $1 AND p.mes = $2
+        ORDER BY p.papel`,
+      [ticket.id, mes]
+    );
+    res.json({ ticket, pontos });
+  } catch (err) {
+    console.error('[gam] ticket-busca falhou:', err);
+    res.status(500).json({ error: 'Erro ao buscar ticket.' });
+  }
+});
 
 // ── Mapeamento de checklist por regime + tipo ─────────────────────────────────
 const CHECKLIST_MAP = {

@@ -5876,11 +5876,110 @@ const Gamificacao = (() => {
     box.innerHTML = html;
   }
 
+  // ── Busca direta por número de ticket (reaproveitada nas 4 telas de revisão
+  // abaixo) — pedido do Reysner, 28/08/2026: às vezes já se sabe qual ticket
+  // corrigir e não quer catar na lista filtrada por pendente/devida/indevida.
+  function _htmlBuscaTicket(tipo, mes) {
+    return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px">' +
+        '<label style="font-size:12px;font-weight:700;color:var(--gray-500);white-space:nowrap">🔎 Buscar ticket:</label>' +
+        '<input id="gam-busca-' + tipo + '-input" class="input" style="width:140px" placeholder="Nº do ticket" ' +
+          'onkeydown="if(event.key===\'Enter\'){Gamificacao.buscarTicketRevisao(\'' + tipo + '\',\'' + mes + '\')}">' +
+        '<button class="btn btn-sm" onclick="Gamificacao.buscarTicketRevisao(\'' + tipo + '\',\'' + mes + '\')">Buscar</button>' +
+        '<span style="font-size:11px;color:var(--gray-400)">Marca devida/indevida direto pelo número.</span>' +
+      '</div>' +
+      '<div id="gam-busca-' + tipo + '-resultado"></div>';
+  }
+
+  async function buscarTicketRevisao(tipo, mes) {
+    const input = document.getElementById('gam-busca-' + tipo + '-input');
+    const box = document.getElementById('gam-busca-' + tipo + '-resultado');
+    if (!box) return;
+    const zappyId = (input?.value || '').replace(/\D/g, '');
+    if (!zappyId) { box.innerHTML = '<p style="color:#e53e3e;font-size:12px;margin-top:6px">Digite o número do ticket.</p>'; return; }
+    box.innerHTML = '<p style="font-size:12px;color:var(--gray-400);margin-top:6px">Buscando...</p>';
+    const res = await fetch('/api/data/gam/ticket-busca?zappy_id=' + zappyId + '&mes=' + mes, { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) {
+      const corpo = res ? await res.json().catch(() => ({})) : {};
+      box.innerHTML = '<p style="color:#e53e3e;font-size:12px;margin-top:6px">' + (corpo.error || 'Ticket não encontrado em ' + _mesLabel(mes) + '.') + '</p>';
+      return;
+    }
+    const { ticket, pontos } = await res.json();
+    box.innerHTML = _renderBuscaTicket(tipo, ticket, pontos, mes);
+  }
+
+  function _renderBuscaTicket(tipo, ticket, pontos, mes) {
+    if (tipo === 'nota') {
+      const status = ticket.revisao_nota_status || 'pendente';
+      return '<div class="table-wrap" style="margin-top:8px"><table class="data-table">' +
+        '<thead><tr><th>Ticket</th><th>Cliente</th><th>Nota</th><th>Status</th><th></th></tr></thead><tbody>' +
+        '<tr><td>#' + ticket.zappy_id + '</td><td>' + (ticket.empresa_texto || '—') + '</td>' +
+        '<td style="font-weight:700">' + (ticket.nota_cliente ?? '—') + '</td>' +
+        '<td style="font-size:11px;color:var(--gray-400)">' + status + (ticket.revisao_nota_por ? ' — ' + ticket.revisao_nota_por : '') + '</td>' +
+        '<td style="white-space:nowrap">' +
+          '<button class="btn btn-sm" ' + (status === 'devida' ? 'disabled title="Já está devida"' : '') + ' style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisaoBusca(\'nota\',\'' + ticket.id + '\',null,\'devida\',\'' + mes + '\')">Devida</button> ' +
+          '<button class="btn btn-sm" ' + (status === 'indevida' ? 'disabled title="Já está indevida"' : '') + ' style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisaoBusca(\'nota\',\'' + ticket.id + '\',null,\'indevida\',\'' + mes + '\')">Indevida</button>' +
+        '</td></tr></tbody></table></div>';
+    }
+    const campoAjuste = { velocidade: 'ajuste_velocidade', aceite: 'ajuste_aceite', finalizar: 'ajuste_finalizar' }[tipo];
+    const campoStatus = { velocidade: 'vel_status', aceite: 'aceite_status', finalizar: 'finalizar_status' }[tipo];
+    const campoPor = { velocidade: 'vel_por', aceite: 'aceite_por', finalizar: 'finalizar_por' }[tipo];
+    const papelLabel = tipo === 'aceite'
+      ? { transferiu: 'Transferiu', unico: 'Único' }
+      : tipo === 'finalizar'
+        ? { recebeu: 'Recebeu', unico: 'Único' }
+        : { transferiu: 'Transferiu', recebeu: 'Recebeu', unico: 'Único' };
+    const rotuloTipo = { velocidade: 'velocidade', aceite: 'aceite', finalizar: '/Finalizar' }[tipo];
+    const linhas = (pontos || []).filter(p => p[campoAjuste] !== null && p[campoAjuste] !== undefined);
+    if (!linhas.length) {
+      return '<p style="font-size:12px;color:var(--gray-400);margin-top:6px">Ticket #' + ticket.zappy_id + ' encontrado, mas sem desconto de ' + rotuloTipo + ' registrado em ' + _mesLabel(mes) + '.</p>';
+    }
+    return '<div class="table-wrap" style="margin-top:8px"><table class="data-table">' +
+      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Analista</th><th>Papel</th><th>Desconto</th><th>Status</th><th></th></tr></thead><tbody>' +
+      linhas.map(p => {
+        const status = p[campoStatus] || 'pendente';
+        return '<tr>' +
+          '<td>#' + ticket.zappy_id + '</td>' +
+          '<td>' + (ticket.empresa_texto || '—') + '</td>' +
+          '<td>' + (p.analista || '—') + '</td>' +
+          '<td>' + (papelLabel[p.papel] || p.papel) + '</td>' +
+          '<td style="font-weight:700;color:' + (parseFloat(p[campoAjuste]) < 0 ? '#c0362c' : 'var(--gray-500)') + '">' + p[campoAjuste] + '</td>' +
+          '<td style="font-size:11px;color:var(--gray-400)">' + status + (p[campoPor] ? ' — ' + p[campoPor] : '') + '</td>' +
+          '<td style="white-space:nowrap">' +
+            '<button class="btn btn-sm" ' + (status === 'devida' ? 'disabled title="Já está devida"' : '') + ' style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisaoBusca(\'' + tipo + '\',\'' + ticket.id + '\',\'' + p.papel + '\',\'devida\',\'' + mes + '\')">Devida</button> ' +
+            '<button class="btn btn-sm" ' + (status === 'indevida' ? 'disabled title="Já está indevida"' : '') + ' style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisaoBusca(\'' + tipo + '\',\'' + ticket.id + '\',\'' + p.papel + '\',\'indevida\',\'' + mes + '\')">Indevida</button>' +
+          '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
+  async function marcarRevisaoBusca(tipo, ticketId, papel, novoStatus, mes) {
+    const rotas = {
+      nota: '/api/data/gam/tickets-revisao/' + ticketId,
+      velocidade: '/api/data/gam/tickets-revisao-velocidade/' + ticketId + '/' + papel,
+      aceite: '/api/data/gam/tickets-revisao-aceite/' + ticketId + '/' + papel,
+      finalizar: '/api/data/gam/tickets-revisao-finalizar/' + ticketId + '/' + papel,
+    };
+    const res = await fetch(rotas[tipo], {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ status_revisao: novoStatus })
+    });
+    if (!res || !res.ok) { App.Toast.err('Erro ao salvar.'); return; }
+    App.Toast.ok('Marcado como ' + novoStatus + '.');
+    await buscarTicketRevisao(tipo, mes);
+    // Se o ticket também aparece na lista filtrada (pendente/devida/indevida)
+    // logo abaixo, recarrega ela também pra não ficar desatualizada.
+    const recarregar = { nota: _carregarRevisaoNotas, velocidade: _carregarRevisaoVelocidade, aceite: _carregarRevisaoAceite, finalizar: _carregarRevisaoFinalizar }[tipo];
+    const idSelect = { nota: 'gam-revisao-status', velocidade: 'gam-revisao-vel-status', aceite: 'gam-revisao-aceite-status', finalizar: 'gam-revisao-fin-status' }[tipo];
+    const statusAtual = document.getElementById(idSelect)?.value || 'pendente';
+    if (recarregar) await recarregar(mes, statusAtual);
+  }
+
   // ── Revisão de nota baixa (Ticket / Cliente / Nota) ─────────────────────────
   async function abrirRevisaoNotas() {
     const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
     App.Modal.open('Revisar notas baixas — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
       '<p style="font-size:13px;color:var(--gray-500)">Tickets com nota do cliente abaixo de 5, e também tickets com nota 5 cujo contato pode ser alguém da própria equipe (nome bate com um usuário do Zappy — possível avaliação combinada). Marca "Devida" se a nota reflete a realidade (conta normalmente), ou "Indevida" se não reflete (ex.: interação robótica/IA, ou avaliação de colega) — aí ela sai do cálculo da nota mensal. A nota é atribuída só a quem encerrou o atendimento — quem só transferiu não é afetado por essa revisão. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
+      _htmlBuscaTicket('nota', mes) +
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<label style="font-size:12px;font-weight:700;color:var(--gray-500)">Mostrar:</label>' +
         '<select id="gam-revisao-status" class="input" style="width:auto" onchange="Gamificacao._trocarStatusRevisao(\'' + mes + '\')">' +
@@ -5947,6 +6046,7 @@ const Gamificacao = (() => {
     const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
     App.Modal.open('Revisar descontos de velocidade — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
       '<p style="font-size:13px;color:var(--gray-500)">Tickets com desconto de velocidade (transferência ou tempo de resposta). Marca "Devida" se o desconto reflete a realidade (o analista realmente ficou parado), ou "Indevida" se não reflete (ex.: estava esperando o cliente mandar algo, como um documento ou valor) — aí o desconto sai do cálculo daquele papel específico, sem afetar o resto do ticket. Existe tanto pra quem recebeu/atendeu quanto pra quem só transferiu. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
+      _htmlBuscaTicket('velocidade', mes) +
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<label style="font-size:12px;font-weight:700;color:var(--gray-500)">Mostrar:</label>' +
         '<select id="gam-revisao-vel-status" class="input" style="width:auto" onchange="Gamificacao._trocarStatusRevisaoVelocidade(\'' + mes + '\')">' +
@@ -6013,6 +6113,7 @@ const Gamificacao = (() => {
     const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
     App.Modal.open('Revisar aceite do aguardando — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
       '<p style="font-size:13px;color:var(--gray-500)">Tickets com desconto de aceite do aguardando (só conta pra colaboradores com a regra ligada). Marca "Devida" se é um cliente de verdade esperando atendimento, ou "Indevida" se parece bot/marketing/envio de currículo/spam — aí o ticket sai do cálculo da média de aceite, sem afetar mais nada. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
+      _htmlBuscaTicket('aceite', mes) +
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<label style="font-size:12px;font-weight:700;color:var(--gray-500)">Mostrar:</label>' +
         '<select id="gam-revisao-aceite-status" class="input" style="width:auto" onchange="Gamificacao._trocarStatusRevisaoAceite(\'' + mes + '\')">' +
@@ -6078,6 +6179,7 @@ const Gamificacao = (() => {
     const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
     App.Modal.open('Revisar /Finalizar + reabertura — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
       '<p style="font-size:13px;color:var(--gray-500)">Tickets com desconto de encerramento (não avisou certo E o cliente voltou a chamar em até 30 min). Marca "Devida" se a reabertura realmente mostra que o encerramento confundiu o cliente, ou "Indevida" se o cliente voltou por outro motivo (ex.: um assunto novo, sem relação com o fechamento) — aí o ticket sai do cálculo da média, sem afetar mais nada. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
+      _htmlBuscaTicket('finalizar', mes) +
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<label style="font-size:12px;font-weight:700;color:var(--gray-500)">Mostrar:</label>' +
         '<select id="gam-revisao-fin-status" class="input" style="width:auto" onchange="Gamificacao._trocarStatusRevisaoFinalizar(\'' + mes + '\')">' +
@@ -6390,6 +6492,7 @@ const Gamificacao = (() => {
     abrirRevisaoVelocidade, marcarRevisaoVelocidade, _trocarStatusRevisaoVelocidade,
     abrirRevisaoAceite, marcarRevisaoAceite, _trocarStatusRevisaoAceite,
     abrirRevisaoFinalizar, marcarRevisaoFinalizar, _trocarStatusRevisaoFinalizar,
+    buscarTicketRevisao, marcarRevisaoBusca,
     abrirRelatorioDescontos, gerarRelatorioDescontos, exportarRelatorioDescontosCSV, exportarRelatorioDescontosPDF,
     recalcularPontos,
   };
