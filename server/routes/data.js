@@ -2991,6 +2991,37 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
   return { dryRun: !!dryRun, mes, resultados, rotulosNovos: [...rotulosNovos] };
 }
 
+/**
+ * GET /api/data/gam/diagnostico-vinculos?mes= — TEMPORÁRIO, pra conferir
+ * se sobrou algum ticket de não-cliente (fornecedor/interno/software/
+ * pendente/sem vínculo) ainda pontuando em gam_tickets_pontos depois do
+ * fix de 28/08/2026 (persistirPontosTicket agora exige vinculo tipo=
+ * 'cliente'). Como esse fix só roda quando o ticket é reprocessado
+ * (recálculo do mês ou ingestão nova), agrupa por empresa+tipo pra achar
+ * rápido quem ainda precisa de recálculo ou reclassificação.
+ */
+router.get('/gam/diagnostico-vinculos', requireAdmin, async (req, res) => {
+  try {
+    const { mes } = req.query;
+    if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+    const { rows } = await pool.query(
+      `SELECT t.empresa_texto, v.tipo AS vinculo_tipo, v.id AS vinculo_id,
+              COUNT(*) AS tickets, array_agg(DISTINCT t.zappy_id) AS zappy_ids, array_agg(DISTINCT p.analista) AS analistas
+         FROM gam_tickets_pontos p
+         JOIN cs_tickets t ON t.id = p.ticket_id
+         LEFT JOIN cs_vinculos v ON v.id = t.vinculo_id
+        WHERE p.mes = $1 AND COALESCE(v.tipo, 'sem_vinculo') != 'cliente'
+        GROUP BY t.empresa_texto, v.tipo, v.id
+        ORDER BY tickets DESC`,
+      [mes]
+    );
+    res.json({ mes, total: rows.length, resultados: rows });
+  } catch (err) {
+    console.error('[gam] diagnostico-vinculos falhou:', err);
+    res.status(500).json({ error: err.message || 'Erro ao diagnosticar vínculos.' });
+  }
+});
+
 router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
   try {
     const { mes, dryRun = true } = req.body;
