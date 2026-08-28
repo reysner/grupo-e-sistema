@@ -1292,6 +1292,30 @@ router.get('/tratados', requireAuth, requireAdmin, async (req, res) => {
 });
 
 /** GET /api/cs/vinculos/pendentes — fila de de-para aguardando confirmação humana. */
+/**
+ * GET /api/cs/vinculos/buscar?q= — busca vínculos por nome (qualquer
+ * status, não só pendente), pra achar e corrigir uma classificação já
+ * confirmada (ex.: empresa marcada 'cliente' por engano, quando na
+ * verdade é fornecedor). Não existia um jeito de achar um vínculo já
+ * confirmado antes disso — só a fila de pendentes.
+ */
+router.get('/vinculos/buscar', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pool = obterPool();
+    const q = (req.query.q || '').trim();
+    if (!q) return res.status(400).json({ error: 'Informe "q" (nome pra buscar).' });
+    const { rows } = await pool.query(
+      `SELECT id, telefone, empresa_nome, cnpj, tipo, confianca, confirmado_por, confirmado_em
+         FROM cs_vinculos WHERE empresa_nome ILIKE $1 ORDER BY empresa_nome ASC LIMIT 50`,
+      [`%${q}%`]
+    );
+    res.json({ vinculos: rows });
+  } catch (e) {
+    console.error('[cs] GET /vinculos/buscar falhou:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/vinculos/pendentes', requireAuth, async (req, res) => {
   try {
     const pool = obterPool();
