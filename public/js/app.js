@@ -1443,22 +1443,27 @@ const App = (() => {
         <div class="field" style="margin-top:12px"><label>Senha</label><input id="m-pass" type="password" placeholder="Mín. 6 caracteres" /></div>
         <div class="field" style="margin-top:12px"><label>Perfil</label>
           <select id="m-role">
+            <option value="" selected>Escolha o perfil</option>
             <option value="usuario">Usuário</option>
             <option value="administrador">Administrador</option>
             <option value="contabil">Contábil — acesso só ao Portal Contábil</option>
-            <option value="colaborador">Colaborador — acesso só à própria nota (Minha Nota)</option>
           </select>
         </div>
         <div class="field" style="margin-top:12px;display:flex;align-items:center;gap:8px">
           <input id="m-minha-nota" type="checkbox" style="width:auto" />
-          <label for="m-minha-nota" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso a Minha Nota (Gamificação) — combina com qualquer perfil acima, ex.: Contábil + Minha Nota</label>
+          <label for="m-minha-nota" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso a Minha Nota (Gamificação) — combina com qualquer perfil acima, ou marque sozinho (sem escolher perfil) pra acesso só à Minha Nota</label>
         </div>`, Admin._confirmAdd);
     },
 
     async _confirmAdd() {
-      const name=Util.val('m-name'), email=Util.val('m-email'), password=Util.val('m-pass'), role=document.getElementById('m-role')?.value;
+      const name=Util.val('m-name'), email=Util.val('m-email'), password=Util.val('m-pass');
+      let role = document.getElementById('m-role')?.value;
       const acesso_minha_nota = document.getElementById('m-minha-nota')?.checked || false;
       if (!name||!email||!password) { Toast.err('Preencha todos os campos.'); return; }
+      if (!role) {
+        if (!acesso_minha_nota) { Toast.err('Escolha um perfil, ou marque "acesso a Minha Nota".'); return; }
+        role = 'colaborador'; // sem perfil + Minha Nota marcada = acesso só à própria nota
+      }
       const res  = await API.post('/api/users', { name, email, password, role, acesso_minha_nota });
       const data = await res.json();
       if (!res.ok) { Toast.err(data.error); return; }
@@ -1466,18 +1471,22 @@ const App = (() => {
     },
 
     openEditProfile(id, name, email, role, acessoMinhaNota) {
+      // 'colaborador' é representado no dropdown como "Escolha o perfil" (vazio)
+      // + checkbox marcada — não é mais uma opção própria na lista.
+      const roleParaExibir = role === 'colaborador' ? '' : role;
+      const minhaNotaMarcada = acessoMinhaNota || role === 'colaborador';
       App.Modal.open('Editar usuário', '<div style="display:grid;gap:12px">' +
         '<div class="field"><label>Nome</label><input id="eu-name" type="text" value="' + (name||'') + '" /></div>' +
         '<div class="field"><label>E-mail</label><input id="eu-email" type="email" value="' + (email||'') + '" /></div>' +
-        '<div class="field"><label>Função</label><select id="eu-role">' +
-          '<option value="usuario"' + (role==='usuario'?' selected':'') + '>Usuário</option>' +
-          '<option value="administrador"' + (role==='administrador'?' selected':'') + '>Administrador</option>' +
-          '<option value="contabil"' + (role==='contabil'?' selected':'') + '>Contábil — só Portal Contábil</option>' +
-          '<option value="colaborador"' + (role==='colaborador'?' selected':'') + '>Colaborador — só Minha Nota</option>' +
+        '<div class="field"><label>Perfil</label><select id="eu-role">' +
+          '<option value=""' + (!roleParaExibir?' selected':'') + '>Escolha o perfil</option>' +
+          '<option value="usuario"' + (roleParaExibir==='usuario'?' selected':'') + '>Usuário</option>' +
+          '<option value="administrador"' + (roleParaExibir==='administrador'?' selected':'') + '>Administrador</option>' +
+          '<option value="contabil"' + (roleParaExibir==='contabil'?' selected':'') + '>Contábil — só Portal Contábil</option>' +
         '</select></div>' +
         '<div class="field" style="display:flex;align-items:center;gap:8px">' +
-          '<input id="eu-minha-nota" type="checkbox" style="width:auto"' + (acessoMinhaNota ? ' checked' : '') + ' />' +
-          '<label for="eu-minha-nota" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso a Minha Nota (Gamificação)</label>' +
+          '<input id="eu-minha-nota" type="checkbox" style="width:auto"' + (minhaNotaMarcada ? ' checked' : '') + ' />' +
+          '<label for="eu-minha-nota" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso a Minha Nota (Gamificação) — ou marque sozinho (sem escolher perfil) pra acesso só à Minha Nota</label>' +
         '</div>' +
         '<button class="btn btn-primary" data-id="' + id + '" onclick="App.Admin.saveEdit(this.dataset.id)">Salvar</button>' +
       '</div>', null, { noFooter: true });
@@ -1486,9 +1495,13 @@ const App = (() => {
     async saveEdit(id) {
       const name  = document.getElementById('eu-name')?.value?.trim();
       const email = document.getElementById('eu-email')?.value?.trim();
-      const role  = document.getElementById('eu-role')?.value;
+      let role    = document.getElementById('eu-role')?.value;
       const acesso_minha_nota = document.getElementById('eu-minha-nota')?.checked || false;
       if (!name) { App.Toast.err('Nome obrigatório.'); return; }
+      if (!role) {
+        if (!acesso_minha_nota) { App.Toast.err('Escolha um perfil, ou marque "acesso a Minha Nota".'); return; }
+        role = 'colaborador';
+      }
       const res = await API.patch('/api/users/' + id + '/profile', { name, email, role, acesso_minha_nota });
       if (res && res.ok) { App.Modal.close(); App.Toast.ok('Usuário atualizado!'); Admin.load(); }
       else App.Toast.err('Erro ao atualizar.');
