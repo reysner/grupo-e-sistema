@@ -312,9 +312,29 @@ async function ensurePontuacaoSchema(pool) {
 
 /** Calcula e grava a pontuação de UM ticket (upsert), preservando revisão humana já feita. */
 async function persistirPontosTicket(pool, ticketId) {
-  const { rows } = await pool.query(`SELECT * FROM cs_tickets WHERE id = $1`, [ticketId]);
+  const { rows } = await pool.query(
+    `SELECT t.*, v.tipo AS vinculo_tipo
+       FROM cs_tickets t
+       LEFT JOIN cs_vinculos v ON v.id = t.vinculo_id
+      WHERE t.id = $1`,
+    [ticketId]
+  );
   if (!rows.length) return 0;
   const ticket = rows[0];
+
+  // Só pontua ticket de CLIENTE de verdade (cs_vinculos.tipo = 'cliente') —
+  // fornecedor/interno/software/pendente/sem vínculo nunca deveriam gerar
+  // pontuação pra ninguém. Achado do Reysner (28/08/2026): "Suporte Total
+  // Consultoria" (um fornecedor, não cliente) estava pontuando pra Kelen —
+  // esse motor nunca checava o tipo do vínculo, só se tinha nota_avaliacao.
+  // Se o vínculo foi reclassificado DEPOIS de já ter pontuado (ex.: era
+  // 'pendente', virou 'fornecedor'), remove a pontuação já gravada — não é
+  // só pular daqui pra frente, é limpar o que não devia ter contado.
+  if (ticket.vinculo_tipo !== 'cliente') {
+    await pool.query(`DELETE FROM gam_tickets_pontos WHERE ticket_id = $1`, [ticketId]);
+    return 0;
+  }
+
   if (ticket.nota_avaliacao == null) return 0;
 
   const { rows: mensagens } = await pool.query(
