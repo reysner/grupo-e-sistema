@@ -114,6 +114,13 @@ async function init() {
   // corrida entre instâncias no boot).
   await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`).catch(()=>{});
   await pool.query(`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('administrador','usuario','contabil','colaborador'))`).catch(()=>{});
+
+  // Acesso a Minha Nota como permissão INDEPENDENTE do perfil principal —
+  // pedido do Reysner: "tem como escolher só minha nota e contábil pro
+  // mesmo usuário?" / "usuário também". Combinável com qualquer role
+  // (usuario/contabil/administrador) sem precisar de um segundo login —
+  // ver server/auth.js requireAuth.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS acesso_minha_nota BOOLEAN NOT NULL DEFAULT false`).catch(()=>{});
 }
 
 async function query(text, params) {

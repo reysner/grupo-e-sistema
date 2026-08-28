@@ -115,6 +115,9 @@ async function login() {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) { err.textContent = data.error || 'Credenciais inválidas.'; err.style.display = 'block'; return; }
+  if (data.user.role !== 'colaborador' && !data.user.acesso_minha_nota) {
+    err.textContent = 'Esse login não tem acesso a Minha Nota. Fale com a liderança.'; err.style.display = 'block'; return;
+  }
   _token = data.token;
   _user = data.user;
   localStorage.setItem('mn_token', _token);

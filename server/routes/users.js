@@ -15,7 +15,7 @@ const VALID_ROLES = ['usuario', 'administrador', 'contabil', 'colaborador'];
 router.get('/', async (req, res) => {
   try {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true`).catch(()=>{});
-    const result = await pool.query(`SELECT id, name, email, role, active, created_at FROM users ORDER BY created_at ASC`);
+    const result = await pool.query(`SELECT id, name, email, role, active, acesso_minha_nota, created_at FROM users ORDER BY created_at ASC`);
     const users = result.rows.map(u => ({ ...u, ativo: u.active !== 0 }));
     res.json({ users });
   } catch (err) {
@@ -25,7 +25,7 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, acesso_minha_nota } = req.body;
     if (!name || !email || !password)
       return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios.' });
     if (password.length < 6)
@@ -38,10 +38,10 @@ router.post('/', async (req, res) => {
     const id = uuidv4();
     const userRole = VALID_ROLES.includes(role) ? role : 'usuario';
     await pool.query(
-      `INSERT INTO users (id, name, email, password, role) VALUES ($1, $2, $3, $4, $5)`,
-      [id, name.trim(), email.toLowerCase().trim(), hashedPw, userRole]
+      `INSERT INTO users (id, name, email, password, role, acesso_minha_nota) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [id, name.trim(), email.toLowerCase().trim(), hashedPw, userRole, !!acesso_minha_nota]
     );
-    res.status(201).json({ user: { id, name: name.trim(), email, role: userRole } });
+    res.status(201).json({ user: { id, name: name.trim(), email, role: userRole, acesso_minha_nota: !!acesso_minha_nota } });
   } catch (err) {
     console.error('Create user error:', err);
     res.status(500).json({ error: 'Erro ao criar usuário.' });
@@ -77,7 +77,7 @@ router.delete('/:id', async (req, res) => {
 // PATCH /api/users/:id/profile (name + email + role)
 router.patch('/:id/profile', async (req, res) => {
   try {
-    const { name, email, role } = req.body;
+    const { name, email, role, acesso_minha_nota } = req.body;
     if (!name || !email) return res.status(400).json({ error: 'Nome e e-mail são obrigatórios.' });
 
     // Check email not taken by another user
@@ -86,22 +86,25 @@ router.patch('/:id/profile', async (req, res) => {
     );
     if (existing.rows.length > 0) return res.status(409).json({ error: 'E-mail já usado por outro usuário.' });
 
+    // acesso_minha_nota é permissão independente do role — pedido do
+    // Reysner pra combinar, ex., Contábil + Minha Nota no mesmo login.
+    const acessoMinhaNota = !!acesso_minha_nota;
+
     // Se veio um role válido, atualiza também; senão, mantém o atual
     if (VALID_ROLES.includes(role)) {
       await pool.query(
-        `UPDATE users SET name = $1, email = $2, role = $3, updated_at = NOW() WHERE id = $4`,
-        [name.trim(), email.toLowerCase().trim(), role, req.params.id]
+        `UPDATE users SET name = $1, email = $2, role = $3, acesso_minha_nota = $4, updated_at = NOW() WHERE id = $5`,
+        [name.trim(), email.toLowerCase().trim(), role, acessoMinhaNota, req.params.id]
       );
     } else {
       await pool.query(
-        `UPDATE users SET name = $1, email = $2, updated_at = NOW() WHERE id = $3`,
-        [name.trim(), email.toLowerCase().trim(), req.params.id]
+        `UPDATE users SET name = $1, email = $2, acesso_minha_nota = $3, updated_at = NOW() WHERE id = $4`,
+        [name.trim(), email.toLowerCase().trim(), acessoMinhaNota, req.params.id]
       );
     }
-    // Se a role mudou, revoga os tokens ativos para forçar novo login com as permissões corretas
-    if (VALID_ROLES.includes(role)) {
-      await revokeAllUserTokens(req.params.id).catch(()=>{});
-    }
+    // Role ou acesso_minha_nota mudaram (ambos vão no JWT) — revoga os
+    // tokens ativos pra forçar novo login com as permissões corretas.
+    await revokeAllUserTokens(req.params.id).catch(()=>{});
     res.json({ ok: true });
   } catch (err) {
     console.error('PATCH profile error:', err);

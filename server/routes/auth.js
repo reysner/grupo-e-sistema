@@ -62,10 +62,10 @@ router.post('/login', loginLimiter, async (req, res) => {
     const match = await auth.checkPassword(password, row.password);
     if (!match) return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
 
-    const user = { id: row.id, name: row.name, role: row.role };
+    const user = { id: row.id, name: row.name, role: row.role, acesso_minha_nota: !!row.acesso_minha_nota };
     const accessToken = auth.signAccess(user);
     const { token: refreshToken } = await auth.issueRefreshToken(row.id);
-    return res.json({ token: accessToken, refreshToken, user: { id: row.id, name: row.name, email: row.email, role: row.role } });
+    return res.json({ token: accessToken, refreshToken, user: { id: row.id, name: row.name, email: row.email, role: row.role, acesso_minha_nota: !!row.acesso_minha_nota } });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Erro ao fazer login.' });
@@ -79,7 +79,7 @@ router.post('/refresh', async (req, res) => {
     if (!refreshToken) return res.status(401).json({ error: 'Sem refresh token.' });
 
     const result = await pool.query(
-      `SELECT rt.*, u.name, u.role, u.active
+      `SELECT rt.*, u.name, u.role, u.active, u.acesso_minha_nota
        FROM refresh_tokens rt
        JOIN users u ON u.id = rt.user_id
        WHERE rt.token = $1 AND rt.expires_at > NOW()`,
@@ -90,7 +90,7 @@ router.post('/refresh', async (req, res) => {
       return res.status(401).json({ error: 'Sessão expirada. Faça login novamente.' });
 
     await auth.revokeRefreshToken(refreshToken);
-    const user = { id: row.user_id, name: row.name, role: row.role };
+    const user = { id: row.user_id, name: row.name, role: row.role, acesso_minha_nota: !!row.acesso_minha_nota };
     const accessToken = auth.signAccess(user);
     const { token: newRefresh } = await auth.issueRefreshToken(row.user_id);
     return res.json({ token: accessToken, refreshToken: newRefresh, user });

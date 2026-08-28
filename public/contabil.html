@@ -120,6 +120,7 @@
             <div class="em" id="menu-email"></div>
           </div>
           <button class="user-menu-item" onclick="abrirEditarPerfil()">✏️ Editar perfil</button>
+          <a class="user-menu-item" id="link-minha-nota" href="/minha-nota" style="display:none;text-decoration:none;box-sizing:border-box">🏆 Ver Minha Nota (Gamificação)</a>
           <button class="user-menu-item danger" onclick="sair()">⏻ Sair</button>
         </div>
       </div>
@@ -201,6 +202,8 @@ function mostrarApp() {
   document.getElementById('app-screen').style.display   = 'block';
   document.getElementById('app-nome').textContent = _user.name;
   document.getElementById('menu-nome').textContent = _user.name;
+  const linkMinhaNota = document.getElementById('link-minha-nota');
+  if (linkMinhaNota) linkMinhaNota.style.display = _user.acesso_minha_nota ? 'flex' : 'none';
   document.getElementById('menu-email').textContent = _user.email || '';
   carregarTickets();
 }

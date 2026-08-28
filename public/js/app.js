@@ -243,6 +243,8 @@ const App = (() => {
 
       currentUser = user;
       window._currentUser = user;
+      const linkMinhaNota = document.getElementById('user-menu-minha-nota');
+      if (linkMinhaNota) linkMinhaNota.hidden = !user.acesso_minha_nota;
       document.getElementById('topbar-name').textContent = user.name;
       const pill = document.getElementById('topbar-role');
       pill.textContent = user.role === 'administrador' ? 'Administrador' : 'Usuário';
@@ -1352,15 +1354,16 @@ const App = (() => {
             (u.name||'').toLowerCase().includes(busca) ||
             (u.email||'').toLowerCase().includes(busca))
         : Admin._users;
+      const ROLE_LABEL = { administrador: 'Administrador', usuario: 'Usuário', contabil: 'Contábil', colaborador: 'Colaborador' };
       document.getElementById('users-tbody').innerHTML = users.map(u => {
         const ativo = u.ativo !== false;
         return `<tr style="${!ativo?'opacity:.55':''}">
           <td style="font-weight:600">${u.name}</td>
           <td style="font-size:12px;color:var(--gray-500)">${u.email}</td>
-          <td><span class="role-pill ${u.role==='administrador'?'admin':'user'}">${u.role==='administrador'?'Administrador':'Usuário'}</span></td>
+          <td><span class="role-pill ${u.role==='administrador'?'admin':'user'}">${ROLE_LABEL[u.role] || u.role}</span>${u.acesso_minha_nota ? ' <span title="Também acessa Minha Nota" style="font-size:12px">🏆</span>' : ''}</td>
           <td><span style="background:${ativo?'#f0fff4':'#fff5f5'};color:${ativo?'#38a169':'#e53e3e'};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${ativo?'Ativo':'Inativo'}</span></td>
           <td style="white-space:nowrap;display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditProfile('${u.id}','${u.name}','${u.email}','${u.role}')">✏️ Editar</button>
+            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditProfile('${u.id}','${u.name}','${u.email}','${u.role}',${!!u.acesso_minha_nota})">✏️ Editar</button>
             <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditPass('${u.id}')">🔑 Senha</button>
             <button class="btn btn-sm" style="background:${ativo?'#fff5f5':'#f0fff4'};color:${ativo?'#e53e3e':'#38a169'};border:1px solid ${ativo?'#fed7d7':'#c6f6d5'}" onclick="App.Admin.toggleAtivo('${u.id}','${u.name}',${ativo})">${ativo?'⏸ Desativar':'▶ Ativar'}</button>
             <button class="btn btn-danger btn-sm" onclick="App.Admin.deleteUser('${u.id}','${u.name}')">🗑 Excluir</button>
@@ -1445,19 +1448,24 @@ const App = (() => {
             <option value="contabil">Contábil — acesso só ao Portal Contábil</option>
             <option value="colaborador">Colaborador — acesso só à própria nota (Minha Nota)</option>
           </select>
+        </div>
+        <div class="field" style="margin-top:12px;display:flex;align-items:center;gap:8px">
+          <input id="m-minha-nota" type="checkbox" style="width:auto" />
+          <label for="m-minha-nota" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso a Minha Nota (Gamificação) — combina com qualquer perfil acima, ex.: Contábil + Minha Nota</label>
         </div>`, Admin._confirmAdd);
     },
 
     async _confirmAdd() {
       const name=Util.val('m-name'), email=Util.val('m-email'), password=Util.val('m-pass'), role=document.getElementById('m-role')?.value;
+      const acesso_minha_nota = document.getElementById('m-minha-nota')?.checked || false;
       if (!name||!email||!password) { Toast.err('Preencha todos os campos.'); return; }
-      const res  = await API.post('/api/users', { name, email, password, role });
+      const res  = await API.post('/api/users', { name, email, password, role, acesso_minha_nota });
       const data = await res.json();
       if (!res.ok) { Toast.err(data.error); return; }
       Modal.close(); Toast.ok('Usuário criado!'); Admin.load();
     },
 
-    openEditProfile(id, name, email, role) {
+    openEditProfile(id, name, email, role, acessoMinhaNota) {
       App.Modal.open('Editar usuário', '<div style="display:grid;gap:12px">' +
         '<div class="field"><label>Nome</label><input id="eu-name" type="text" value="' + (name||'') + '" /></div>' +
         '<div class="field"><label>E-mail</label><input id="eu-email" type="email" value="' + (email||'') + '" /></div>' +
@@ -1467,6 +1475,10 @@ const App = (() => {
           '<option value="contabil"' + (role==='contabil'?' selected':'') + '>Contábil — só Portal Contábil</option>' +
           '<option value="colaborador"' + (role==='colaborador'?' selected':'') + '>Colaborador — só Minha Nota</option>' +
         '</select></div>' +
+        '<div class="field" style="display:flex;align-items:center;gap:8px">' +
+          '<input id="eu-minha-nota" type="checkbox" style="width:auto"' + (acessoMinhaNota ? ' checked' : '') + ' />' +
+          '<label for="eu-minha-nota" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso a Minha Nota (Gamificação)</label>' +
+        '</div>' +
         '<button class="btn btn-primary" data-id="' + id + '" onclick="App.Admin.saveEdit(this.dataset.id)">Salvar</button>' +
       '</div>', null, { noFooter: true });
     },
@@ -1475,8 +1487,9 @@ const App = (() => {
       const name  = document.getElementById('eu-name')?.value?.trim();
       const email = document.getElementById('eu-email')?.value?.trim();
       const role  = document.getElementById('eu-role')?.value;
+      const acesso_minha_nota = document.getElementById('eu-minha-nota')?.checked || false;
       if (!name) { App.Toast.err('Nome obrigatório.'); return; }
-      const res = await API.patch('/api/users/' + id + '/profile', { name, email, role });
+      const res = await API.patch('/api/users/' + id + '/profile', { name, email, role, acesso_minha_nota });
       if (res && res.ok) { App.Modal.close(); App.Toast.ok('Usuário atualizado!'); Admin.load(); }
       else App.Toast.err('Erro ao atualizar.');
     },

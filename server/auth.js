@@ -32,7 +32,7 @@ const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function signAccess(user) {
   return jwt.sign(
-    { sub: user.id, name: user.name, role: user.role },
+    { sub: user.id, name: user.name, role: user.role, acesso_minha_nota: !!user.acesso_minha_nota },
     ACCESS_SECRET,
     { expiresIn: ACCESS_TTL, issuer: 'grupo-e' }
   );
@@ -72,20 +72,30 @@ function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Não autenticado.' });
   try {
     const payload = jwt.verify(token, ACCESS_SECRET, { issuer: 'grupo-e' });
-    req.user = { id: payload.sub, name: payload.name, role: payload.role };
-    // Usuário contábil só pode acessar rotas de tickets — bloqueia o resto
-    const isTicketRoute = req.path && (req.path.includes('/tickets') || req.path.includes('/auth') || req.path.includes('/perfil'));
-    if (payload.role === 'contabil' && !isTicketRoute) {
-      return res.status(403).json({ error: 'Acesso restrito ao portal contábil.' });
+    req.user = { id: payload.sub, name: payload.name, role: payload.role, acessoMinhaNota: !!payload.acesso_minha_nota };
+    const isAuthOuPerfil = req.path && (req.path.includes('/auth') || req.path.includes('/perfil'));
+    // Minha Nota (28/08/2026, self-service da Gamificação): rotas
+    // /gam/minha-* e /gam/meus-* — a nota/tickets da PRÓPRIA pessoa,
+    // resolvida no backend a partir do login (nunca aceita um
+    // colaborador_id vindo do cliente). Combinável com qualquer perfil via
+    // `acesso_minha_nota` (checkbox em Administração de Usuários) — ex.:
+    // alguém pode ser Contábil E ter acesso a Minha Nota ao mesmo tempo,
+    // sem precisar de dois logins (pedido do Reysner: "tem como escolher
+    // só minha nota e contábil pro mesmo usuário?").
+    const isMinhaNotaRoute = req.path && (req.path.includes('/gam/minha-') || req.path.includes('/gam/meus-'));
+
+    // Usuário contábil só pode acessar rotas de tickets (+ Minha Nota, se
+    // acesso_minha_nota estiver ligado) — bloqueia o resto.
+    if (payload.role === 'contabil') {
+      const isTicketRoute = req.path && req.path.includes('/tickets');
+      const permitido = isTicketRoute || isAuthOuPerfil || (payload.acesso_minha_nota && isMinhaNotaRoute);
+      if (!permitido) return res.status(403).json({ error: 'Acesso restrito ao portal contábil.' });
     }
-    // Colaborador (28/08/2026, self-service da Gamificação): só pode ver a
-    // própria nota — nunca dados de tickets, clientes, outros colaboradores
-    // etc. Mesmo padrão do contabil acima, mas restrito às rotas
-    // /gam/minha-* e /gam/meus-* (a nota/tickets da PRÓPRIA pessoa,
-    // resolvida no backend a partir do login — nunca aceita um
-    // colaborador_id vindo do cliente).
-    const isMinhaNotaRoute = req.path && (req.path.includes('/gam/minha-') || req.path.includes('/gam/meus-') || req.path.includes('/auth') || req.path.includes('/perfil'));
-    if (payload.role === 'colaborador' && !isMinhaNotaRoute) {
+    // Colaborador: só pode ver a própria nota — nunca dados de tickets,
+    // clientes, outros colaboradores etc. Papel "puro", pra quem não deve
+    // ter NENHUM outro acesso (diferente do checkbox acima, que ADICIONA
+    // Minha Nota a um perfil que já tem outra coisa).
+    if (payload.role === 'colaborador' && !(isMinhaNotaRoute || isAuthOuPerfil)) {
       return res.status(403).json({ error: 'Acesso restrito à sua nota da Gamificação.' });
     }
     next();
