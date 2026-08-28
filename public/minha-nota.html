@@ -262,7 +262,12 @@ async function carregar() {
           const indevida = tk.revisao_nota_status === 'indevida';
           const velIndevida = tk.vel_revisao_status === 'indevida';
           const finalizarIndevida = tk.finalizar_revisao_status === 'indevida';
-          const temDesconto = !indevida && ((parseFloat(tk.ajuste_velocidade) < 0 && !velIndevida) || (parseFloat(tk.ajuste_finalizar) < 0 && !finalizarIndevida));
+          // Se a nota do ticket, a velocidade OU o /Finalizar foram marcados
+          // indevida, a linha inteira sai riscada — mesmo tratamento visual
+          // pra qualquer tipo de revisão que anule algo ali (pedido do
+          // Reysner, 28/08/2026: "se é indevido passe o risco completo").
+          const linhaRiscada = indevida || velIndevida || finalizarIndevida;
+          const temDesconto = !linhaRiscada && (parseFloat(tk.ajuste_velocidade) < 0 || parseFloat(tk.ajuste_finalizar) < 0);
           const statusLabel = { pendente: 'Pendente', devida: 'Devida', indevida: 'Indevida — não conta' };
           const statusCor = indevida ? 'var(--gray-400)' : (tk.revisao_nota_status === 'devida' ? 'var(--green-ok)' : 'var(--gray-500)');
           // Nota 5 nunca precisa de revisão (não tem o que corrigir) — só
@@ -272,19 +277,30 @@ async function carregar() {
           const mostrarRevisao = Number(tk.nota_cliente) < 5;
           const revisaoTexto = mostrarRevisao ? (statusLabel[tk.revisao_nota_status] || tk.revisao_nota_status || '—') : '—';
           const celulaVel = velIndevida
-            ? '<span style="text-decoration:line-through;color:var(--gray-400)">' + tk.ajuste_velocidade + '</span> <span style="font-size:10px;color:var(--gray-400)">(indevida)</span>'
+            ? '<span style="text-decoration:line-through">' + tk.ajuste_velocidade + '</span> <span style="font-size:10px">(indevida)</span>'
             : tk.ajuste_velocidade;
           const celulaFinalizar = finalizarIndevida
-            ? '<span style="text-decoration:line-through;color:var(--gray-400)">' + tk.ajuste_finalizar + '</span> <span style="font-size:10px;color:var(--gray-400)">(indevida)</span>'
+            ? '<span style="text-decoration:line-through">' + tk.ajuste_finalizar + '</span> <span style="font-size:10px">(indevida)</span>'
             : tk.ajuste_finalizar;
-          return '<tr class="' + (temDesconto ? 'desconto' : '') + '"' + (indevida ? ' style="opacity:.55;text-decoration:line-through"' : '') + '>' +
+          // "Final" sem o desconto de velocidade indevido: pra quem
+          // encerrou/atendeu sozinho, a nota do ticket sem a velocidade É a
+          // nota do cliente (reabertura já não entra mais na nota_final
+          // desde 28/08/2026); pra quem só transferiu, a nota_final É a
+          // própria velocidade, então sem ela fica neutra (0).
+          const finalCorrigido = velIndevida
+            ? (tk.papel === 'transferiu' ? '0.00' : Number(tk.nota_cliente).toFixed(2))
+            : tk.nota_final;
+          const celulaFinal = velIndevida
+            ? '<span style="text-decoration:line-through">' + tk.nota_final + '</span> <b style="text-decoration:none;color:var(--green-ok)">' + finalCorrigido + '</b>'
+            : tk.nota_final;
+          return '<tr class="' + (temDesconto ? 'desconto' : '') + '"' + (linhaRiscada ? ' style="opacity:.55;text-decoration:line-through"' : '') + '>' +
             '<td>#' + tk.zappy_id + '</td>' +
             '<td>' + (tk.empresa_texto || '—') + '</td>' +
             '<td>' + tk.papel + '</td>' +
             '<td>' + (tk.nota_cliente ?? '—') + '</td>' +
             '<td>' + celulaVel + '</td>' +
             '<td>' + celulaFinalizar + '</td>' +
-            '<td style="font-weight:700">' + tk.nota_final + '</td>' +
+            '<td style="font-weight:700">' + celulaFinal + '</td>' +
             '<td style="text-decoration:none;font-size:12px;color:' + (mostrarRevisao ? statusCor : 'var(--gray-400)') + '">' + revisaoTexto + '</td>' +
           '</tr>';
         }).join('') +
