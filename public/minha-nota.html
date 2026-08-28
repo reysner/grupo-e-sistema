@@ -256,7 +256,7 @@ async function carregar() {
       html += '<div class="card"><p class="empty-msg">' + t.aviso + '</p></div>';
     } else if (tickets.length) {
       html += '<div class="card"><p class="card-title">Seus atendimentos em ' + mesLabel(mes) + '</p>' +
-        '<p style="font-size:12px;color:var(--gray-400);margin-bottom:10px">Tickets marcados <b>"Indevida"</b> já foram revisados pela liderança e <b>não entram</b> na composição da sua nota acima — aparecem aqui só pra registro. Quando só o desconto de Vel./Finalizar foi anulado (ticket em si continua válido), o Final já aparece corrigido em <b style="color:var(--green-ok)">verde</b>.</p>' +
+        '<p style="font-size:12px;color:var(--gray-400);margin-bottom:10px">Tickets marcados <b>"Indevida"</b> já foram revisados pela liderança e <b>não entram</b> na composição da sua nota acima — aparecem aqui só pra registro. Quando só o desconto de Vel./Finalizar foi anulado (ticket em si continua válido), o Final já aparece corrigido, sem o desconto.</p>' +
         '<div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota</th><th>Vel.</th><th>/Finalizar</th><th>Final</th><th>Revisão</th></tr></thead><tbody>' +
         tickets.map(tk => {
           const indevida = tk.revisao_nota_status === 'indevida';
@@ -293,9 +293,10 @@ async function carregar() {
           const finalCorrigido = velIndevida
             ? (tk.papel === 'transferiu' ? '0.00' : Number(tk.nota_cliente).toFixed(2))
             : tk.nota_final;
-          const celulaFinal = velIndevida
-            ? '<b style="color:var(--green-ok)">' + finalCorrigido + '</b>'
-            : tk.nota_final;
+          // Sem cor diferente: o Final corrigido fica igual a qualquer outro
+          // Final da tabela — destacar em verde fazia parecer marcado
+          // (pedido do Reysner, 28/08/2026).
+          const celulaFinal = velIndevida ? finalCorrigido : tk.nota_final;
           return '<tr class="' + (temDesconto ? 'desconto' : '') + '"' + (linhaRiscada ? ' style="opacity:.55;text-decoration:line-through"' : '') + '>' +
             '<td>#' + tk.zappy_id + '</td>' +
             '<td>' + (tk.empresa_texto || '—') + '</td>' +
