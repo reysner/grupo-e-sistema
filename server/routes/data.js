@@ -2332,7 +2332,6 @@ publicRouter.get('/gamificacao', async (req, res) => {
         return {
           nome: nomesPorId[id],
           media_geral: media.toFixed(2),
-          media_raw: media, // TEMPORÁRIO: valor sem arredondar, pra investigar empates (28/08/2026)
           meses_avaliados: notas.length,
           total_avaliacoes: 0
         };
