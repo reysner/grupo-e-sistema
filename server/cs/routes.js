@@ -734,7 +734,15 @@ router.get('/diagnostico', requireAuth, requireAdmin, async (req, res) => {
   try {
     const zappyClient = criarClienteZappy();
     const ticket = await zappyClient.obterTicket(ticketId);
-    res.json({ ok: true, ticket });
+    // mensagens=1 também traz o histórico bruto da conversa (ao vivo do
+    // Zappy) — pra investigar divergência entre o relógio calculado e o
+    // que aparece de verdade no atendimento (ex.: achado do Reysner com o
+    // ticket #47885, 28/08/2026).
+    let mensagens = null;
+    if (req.query.mensagens === '1') {
+      mensagens = await zappyClient.obterMensagens(ticketId);
+    }
+    res.json({ ok: true, ticket, mensagens });
   } catch (e) {
     console.error('[cs] GET /diagnostico falhou:', e);
     res.status(500).json({ ok: false, error: e.message, status: e.status, body: e.body });
