@@ -35,6 +35,22 @@
  * Reysner: "o analista não teve avaliações, mas transferiu rapidamente,
  * permanece sem nota".
  *
+ * ATUALIZAÇÃO (27/08/2026): velocidade (métrica 1) não tem mais bônus
+ * positivo — só neutro ou -1 (achado do Reysner: bônus positivo dentro do
+ * teto de 5 pontos do ticket mascarava outros descontos reais, fazendo
+ * quase todo mundo fechar em 5.00 mesmo com problemas no meio do caminho).
+ *
+ * ATUALIZAÇÃO (28/08/2026): /Finalizar (métrica 2) e reabertura (métrica 4)
+ * viraram UMA regra combinada — avisou corretamente do encerramento ->
+ * sempre neutro, mesmo se o cliente voltar a chamar nos 30min; NÃO avisou
+ * -> só desconta -1 SE o cliente voltar a chamar nesses 30min (sem
+ * reabertura, neutro também). Guardado ainda no campo `ajusteFinalizar`
+ * (ajusteReabertura fica sempre 0 daqui pra frente, só por compatibilidade
+ * de schema com meses anteriores não recalculados). Virou MÉDIA mensal
+ * separada (bonusFinalizar em executarAutoPreencher, routes/data.js) igual
+ * ao bônus de transferência/aceite — não soma mais direto na nota_final do
+ * ticket (mesmo motivo: evitar mascaramento pelo teto de 5 por ticket).
+ *
  * SUPOSIÇÕES ASSUMIDAS (sem dado real pra confirmar ainda — avisar o
  * Reysner e ajustar se a calibração real mostrar outra coisa):
  *   - Métrica 2 (/Finalizar): olha a ÚLTIMA mensagem do escritório antes do
@@ -191,30 +207,45 @@ function calcularPontosTicket(ticket, mensagens = []) {
   }
 
   // ── Papel "recebeu" (se transferido) ou "unico" (se não) ─────────────────
-  // Métricas 1 (velocidade de resposta desse papel) + 2 (/Finalizar) + 4 (reabertura).
+  // Métrica 1 (velocidade de resposta desse papel, direto na nota_final) +
+  // métricas 2+4 combinadas (/Finalizar + reabertura, ver ajusteFinalizar
+  // abaixo — vira média mensal separada, não entra na nota_final).
   const relVelocidade = foiTransferido ? porTipo('departamento') : porTipo('aceite');
   const ajusteVelocidade2 = tierVelocidade(relVelocidade ? relVelocidade.minutos_uteis : null);
 
   const msgsOrdenadas = [...mensagens].sort((a, b) => new Date(a.hora) - new Date(b.hora));
   const ultimaDoEscritorio = [...msgsOrdenadas].reverse().find(m => m.remetente === 'escritorio');
-  const ajusteFinalizar = ultimaDoEscritorio && pareceFinalizacaoCorreta(ultimaDoEscritorio.texto) ? 1 : 0;
+  const avisouCorretamente = !!(ultimaDoEscritorio && pareceFinalizacaoCorreta(ultimaDoEscritorio.texto));
 
-  // Janela de 30min em TEMPO ÚTIL (respeitando expediente/feriados de
-  // Uberlândia-MG, já cadastrados em tempoUtil.js — mesma régua usada em
-  // toda métrica de SLA do sistema), não tempo corrido. Sem isso, um
-  // ticket que fecha perto do fim do expediente (ou véspera de feriado)
-  // penalizaria injustamente uma mensagem do cliente chegando fora do
-  // horário, quando ninguém do escritório poderia responder mesmo.
-  let ajusteReabertura = 0;
+  // Cliente voltou a chamar (sem só estar respondendo a nota) nos 30min
+  // ÚTEIS (respeitando expediente/feriados de Uberlândia-MG, já cadastrados
+  // em tempoUtil.js) depois do encerramento — mesma checagem de antes, mas
+  // agora alimenta a regra combinada abaixo em vez de descontar sozinha.
+  let clienteReabriuNoLimbo = false;
   if (ticket.encerramento) {
     const naJanela = msgsOrdenadas.filter(m =>
       m.remetente === 'cliente' &&
       new Date(m.hora) > new Date(ticket.encerramento) &&
       T.minutosUteis(ticket.encerramento, m.hora) <= 30
     );
-    const presoNoProcesso = naJanela.some(m => !pareceRespostaDeNota(m.texto));
-    if (presoNoProcesso) ajusteReabertura = -1;
+    clienteReabriuNoLimbo = naJanela.some(m => !pareceRespostaDeNota(m.texto));
   }
+
+  // Regra combinada /Finalizar + reabertura (pedido do Reysner, 28/08/2026
+  // — substituiu as duas regras separadas que existiam antes): avisou
+  // corretamente do encerramento (perguntou se pode ajudar em algo mais,
+  // que vai finalizar, pediu avaliação) -> SEMPRE neutro (0), mesmo que o
+  // cliente volte a chamar nos 30min seguintes — não é "ficar preso no
+  // limbo", é resposta esperada de quem já foi avisado. NÃO avisou
+  // corretamente -> só desconta -1 SE o cliente voltar a chamar nesses
+  // 30min (sem essa interação, fica neutro também — não avisar sozinho,
+  // sem reabertura, não é punido). Igual à velocidade: sem bônus positivo,
+  // só neutro ou desconto (bônus positivo dentro do teto de 5 do ticket
+  // mascarava outros descontos, ver tierVelocidade acima). Vira MÉDIA
+  // mensal separada (bonusFinalizar em executarAutoPreencher,
+  // routes/data.js), igual ao bônus de transferência/aceite — não desconta
+  // direto na nota_final do ticket.
+  const ajusteFinalizar = (!avisouCorretamente && clienteReabriuNoLimbo) ? -1 : 0;
 
   linhas.push({
     papel: foiTransferido ? 'recebeu' : 'unico',
@@ -222,14 +253,19 @@ function calcularPontosTicket(ticket, mensagens = []) {
     analistaId: ticket.analista_id || null,
     ajusteVelocidade: ajusteVelocidade2 ?? 0,
     ajusteFinalizar,
-    ajusteReabertura,
+    // Absorvida pela regra combinada acima (ajusteFinalizar) — mantido só
+    // por compatibilidade de schema (coluna ainda existe e é lida por
+    // meses ANTERIORES a essa mudança, que não são recalculados).
+    ajusteReabertura: 0,
     // Só quando NÃO foi transferido (papel 'unico') esse analista é quem fez
     // o aceite original — grava o ajuste. Quando 'recebeu' (foi transferido),
     // o aceite original foi de OUTRA pessoa (linha "transferiu" acima), então
     // fica null (não 0 — null é "não se aplica a esse papel", pra AVG()
     // ignorar em vez de contar como zero).
     ajusteAceite: foiTransferido ? null : ajusteAceite,
-    notaFinal: clamp(notaCliente + (ajusteVelocidade2 ?? 0) + ajusteFinalizar + ajusteReabertura, 0, 5),
+    // Nem ajusteFinalizar nem ajusteReabertura entram aqui — os dois viraram
+    // a mesma média mensal separada (ver comentário acima).
+    notaFinal: clamp(notaCliente + (ajusteVelocidade2 ?? 0), 0, 5),
   });
 
   return linhas.map(l => ({ ...l, notaCliente }));

@@ -166,13 +166,18 @@
     </div>
 
     <div class="card">
-      <p class="card-title">✅ Uso correto do /Finalizar</p>
-      <p class="card-note">Vale pra quem encerrou o atendimento. Conta se a mensagem de encerramento foi enviada corretamente, por exemplo:</p>
+      <p class="card-title">✅🔒 Encerramento correto (sem reabertura)</p>
+      <p class="card-note">Vale pra quem encerrou o atendimento. Conta se o cliente foi avisado do encerramento antes de fechar — perguntou se pode ajudar em algo mais, avisou que vai finalizar e pediu pra avaliar o atendimento, por exemplo:</p>
       <div class="quote-box">"Estou finalizando o atendimento. Fico à disposição para qualquer dúvida ou nova solicitação 😊✨"</div>
-      <div class="rowline"><span>Nota do cliente já é 5</span><span class="pill good">mantém</span></div>
-      <div class="rowline"><span>Nota do cliente é menor que 5</span><span class="pill good">+1</span></div>
-      <div class="rowline"><span>Não encerrou com a mensagem correta</span><span class="pill neu">neutro</span></div>
-      <p class="card-foot">"Neutro" quer dizer que não soma nem desconta nada.</p>
+      <p class="card-note">Depois do encerramento, o Zappy manda a pesquisa e o ticket fica 30 minutos <b>úteis</b> (dentro do expediente) aguardando a resposta do cliente:</p>
+      <div class="rowline"><span>Avisou corretamente antes de encerrar</span><span class="pill neu">neutro</span></div>
+      <div class="rowline"><span>Não avisou, e o cliente volta a chamar nesses 30 min</span><span class="pill bad">−1</span></div>
+      <div class="rowline"><span>Não avisou, mas o cliente não volta a chamar</span><span class="pill neu">neutro</span></div>
+      <p class="card-foot">Quem avisa direito nunca é penalizado, mesmo que o cliente responda algo depois — isso é esperado, não é "ficar preso no limbo". Quem não avisa só é descontado se isso realmente gerar confusão (o cliente voltando a chamar). "Útil" quer dizer que não conta fora do expediente — fechar perto do fim do dia não penaliza uma mensagem que só chegaria fora do horário mesmo. Igual à velocidade: não soma bônus por fazer certo — só evita o desconto. E, como o de transferência/aceite, é <b>média mensal</b>, não um desconto direto no ticket — o resultado do mês inteiro não pode virar um só ticket ruim.</p>
+      <div class="formula-box" style="text-align:left">
+        <b>Exemplo prático:</b> no mês, um analista encerrou 20 atendimentos — em 3 não avisou direito e o cliente voltou a chamar (−1 cada), nos outros 17 avisou certo ou o cliente não voltou (neutro, 0).<br><br>
+        Média: (3×−1 + 17×0) ÷ 20 = <b>−0,15</b> somado à nota final do mês.
+      </div>
     </div>
 
     <div class="card">
@@ -187,27 +192,18 @@
       </div>
     </div>
 
-    <div class="card">
-      <p class="card-title">🔒 Ticket sem reabertura</p>
-      <p class="card-note">Depois que o Zappy manda a pesquisa de avaliação, o ticket fica 30 minutos <b>úteis</b> (dentro do expediente) aguardando a resposta do cliente.</p>
-      <div class="rowline"><span>Cliente avalia e não volta a chamar</span><span class="pill good">sem alteração</span></div>
-      <div class="rowline"><span>Cliente volta a chamar sem avaliar, nesses 30 min úteis</span><span class="pill bad">−1</span></div>
-      <p class="card-foot">O objetivo é não deixar o ticket preso num limbo bem na hora que o cliente deveria estar avaliando. "Útil" quer dizer que não conta fora do expediente — fechar perto do fim do dia não penaliza uma mensagem que só chegaria fora do horário mesmo.</p>
-    </div>
-
     <div class="rule-banner">
       <p class="label">📋 Regra geral da nota</p>
-      <p class="formula">Nota do ticket = Avaliação do cliente + ajustes das métricas</p>
-      <p class="cap">Limite máximo: <b>5 pontos</b>. Nunca passa disso, não importa quantos bônus se somem.</p>
+      <p class="formula">Nota do ticket = Avaliação do cliente + velocidade</p>
+      <p class="cap">Limite máximo: <b>5 pontos</b> por ticket. Nunca passa disso, não importa quantos ajustes se somem.</p>
       <div class="rule-examples">
         <p class="label">Exemplos</p>
         <ul>
-          <li>Nota 4 + finalizou corretamente (+1) = <b>5</b></li>
           <li>Nota 5 + respondeu em até 30 min (neutro) = continua <b>5</b></li>
           <li>Nota 5 + demorou mais de 30 min pra responder (−1) = <b>4</b></li>
-          <li>Nota 5 + reabertura no limbo (−1) = <b>4</b></li>
         </ul>
       </div>
+      <p style="font-size:15.5px;font-style:italic;line-height:1.6;opacity:.8;margin-top:14px">Encerramento/reabertura, transferência e aceite do aguardando <b>não entram aqui</b> — cada um vira uma média separada, somada só na nota final do mês (ver cards acima), pra um desconto isolado não ficar escondido atrás do teto de 5 de um único ticket.</p>
     </div>
 
     <div class="transp-card">

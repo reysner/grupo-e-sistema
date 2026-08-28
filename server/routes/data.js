@@ -2719,9 +2719,10 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
       // gam_velocidade_revisoes em ensureGamTables): quando 'indevida',
       // remove o ajuste_velocidade daquela linha em vez de descartar o
       // ticket inteiro. Pra recebeu/unico, recalcula a nota_final sem o
-      // ajuste_velocidade (mantendo finalizar/reabertura); pra transferiu,
-      // exclui a linha inteira da média (o ajuste_velocidade É a nota_final
-      // desse papel, não tem "resto" pra manter).
+      // ajuste_velocidade (mantendo reabertura — /Finalizar não faz mais
+      // parte da nota_final por ticket, ver bonusFinalizar abaixo); pra
+      // transferiu, exclui a linha inteira da média (o ajuste_velocidade É
+      // a nota_final desse papel, não tem "resto" pra manter).
       const { rows: notasRows } = await pool.query(
         `SELECT p.nota_final, p.nota_cliente, p.ajuste_velocidade, p.ajuste_finalizar, p.ajuste_reabertura,
                 COALESCE(vr.status, 'pendente') AS vel_status
@@ -2769,16 +2770,28 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
           }
         }
 
+        // Bônus/desconto do /FINALIZAR + REABERTURA (regra combinada desde
+        // 28/08/2026 — ver cs/pontuacao.js): avisou certo do encerramento ->
+        // sempre neutro; não avisou -> -1 só se o cliente voltou a chamar
+        // nos 30min. Mesma lógica de média (não soma) de transferência/
+        // aceite, e pelo mesmo motivo: evitar que o teto de 5 por ticket
+        // mascare o desconto. Reaproveita notasRows (já traz
+        // ajuste_finalizar) — mesmo conjunto de tickets (recebeu/unico, nota
+        // não-indevida) que forma a mediaBase logo abaixo.
+        const bonusFinalizar = notasRows.length
+          ? notasRows.reduce((s, r) => s + parseFloat(r.ajuste_finalizar), 0) / notasRows.length
+          : 0;
+
         const somaBase = notasRows.reduce((s, r) => {
           if (r.vel_status === 'indevida') {
-            const semVelocidade = clamp(parseFloat(r.nota_cliente) + 0 + parseFloat(r.ajuste_finalizar) + parseFloat(r.ajuste_reabertura), 0, 5);
+            const semVelocidade = clamp(parseFloat(r.nota_cliente) + 0 + parseFloat(r.ajuste_reabertura), 0, 5);
             return s + semVelocidade;
           }
           return s + parseFloat(r.nota_final);
         }, 0);
         const mediaBase = somaBase / notasRows.length;
-        const media_individual = Number(Math.max(0, Math.min(5, mediaBase + bonusTransferencia + bonusAceite)).toFixed(2));
-        resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes: notasRows.length, bonusTransferencia, bonusAceite, fonte: 'tickets' });
+        const media_individual = Number(Math.max(0, Math.min(5, mediaBase + bonusTransferencia + bonusAceite + bonusFinalizar)).toFixed(2));
+        resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes: notasRows.length, bonusTransferencia, bonusAceite, bonusFinalizar, fonte: 'tickets' });
         if (!dryRun) {
           await pool.query(
             `INSERT INTO gam_notas (colaborador_id, mes, media_individual, avaliacoes, lancado_por)
