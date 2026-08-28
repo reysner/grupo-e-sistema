@@ -256,10 +256,14 @@ async function carregar() {
       html += '<div class="card"><p class="empty-msg">' + t.aviso + '</p></div>';
     } else if (tickets.length) {
       html += '<div class="card"><p class="card-title">Seus atendimentos em ' + mesLabel(mes) + '</p>' +
-        '<div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota</th><th>Vel.</th><th>/Finalizar</th><th>Final</th></tr></thead><tbody>' +
+        '<p style="font-size:12px;color:var(--gray-400);margin-bottom:10px">Tickets marcados <b>"Indevida"</b> já foram revisados pela liderança e <b>não entram</b> na composição da sua nota acima — aparecem aqui só pra registro.</p>' +
+        '<div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota</th><th>Vel.</th><th>/Finalizar</th><th>Final</th><th>Revisão</th></tr></thead><tbody>' +
         tickets.map(tk => {
-          const temDesconto = parseFloat(tk.ajuste_velocidade) < 0 || parseFloat(tk.ajuste_finalizar) < 0;
-          return '<tr class="' + (temDesconto ? 'desconto' : '') + '">' +
+          const indevida = tk.revisao_nota_status === 'indevida';
+          const temDesconto = !indevida && (parseFloat(tk.ajuste_velocidade) < 0 || parseFloat(tk.ajuste_finalizar) < 0);
+          const statusLabel = { pendente: 'Pendente', devida: 'Devida', indevida: 'Indevida — não conta' };
+          const statusCor = indevida ? 'var(--gray-400)' : (tk.revisao_nota_status === 'devida' ? 'var(--green-ok)' : 'var(--gray-500)');
+          return '<tr class="' + (temDesconto ? 'desconto' : '') + '"' + (indevida ? ' style="opacity:.55;text-decoration:line-through"' : '') + '>' +
             '<td>#' + tk.zappy_id + '</td>' +
             '<td>' + (tk.empresa_texto || '—') + '</td>' +
             '<td>' + tk.papel + '</td>' +
@@ -267,6 +271,7 @@ async function carregar() {
             '<td>' + tk.ajuste_velocidade + '</td>' +
             '<td>' + tk.ajuste_finalizar + '</td>' +
             '<td style="font-weight:700">' + tk.nota_final + '</td>' +
+            '<td style="text-decoration:none;font-size:12px;color:' + statusCor + '">' + (statusLabel[tk.revisao_nota_status] || tk.revisao_nota_status || '—') + '</td>' +
           '</tr>';
         }).join('') +
         '</tbody></table></div></div>';
