@@ -1297,7 +1297,7 @@ const App = (() => {
       const res = await API.get('/api/users');
       if (!res || !res.ok) return;
       const { users } = await res.json();
-      Admin._users = users;
+      Admin._users = (users || []).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
       Admin.filtrar();
       Admin.carregarBackupsAutomaticos();
     },
