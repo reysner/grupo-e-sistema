@@ -3026,7 +3026,43 @@ router.get('/gam/diagnostico-analista', requireAdmin, async (req, res) => {
       [mes, analista_id]
     );
     const totalGeral = rows.reduce((s, r) => s + parseInt(r.total, 10), 0);
-    res.json({ mes, analista_id, totalGeral, porTipo: rows });
+
+    // Quebra por papel real (encerrou = conta como "avaliações"; só
+    // transferiu = NÃO conta como avaliação dela, vira bônus separado) —
+    // só entre os tickets de CLIENTE (os únicos que deveriam pontuar).
+    const { rows: porPapel } = await pool.query(
+      `SELECT
+         CASE WHEN t.analista_id = $2 THEN 'encerrou_ela' ELSE 'so_transferiu' END AS papel_real,
+         COUNT(*) AS total
+         FROM cs_tickets t
+         LEFT JOIN cs_vinculos v ON v.id = t.vinculo_id
+        WHERE t.nota_avaliacao IS NOT NULL
+          AND TO_CHAR(COALESCE(t.encerramento, t.abertura), 'YYYY-MM') = $1
+          AND (t.analista_id = $2 OR t.analista_anterior_id = $2)
+          AND v.tipo = 'cliente'
+        GROUP BY papel_real`,
+      [mes, analista_id]
+    );
+
+    // Dos que ela encerrou (cliente), quantos JÁ estão persistidos em
+    // gam_tickets_pontos (papel recebeu/unico) pra esse mês — se for menos
+    // que o total acima, tem ticket de cliente que nunca foi processado
+    // pelo motor de pontuação (gap de ingestão/processamento, não de
+    // classificação de vínculo).
+    const { rows: jaPersistidos } = await pool.query(
+      `SELECT COUNT(*) AS total, array_agg(t.zappy_id ORDER BY t.zappy_id) AS zappy_ids
+         FROM cs_tickets t
+         JOIN cs_vinculos v ON v.id = t.vinculo_id
+         LEFT JOIN gam_tickets_pontos p ON p.ticket_id = t.id AND p.papel IN ('recebeu','unico')
+        WHERE t.nota_avaliacao IS NOT NULL
+          AND TO_CHAR(COALESCE(t.encerramento, t.abertura), 'YYYY-MM') = $1
+          AND t.analista_id = $2
+          AND v.tipo = 'cliente'
+          AND p.id IS NULL`,
+      [mes, analista_id]
+    );
+
+    res.json({ mes, analista_id, totalGeral, porTipo: rows, porPapel, ticketsClienteEncerradosNaoPersistidos: jaPersistidos[0] });
   } catch (err) {
     console.error('[gam] diagnostico-analista falhou:', err);
     res.status(500).json({ error: err.message || 'Erro ao diagnosticar analista.' });
