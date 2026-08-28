@@ -5667,21 +5667,21 @@ const Gamificacao = (() => {
         '<input id="gam-novo-nome" type="text" placeholder="Nome do colaborador" style="flex:1;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px" />' +
         '<button class="btn btn-success btn-sm" onclick="Gamificacao.adicionarColaborador()">+ Adicionar</button>' +
       '</div>' +
-      '<div id="gam-colab-list" style="max-height:320px;overflow-y:auto">' + _renderColabList() + '</div>' +
-    '</div>');
+      '<div id="gam-colab-list" style="max-height:min(60vh,520px);overflow-y:auto">' + _renderColabList() + '</div>' +
+    '</div>', null, { wide: true });
   }
 
   function _renderColabList() {
     if (!_colaboradores.length) return '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum colaborador cadastrado.</p>';
     return _colaboradores.map(c => {
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-100)">' +
-        '<span style="font-weight:600;' + (!c.ativo ? 'opacity:.5;text-decoration:line-through' : '') + '">' + c.nome + '</span>' +
-        '<div style="display:flex;gap:6px;align-items:center">' +
-          '<button class="btn btn-sm" style="background:' + (c.zappy_user_id?'#f0fff4':'#f7fafc') + ';color:' + (c.zappy_user_id?'#38a169':'var(--gray-400)') + ';border:1px solid ' + (c.zappy_user_id?'#c6f6d5':'var(--gray-200)') + ';font-size:11px" data-id="' + c.id + '" onclick="Gamificacao.vincularZappy(this.dataset.id)">' + (c.zappy_user_id ? '🔗 Zappy' : '🔗 Vincular') + '</button>' +
-          '<button class="btn btn-sm" title="Login pra essa pessoa ver a própria nota em /minha-nota" style="background:' + (c.user_id?'#f0fff4':'#f7fafc') + ';color:' + (c.user_id?'#38a169':'var(--gray-400)') + ';border:1px solid ' + (c.user_id?'#c6f6d5':'var(--gray-200)') + ';font-size:11px" data-id="' + c.id + '" onclick="Gamificacao.vincularLogin(this.dataset.id)">' + (c.user_id ? '👤 Login' : '👤 Vincular') + '</button>' +
-          '<button class="btn btn-sm" title="Regra de tempo de aceite do aguardando (>15min = -1)" style="background:' + (c.aplica_regra_aceite?'#f0fff4':'#f7fafc') + ';color:' + (c.aplica_regra_aceite?'#38a169':'var(--gray-400)') + ';border:1px solid ' + (c.aplica_regra_aceite?'#c6f6d5':'var(--gray-200)') + ';font-size:11px" data-id="' + c.id + '" onclick="Gamificacao.toggleRegraAceite(this.dataset.id)">⏱️ Aceite: ' + (c.aplica_regra_aceite ? 'ON' : 'OFF') + '</button>' +
-          '<button class="btn btn-sm" style="background:' + (c.ativo?'#fff5f5':'#f0fff4') + ';color:' + (c.ativo?'#e53e3e':'#38a169') + ';border:1px solid ' + (c.ativo?'#fed7d7':'#c6f6d5') + ';font-size:11px" data-id="' + c.id + '" data-ativo="' + c.ativo + '" onclick="Gamificacao.toggleColaborador(this.dataset.id)">' + (c.ativo ? 'Desativar' : 'Ativar') + '</button>' +
-          '<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:14px" data-id="' + c.id + '" onclick="Gamificacao.excluirColaborador(this.dataset.id)">🗑</button>' +
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--gray-100);display:grid;gap:8px">' +
+        '<span style="font-weight:700;font-size:14.5px;' + (!c.ativo ? 'opacity:.5;text-decoration:line-through' : '') + '">' + c.nome + '</span>' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
+          '<button class="btn btn-sm" style="background:' + (c.zappy_user_id?'#f0fff4':'#f7fafc') + ';color:' + (c.zappy_user_id?'#38a169':'var(--gray-400)') + ';border:1px solid ' + (c.zappy_user_id?'#c6f6d5':'var(--gray-200)') + ';font-size:11px;white-space:nowrap" data-id="' + c.id + '" onclick="Gamificacao.vincularZappy(this.dataset.id)">' + (c.zappy_user_id ? '🔗 Zappy' : '🔗 Vincular Zappy') + '</button>' +
+          '<button class="btn btn-sm" title="Login pra essa pessoa ver a própria nota em /minha-nota" style="background:' + (c.user_id?'#f0fff4':'#f7fafc') + ';color:' + (c.user_id?'#38a169':'var(--gray-400)') + ';border:1px solid ' + (c.user_id?'#c6f6d5':'var(--gray-200)') + ';font-size:11px;white-space:nowrap" data-id="' + c.id + '" onclick="Gamificacao.vincularLogin(this.dataset.id)">' + (c.user_id ? '👤 Login' : '👤 Vincular Login') + '</button>' +
+          '<button class="btn btn-sm" title="Regra de tempo de aceite do aguardando (>15min = -1)" style="background:' + (c.aplica_regra_aceite?'#f0fff4':'#f7fafc') + ';color:' + (c.aplica_regra_aceite?'#38a169':'var(--gray-400)') + ';border:1px solid ' + (c.aplica_regra_aceite?'#c6f6d5':'var(--gray-200)') + ';font-size:11px;white-space:nowrap" data-id="' + c.id + '" onclick="Gamificacao.toggleRegraAceite(this.dataset.id)">⏱️ Aceite: ' + (c.aplica_regra_aceite ? 'ON' : 'OFF') + '</button>' +
+          '<button class="btn btn-sm" style="background:' + (c.ativo?'#fff5f5':'#f0fff4') + ';color:' + (c.ativo?'#e53e3e':'#38a169') + ';border:1px solid ' + (c.ativo?'#fed7d7':'#c6f6d5') + ';font-size:11px;white-space:nowrap" data-id="' + c.id + '" data-ativo="' + c.ativo + '" onclick="Gamificacao.toggleColaborador(this.dataset.id)">' + (c.ativo ? 'Desativar' : 'Ativar') + '</button>' +
+          '<button class="btn btn-sm" title="Excluir" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:15px;padding:4px 6px" data-id="' + c.id + '" onclick="Gamificacao.excluirColaborador(this.dataset.id)">🗑</button>' +
         '</div>' +
       '</div>';
     }).join('');
