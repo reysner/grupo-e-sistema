@@ -3063,8 +3063,9 @@ router.patch('/gam/tickets-revisao-velocidade/:ticketId/:papel', requireAdmin, a
 
 /**
  * GET /api/data/gam/tickets-revisao-aceite — revisão do ACEITE do
- * aguardando: lista linhas de gam_tickets_pontos com ajuste_aceite gravado
- * (papel 'unico'/'transferiu', não-null) pra colaboradores com
+ * aguardando: lista linhas de gam_tickets_pontos com desconto de aceite
+ * (ajuste_aceite < 0 — mesmo critério da revisão de velocidade, só o que
+ * de fato pesa contra alguém) pra colaboradores com
  * gam_colaboradores.aplica_regra_aceite = true. Pra marcar como 'indevida'
  * contatos que parecem bot/marketing/currículo etc. — o ticket some do
  * cálculo da média de aceite daquele colaborador, sem afetar mais nada.
@@ -3086,7 +3087,7 @@ router.get('/gam/tickets-revisao-aceite', requireAdmin, async (req, res) => {
          JOIN gam_colaboradores c ON c.zappy_user_id = p.analista_id
          LEFT JOIN gam_aceite_revisoes ar ON ar.ticket_id = p.ticket_id AND ar.papel = p.papel
         WHERE p.mes = $1
-          AND p.ajuste_aceite IS NOT NULL
+          AND p.ajuste_aceite < 0
           AND c.aplica_regra_aceite = true
           AND COALESCE(ar.status, 'pendente') = $2
         ORDER BY t.encerramento DESC NULLS LAST`,

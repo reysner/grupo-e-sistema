@@ -5885,7 +5885,7 @@ const Gamificacao = (() => {
   async function abrirRevisaoAceite() {
     const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
     App.Modal.open('Revisar aceite do aguardando — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
-      '<p style="font-size:13px;color:var(--gray-500)">Tickets com a métrica de tempo de aceite do aguardando (só conta pra colaboradores com a regra ligada). Marca "Devida" se é um cliente de verdade esperando atendimento, ou "Indevida" se parece bot/marketing/envio de currículo/spam — aí o ticket sai do cálculo da média de aceite, sem afetar mais nada. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
+      '<p style="font-size:13px;color:var(--gray-500)">Tickets com desconto de aceite do aguardando (só conta pra colaboradores com a regra ligada). Marca "Devida" se é um cliente de verdade esperando atendimento, ou "Indevida" se parece bot/marketing/envio de currículo/spam — aí o ticket sai do cálculo da média de aceite, sem afetar mais nada. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<label style="font-size:12px;font-weight:700;color:var(--gray-500)">Mostrar:</label>' +
         '<select id="gam-revisao-aceite-status" class="input" style="width:auto" onchange="Gamificacao._trocarStatusRevisaoAceite(\'' + mes + '\')">' +
