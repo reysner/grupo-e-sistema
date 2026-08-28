@@ -480,6 +480,90 @@ async function recalcularSlaTodos(pool, { agora = new Date(), loteSize = 300, on
 }
 
 /**
+ * Reingesta uma lista EXPLÍCITA de tickets (por zappy_id), SEM escanear
+ * atividade — vai direto no ID. Muito mais rápido e confiável que
+ * executarCargaRetroativa (que precisa varrer TODAS as mensagens do
+ * período inteiro só pra DESCOBRIR quais tickets tocar, e reprocessa tudo
+ * do zero a cada tentativa — caro e sujeito a travar em janelas grandes,
+ * ex.: 30 dias travou 2x no plano gratuito em 27/08/2026) quando já se
+ * sabe exatamente quais tickets precisam ser reprocessados — ex.: pegar o
+ * evento formal de aceite (metas.acceptTicket, ver tradutorZappy.js) em
+ * tickets antigos já ingeridos, sem precisar reingerir o mês inteiro de
+ * todo mundo. Não mexe em dataInicio/ultimaExecucao (não é o fluxo
+ * normal) e não filtra por data de início da coleta — assume que quem
+ * chamou já sabe que quer exatamente esses tickets.
+ */
+async function reingerirTicketsPorId({ zappyClient, pool, zappyIds, agora = new Date(), onProgress = null }) {
+  await ensurePontuacaoSchema(pool);
+
+  const [filas, usuarios] = await Promise.all([
+    zappyClient.listarFilas().catch(() => []),
+    zappyClient.listarUsuarios().catch(() => []),
+  ]);
+  const filaMap = Object.fromEntries(filas.map(f => [String(f.id), f.name]));
+  const usuarioMap = Object.fromEntries(usuarios.map(u => [String(u.id), u.name]));
+  const contatoCache = new Map();
+
+  let processados = 0;
+  const erros = [];
+
+  for (const ticketId of zappyIds) {
+    let ticketZappy = null;
+    try {
+      ticketZappy = await zappyClient.obterTicket(ticketId);
+
+      let contato = null;
+      if (ticketZappy.contactId != null) {
+        const cid = String(ticketZappy.contactId);
+        if (contatoCache.has(cid)) {
+          contato = contatoCache.get(cid);
+        } else {
+          contato = await zappyClient.obterContato(ticketZappy.contactId).catch(() => null);
+          contatoCache.set(cid, contato);
+        }
+      }
+
+      const contexto = {
+        contato,
+        filaNome: filaMap[String(ticketZappy.queueId)] || null,
+        analistaNome: usuarioMap[String(ticketZappy.userId)] || null,
+      };
+
+      const mensagensZappy = await zappyClient.obterMensagens(ticketZappy.id);
+      const generico = traduzirTicket(ticketZappy, mensagensZappy, contexto);
+
+      const transferenciaInfo = await resolverHoraTransferencia(pool, generico.zappy_id, generico.analista, agora);
+      const horaTransferencia = transferenciaInfo ? transferenciaInfo.hora : null;
+      if (horaTransferencia) generico.eventos.push({ tipo: 'transferencia', hora: horaTransferencia });
+      generico.analista_anterior = transferenciaInfo ? transferenciaInfo.analistaAnterior : null;
+      generico.analista_anterior_id = transferenciaInfo ? transferenciaInfo.analistaAnteriorId : null;
+
+      const sla = calcularSLA(generico, agora);
+      const trocas = calcularTrocas(generico.mensagens, agora);
+      const mensagensPosTransferencia = horaTransferencia
+        ? generico.mensagens.filter(m => new Date(m.hora) > new Date(horaTransferencia))
+        : [];
+      const trocasPosTransferencia = calcularTrocas(mensagensPosTransferencia, agora);
+
+      const vinculo = await garantirVinculo(pool, {
+        nome: contato ? contato.name : null,
+        telefone: contato ? contato.number : null,
+        tags: contato ? contato.tags : null,
+      });
+
+      const linha = montarLinhaTicket(generico, sla, vinculo, trocas, trocasPosTransferencia);
+      await persistirTicket(pool, linha, generico.mensagens);
+      processados++;
+    } catch (e) {
+      erros.push({ ticketId: ticketZappy ? ticketZappy.id : ticketId, erro: e.message });
+    }
+    if (onProgress) onProgress({ processados, total: zappyIds.length, erros: erros.length });
+  }
+
+  return { processados, total: zappyIds.length, erros };
+}
+
+/**
  * Carga retroativa ÚNICA: reabre a "data de início da coleta" pra trás (nunca
  * pra frente — nunca esconde ticket já coletado) e roda a ingestão buscando
  * atividade desde essa nova data, em vez de só a partir da última execução.
@@ -581,6 +665,7 @@ if (require.main === module) {
 module.exports = {
   ingerirTickets,
   executarCargaRetroativa,
+  reingerirTicketsPorId,
   montarLinhaTicket,
   primeiraHoraPorTipo,
   obterDataInicio,

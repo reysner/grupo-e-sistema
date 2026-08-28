@@ -30,13 +30,16 @@
 const express = require('express');
 const router = express.Router();
 const { obterPool } = require('./pool');
-const { ingerirTickets, executarCargaRetroativa, recalcularSlaTodos, atualizarNotasPendentes } = require('./ingestao');
+const { ingerirTickets, executarCargaRetroativa, recalcularSlaTodos, atualizarNotasPendentes, reingerirTicketsPorId } = require('./ingestao');
 const { criarClienteZappy } = require('./zappyClient');
 const { listarPendentes, confirmarVinculo, recalcularSugestoes } = require('./vinculos');
 const { detectarSinalChurn, detectarInsatisfacao, classificarMotivoConversa, palavrasFrequentes } = require('./slaEngine');
 
 // Trava simples pra não deixar disparar 2 backfills ao mesmo tempo (ex.: duplo clique).
 let backfillEmAndamento = false;
+// Idem, mas pra reingestão pontual por lista de tickets (ver POST /reingerir abaixo).
+let reingestaoEmAndamento = false;
+let reingestaoProgresso = null;
 // Idem, mas pro recálculo de SLA (ver POST /recalcular-sla abaixo).
 let recalculoSlaEmAndamento = false;
 // Progresso do recálculo de SLA em andamento — ver GET /recalcular-sla/status.
@@ -199,6 +202,68 @@ router.post('/backfill', requireAuth, requireAdmin, async (req, res) => {
   } finally {
     backfillEmAndamento = false;
   }
+});
+
+/**
+ * POST /api/cs/reingerir — reingesta uma lista PONTUAL de tickets já
+ * conhecidos (por zappy_id, direto — sem escanear atividade), OU todos os
+ * tickets de um colaborador num mês (analista_id + mes). Muito mais rápido
+ * e confiável que /backfill quando já se sabe exatamente quais tickets
+ * precisam ser reprocessados — ver reingerirTicketsPorId em ingestao.js
+ * (criado depois do backfill de 30 dias ter travado 2x em 27/08/2026 no
+ * plano gratuito, tentando reprocessar TODO MUNDO só pra atualizar o
+ * aceite de uma pessoa). Roda em segundo plano como o /backfill.
+ */
+router.post('/reingerir', requireAuth, requireAdmin, async (req, res) => {
+  if (reingestaoEmAndamento) {
+    return res.status(409).json({ error: 'Já existe uma reingestão em andamento. Aguarde terminar.', progresso: reingestaoProgresso });
+  }
+  const { analista_id, mes, zappy_ids } = req.body || {};
+  let zappyIds = Array.isArray(zappy_ids) ? zappy_ids.map(String) : null;
+
+  try {
+    const pool = obterPool();
+    if (!zappyIds) {
+      if (!analista_id || !mes || !/^\d{4}-\d{2}$/.test(mes)) {
+        return res.status(400).json({ error: 'Informe "zappy_ids" (array) OU "analista_id" + "mes" (AAAA-MM).' });
+      }
+      // Pega tanto quem atendeu (analista_id) quanto quem transferiu
+      // (analista_anterior_id) — os dois papéis usam a métrica de aceite
+      // (ver cs/pontuacao.js).
+      const { rows } = await pool.query(
+        `SELECT zappy_id FROM cs_tickets
+          WHERE (analista_id = $1 OR analista_anterior_id = $1)
+            AND TO_CHAR(COALESCE(encerramento, abertura), 'YYYY-MM') = $2`,
+        [String(analista_id), mes]
+      );
+      zappyIds = rows.map(r => r.zappy_id);
+    }
+    if (!zappyIds.length) {
+      return res.json({ ok: true, mensagem: 'Nenhum ticket encontrado pra reingerir.', total: 0 });
+    }
+
+    reingestaoEmAndamento = true;
+    reingestaoProgresso = { processados: 0, total: zappyIds.length, erros: 0, iniciadoEm: new Date().toISOString(), concluidoEm: null };
+    res.json({ ok: true, total: zappyIds.length, mensagem: `Reingestão de ${zappyIds.length} ticket(s) iniciada em segundo plano.` });
+
+    const zappyClient = criarClienteZappy();
+    const resultado = await reingerirTicketsPorId({
+      zappyClient, pool, zappyIds,
+      onProgress: (p) => { reingestaoProgresso = { ...reingestaoProgresso, ...p }; },
+    });
+    reingestaoProgresso = { ...reingestaoProgresso, ...resultado, concluidoEm: new Date().toISOString() };
+    console.log('[CS] Reingestão pontual concluída:', resultado);
+  } catch (e) {
+    console.error('[CS] Reingestão pontual falhou:', e);
+    reingestaoProgresso = reingestaoProgresso ? { ...reingestaoProgresso, erro: e.message } : { erro: e.message };
+  } finally {
+    reingestaoEmAndamento = false;
+  }
+});
+
+/** GET /api/cs/reingerir/status — só leitura, não dispara nada. */
+router.get('/reingerir/status', requireAuth, requireAdmin, (req, res) => {
+  res.json({ emAndamento: reingestaoEmAndamento, progresso: reingestaoProgresso });
 });
 
 /**
