@@ -263,6 +263,12 @@ async function carregar() {
           const temDesconto = !indevida && (parseFloat(tk.ajuste_velocidade) < 0 || parseFloat(tk.ajuste_finalizar) < 0);
           const statusLabel = { pendente: 'Pendente', devida: 'Devida', indevida: 'Indevida — não conta' };
           const statusCor = indevida ? 'var(--gray-400)' : (tk.revisao_nota_status === 'devida' ? 'var(--green-ok)' : 'var(--gray-500)');
+          // Nota 5 nunca precisa de revisão (não tem o que corrigir) — só
+          // mostra a coluna quando a nota é menor que 5, senão "Pendente"
+          // aparece em toda linha perfeita sem motivo, o que só confunde
+          // (achado do Reysner, 28/08/2026).
+          const mostrarRevisao = Number(tk.nota_cliente) < 5;
+          const revisaoTexto = mostrarRevisao ? (statusLabel[tk.revisao_nota_status] || tk.revisao_nota_status || '—') : '—';
           return '<tr class="' + (temDesconto ? 'desconto' : '') + '"' + (indevida ? ' style="opacity:.55;text-decoration:line-through"' : '') + '>' +
             '<td>#' + tk.zappy_id + '</td>' +
             '<td>' + (tk.empresa_texto || '—') + '</td>' +
@@ -271,7 +277,7 @@ async function carregar() {
             '<td>' + tk.ajuste_velocidade + '</td>' +
             '<td>' + tk.ajuste_finalizar + '</td>' +
             '<td style="font-weight:700">' + tk.nota_final + '</td>' +
-            '<td style="text-decoration:none;font-size:12px;color:' + statusCor + '">' + (statusLabel[tk.revisao_nota_status] || tk.revisao_nota_status || '—') + '</td>' +
+            '<td style="text-decoration:none;font-size:12px;color:' + (mostrarRevisao ? statusCor : 'var(--gray-400)') + '">' + revisaoTexto + '</td>' +
           '</tr>';
         }).join('') +
         '</tbody></table></div></div>';
