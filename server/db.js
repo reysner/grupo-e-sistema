@@ -105,6 +105,15 @@ async function init() {
       created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  // Role 'colaborador' (28/08/2026): login self-service restrito só à
+  // própria nota da Gamificação (ver server/auth.js requireAuth e
+  // public/minha-nota.html) — mesmo padrão do role 'contabil', que já é
+  // restrito só ao portal /contabil. Postgres não tem
+  // "ADD CONSTRAINT IF NOT EXISTS" — dropa e recria (idempotente, tolera
+  // corrida entre instâncias no boot).
+  await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`).catch(()=>{});
+  await pool.query(`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('administrador','usuario','contabil','colaborador'))`).catch(()=>{});
 }
 
 async function query(text, params) {

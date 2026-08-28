@@ -235,6 +235,11 @@ const App = (() => {
         window.location.href = '/contabil';
         return;
       }
+      // Colaborador só tem acesso à própria nota — redireciona pro /minha-nota
+      if (user.role === 'colaborador') {
+        window.location.href = '/minha-nota';
+        return;
+      }
 
       currentUser = user;
       window._currentUser = user;
@@ -266,6 +271,11 @@ const App = (() => {
       // Bloqueia contábil de usar o sistema principal
       if (currentUser.role === 'contabil') {
         window.location.href = '/contabil';
+        return false;
+      }
+      // Bloqueia colaborador de usar o sistema principal
+      if (currentUser.role === 'colaborador') {
+        window.location.href = '/minha-nota';
         return false;
       }
 
@@ -1433,6 +1443,7 @@ const App = (() => {
             <option value="usuario">Usuário</option>
             <option value="administrador">Administrador</option>
             <option value="contabil">Contábil — acesso só ao Portal Contábil</option>
+            <option value="colaborador">Colaborador — acesso só à própria nota (Minha Nota)</option>
           </select>
         </div>`, Admin._confirmAdd);
     },
@@ -1454,6 +1465,7 @@ const App = (() => {
           '<option value="usuario"' + (role==='usuario'?' selected':'') + '>Usuário</option>' +
           '<option value="administrador"' + (role==='administrador'?' selected':'') + '>Administrador</option>' +
           '<option value="contabil"' + (role==='contabil'?' selected':'') + '>Contábil — só Portal Contábil</option>' +
+          '<option value="colaborador"' + (role==='colaborador'?' selected':'') + '>Colaborador — só Minha Nota</option>' +
         '</select></div>' +
         '<button class="btn btn-primary" data-id="' + id + '" onclick="App.Admin.saveEdit(this.dataset.id)">Salvar</button>' +
       '</div>', null, { noFooter: true });
@@ -5640,6 +5652,8 @@ const Gamificacao = (() => {
         '<span style="font-weight:600;' + (!c.ativo ? 'opacity:.5;text-decoration:line-through' : '') + '">' + c.nome + '</span>' +
         '<div style="display:flex;gap:6px;align-items:center">' +
           '<button class="btn btn-sm" style="background:' + (c.zappy_user_id?'#f0fff4':'#f7fafc') + ';color:' + (c.zappy_user_id?'#38a169':'var(--gray-400)') + ';border:1px solid ' + (c.zappy_user_id?'#c6f6d5':'var(--gray-200)') + ';font-size:11px" data-id="' + c.id + '" onclick="Gamificacao.vincularZappy(this.dataset.id)">' + (c.zappy_user_id ? '🔗 Zappy' : '🔗 Vincular') + '</button>' +
+          '<button class="btn btn-sm" title="Login pra essa pessoa ver a própria nota em /minha-nota" style="background:' + (c.user_id?'#f0fff4':'#f7fafc') + ';color:' + (c.user_id?'#38a169':'var(--gray-400)') + ';border:1px solid ' + (c.user_id?'#c6f6d5':'var(--gray-200)') + ';font-size:11px" data-id="' + c.id + '" onclick="Gamificacao.vincularLogin(this.dataset.id)">' + (c.user_id ? '👤 Login' : '👤 Vincular') + '</button>' +
+          '<button class="btn btn-sm" title="Regra de tempo de aceite do aguardando (>15min = -1)" style="background:' + (c.aplica_regra_aceite?'#f0fff4':'#f7fafc') + ';color:' + (c.aplica_regra_aceite?'#38a169':'var(--gray-400)') + ';border:1px solid ' + (c.aplica_regra_aceite?'#c6f6d5':'var(--gray-200)') + ';font-size:11px" data-id="' + c.id + '" onclick="Gamificacao.toggleRegraAceite(this.dataset.id)">⏱️ Aceite: ' + (c.aplica_regra_aceite ? 'ON' : 'OFF') + '</button>' +
           '<button class="btn btn-sm" style="background:' + (c.ativo?'#fff5f5':'#f0fff4') + ';color:' + (c.ativo?'#e53e3e':'#38a169') + ';border:1px solid ' + (c.ativo?'#fed7d7':'#c6f6d5') + ';font-size:11px" data-id="' + c.id + '" data-ativo="' + c.ativo + '" onclick="Gamificacao.toggleColaborador(this.dataset.id)">' + (c.ativo ? 'Desativar' : 'Ativar') + '</button>' +
           '<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:14px" data-id="' + c.id + '" onclick="Gamificacao.excluirColaborador(this.dataset.id)">🗑</button>' +
         '</div>' +
@@ -5677,6 +5691,40 @@ const Gamificacao = (() => {
       if (colab) colab.zappy_user_id = data.zappy_user_id;
       App.Modal.close();
       App.Toast.ok('Vínculo atualizado.');
+      abrirColaboradores();
+    } else App.Toast.err('Erro ao salvar vínculo.');
+  }
+
+  // ── Vínculo com login (pra colaborador ver a própria nota em /minha-nota) ──
+  async function vincularLogin(colabId) {
+    const res = await fetch('/api/users', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { App.Toast.err('Erro ao buscar usuários.'); return; }
+    const { users } = await res.json();
+    const colab = _colaboradores.find(c => c.id === colabId);
+    const opcoes = '<option value="">— nenhum —</option>' + (users || []).map(u =>
+      '<option value="' + u.id + '" ' + (colab && colab.user_id === u.id ? 'selected' : '') + '>' + u.name + ' (' + u.email + ')</option>'
+    ).join('');
+    App.Modal.open('Vincular Login', '<div style="display:grid;gap:14px">' +
+      '<p style="font-size:13px;color:var(--gray-500)">Liga "' + (colab ? colab.nome : '') + '" a um login existente, pra essa pessoa ver a própria composição de nota em <b>/minha-nota</b>. Pra isso funcionar de forma restrita, o login precisa ter o perfil "Colaborador" (em Administração → Usuários) — senão continua vendo o sistema normal.</p>' +
+      '<div class="field"><label>Login</label><select id="gam-login-select">' + opcoes + '</select></div>' +
+      '<button class="btn btn-primary" data-id="' + colabId + '" onclick="Gamificacao.salvarVinculoLogin(this.dataset.id)">Salvar</button>' +
+    '</div>');
+  }
+
+  async function salvarVinculoLogin(colabId) {
+    const sel = document.getElementById('gam-login-select');
+    const user_id = sel && sel.value ? sel.value : null;
+    const res = await fetch('/api/data/gam/colaboradores/' + colabId + '/login', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ user_id })
+    });
+    if (res && res.ok) {
+      const { data } = await res.json();
+      const colab = _colaboradores.find(c => c.id === colabId);
+      if (colab) colab.user_id = data.user_id;
+      App.Modal.close();
+      App.Toast.ok('Login vinculado.');
       abrirColaboradores();
     } else App.Toast.err('Erro ao salvar vínculo.');
   }
@@ -5944,6 +5992,71 @@ const Gamificacao = (() => {
     } else App.Toast.err('Erro ao salvar.');
   }
 
+  // ── Revisão do /FINALIZAR + REABERTURA (regra combinada) ───────────────────
+  // Pra reaberturas que não refletem um encerramento mal feito de verdade
+  // (ex.: cliente voltou por um assunto novo, sem relação com o fechamento).
+  async function abrirRevisaoFinalizar() {
+    const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
+    App.Modal.open('Revisar /Finalizar + reabertura — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
+      '<p style="font-size:13px;color:var(--gray-500)">Tickets com desconto de encerramento (não avisou certo E o cliente voltou a chamar em até 30 min). Marca "Devida" se a reabertura realmente mostra que o encerramento confundiu o cliente, ou "Indevida" se o cliente voltou por outro motivo (ex.: um assunto novo, sem relação com o fechamento) — aí o ticket sai do cálculo da média, sem afetar mais nada. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+        '<label style="font-size:12px;font-weight:700;color:var(--gray-500)">Mostrar:</label>' +
+        '<select id="gam-revisao-fin-status" class="input" style="width:auto" onchange="Gamificacao._trocarStatusRevisaoFinalizar(\'' + mes + '\')">' +
+          '<option value="pendente">Pendentes</option>' +
+          '<option value="devida">Já marcadas como devida</option>' +
+          '<option value="indevida">Já marcadas como indevida</option>' +
+        '</select>' +
+      '</div>' +
+      '<div id="gam-revisao-fin-lista">Carregando...</div>' +
+    '</div>', null, { wide: true });
+    await _carregarRevisaoFinalizar(mes, 'pendente');
+  }
+
+  function _trocarStatusRevisaoFinalizar(mes) {
+    const status = document.getElementById('gam-revisao-fin-status')?.value || 'pendente';
+    _carregarRevisaoFinalizar(mes, status);
+  }
+
+  async function _carregarRevisaoFinalizar(mes, status) {
+    const box = document.getElementById('gam-revisao-fin-lista');
+    if (!box) return;
+    status = status || 'pendente';
+    box.innerHTML = 'Carregando...';
+    const res = await fetch('/api/data/gam/tickets-revisao-finalizar?mes=' + mes + '&status=' + status, { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao carregar.</p>'; return; }
+    const { data } = await res.json();
+    const rotuloVazio = status === 'pendente' ? 'Nenhum desconto de finalizar/reabertura pendente de revisão' : 'Nenhum ticket marcado como ' + status;
+    if (!data.length) { box.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:16px">' + rotuloVazio + ' em ' + _mesLabel(mes) + '.</p>'; return; }
+    const mostrarQuem = status !== 'pendente';
+    const papelLabel = { recebeu: 'Recebeu', unico: 'Único' };
+    box.innerHTML = '<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">' +
+      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Analista</th><th>Papel</th><th>Desconto</th>' + (mostrarQuem ? '<th>Revisado por</th>' : '') + '<th></th></tr></thead><tbody>' +
+      data.map(r => `<tr data-id="${r.ticket_id}-${r.papel}">` +
+        `<td>#${r.zappy_id}</td>` +
+        `<td>${r.empresa_texto || '—'}</td>` +
+        `<td>${r.analista || '—'}</td>` +
+        `<td>${papelLabel[r.papel] || r.papel}</td>` +
+        `<td style="font-weight:700;color:#c0362c">${r.ajuste_finalizar}</td>` +
+        (mostrarQuem ? `<td style="font-size:11px;color:var(--gray-400)">${r.revisado_por || '—'}${r.revisado_em ? '<br>' + new Date(r.revisado_em).toLocaleDateString('pt-BR') : ''}</td>` : '') +
+        `<td style="white-space:nowrap">` +
+          `<button class="btn btn-sm" ${status === 'devida' ? 'disabled title="Já está devida"' : ''} style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisaoFinalizar('${r.ticket_id}','${r.papel}','devida','${mes}','${status}')">Devida</button> ` +
+          `<button class="btn btn-sm" ${status === 'indevida' ? 'disabled title="Já está indevida"' : ''} style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisaoFinalizar('${r.ticket_id}','${r.papel}','indevida','${mes}','${status}')">Indevida</button>` +
+        `</td></tr>`
+      ).join('') + '</tbody></table></div>';
+  }
+
+  async function marcarRevisaoFinalizar(ticketId, papel, novoStatus, mes, statusAtual) {
+    const res = await fetch('/api/data/gam/tickets-revisao-finalizar/' + ticketId + '/' + papel, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ status_revisao: novoStatus })
+    });
+    if (res && res.ok) {
+      App.Toast.ok('Marcado como ' + novoStatus + '.');
+      await _carregarRevisaoFinalizar(mes, statusAtual);
+    } else App.Toast.err('Erro ao salvar.');
+  }
+
   // ── Relatório de descontos por colaborador (transparência) ─────────────────
   let _relatorioDescontosData = [];
 
@@ -5973,6 +6086,25 @@ const Gamificacao = (() => {
     '</div>', null, { wide: true });
   }
 
+  // Composição da nota (bônus mensais) formatada como lista "base + ajustes = final".
+  function _renderComposicaoNota(c) {
+    if (!c || c.semDados || c.mediaBase === undefined) return '';
+    const linha = (rotulo, valor) => {
+      const num = Number(valor);
+      const sinal = num > 0 ? '+' : '';
+      const cor = num < 0 ? '#c0362c' : (num > 0 ? '#38a169' : 'var(--gray-400)');
+      return '<div style="display:flex;justify-content:space-between;padding:4px 0"><span>' + rotulo + '</span><span style="font-weight:700;color:' + cor + '">' + sinal + num.toFixed(2) + '</span></div>';
+    };
+    return '<div style="background:var(--gray-50,#f7fafc);border-radius:10px;padding:14px 16px;margin-bottom:14px">' +
+      '<p style="font-size:12px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Composição da nota do mês</p>' +
+      '<div style="display:flex;justify-content:space-between;padding:4px 0"><span>Nota base (média dos tickets, já com velocidade)</span><span style="font-weight:700">' + Number(c.mediaBase).toFixed(2) + '</span></div>' +
+      linha('Bônus/desconto de transferência (média)', c.bonusTransferencia) +
+      (c.bonusAceite !== undefined ? linha('Bônus/desconto de aceite do aguardando (média)', c.bonusAceite) : '') +
+      linha('Bônus/desconto de /Finalizar + reabertura (média)', c.bonusFinalizar) +
+      '<div style="display:flex;justify-content:space-between;padding:8px 0 0;border-top:1px solid var(--gray-200);margin-top:6px"><span style="font-weight:700">Nota final do mês (capada em 5)</span><span style="font-weight:800;font-size:16px">' + Number(c.media_individual).toFixed(2) + '</span></div>' +
+    '</div>';
+  }
+
   async function gerarRelatorioDescontos() {
     const colaboradorId = document.getElementById('gam-rel-colab')?.value;
     const mes = document.getElementById('gam-rel-mes')?.value;
@@ -5980,16 +6112,21 @@ const Gamificacao = (() => {
     if (!box) return;
     box.innerHTML = 'Carregando...';
 
-    const res = await fetch('/api/data/gam/relatorio-descontos?mes=' + mes + '&colaborador_id=' + colaboradorId, { headers: { Authorization: 'Bearer ' + _tk() } });
-    if (!res || !res.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao gerar relatório.</p>'; return; }
-    const { colaborador, tickets, aviso } = await res.json();
+    const [resRel, resComp] = await Promise.all([
+      fetch('/api/data/gam/relatorio-descontos?mes=' + mes + '&colaborador_id=' + colaboradorId, { headers: { Authorization: 'Bearer ' + _tk() } }),
+      fetch('/api/data/gam/composicao-nota?mes=' + mes + '&colaborador_id=' + colaboradorId, { headers: { Authorization: 'Bearer ' + _tk() } }),
+    ]);
+    if (!resRel || !resRel.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao gerar relatório.</p>'; return; }
+    const { colaborador, tickets, aviso } = await resRel.json();
     _relatorioDescontosData = (tickets || []).map(t => ({ ...t, colaborador }));
+    const composicao = resComp && resComp.ok ? await resComp.json() : null;
+    const composicaoHtml = _renderComposicaoNota(composicao);
 
-    if (aviso) { box.innerHTML = '<p style="color:var(--gray-500)">' + aviso + '</p>'; return; }
-    if (!tickets.length) { box.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum ticket pontuado pra ' + colaborador + ' em ' + _mesLabel(mes) + '.</p>'; return; }
+    if (aviso) { box.innerHTML = composicaoHtml + '<p style="color:var(--gray-500)">' + aviso + '</p>'; return; }
+    if (!tickets.length) { box.innerHTML = composicaoHtml + '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum ticket pontuado pra ' + colaborador + ' em ' + _mesLabel(mes) + '.</p>'; return; }
 
     const comDesconto = tickets.filter(t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_reabertura) < 0);
-    box.innerHTML =
+    box.innerHTML = composicaoHtml +
       '<p style="font-size:12.5px;color:var(--gray-500);margin:10px 0">' + comDesconto.length + ' de ' + tickets.length + ' ticket(s) com desconto de métrica esse mês.</p>' +
       '<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">' +
       '<thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota Cliente</th><th>Vel.</th><th>/Finalizar</th><th>Reabertura</th><th>Nota Final</th><th>Revisão</th></tr></thead><tbody>' +
@@ -6137,6 +6274,18 @@ const Gamificacao = (() => {
     } else App.Toast.err('Erro ao alterar status.');
   }
 
+  async function toggleRegraAceite(id) {
+    const res = await fetch('/api/data/gam/colaboradores/' + id + '/aceite', { method: 'PATCH', headers: { Authorization: 'Bearer ' + _tk() } });
+    if (res && res.ok) {
+      const { aplica_regra_aceite } = await res.json();
+      const colab = _colaboradores.find(c => c.id === id);
+      if (colab) colab.aplica_regra_aceite = aplica_regra_aceite;
+      const list = document.getElementById('gam-colab-list');
+      if (list) list.innerHTML = _renderColabList();
+      App.Toast.ok('Regra de aceite ' + (aplica_regra_aceite ? 'ligada' : 'desligada') + '.');
+    } else App.Toast.err('Erro ao alterar regra de aceite.');
+  }
+
   async function excluirColaborador(id) {
     if (!confirm('Excluir este colaborador? Todas as notas dele também serão removidas.')) return;
     const res = await fetch('/api/data/gam/colaboradores/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + _tk() } });
@@ -6152,13 +6301,15 @@ const Gamificacao = (() => {
     load, loadNotas, excluirNota,
     loadFormLancamento, salvarLote,
     abrirConfig, salvarConfig, toggleConsolidado,
-    abrirColaboradores, adicionarColaborador, toggleColaborador, excluirColaborador,
+    abrirColaboradores, adicionarColaborador, toggleColaborador, excluirColaborador, toggleRegraAceite,
     vincularZappy, salvarVinculoZappy,
+    vincularLogin, salvarVinculoLogin,
     abrirMapaQualificacao, salvarMapaQualificacao,
     abrirAutoPreencher, confirmarAutoPreencher,
     abrirRevisaoNotas, marcarRevisao, _trocarStatusRevisao,
     abrirRevisaoVelocidade, marcarRevisaoVelocidade, _trocarStatusRevisaoVelocidade,
     abrirRevisaoAceite, marcarRevisaoAceite, _trocarStatusRevisaoAceite,
+    abrirRevisaoFinalizar, marcarRevisaoFinalizar, _trocarStatusRevisaoFinalizar,
     abrirRelatorioDescontos, gerarRelatorioDescontos, exportarRelatorioDescontosCSV, exportarRelatorioDescontosPDF,
     recalcularPontos,
   };

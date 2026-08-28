@@ -8,7 +8,9 @@ const router = express.Router();
 router.use(requireAuth, requireAdmin);
 
 // Papéis válidos aceitos pelo sistema (bate com a constraint users_role_check)
-const VALID_ROLES = ['usuario', 'administrador', 'contabil'];
+// 'colaborador' (28/08/2026): login self-service restrito só à própria nota
+// da Gamificação — ver server/auth.js e public/minha-nota.html.
+const VALID_ROLES = ['usuario', 'administrador', 'contabil', 'colaborador'];
 
 router.get('/', async (req, res) => {
   try {

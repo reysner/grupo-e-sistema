@@ -2411,6 +2411,13 @@ async function ensureGamTables() {
   await pool.query(`ALTER TABLE gam_colaboradores ADD COLUMN IF NOT EXISTS aplica_regra_aceite BOOLEAN DEFAULT false`).catch(()=>{});
   await pool.query(`UPDATE gam_colaboradores SET aplica_regra_aceite = true WHERE nome = 'Elma' AND aplica_regra_aceite = false`).catch(()=>{});
 
+  // ── Login self-service (28/08/2026) — ver server/auth.js (role
+  // 'colaborador') e public/minha-nota.html. Liga um colaborador a um login
+  // da tabela `users`, pra ele conseguir ver a própria composição de nota
+  // sem depender de pedir pro admin. ON DELETE SET NULL: se o login for
+  // apagado, o colaborador não fica travado, só perde o vínculo.
+  await pool.query(`ALTER TABLE gam_colaboradores ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE SET NULL`).catch(()=>{});
+
   await pool.query(`CREATE TABLE IF NOT EXISTS gam_qualificacao_mapa (
     chave TEXT PRIMARY KEY,
     nota NUMERIC(3,2),
@@ -2454,6 +2461,22 @@ async function ensureGamTables() {
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ticket_id UUID NOT NULL REFERENCES cs_tickets(id) ON DELETE CASCADE,
     papel TEXT NOT NULL CHECK (papel IN ('transferiu','unico')),
+    status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente','devida','indevida')),
+    revisado_por TEXT,
+    revisado_em TIMESTAMPTZ,
+    UNIQUE (ticket_id, papel)
+  )`).catch(()=>{});
+
+  // ── Revisão do /FINALIZAR + REABERTURA (regra combinada, 28/08/2026) ─────
+  // Mesmo padrão de gam_aceite_revisoes: quando 'indevida', o desconto some
+  // da média de bonusFinalizar daquele colaborador — pra reaberturas que não
+  // refletem um encerramento mal feito de verdade (ex.: cliente voltou por
+  // um assunto novo, sem relação com o fechamento anterior). Só 'recebeu'/
+  // 'unico' porque só quem encerra tem essa métrica (ver cs/pontuacao.js).
+  await pool.query(`CREATE TABLE IF NOT EXISTS gam_finalizar_revisoes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ticket_id UUID NOT NULL REFERENCES cs_tickets(id) ON DELETE CASCADE,
+    papel TEXT NOT NULL CHECK (papel IN ('recebeu','unico')),
     status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente','devida','indevida')),
     revisado_por TEXT,
     revisado_em TIMESTAMPTZ,
@@ -2614,6 +2637,32 @@ router.get('/gam/usuarios-zappy', requireAdmin, async (req, res) => {
 // Liga/desliga o vínculo de um colaborador da Gamificação com um usuário do
 // Zappy — sem esse vínculo, o auto-preenchimento pula o colaborador (não dá
 // pra adivinhar por nome, já teve caso real de nome digitado diferente).
+/** PATCH /api/data/gam/colaboradores/:id/aceite — liga/desliga a regra de tempo de aceite do aguardando pra esse colaborador. */
+router.patch('/gam/colaboradores/:id/aceite', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { rows } = await pool.query(`SELECT aplica_regra_aceite FROM gam_colaboradores WHERE id = $1`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Não encontrado.' });
+    const novo = !rows[0].aplica_regra_aceite;
+    await pool.query(`UPDATE gam_colaboradores SET aplica_regra_aceite = $1 WHERE id = $2`, [novo, req.params.id]);
+    res.json({ ok: true, aplica_regra_aceite: novo });
+  } catch (err) { res.status(500).json({ error: 'Erro ao alterar regra de aceite.' }); }
+});
+
+/** PATCH /api/data/gam/colaboradores/:id/login — liga/desliga o colaborador a um login (users.id) pra ele ver a própria nota em /minha-nota. */
+router.patch('/gam/colaboradores/:id/login', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { user_id } = req.body;
+    const { rows } = await pool.query(
+      `UPDATE gam_colaboradores SET user_id = $2 WHERE id = $1 RETURNING *`,
+      [req.params.id, user_id || null]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Não encontrado.' });
+    res.json({ ok: true, data: rows[0] });
+  } catch (err) { res.status(500).json({ error: 'Erro ao vincular login.' }); }
+});
+
 router.patch('/gam/colaboradores/:id/zappy', requireAdmin, async (req, res) => {
   try {
     await ensureGamTables();
@@ -2725,10 +2774,12 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
       // a nota_final desse papel, não tem "resto" pra manter).
       const { rows: notasRows } = await pool.query(
         `SELECT p.nota_final, p.nota_cliente, p.ajuste_velocidade, p.ajuste_finalizar, p.ajuste_reabertura,
-                COALESCE(vr.status, 'pendente') AS vel_status
+                COALESCE(vr.status, 'pendente') AS vel_status,
+                COALESCE(fr.status, 'pendente') AS finalizar_status
          FROM gam_tickets_pontos p
          JOIN cs_tickets t ON t.id = p.ticket_id
          LEFT JOIN gam_velocidade_revisoes vr ON vr.ticket_id = p.ticket_id AND vr.papel = p.papel
+         LEFT JOIN gam_finalizar_revisoes fr ON fr.ticket_id = p.ticket_id AND fr.papel = p.papel
          WHERE p.mes = $1 AND p.analista_id = $2 AND p.papel IN ('recebeu','unico')
            AND COALESCE(t.revisao_nota_status, 'pendente') != 'indevida'`,
         [mes, c.zappy_user_id]
@@ -2776,10 +2827,14 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
         // nos 30min. Mesma lógica de média (não soma) de transferência/
         // aceite, e pelo mesmo motivo: evitar que o teto de 5 por ticket
         // mascare o desconto. Reaproveita notasRows (já traz
-        // ajuste_finalizar) — mesmo conjunto de tickets (recebeu/unico, nota
-        // não-indevida) que forma a mediaBase logo abaixo.
-        const bonusFinalizar = notasRows.length
-          ? notasRows.reduce((s, r) => s + parseFloat(r.ajuste_finalizar), 0) / notasRows.length
+        // ajuste_finalizar + finalizar_status) — mesmo conjunto de tickets
+        // (recebeu/unico, nota não-indevida) que forma a mediaBase logo
+        // abaixo. gam_finalizar_revisoes: exclui reaberturas que não
+        // refletiam um encerramento mal feito (ex.: cliente voltou por um
+        // assunto novo, sem relação com o fechamento).
+        const finalizarValidos = notasRows.filter(r => r.finalizar_status !== 'indevida');
+        const bonusFinalizar = finalizarValidos.length
+          ? finalizarValidos.reduce((s, r) => s + parseFloat(r.ajuste_finalizar), 0) / finalizarValidos.length
           : 0;
 
         const somaBase = notasRows.reduce((s, r) => {
@@ -2791,7 +2846,11 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
         }, 0);
         const mediaBase = somaBase / notasRows.length;
         const media_individual = Number(Math.max(0, Math.min(5, mediaBase + bonusTransferencia + bonusAceite + bonusFinalizar)).toFixed(2));
-        resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes: notasRows.length, bonusTransferencia, bonusAceite, bonusFinalizar, fonte: 'tickets' });
+        // mediaBase exposta pra transparência (ver GET /gam/composicao-nota)
+        // — é a nota bruta antes dos 3 bônus mensais, pra dar pra mostrar
+        // "sua nota final é X porque: base Y + transferência Z + aceite W +
+        // finalizar V", em vez desses números ficarem só numa resposta crua.
+        resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes: notasRows.length, mediaBase: Number(mediaBase.toFixed(2)), bonusTransferencia, bonusAceite, bonusFinalizar, fonte: 'tickets' });
         if (!dryRun) {
           await pool.query(
             `INSERT INTO gam_notas (colaborador_id, mes, media_individual, avaliacoes, lancado_por)
@@ -2875,6 +2934,84 @@ router.post('/gam/notas/auto-preencher', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[gam] auto-preencher falhou:', err);
     res.status(500).json({ error: err.message || 'Erro ao auto-preencher notas.' });
+  }
+});
+
+/**
+ * GET /api/data/gam/minha-composicao?mes= — versão self-service da
+ * composição da nota (ver /gam/composicao-nota acima), pro colaborador ver
+ * a própria nota sem precisar de acesso de admin. NUNCA aceita
+ * colaborador_id do cliente — resolve sempre a partir de quem está logado
+ * (req.user.id -> gam_colaboradores.user_id), então não tem como uma
+ * pessoa ver a nota de outra trocando parâmetro. Role 'colaborador' só
+ * consegue chegar aqui mesmo (ver auth.js); 'administrador'/'usuario'
+ * também podem usar (útil pra admin conferir "o que ESSA pessoa vê").
+ */
+router.get('/gam/minha-composicao', async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { mes } = req.query;
+    if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+    const { rows } = await pool.query(`SELECT id, nome FROM gam_colaboradores WHERE user_id = $1`, [req.user.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Seu login ainda não está vinculado a um colaborador da Gamificação. Fale com a liderança.' });
+    const colaborador = rows[0];
+    const resultado = await executarAutoPreencher(mes, { dryRun: true });
+    const linha = (resultado.resultados || []).find(r => r.colaborador_id === colaborador.id);
+    if (!linha) {
+      return res.json({ ok: true, mes, nome: colaborador.nome, semDados: true, mensagem: 'Sem nota calculada nesse mês (sem avaliação de cliente ainda).' });
+    }
+    res.json({ ok: true, mes, ...linha });
+  } catch (err) {
+    console.error('[gam] minha-composicao falhou:', err);
+    res.status(500).json({ error: 'Erro ao calcular sua composição de nota.' });
+  }
+});
+
+/** GET /api/data/gam/meus-tickets?mes= — versão self-service do relatório de descontos, mesmo esquema de segurança de /gam/minha-composicao acima. */
+router.get('/gam/meus-tickets', async (req, res) => {
+  try {
+    await ensurePontuacaoSchema(pool);
+    const { mes } = req.query;
+    if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+    const { rows: colabRows } = await pool.query(`SELECT nome, zappy_user_id FROM gam_colaboradores WHERE user_id = $1`, [req.user.id]);
+    if (!colabRows.length) return res.status(404).json({ error: 'Seu login ainda não está vinculado a um colaborador da Gamificação. Fale com a liderança.' });
+    if (!colabRows[0].zappy_user_id) return res.json({ colaborador: colabRows[0].nome, mes, tickets: [], aviso: 'Ainda não vinculado a um usuário do Zappy.' });
+    const { rows } = await pool.query(
+      `SELECT p.papel, p.nota_cliente, p.ajuste_velocidade, p.ajuste_finalizar, p.ajuste_aceite, p.nota_final,
+              t.zappy_id, t.empresa_texto, t.encerramento, t.revisao_nota_status
+       FROM gam_tickets_pontos p
+       JOIN cs_tickets t ON t.id = p.ticket_id
+       WHERE p.mes = $1 AND p.analista_id = $2
+       ORDER BY t.encerramento DESC NULLS LAST`,
+      [mes, colabRows[0].zappy_user_id]
+    );
+    res.json({ colaborador: colabRows[0].nome, mes, tickets: rows });
+  } catch (err) {
+    console.error('[gam] meus-tickets falhou:', err);
+    res.status(500).json({ error: 'Erro ao listar seus tickets.' });
+  }
+});
+
+/**
+ * GET /api/data/gam/composicao-nota?colaborador_id=&mes= — versão admin da
+ * composição da nota (mostra "a nota final é X porque": nota base + bônus/
+ * desconto de transferência + aceite + /Finalizar) pra qualquer colaborador
+ * — ver a versão self-service em /gam/minha-composicao acima.
+ */
+router.get('/gam/composicao-nota', requireAdmin, async (req, res) => {
+  try {
+    const { colaborador_id, mes } = req.query;
+    if (!colaborador_id) return res.status(400).json({ error: 'Informe "colaborador_id".' });
+    if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+    const resultado = await executarAutoPreencher(mes, { dryRun: true });
+    const linha = (resultado.resultados || []).find(r => r.colaborador_id === colaborador_id);
+    if (!linha) {
+      return res.json({ ok: true, mes, colaborador_id, semDados: true, mensagem: 'Sem nota calculada nesse mês (sem avaliação, ou colaborador ainda vem do agregado de qualificação — sem esse detalhamento).' });
+    }
+    res.json({ ok: true, mes, ...linha });
+  } catch (err) {
+    console.error('[gam] composicao-nota falhou:', err);
+    res.status(500).json({ error: err.message || 'Erro ao calcular composição da nota.' });
   }
 });
 
@@ -3137,6 +3274,70 @@ router.patch('/gam/tickets-revisao-aceite/:ticketId/:papel', requireAdmin, async
   } catch (err) {
     console.error('[gam] PATCH tickets-revisao-aceite falhou:', err);
     res.status(500).json({ error: 'Erro ao salvar revisão de aceite.' });
+  }
+});
+
+/**
+ * GET /api/data/gam/tickets-revisao-finalizar — revisão do /FINALIZAR +
+ * REABERTURA combinado (ver cs/pontuacao.js): lista linhas de
+ * gam_tickets_pontos com desconto (ajuste_finalizar < 0 — só acontece
+ * quando não avisou certo E o cliente voltou a chamar em 30min). Pra marcar
+ * como 'indevida' reaberturas que não refletem um encerramento mal feito
+ * de verdade (ex.: cliente voltou por um assunto novo) — o ticket some do
+ * cálculo da média daquele colaborador, sem afetar mais nada.
+ */
+router.get('/gam/tickets-revisao-finalizar', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    await ensurePontuacaoSchema(pool);
+    const { mes } = req.query;
+    if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+    const status = ['pendente', 'devida', 'indevida'].includes(req.query.status) ? req.query.status : 'pendente';
+
+    const { rows } = await pool.query(
+      `SELECT p.ticket_id, p.papel, p.analista, p.ajuste_finalizar, p.nota_final,
+              t.zappy_id, t.empresa_texto, t.encerramento,
+              fr.status AS revisao_status, fr.revisado_por, fr.revisado_em
+         FROM gam_tickets_pontos p
+         JOIN cs_tickets t ON t.id = p.ticket_id
+         LEFT JOIN gam_finalizar_revisoes fr ON fr.ticket_id = p.ticket_id AND fr.papel = p.papel
+        WHERE p.mes = $1
+          AND p.ajuste_finalizar < 0
+          AND COALESCE(fr.status, 'pendente') = $2
+        ORDER BY t.encerramento DESC NULLS LAST`,
+      [mes, status]
+    );
+    res.json({ data: rows });
+  } catch (err) {
+    console.error('[gam] tickets-revisao-finalizar falhou:', err);
+    res.status(500).json({ error: 'Erro ao listar descontos de finalizar/reabertura para revisão.' });
+  }
+});
+
+/** PATCH /api/data/gam/tickets-revisao-finalizar/:ticketId/:papel — marca devida/indevida. */
+router.patch('/gam/tickets-revisao-finalizar/:ticketId/:papel', requireAdmin, async (req, res) => {
+  try {
+    const { status_revisao } = req.body;
+    if (!['devida', 'indevida'].includes(status_revisao)) {
+      return res.status(400).json({ error: 'status_revisao deve ser "devida" ou "indevida".' });
+    }
+    const { papel } = req.params;
+    if (!['recebeu', 'unico'].includes(papel)) {
+      return res.status(400).json({ error: 'papel inválido.' });
+    }
+    await ensureGamTables();
+    const { rows } = await pool.query(
+      `INSERT INTO gam_finalizar_revisoes (ticket_id, papel, status, revisado_por, revisado_em)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (ticket_id, papel) DO UPDATE SET
+         status = $3, revisado_por = $4, revisado_em = NOW()
+       RETURNING id`,
+      [req.params.ticketId, papel, status_revisao, req.user.name]
+    );
+    res.json({ ok: true, data: rows[0] });
+  } catch (err) {
+    console.error('[gam] PATCH tickets-revisao-finalizar falhou:', err);
+    res.status(500).json({ error: 'Erro ao salvar revisão de finalizar/reabertura.' });
   }
 });
 

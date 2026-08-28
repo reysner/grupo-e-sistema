@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Minha Nota — Grupo-E</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    :root{
+      --green:#1a4233;--green-light:#2a6e4a;--green-pale:#e8f4ef;
+      --gold:#f5c518;--gray-50:#f8fafc;--gray-100:#f1f5f9;
+      --gray-200:#e2e8f0;--gray-400:#94a3b8;--gray-500:#64748b;
+      --gray-600:#475569;--gray-700:#334155;--gray-800:#1e293b;
+      --white:#fff;--radius:12px;--shadow:0 4px 16px rgba(0,0,0,.08);
+      --red:#c0362c;--red-pale:#fff5f5;--green-ok:#38a169;
+    }
+    body{font-family:'Inter',sans-serif;background:var(--gray-50);color:var(--gray-800);min-height:100vh}
+    /* LOGIN */
+    #login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+    .login-card{background:var(--white);border-radius:16px;box-shadow:0 8px 40px rgba(0,0,0,.12);padding:40px;width:100%;max-width:400px}
+    .login-title{font-size:20px;font-weight:800;color:var(--green);text-align:center;margin-bottom:6px}
+    .login-sub{font-size:13px;color:var(--gray-400);text-align:center;margin-bottom:24px}
+    .field label{display:block;font-size:12px;font-weight:700;color:var(--gray-500);margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+    .field input,.field select{width:100%;padding:10px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:14px;outline:none;transition:border .15s}
+    .field input:focus,.field select:focus{border-color:var(--green)}
+    .field{margin-bottom:14px}
+    .btn-login{width:100%;padding:12px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px}
+    .btn-login:hover{background:var(--green-light)}
+    .login-err{color:var(--red);font-size:13px;text-align:center;margin-top:10px;display:none}
+    /* APP */
+    #app-screen{display:none}
+    .topbar{background:var(--green);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+    .topbar-title{color:#fff;font-weight:800;font-size:16px}
+    .topbar-right{display:flex;align-items:center;gap:12px}
+    .topbar-user{color:rgba(255,255,255,.85);font-size:13px}
+    .btn-sair{background:rgba(255,255,255,.15);color:#fff;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:12.5px}
+    .btn-sair:hover{background:rgba(255,255,255,.25)}
+    .container{max-width:720px;margin:0 auto;padding:28px 20px 60px}
+    .mes-row{display:flex;align-items:flex-end;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+    .mes-row .field{margin-bottom:0;flex:1;min-width:160px}
+    .btn-primary{background:var(--green);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:700;cursor:pointer}
+    .btn-primary:hover{background:var(--green-light)}
+    .card{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px 24px;margin-bottom:18px}
+    .card-title{font-size:12px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.05em;margin-bottom:14px}
+    .comp-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;font-size:14.5px}
+    .comp-row.total{border-top:1px solid var(--gray-200);margin-top:8px;padding-top:14px;font-weight:800;font-size:17px}
+    .comp-val{font-weight:700;font-variant-numeric:tabular-nums}
+    .val-pos{color:var(--green-ok)}
+    .val-neg{color:var(--red)}
+    .val-neu{color:var(--gray-400)}
+    .empty-msg{text-align:center;color:var(--gray-400);padding:30px 10px;font-size:14px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--gray-500);padding:8px 10px;border-bottom:2px solid var(--gray-100)}
+    td{padding:9px 10px;border-bottom:1px solid var(--gray-100)}
+    tr.desconto{background:var(--red-pale)}
+    .table-wrap{overflow-x:auto}
+    .loading{text-align:center;color:var(--gray-400);padding:30px}
+  </style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-title">🏆 Minha Nota</div>
+    <div class="login-sub">Liga do Atendimento — Grupo-E</div>
+    <div class="field"><label>E-mail</label><input id="l-email" type="email" placeholder="seu@email.com" /></div>
+    <div class="field"><label>Senha</label><input id="l-senha" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter') login()" /></div>
+    <button class="btn-login" onclick="login()">Entrar</button>
+    <div class="login-err" id="l-err"></div>
+  </div>
+</div>
+
+<div id="app-screen">
+  <div class="topbar">
+    <div class="topbar-title">🏆 Minha Nota</div>
+    <div class="topbar-right">
+      <span class="topbar-user" id="app-nome"></span>
+      <button class="btn-sair" onclick="sair()">Sair</button>
+    </div>
+  </div>
+  <div class="container">
+    <div class="mes-row">
+      <div class="field"><label>Mês</label><input id="mes-select" type="month" /></div>
+      <button class="btn-primary" onclick="carregar()">Ver minha nota</button>
+    </div>
+    <div id="conteudo"><p class="loading">Escolha um mês e clique em "Ver minha nota".</p></div>
+  </div>
+</div>
+
+<script>
+let _token = null, _user = null;
+
+function mesLabel(mes) {
+  if (!mes) return '';
+  const [ano, m] = mes.split('-');
+  const nomes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  return nomes[parseInt(m, 10) - 1] + '/' + ano;
+}
+function mesAtual() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
+async function login() {
+  const email = document.getElementById('l-email').value.trim();
+  const senha = document.getElementById('l-senha').value;
+  const err = document.getElementById('l-err');
+  err.style.display = 'none';
+  if (!email || !senha) { err.textContent = 'Preencha e-mail e senha.'; err.style.display = 'block'; return; }
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: senha })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { err.textContent = data.error || 'Credenciais inválidas.'; err.style.display = 'block'; return; }
+  _token = data.token;
+  _user = data.user;
+  localStorage.setItem('mn_token', _token);
+  localStorage.setItem('mn_user', JSON.stringify(_user));
+  mostrarApp();
+}
+
+function sair() {
+  _token = null; _user = null;
+  localStorage.removeItem('mn_token');
+  localStorage.removeItem('mn_user');
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app-screen').style.display = 'none';
+}
+
+function mostrarApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display = 'block';
+  document.getElementById('app-nome').textContent = _user.name;
+  document.getElementById('mes-select').value = mesAtual();
+  carregar();
+}
+
+function api(path) {
+  return fetch(path, { headers: { Authorization: 'Bearer ' + _token } });
+}
+
+function linhaComposicao(rotulo, valor) {
+  const num = Number(valor);
+  const sinal = num > 0 ? '+' : '';
+  const cor = num < 0 ? 'val-neg' : (num > 0 ? 'val-pos' : 'val-neu');
+  return '<div class="comp-row"><span>' + rotulo + '</span><span class="comp-val ' + cor + '">' + sinal + num.toFixed(2) + '</span></div>';
+}
+
+async function carregar() {
+  const mes = document.getElementById('mes-select').value;
+  const box = document.getElementById('conteudo');
+  if (!mes) { box.innerHTML = '<p class="empty-msg">Escolha um mês.</p>'; return; }
+  box.innerHTML = '<p class="loading">Carregando...</p>';
+
+  const [resComp, resTickets] = await Promise.all([
+    api('/api/data/gam/minha-composicao?mes=' + mes),
+    api('/api/data/gam/meus-tickets?mes=' + mes),
+  ]);
+
+  if (resComp.status === 401) { sair(); return; }
+  if (resComp.status === 404) {
+    const d = await resComp.json().catch(() => ({}));
+    box.innerHTML = '<div class="card"><p class="empty-msg">' + (d.error || 'Seu login ainda não está vinculado a um colaborador.') + '</p></div>';
+    return;
+  }
+  if (!resComp.ok) { box.innerHTML = '<div class="card"><p class="empty-msg">Erro ao carregar sua nota.</p></div>'; return; }
+  const comp = await resComp.json();
+
+  let html = '';
+  if (comp.semDados || comp.mediaBase === undefined) {
+    html += '<div class="card"><p class="card-title">' + mesLabel(mes) + '</p><p class="empty-msg">' + (comp.mensagem || 'Sem nota calculada nesse mês ainda.') + '</p></div>';
+  } else {
+    html += '<div class="card">' +
+      '<p class="card-title">Composição da sua nota — ' + mesLabel(mes) + '</p>' +
+      '<div class="comp-row"><span>Nota base (média dos atendimentos, já com velocidade)</span><span class="comp-val">' + Number(comp.mediaBase).toFixed(2) + '</span></div>' +
+      linhaComposicao('Bônus/desconto de transferência (média)', comp.bonusTransferencia) +
+      (comp.bonusAceite !== undefined ? linhaComposicao('Bônus/desconto de aceite do aguardando (média)', comp.bonusAceite) : '') +
+      linhaComposicao('Bônus/desconto de /Finalizar + reabertura (média)', comp.bonusFinalizar) +
+      '<div class="comp-row total"><span>Nota final do mês (capada em 5)</span><span>' + Number(comp.media_individual).toFixed(2) + '</span></div>' +
+      '<p style="font-size:12px;color:var(--gray-400);margin-top:12px">Baseada em ' + comp.avaliacoes + ' atendimento(s) avaliado(s) pelo cliente esse mês.</p>' +
+    '</div>';
+  }
+
+  if (resTickets.ok) {
+    const t = await resTickets.json();
+    const tickets = t.tickets || [];
+    if (t.aviso) {
+      html += '<div class="card"><p class="empty-msg">' + t.aviso + '</p></div>';
+    } else if (tickets.length) {
+      html += '<div class="card"><p class="card-title">Seus atendimentos em ' + mesLabel(mes) + '</p>' +
+        '<div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota</th><th>Vel.</th><th>/Finalizar</th><th>Final</th></tr></thead><tbody>' +
+        tickets.map(tk => {
+          const temDesconto = parseFloat(tk.ajuste_velocidade) < 0 || parseFloat(tk.ajuste_finalizar) < 0;
+          return '<tr class="' + (temDesconto ? 'desconto' : '') + '">' +
+            '<td>#' + tk.zappy_id + '</td>' +
+            '<td>' + (tk.empresa_texto || '—') + '</td>' +
+            '<td>' + tk.papel + '</td>' +
+            '<td>' + (tk.nota_cliente ?? '—') + '</td>' +
+            '<td>' + tk.ajuste_velocidade + '</td>' +
+            '<td>' + tk.ajuste_finalizar + '</td>' +
+            '<td style="font-weight:700">' + tk.nota_final + '</td>' +
+          '</tr>';
+        }).join('') +
+        '</tbody></table></div></div>';
+    }
+  }
+
+  box.innerHTML = html || '<p class="empty-msg">Nada por aqui ainda.</p>';
+}
+
+window.addEventListener('load', () => {
+  const t = localStorage.getItem('mn_token');
+  const u = localStorage.getItem('mn_user');
+  if (t && u) {
+    try {
+      _token = t; _user = JSON.parse(u);
+      mostrarApp();
+    } catch (e) { sair(); }
+  }
+});
+</script>
+</body>
+</html>

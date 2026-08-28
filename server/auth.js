@@ -78,6 +78,16 @@ function requireAuth(req, res, next) {
     if (payload.role === 'contabil' && !isTicketRoute) {
       return res.status(403).json({ error: 'Acesso restrito ao portal contábil.' });
     }
+    // Colaborador (28/08/2026, self-service da Gamificação): só pode ver a
+    // própria nota — nunca dados de tickets, clientes, outros colaboradores
+    // etc. Mesmo padrão do contabil acima, mas restrito às rotas
+    // /gam/minha-* e /gam/meus-* (a nota/tickets da PRÓPRIA pessoa,
+    // resolvida no backend a partir do login — nunca aceita um
+    // colaborador_id vindo do cliente).
+    const isMinhaNotaRoute = req.path && (req.path.includes('/gam/minha-') || req.path.includes('/gam/meus-') || req.path.includes('/auth') || req.path.includes('/perfil'));
+    if (payload.role === 'colaborador' && !isMinhaNotaRoute) {
+      return res.status(403).json({ error: 'Acesso restrito à sua nota da Gamificação.' });
+    }
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') return res.status(401).json({ error: 'token_expired' });

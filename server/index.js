@@ -90,6 +90,11 @@ app.get('/contabil', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'contabil.html'));
 });
 
+// ── Minha Nota — self-service da Gamificação, role 'colaborador' (login próprio) ──
+app.get('/minha-nota', (req, res) => {
+  res.sendFile(path.join(PUBLIC, 'minha-nota.html'));
+});
+
 // ── Arquivos estáticos com MIME correto ───────────────────────────────────────
 app.get('/js/:file', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
