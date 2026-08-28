@@ -211,23 +211,27 @@ initDB().then(async () => {
       }
     };
 
-    // Horário fixo (03:00 de Brasília), não "24h desde que o servidor
-    // ligou" — assim o job sempre roda de madrugada, mesmo que o processo
-    // reinicie várias vezes ao longo do dia por causa de deploys. Checa a
-    // cada 5 min e dispara uma única vez por dia, na primeira checagem
-    // dentro da janela das 03:00.
-    const HORA_JOB_DIARIO = 3;
-    let ultimaExecucaoDiaria = null; // 'AAAA-MM-DD' em horário de Brasília
+    // Horários fixos (08:00, 11:00 e 15:00 de Brasília — pedido do Reysner,
+    // 28/08/2026), não "a cada boot do servidor". Antes disparava de novo
+    // em TODO reinício (inclusive a cada deploy), o que deixava o ranking
+    // público mudando de forma imprevisível ao longo do dia — bastava um
+    // deploy no meio da tarde pra já refletir na hora, mesmo sem ser
+    // horário "de corte". Agora só roda nesses 3 horários, mesmo que o
+    // processo reinicie várias vezes no meio do dia por causa de deploys
+    // (o controle de "já rodei esse horário hoje" é por hora, não só por
+    // dia, então os 3 disparos do dia continuam independentes entre si).
+    const HORAS_JOB_RANKING = [8, 11, 15];
+    const execucoesHojePorHora = new Set(); // 'AAAA-MM-DD-HH' já disparados
     const checarAgendaDiaria = async () => {
       const agora = agoraBrasilia();
-      const hoje = `${agora.ano}-${agora.mes}-${agora.dia}`;
-      if (agora.hora === HORA_JOB_DIARIO && ultimaExecucaoDiaria !== hoje) {
-        ultimaExecucaoDiaria = hoje;
-        await rodarAtualizacaoNotasCS();
-      }
+      if (!HORAS_JOB_RANKING.includes(agora.hora)) return;
+      const chave = `${agora.ano}-${agora.mes}-${agora.dia}-${agora.hora}`;
+      if (execucoesHojePorHora.has(chave)) return;
+      execucoesHojePorHora.add(chave);
+      await rodarAtualizacaoNotasCS();
     };
     setInterval(checarAgendaDiaria, 5 * 60 * 1000); // checa a cada 5 min
-    rodarAtualizacaoNotasCS(); // roda uma vez imediatamente ao subir (dado fresco logo após deploy)
+    checarAgendaDiaria(); // confere já ao subir, caso o boot caia dentro de uma das 3 janelas
   }
 
   // Carteira — sincronização automática diária com o Sistema Acessórias
