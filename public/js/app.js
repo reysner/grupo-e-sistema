@@ -5679,7 +5679,7 @@ const Gamificacao = (() => {
       '<div id="gam-lote-preview">Carregando prévia...</div>' +
       '<div class="field"><label>Senha padrão pros logins novos</label><input id="gam-lote-senha" type="text" value="abcD1234@" /></div>' +
       '<button class="btn btn-primary" onclick="Gamificacao.confirmarCriarLoginsEmLote()">Confirmar e criar</button>' +
-    '</div>', null, { wide: true });
+    '</div>', null, { wide: true, noFooter: true });
     await _carregarPreviewLote();
   }
 
