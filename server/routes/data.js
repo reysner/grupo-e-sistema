@@ -3000,6 +3000,39 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
  * (recálculo do mês ou ingestão nova), agrupa por empresa+tipo pra achar
  * rápido quem ainda precisa de recálculo ou reclassificação.
  */
+/**
+ * GET /api/data/gam/diagnostico-analista?analista_id=&mes= — TEMPORÁRIO,
+ * pra comparar a contagem BRUTA de tickets avaliados (analista_id, sem
+ * filtro nenhum) contra o que sobra depois do filtro de vínculo=cliente,
+ * agrupado por tipo de vínculo. Serve pra explicar diferenças com o
+ * relatório nativo do Zappy (que conta TODO contato avaliado, sem separar
+ * cliente de fornecedor/interno/pendente).
+ */
+router.get('/gam/diagnostico-analista', requireAdmin, async (req, res) => {
+  try {
+    const { analista_id, mes } = req.query;
+    if (!analista_id) return res.status(400).json({ error: 'Informe "analista_id".' });
+    if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+    const { rows } = await pool.query(
+      `SELECT COALESCE(v.tipo, 'sem_vinculo') AS vinculo_tipo, COUNT(*) AS total,
+              array_agg(t.zappy_id ORDER BY t.zappy_id) AS zappy_ids
+         FROM cs_tickets t
+         LEFT JOIN cs_vinculos v ON v.id = t.vinculo_id
+        WHERE t.nota_avaliacao IS NOT NULL
+          AND TO_CHAR(COALESCE(t.encerramento, t.abertura), 'YYYY-MM') = $1
+          AND (t.analista_id = $2 OR t.analista_anterior_id = $2)
+        GROUP BY COALESCE(v.tipo, 'sem_vinculo')
+        ORDER BY total DESC`,
+      [mes, analista_id]
+    );
+    const totalGeral = rows.reduce((s, r) => s + parseInt(r.total, 10), 0);
+    res.json({ mes, analista_id, totalGeral, porTipo: rows });
+  } catch (err) {
+    console.error('[gam] diagnostico-analista falhou:', err);
+    res.status(500).json({ error: err.message || 'Erro ao diagnosticar analista.' });
+  }
+});
+
 router.get('/gam/diagnostico-vinculos', requireAdmin, async (req, res) => {
   try {
     const { mes } = req.query;
