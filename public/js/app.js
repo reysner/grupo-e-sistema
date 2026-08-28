@@ -5666,9 +5666,62 @@ const Gamificacao = (() => {
       '<div style="display:flex;gap:8px">' +
         '<input id="gam-novo-nome" type="text" placeholder="Nome do colaborador" style="flex:1;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px" />' +
         '<button class="btn btn-success btn-sm" onclick="Gamificacao.adicionarColaborador()">+ Adicionar</button>' +
+        '<button class="btn btn-ghost btn-sm" title="Cria login (Perfil = Minha Nota) pra quem ainda não tem, em lote" onclick="Gamificacao.abrirCriarLoginsEmLote()">👥 Criar logins em lote</button>' +
       '</div>' +
       '<div id="gam-colab-list" style="max-height:min(60vh,520px);overflow-y:auto">' + _renderColabList() + '</div>' +
     '</div>', null, { wide: true });
+  }
+
+  // ── Criar logins em lote (Perfil = Minha Nota) pra colaboradores sem login ─
+  async function abrirCriarLoginsEmLote() {
+    App.Modal.open('Criar logins em lote', '<div style="display:grid;gap:14px">' +
+      '<p style="font-size:13px;color:var(--gray-500)">Pra cada colaborador ativo sem login vinculado, tenta o e-mail padrão <code>nome@escritorial.com.br</code>: se já existir esse login, só liga o acesso a Minha Nota nele (sem mexer em mais nada); se não existir, cria um login novo com Perfil "Colaborador" (só Minha Nota) e a senha abaixo.</p>' +
+      '<div id="gam-lote-preview">Carregando prévia...</div>' +
+      '<div class="field"><label>Senha padrão pros logins novos</label><input id="gam-lote-senha" type="text" value="abcD1234@" /></div>' +
+      '<button class="btn btn-primary" onclick="Gamificacao.confirmarCriarLoginsEmLote()">Confirmar e criar</button>' +
+    '</div>', null, { wide: true });
+    await _carregarPreviewLote();
+  }
+
+  async function _carregarPreviewLote() {
+    const box = document.getElementById('gam-lote-preview');
+    if (!box) return;
+    const res = await fetch('/api/data/gam/colaboradores/criar-logins-em-lote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ dryRun: true })
+    });
+    if (!res || !res.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao gerar prévia.</p>'; return; }
+    const { resultados } = await res.json();
+    if (!resultados.length) { box.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:12px">Todo colaborador ativo já tem login vinculado.</p>'; return; }
+    box.innerHTML = '<div class="table-wrap" style="max-height:280px;overflow-y:auto"><table class="data-table">' +
+      '<thead><tr><th>Nome</th><th>E-mail que vai usar</th><th>O que vai acontecer</th></tr></thead><tbody>' +
+      resultados.map(r => `<tr>` +
+        `<td>${r.nome}</td>` +
+        `<td style="font-family:monospace;font-size:12px">${r.email}</td>` +
+        `<td>${r.acao === 'criar_novo' ? '🆕 Cria login novo (perfil Colaborador)' : '🔗 Vincula login já existente (perfil ' + (r.role_atual || '—') + (r.ja_tinha_acesso ? ', já tinha Minha Nota' : ', vai ganhar acesso a Minha Nota') + ')'}</td>` +
+      `</tr>`).join('') + '</tbody></table></div>' +
+      '<p style="font-size:12px;color:var(--gray-400);margin-top:8px">' + resultados.length + ' colaborador(es) no total.</p>';
+  }
+
+  async function confirmarCriarLoginsEmLote() {
+    const senhaPadrao = document.getElementById('gam-lote-senha')?.value || '';
+    if (senhaPadrao.length < 6) { App.Toast.err('Senha padrão deve ter ao menos 6 caracteres.'); return; }
+    if (!confirm('Confirma a criação/vínculo de logins em lote com essa senha padrão pros novos?')) return;
+    const res = await fetch('/api/data/gam/colaboradores/criar-logins-em-lote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ dryRun: false, senhaPadrao })
+    });
+    if (res && res.ok) {
+      const { total } = await res.json();
+      App.Toast.ok(total + ' login(s) processado(s).');
+      App.Modal.close();
+      abrirColaboradores();
+    } else {
+      const d = await res.json().catch(()=>({}));
+      App.Toast.err(d.error || 'Erro ao criar logins em lote.');
+    }
   }
 
   function _renderColabList() {
@@ -6330,6 +6383,7 @@ const Gamificacao = (() => {
     abrirColaboradores, adicionarColaborador, toggleColaborador, excluirColaborador, toggleRegraAceite,
     vincularZappy, salvarVinculoZappy,
     vincularLogin, salvarVinculoLogin,
+    abrirCriarLoginsEmLote, confirmarCriarLoginsEmLote,
     abrirMapaQualificacao, salvarMapaQualificacao,
     abrirAutoPreencher, confirmarAutoPreencher,
     abrirRevisaoNotas, marcarRevisao, _trocarStatusRevisao,

@@ -2,7 +2,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../db');
-const { requireAuth, requireAdmin } = require('../auth');
+const { requireAuth, requireAdmin, hashPassword, revokeAllUserTokens } = require('../auth');
 const acessoriasClient = require('../acessoriasClient');
 const { criarClienteZappy } = require('../cs/zappyClient');
 const { ensurePontuacaoSchema, recalcularPontosDoMes, clamp } = require('../cs/pontuacao');
@@ -2647,6 +2647,71 @@ router.patch('/gam/colaboradores/:id/aceite', requireAdmin, async (req, res) => 
     await pool.query(`UPDATE gam_colaboradores SET aplica_regra_aceite = $1 WHERE id = $2`, [novo, req.params.id]);
     res.json({ ok: true, aplica_regra_aceite: novo });
   } catch (err) { res.status(500).json({ error: 'Erro ao alterar regra de aceite.' }); }
+});
+
+/** Normaliza um nome pra um e-mail padrão @escritorial.com.br (minúsculo, sem acento, sem espaço). */
+function normalizarParaEmail(nome) {
+  return String(nome || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * POST /api/data/gam/colaboradores/criar-logins-em-lote — pra cada
+ * colaborador ativo sem login vinculado (user_id null), tenta um e-mail
+ * padrão nome@escritorial.com.br: se já existir um usuário com esse
+ * e-mail, só VINCULA (liga acesso_minha_nota=true nele, sem mexer em mais
+ * nada — role, senha etc. ficam como já estavam); se não existir, CRIA um
+ * login novo com perfil 'colaborador' (só Minha Nota) e a senha informada.
+ * dryRun (default true) só mostra o plano, sem gravar nada — pedido
+ * explícito do Reysner de deixar a criação de login/senha um clique
+ * separado e deliberado (nunca automático).
+ */
+router.post('/gam/colaboradores/criar-logins-em-lote', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { senhaPadrao, dryRun = true } = req.body;
+    if (!dryRun && (!senhaPadrao || senhaPadrao.length < 6)) {
+      return res.status(400).json({ error: 'Senha padrão deve ter ao menos 6 caracteres.' });
+    }
+    const { rows: colaboradores } = await pool.query(
+      `SELECT id, nome FROM gam_colaboradores WHERE ativo = true AND user_id IS NULL ORDER BY nome ASC`
+    );
+    const resultados = [];
+    const hashedPw = !dryRun ? await hashPassword(senhaPadrao) : null;
+
+    for (const c of colaboradores) {
+      const email = normalizarParaEmail(c.nome) + '@escritorial.com.br';
+      const { rows: existentes } = await pool.query(`SELECT id, role, acesso_minha_nota FROM users WHERE LOWER(email) = LOWER($1)`, [email]);
+
+      if (existentes.length) {
+        const u = existentes[0];
+        resultados.push({ colaborador_id: c.id, nome: c.nome, email, acao: 'vincular_existente', role_atual: u.role, ja_tinha_acesso: !!u.acesso_minha_nota });
+        if (!dryRun) {
+          if (!u.acesso_minha_nota) {
+            await pool.query(`UPDATE users SET acesso_minha_nota = true, updated_at = NOW() WHERE id = $1`, [u.id]);
+            await revokeAllUserTokens(u.id).catch(()=>{});
+          }
+          await pool.query(`UPDATE gam_colaboradores SET user_id = $1 WHERE id = $2`, [u.id, c.id]);
+        }
+      } else {
+        resultados.push({ colaborador_id: c.id, nome: c.nome, email, acao: 'criar_novo' });
+        if (!dryRun) {
+          const newId = uuidv4();
+          await pool.query(
+            `INSERT INTO users (id, name, email, password, role, acesso_minha_nota) VALUES ($1,$2,$3,$4,'colaborador',true)`,
+            [newId, c.nome, email, hashedPw]
+          );
+          await pool.query(`UPDATE gam_colaboradores SET user_id = $1 WHERE id = $2`, [newId, c.id]);
+        }
+      }
+    }
+    res.json({ ok: true, dryRun: !!dryRun, total: resultados.length, resultados });
+  } catch (err) {
+    console.error('[gam] criar-logins-em-lote falhou:', err);
+    res.status(500).json({ error: err.message || 'Erro ao criar logins em lote.' });
+  }
 });
 
 /** PATCH /api/data/gam/colaboradores/:id/login — liga/desliga o colaborador a um login (users.id) pra ele ver a própria nota em /minha-nota. */
