@@ -8,16 +8,15 @@
  * os atendimentos abertos — o Bruno (dono do ticket) faltou no trabalho e
  * ninguém redistribuiu os atendimentos dele.
  *
- * Regra definida pelo Reysner: se o cliente interagiu até as 16:50 (segunda
- * a quinta) e não teve NENHUMA resposta do escritório até as 17:30 do
- * mesmo dia, é "abandono de atendimento" — SALVO se:
- *   1) o colaborador deixou qualquer resposta antes das 17:30 (mesmo um
- *      "vou ver pra você") — já está "respaldado", não conta.
+ * Regra definida pelo Reysner: se o cliente interagiu até 40min antes do fim
+ * do expediente do dia (16:50 seg-qui, que fecham 17:30; 16:20 na sexta, que
+ * fecha 17:00 — ver EXPEDIENTE_PADRAO em tempoUtil.js) e não teve NENHUMA
+ * resposta do escritório até o fim do expediente daquele dia, é "abandono de
+ * atendimento" — SALVO se:
+ *   1) o colaborador deixou qualquer resposta antes do fim do expediente
+ *      (mesmo um "vou ver pra você") — já está "respaldado", não conta.
  *   2) a última mensagem do cliente é só um fechamento de conversa (ok,
  *      entendido, obrigado...) — não tinha nada pendente de responder.
- *
- * Sexta-feira fica de fora por enquanto (expediente diferente, 08h-11h/
- * 13h-17h, sem os mesmos cortes) — cobrir sexta é uma extensão futura.
  *
  * Cada incidente é por (ticket, dia) — um ticket que fica "preso" por
  * vários dias gera um incidente por dia, cada um revisável separadamente
@@ -54,9 +53,17 @@ function pareceMensagemDeFechamento(texto) {
   return FRASES_FECHAMENTO.some(f => limpo === f || limpo.startsWith(f + ' ') || limpo.startsWith(f + ',') || limpo.startsWith(f + '!'));
 }
 
-const DIAS_COBERTOS = [1, 2, 3, 4]; // segunda a quinta — ver docstring do módulo
-const CORTE_CLIENTE = '16:50';
-const CORTE_RESPOSTA = '17:30';
+// Cortes por dia da semana — segunda a quinta fecha às 17:30, sexta às
+// 17:00 (ver EXPEDIENTE_PADRAO em tempoUtil.js), então o corte do cliente é
+// sempre 40min antes do fim do expediente e a resposta precisa vir até o
+// fim do expediente daquele dia. Pedido do Reysner, 02/09/2026.
+const CORTES_POR_DIA = {
+  1: { cliente: '16:50', resposta: '17:30' }, // segunda
+  2: { cliente: '16:50', resposta: '17:30' }, // terça
+  3: { cliente: '16:50', resposta: '17:30' }, // quarta
+  4: { cliente: '16:50', resposta: '17:30' }, // quinta
+  5: { cliente: '16:20', resposta: '17:00' }, // sexta
+};
 
 /**
  * Detecta incidentes de abandono num ticket já ACEITO (não olha o tempo em
@@ -75,10 +82,11 @@ function detectarIncidentesAbandono(ticket, mensagens) {
   const incidentes = [];
 
   for (const dia of dias) {
-    if (!DIAS_COBERTOS.includes(T.diaSemana(dia))) continue;
+    const cortes = CORTES_POR_DIA[T.diaSemana(dia)];
+    if (!cortes) continue; // fim de semana — não coberto
     if (T.FERIADOS.has(dia)) continue;
-    const corteCliente = T.instante(dia, CORTE_CLIENTE);
-    const corteResposta = T.instante(dia, CORTE_RESPOSTA);
+    const corteCliente = T.instante(dia, cortes.cliente);
+    const corteResposta = T.instante(dia, cortes.resposta);
 
     const ateOCorte = msgs.filter(m => m.horaDate <= corteCliente);
     if (!ateOCorte.length) continue;
