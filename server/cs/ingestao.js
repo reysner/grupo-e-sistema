@@ -338,7 +338,7 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
   // mesmo sem nota do cliente ainda (diferente da pontuação normal).
   let abandono = { candidatos: 0, processados: 0 };
   try {
-    abandono = await recalcularAbandonoPendentes(pool, { limite: 100 });
+    abandono = await recalcularAbandonoPendentes(pool, { limite: 30 });
   } catch (e) {
     console.error('[CS] recalcularAbandonoPendentes falhou (ingestão normal seguiu OK):', e.message);
   }

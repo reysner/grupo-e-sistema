@@ -92,23 +92,28 @@ function detectarIncidentesAbandono(ticket, mensagens) {
     const corteCliente = T.instante(dia, cortes.cliente);
     const corteResposta = T.instante(dia, cortes.resposta);
 
-    const ateOCorte = msgs.filter(m => m.horaDate <= corteCliente);
-    if (!ateOCorte.length) continue;
-    const ultima = ateOCorte[ateOCorte.length - 1];
-    if (ultima.remetente !== 'cliente') continue; // já não tinha nada pendente do cliente
-    if (pareceMensagemDeFechamento(ultima.texto)) continue; // só um "ok, obrigado"
-
-    // Só uma resposta de VERDADE (humana) respalda — mensagem automática do
-    // bot/sistema (ex.: pesquisa de satisfação) não conta.
-    const respondeuAntesDoFechamento = msgs.some(m =>
-      m.remetente === 'escritorio' && m.horaDate > ultima.horaDate && m.horaDate <= corteResposta
-    );
-    if (respondeuAntesDoFechamento) continue;
+    // Não é só a ÚLTIMA mensagem do cliente no dia que importa — é QUALQUER
+    // mensagem dele que pareça um pedido de verdade (não um fechamento tipo
+    // "bom dia"/"obrigado") e que ninguém respondeu até o fim do expediente.
+    // Um "bom dia" mandado às 16h não "apaga" uma pergunta real feita às 9h
+    // que nunca foi respondida (achado do Reysner, 02/09/2026).
+    const candidata = msgs.find(m => {
+      if (m.remetente !== 'cliente') return false;
+      if (m.horaDate > corteCliente) return false;
+      if (pareceMensagemDeFechamento(m.texto)) return false;
+      // Só uma resposta de VERDADE (humana) respalda — mensagem automática
+      // do bot/sistema (ex.: pesquisa de satisfação) não conta.
+      const respondida = msgs.some(r =>
+        r.remetente === 'escritorio' && r.horaDate > m.horaDate && r.horaDate <= corteResposta
+      );
+      return !respondida;
+    });
+    if (!candidata) continue;
 
     incidentes.push({
       data: dia,
-      ultimaMensagemCliente: ultima.hora,
-      ultimaMensagemTexto: ultima.texto,
+      ultimaMensagemCliente: candidata.hora,
+      ultimaMensagemTexto: candidata.texto,
     });
   }
   return incidentes;
