@@ -6238,8 +6238,13 @@ const Gamificacao = (() => {
     } else App.Toast.err('Erro ao salvar.');
   }
 
-  // ── Relatório de descontos por colaborador (transparência) ─────────────────
+  // ── Relatório de descontos por colaborador (transparência) — também serve
+  // de Relatório Gerencial Mensal: individual (ticket a ticket) ou "Todos"
+  // (composição comparada de todo mundo, pra apresentar à diretoria).
+  // Pedido do Reysner, 02/09/2026.
   let _relatorioDescontosData = [];
+  let _relatorioTodosData = [];
+  let _relatorioModoTodos = false;
 
   async function abrirRelatorioDescontos() {
     const res = await fetch('/api/data/gam/colaboradores', { headers: { Authorization: 'Bearer ' + _tk() } });
@@ -6252,10 +6257,11 @@ const Gamificacao = (() => {
       return;
     }
 
-    App.Modal.open('Relatório de Descontos', '<div style="display:grid;gap:14px">' +
-      '<p style="font-size:13px;color:var(--gray-500)">Mostra, ticket a ticket, os descontos de métrica aplicados na nota de um colaborador — útil pra justificar quando alguém questionar a nota.</p>' +
+    App.Modal.open('Relatório de Descontos / Relatório Gerencial', '<div style="display:grid;gap:14px">' +
+      '<p style="font-size:13px;color:var(--gray-500)">Escolha um colaborador pra ver o detalhe ticket a ticket (útil pra justificar quando alguém questionar a nota), ou <b>"Todos os colaboradores"</b> pra gerar o comparativo do mês inteiro — pronto pra apresentar à diretoria.</p>' +
       '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">' +
         '<div class="field" style="flex:1;min-width:160px"><label>Colaborador</label><select id="gam-rel-colab">' +
+          '<option value="todos">— Todos os colaboradores —</option>' +
           vinculados.map(c => '<option value="' + c.id + '">' + c.nome + '</option>').join('') +
         '</select></div>' +
         '<div class="field" style="min-width:150px"><label>Mês</label><input id="gam-rel-mes" type="month" value="' + mes + '" /></div>' +
@@ -6291,6 +6297,13 @@ const Gamificacao = (() => {
     const mes = document.getElementById('gam-rel-mes')?.value;
     const box = document.getElementById('gam-rel-resultado');
     if (!box) return;
+
+    if (colaboradorId === 'todos') {
+      _relatorioModoTodos = true;
+      await _gerarRelatorioTodos(mes);
+      return;
+    }
+    _relatorioModoTodos = false;
     box.innerHTML = 'Carregando...';
 
     const [resRel, resComp] = await Promise.all([
@@ -6334,7 +6347,60 @@ const Gamificacao = (() => {
       }).join('') + '</tbody></table></div>';
   }
 
+  // "Todos os colaboradores": junta o ranking público (posição + nota final
+  // já com peso mínimo, igual ao que aparece pra todo mundo) com a
+  // composição interna (base + cada bônus) de cada um, num comparativo só —
+  // o "relatório gerencial mensal" pedido pelo Reysner, 02/09/2026.
+  async function _gerarRelatorioTodos(mes) {
+    const box = document.getElementById('gam-rel-resultado');
+    box.innerHTML = 'Carregando...';
+    const [resRanking, resComp] = await Promise.all([
+      fetch('/api/public/gamificacao?mes=' + mes),
+      fetch('/api/data/gam/notas/auto-preencher', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+        body: JSON.stringify({ mes, dryRun: true })
+      }),
+    ]);
+    if (!resRanking || !resRanking.ok || !resComp || !resComp.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao gerar relatório.</p>'; return; }
+    const ranking = (await resRanking.json()).ranking || [];
+    const comp = (await resComp.json()).resultados || [];
+    const compPorId = Object.fromEntries(comp.map(c => [c.colaborador_id, c]));
+
+    if (!ranking.length) { box.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum colaborador com nota em ' + _mesLabel(mes) + '.</p>'; return; }
+
+    _relatorioTodosData = ranking.map((r, i) => {
+      const c = compPorId[r.id] || {};
+      return {
+        posicao: i + 1, nome: r.nome, avaliacoes: r.avaliacoes,
+        mediaBase: c.mediaBase, bonusTransferencia: c.bonusTransferencia,
+        bonusAceite: c.bonusAceite, bonusFinalizar: c.bonusFinalizar,
+        notaFinal: r.media,
+      };
+    });
+
+    const fmtBonus = v => v === undefined ? '—' : (Number(v) === 0 ? '0,00' : (Number(v) > 0 ? '+' : '') + Number(v).toFixed(2));
+    const corBonus = v => v === undefined ? 'var(--gray-400)' : (Number(v) < 0 ? '#c0362c' : (Number(v) > 0 ? '#38a169' : 'var(--gray-400)'));
+    box.innerHTML =
+      '<p style="font-size:12.5px;color:var(--gray-500);margin:10px 0">' + ranking.length + ' colaborador(es) com nota em ' + _mesLabel(mes) + '. Nota final já com o ajuste de peso mínimo (mesma fórmula do ranking público).</p>' +
+      '<div class="table-wrap" style="max-height:440px;overflow-y:auto"><table class="data-table">' +
+      '<thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Bônus Transf.</th><th>Bônus Aceite</th><th>Bônus /Finalizar</th><th>Nota Final</th></tr></thead><tbody>' +
+      _relatorioTodosData.map(r =>
+        `<tr>` +
+          `<td>${r.posicao}º</td>` +
+          `<td>${r.nome}</td>` +
+          `<td>${r.avaliacoes}</td>` +
+          `<td>${r.mediaBase !== undefined ? Number(r.mediaBase).toFixed(2) : '—'}</td>` +
+          `<td style="color:${corBonus(r.bonusTransferencia)};font-weight:700">${fmtBonus(r.bonusTransferencia)}</td>` +
+          `<td style="color:${corBonus(r.bonusAceite)};font-weight:700">${fmtBonus(r.bonusAceite)}</td>` +
+          `<td style="color:${corBonus(r.bonusFinalizar)};font-weight:700">${fmtBonus(r.bonusFinalizar)}</td>` +
+          `<td style="font-weight:800">${r.notaFinal}</td>` +
+        `</tr>`
+      ).join('') + '</tbody></table></div>';
+  }
+
   function exportarRelatorioDescontosPDF() {
+    if (_relatorioModoTodos) { _exportarRelatorioTodosPDF(); return; }
     if (!_relatorioDescontosData.length) { App.Toast.err('Gere o relatório primeiro.'); return; }
     const colaborador = _relatorioDescontosData[0].colaborador;
     const mes = document.getElementById('gam-rel-mes')?.value || '';
@@ -6366,7 +6432,53 @@ const Gamificacao = (() => {
     App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
   }
 
+  // Comparativo de todo mundo, num documento único — pensado pra impressão/
+  // apresentação (diretoria), não só consulta interna: cabeçalho maior,
+  // tabela central com posição e composição de cada colaborador.
+  function _exportarRelatorioTodosPDF() {
+    if (!_relatorioTodosData.length) { App.Toast.err('Gere o relatório primeiro.'); return; }
+    const mes = document.getElementById('gam-rel-mes')?.value || '';
+    const titulo = `Relatório Gerencial — Liga do Atendimento — ${_mesLabel(mes)}`;
+    const fmtBonus = v => v === undefined ? '—' : (Number(v) === 0 ? '0,00' : (Number(v) > 0 ? '+' : '') + Number(v).toFixed(2));
+    const rows = _relatorioTodosData.map(r =>
+      `<tr>` +
+        `<td>${r.posicao}º</td><td><b>${r.nome}</b></td><td>${r.avaliacoes}</td>` +
+        `<td>${r.mediaBase !== undefined ? Number(r.mediaBase).toFixed(2) : '—'}</td>` +
+        `<td class="${Number(r.bonusTransferencia) < 0 ? 'neg' : ''}">${fmtBonus(r.bonusTransferencia)}</td>` +
+        `<td class="${Number(r.bonusAceite) < 0 ? 'neg' : ''}">${fmtBonus(r.bonusAceite)}</td>` +
+        `<td class="${Number(r.bonusFinalizar) < 0 ? 'neg' : ''}">${fmtBonus(r.bonusFinalizar)}</td>` +
+        `<td class="final">${r.notaFinal}</td></tr>`
+    ).join('');
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
+    <style>
+      @page { size: A4; margin: 1.8cm; }
+      body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;margin:0;color:#1e293b}
+      h1{font-size:19px;color:#1a4233;margin:0 0 4px}
+      p.sub{color:#64748b;font-size:12px;margin:0 0 18px}
+      table{width:100%;border-collapse:collapse;font-size:11px}
+      th{background:#1a4233;color:#fff;padding:8px 10px;text-align:left;font-weight:700}
+      td{padding:7px 10px;border-bottom:1px solid #e2e8f0}
+      tr:nth-child(even) td{background:#f1f5f9}
+      td.neg{color:#a8341f;font-weight:700}
+      td.final{font-weight:800;color:#1a4233}
+      tr:first-child td{background:#fff8e1!important;font-weight:700}
+      .rodape{font-size:9.5px;color:#94a3b8;margin-top:20px}
+      @media print{body{margin:0}}
+    </style></head><body>
+    <h1>Grupo-E — ${titulo}</h1>
+    <p class="sub">Comparativo de todos os colaboradores com nota no mês, já com o ajuste de peso mínimo (mesma fórmula do ranking público). Gerado em ${new Date().toLocaleString('pt-BR')}.</p>
+    <table><thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Bônus Transf.</th><th>Bônus Aceite</th><th>Bônus /Finalizar</th><th>Nota Final</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <p class="rodape">Relatório gerado automaticamente a partir dos dados do sistema Grupo-E — Gamificação (Liga do Atendimento).</p>
+    <script>window.onload=()=>{window.print();}<\/script></body></html>`;
+    const win = window.open('', '_blank');
+    if (!win) { App.Toast.err('Permita popups para exportar PDF.'); return; }
+    win.document.write(html); win.document.close();
+    App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
+  }
+
   function exportarRelatorioDescontosCSV() {
+    if (_relatorioModoTodos) { _exportarRelatorioTodosCSV(); return; }
     if (!_relatorioDescontosData.length) { App.Toast.err('Gere o relatório primeiro.'); return; }
     const cols = ['colaborador', 'zappy_id', 'empresa_texto', 'papel', 'nota_cliente', 'ajuste_velocidade', 'ajuste_finalizar', 'ajuste_reabertura', 'nota_final', 'revisao_nota_status'];
     const labels = { colaborador: 'Colaborador', zappy_id: 'Ticket', empresa_texto: 'Cliente', papel: 'Papel', nota_cliente: 'Nota Cliente', ajuste_velocidade: 'Desconto Velocidade', ajuste_finalizar: 'Ajuste Finalizar', ajuste_reabertura: 'Desconto Reabertura', nota_final: 'Nota Final', revisao_nota_status: 'Revisão' };
@@ -6377,6 +6489,21 @@ const Gamificacao = (() => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = 'relatorio_descontos_' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click(); URL.revokeObjectURL(url);
+    App.Toast.ok('CSV exportado!');
+  }
+
+  function _exportarRelatorioTodosCSV() {
+    if (!_relatorioTodosData.length) { App.Toast.err('Gere o relatório primeiro.'); return; }
+    const cols = ['posicao', 'nome', 'avaliacoes', 'mediaBase', 'bonusTransferencia', 'bonusAceite', 'bonusFinalizar', 'notaFinal'];
+    const labels = { posicao: 'Posição', nome: 'Colaborador', avaliacoes: 'Avaliações', mediaBase: 'Nota Base', bonusTransferencia: 'Bônus Transferência', bonusAceite: 'Bônus Aceite', bonusFinalizar: 'Bônus /Finalizar', notaFinal: 'Nota Final' };
+    const header = cols.map(c => labels[c]).join(';');
+    const rows = _relatorioTodosData.map(r => cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(';'));
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'relatorio_gerencial_todos_' + new Date().toISOString().slice(0, 10) + '.csv';
     a.click(); URL.revokeObjectURL(url);
     App.Toast.ok('CSV exportado!');
   }
