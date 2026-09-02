@@ -6319,13 +6319,13 @@ const Gamificacao = (() => {
     if (aviso) { box.innerHTML = composicaoHtml + '<p style="color:var(--gray-500)">' + aviso + '</p>'; return; }
     if (!tickets.length) { box.innerHTML = composicaoHtml + '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum ticket pontuado pra ' + colaborador + ' em ' + _mesLabel(mes) + '.</p>'; return; }
 
-    const comDesconto = tickets.filter(t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_reabertura) < 0);
+    const comDesconto = tickets.filter(t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0);
     box.innerHTML = composicaoHtml +
       '<p style="font-size:12.5px;color:var(--gray-500);margin:10px 0">' + comDesconto.length + ' de ' + tickets.length + ' ticket(s) com desconto de métrica esse mês.</p>' +
       '<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">' +
       '<thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota Cliente</th><th>Vel.</th><th>/Finalizar</th><th>Reabertura</th><th>Nota Final</th><th>Revisão</th></tr></thead><tbody>' +
       tickets.map(t => {
-        const temDesconto = parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_reabertura) < 0;
+        const temDesconto = parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0;
         // O ajuste de velocidade só existe nos tiers +2/+1/-1 — um 0.0 aqui
         // nunca é "neutro calculado", é sempre "não tinha relógio de SLA pra
         // medir" (ex.: ticket aberto pelo próprio escritório). Deixa isso
@@ -6372,6 +6372,7 @@ const Gamificacao = (() => {
     _relatorioTodosData = ranking.map((r, i) => {
       const c = compPorId[r.id] || {};
       return {
+        colaboradorId: r.id,
         posicao: i + 1, nome: r.nome, avaliacoes: r.avaliacoes,
         mediaBase: c.mediaBase, bonusTransferencia: c.bonusTransferencia,
         bonusAceite: c.bonusAceite, bonusFinalizar: c.bonusFinalizar,
@@ -6404,11 +6405,11 @@ const Gamificacao = (() => {
     if (!_relatorioDescontosData.length) { App.Toast.err('Gere o relatório primeiro.'); return; }
     const colaborador = _relatorioDescontosData[0].colaborador;
     const mes = document.getElementById('gam-rel-mes')?.value || '';
-    const comDesconto = _relatorioDescontosData.filter(t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_reabertura) < 0);
+    const comDesconto = _relatorioDescontosData.filter(t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0);
     const titulo = `Relatório de Descontos — ${colaborador} — ${_mesLabel(mes)}`;
     const velTexto = t => parseFloat(t.ajuste_velocidade) === 0 ? 'sem dado' : t.ajuste_velocidade;
     const rows = _relatorioDescontosData.map(t => {
-      const temDesconto = parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_reabertura) < 0;
+      const temDesconto = parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0;
       return `<tr${temDesconto ? ' style="background:#fdecec"' : ''}>` +
         `<td>#${t.zappy_id}</td><td>${t.empresa_texto || '—'}</td><td>${t.papel}</td>` +
         `<td>${t.nota_cliente ?? '—'}</td><td>${velTexto(t)}</td><td>${t.ajuste_finalizar}</td>` +
@@ -6432,15 +6433,35 @@ const Gamificacao = (() => {
     App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
   }
 
-  // Comparativo de todo mundo, num documento único — pensado pra impressão/
-  // apresentação (diretoria), não só consulta interna: cabeçalho maior,
-  // tabela central com posição e composição de cada colaborador.
-  function _exportarRelatorioTodosPDF() {
+  // Documento único pra apresentar à diretoria: capa com o comparativo de
+  // todo mundo, seguida de UMA SEÇÃO POR COLABORADOR em sequência (posição,
+  // composição da nota, e os tickets que geraram desconto) — pedido do
+  // Reysner, 02/09/2026: "apontando todos os jogadores em sequência", não só
+  // a tabela resumo. Busca o detalhe ticket a ticket de cada um só na hora
+  // de exportar (a tela já mostra o resumo rápido sem isso).
+  async function _exportarRelatorioTodosPDF() {
     if (!_relatorioTodosData.length) { App.Toast.err('Gere o relatório primeiro.'); return; }
+    // Abre a aba JÁ (síncrono, dentro do clique) pra não cair no bloqueio de
+    // pop-up dos navegadores — só escreve o conteúdo de verdade depois que
+    // os dados de todo mundo chegarem.
+    const win = window.open('', '_blank');
+    if (!win) { App.Toast.err('Permita popups para exportar PDF.'); return; }
+    win.document.write('<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Gerando relatório…</title></head>' +
+      '<body style="font-family:Arial,sans-serif;padding:60px;color:#5c675f">Gerando relatório completo de ' + _relatorioTodosData.length + ' colaborador(es)… isso pode levar alguns segundos.</body></html>');
+    win.document.close();
+
     const mes = document.getElementById('gam-rel-mes')?.value || '';
+    const token = _tk();
+    const temDesconto = t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0;
+    const detalhes = await Promise.all(_relatorioTodosData.map(async r => {
+      const res = await fetch('/api/data/gam/relatorio-descontos?mes=' + mes + '&colaborador_id=' + r.colaboradorId, { headers: { Authorization: 'Bearer ' + token } });
+      const j = res && res.ok ? await res.json() : { tickets: [] };
+      return { ...r, tickets: (j.tickets || []).filter(temDesconto) };
+    }));
+
     const titulo = `Relatório Gerencial — Liga do Atendimento — ${_mesLabel(mes)}`;
     const fmtBonus = v => v === undefined ? '—' : (Number(v) === 0 ? '0,00' : (Number(v) > 0 ? '+' : '') + Number(v).toFixed(2));
-    const rows = _relatorioTodosData.map(r =>
+    const capaRows = detalhes.map(r =>
       `<tr>` +
         `<td>${r.posicao}º</td><td><b>${r.nome}</b></td><td>${r.avaliacoes}</td>` +
         `<td>${r.mediaBase !== undefined ? Number(r.mediaBase).toFixed(2) : '—'}</td>` +
@@ -6449,11 +6470,42 @@ const Gamificacao = (() => {
         `<td class="${Number(r.bonusFinalizar) < 0 ? 'neg' : ''}">${fmtBonus(r.bonusFinalizar)}</td>` +
         `<td class="final">${r.notaFinal}</td></tr>`
     ).join('');
+
+    const linhaComp = (rotulo, valor) => {
+      if (valor === undefined) return '';
+      const num = Number(valor);
+      const sinal = num > 0 ? '+' : '';
+      return `<div class="comp-linha${num < 0 ? ' neg' : ''}"><span>${rotulo}</span><span>${sinal}${num.toFixed(2)}</span></div>`;
+    };
+    const secoesPessoas = detalhes.map(r => {
+      const tabelaTickets = r.tickets.length
+        ? `<table class="tickets"><thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Vel.</th><th>/Finalizar</th><th>Nota Final</th></tr></thead><tbody>` +
+          r.tickets.map(t => `<tr><td>#${t.zappy_id}</td><td>${t.empresa_texto || '—'}</td><td>${t.papel}</td>` +
+            `<td class="${parseFloat(t.ajuste_velocidade) < 0 ? 'neg' : ''}">${t.ajuste_velocidade}</td>` +
+            `<td class="${parseFloat(t.ajuste_finalizar) < 0 ? 'neg' : ''}">${t.ajuste_finalizar}</td>` +
+            `<td><b>${t.nota_final}</b></td></tr>`).join('') +
+          `</tbody></table>`
+        : `<p class="sem-desconto">Nenhum ticket com desconto de métrica esse mês — nota limpa.</p>`;
+      return `<div class="pessoa">
+        <div class="pessoa-header"><span class="pos">${r.posicao}º lugar</span><h2>${r.nome}</h2><span class="nota-final">${r.notaFinal}</span></div>
+        <div class="composicao">
+          <div class="comp-linha"><span>Nota base (média dos tickets)</span><span>${r.mediaBase !== undefined ? Number(r.mediaBase).toFixed(2) : '—'}</span></div>
+          ${linhaComp('Bônus/desconto de transferência (média)', r.bonusTransferencia)}
+          ${linhaComp('Bônus/desconto de aceite do aguardando (média)', r.bonusAceite)}
+          ${linhaComp('Bônus/desconto de /Finalizar + reabertura (média)', r.bonusFinalizar)}
+          <div class="comp-linha total"><span>Nota final do mês</span><span>${r.notaFinal}</span></div>
+        </div>
+        <p class="tickets-titulo">${r.tickets.length} ticket(s) com desconto de métrica em ${r.avaliacoes} avaliado(s)</p>
+        ${tabelaTickets}
+      </div>`;
+    }).join('');
+
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
     <style>
       @page { size: A4; margin: 1.8cm; }
       body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;margin:0;color:#1e293b}
       h1{font-size:19px;color:#1a4233;margin:0 0 4px}
+      h2{font-size:18px;color:#1a4233;margin:0}
       p.sub{color:#64748b;font-size:12px;margin:0 0 18px}
       table{width:100%;border-collapse:collapse;font-size:11px}
       th{background:#1a4233;color:#fff;padding:8px 10px;text-align:left;font-weight:700}
@@ -6461,19 +6513,34 @@ const Gamificacao = (() => {
       tr:nth-child(even) td{background:#f1f5f9}
       td.neg{color:#a8341f;font-weight:700}
       td.final{font-weight:800;color:#1a4233}
-      tr:first-child td{background:#fff8e1!important;font-weight:700}
+      table.tickets tr:first-child td{background:inherit!important;font-weight:400}
+      .capa table tr:first-child td{background:#fff8e1!important;font-weight:700}
       .rodape{font-size:9.5px;color:#94a3b8;margin-top:20px}
+      .pessoa{page-break-before:always;padding-top:4px}
+      .pessoa-header{display:flex;align-items:baseline;gap:12px;border-bottom:2px solid #1a4233;padding-bottom:10px;margin-bottom:14px}
+      .pessoa-header .pos{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+      .pessoa-header .nota-final{margin-left:auto;font-size:24px;font-weight:800;color:#1a4233}
+      .composicao{background:#f7fafc;border-radius:8px;padding:12px 16px;margin-bottom:14px}
+      .comp-linha{display:flex;justify-content:space-between;padding:4px 0;font-size:12px}
+      .comp-linha span:last-child{font-weight:700}
+      .comp-linha.neg span:last-child{color:#a8341f}
+      .comp-linha.total{border-top:1px solid #e2e8f0;margin-top:6px;padding-top:8px;font-weight:700;font-size:13px}
+      .tickets-titulo{font-size:11.5px;color:#64748b;margin:0 0 8px}
+      .sem-desconto{color:#38a169;font-weight:600;font-size:12px}
       @media print{body{margin:0}}
     </style></head><body>
-    <h1>Grupo-E — ${titulo}</h1>
-    <p class="sub">Comparativo de todos os colaboradores com nota no mês, já com o ajuste de peso mínimo (mesma fórmula do ranking público). Gerado em ${new Date().toLocaleString('pt-BR')}.</p>
-    <table><thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Bônus Transf.</th><th>Bônus Aceite</th><th>Bônus /Finalizar</th><th>Nota Final</th></tr></thead>
-    <tbody>${rows}</tbody></table>
-    <p class="rodape">Relatório gerado automaticamente a partir dos dados do sistema Grupo-E — Gamificação (Liga do Atendimento).</p>
+    <div class="capa">
+      <h1>Grupo-E — ${titulo}</h1>
+      <p class="sub">Comparativo de todos os colaboradores com nota no mês, já com o ajuste de peso mínimo (mesma fórmula do ranking público). Gerado em ${new Date().toLocaleString('pt-BR')}.</p>
+      <table><thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Bônus Transf.</th><th>Bônus Aceite</th><th>Bônus /Finalizar</th><th>Nota Final</th></tr></thead>
+      <tbody>${capaRows}</tbody></table>
+      <p class="rodape">A partir da próxima página: uma seção detalhada por colaborador, na mesma ordem do ranking acima.</p>
+    </div>
+    ${secoesPessoas}
     <script>window.onload=()=>{window.print();}<\/script></body></html>`;
-    const win = window.open('', '_blank');
-    if (!win) { App.Toast.err('Permita popups para exportar PDF.'); return; }
-    win.document.write(html); win.document.close();
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
     App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
   }
 
