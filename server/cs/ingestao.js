@@ -17,6 +17,7 @@ const { traduzirTicket } = require('./tradutorZappy');
 const { calcularSLA, calcularTrocas } = require('./slaEngine');
 const { garantirVinculo } = require('./vinculos');
 const { ensurePontuacaoSchema, recalcularPontosPendentes, persistirPontosTicket } = require('./pontuacao');
+const { ensureAbandonoSchema, recalcularAbandonoPendentes, persistirAbandonoTicket } = require('./abandono');
 
 const CHAVE_DATA_INICIO = 'ingestao_data_inicio';
 const CHAVE_ULTIMA_EXECUCAO = 'ingestao_ultima_execucao';
@@ -331,7 +332,18 @@ async function ingerirTickets({ zappyClient, pool, agora = new Date(), maxPagina
     console.error('[CS] recalcularPontosPendentes falhou (ingestão normal seguiu OK):', e.message);
   }
 
-  return { processados, ignoradosPreDataInicio, erros, ticketsComAtividade: ticketIds.length, trocasPreenchidas, pontuacao };
+  // Abandono de atendimento (ver abandono.js) — mesmo espírito das duas
+  // pendências acima: lote pequeno a cada ciclo, sem chamar o Zappy de novo,
+  // falha isolada não derruba a ingestão normal. Roda em tickets aceitos
+  // mesmo sem nota do cliente ainda (diferente da pontuação normal).
+  let abandono = { candidatos: 0, processados: 0 };
+  try {
+    abandono = await recalcularAbandonoPendentes(pool, { limite: 100 });
+  } catch (e) {
+    console.error('[CS] recalcularAbandonoPendentes falhou (ingestão normal seguiu OK):', e.message);
+  }
+
+  return { processados, ignoradosPreDataInicio, erros, ticketsComAtividade: ticketIds.length, trocasPreenchidas, pontuacao, abandono };
 }
 
 /**
@@ -398,6 +410,7 @@ async function preencherTrocasPendentes(pool, { agora = new Date(), limite = 50 
  * @returns {number} total de tickets recalculados
  */
 async function recalcularSlaTodos(pool, { agora = new Date(), loteSize = 300, onProgress = null, mes = null } = {}) {
+  await ensureAbandonoSchema(pool);
   let totalRecalculados = 0;
   let ultimoId = '00000000-0000-0000-0000-000000000000';
 
@@ -469,6 +482,9 @@ async function recalcularSlaTodos(pool, { agora = new Date(), loteSize = 300, on
         `UPDATE cs_tickets SET sla = $1, em_risco = $2, pior_status = $3, calculado_em = NOW(), updated_at = NOW() WHERE id = $4`,
         [novoSla, emRisco, piorStatus, ticket.id]
       );
+      // Reaproveita as mensagens já buscadas acima em vez de esperar o
+      // próximo ciclo de ingestão pegar o ticket como "pendente" de novo.
+      await persistirAbandonoTicket(pool, ticket.id).catch(() => {});
       totalRecalculados++;
     }
 

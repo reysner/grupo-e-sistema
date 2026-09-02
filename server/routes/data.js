@@ -6,6 +6,7 @@ const { requireAuth, requireAdmin, hashPassword, revokeAllUserTokens } = require
 const acessoriasClient = require('../acessoriasClient');
 const { criarClienteZappy } = require('../cs/zappyClient');
 const { ensurePontuacaoSchema, recalcularPontosDoMes, clamp } = require('../cs/pontuacao');
+const { ensureAbandonoSchema } = require('../cs/abandono');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -2790,6 +2791,7 @@ function faixaDoMes(mes) {
 async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automático (Zappy)' } = {}) {
   await ensureGamTables();
   await ensurePontuacaoSchema(pool);
+  await ensureAbandonoSchema(pool);
   if (!mes || !/^\d{4}-\d{2}$/.test(mes)) throw new Error('Informe "mes" no formato AAAA-MM.');
 
   const { rows: colaboradores } = await pool.query(
@@ -2902,6 +2904,22 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
           ? finalizarValidos.reduce((s, r) => s + parseFloat(r.ajuste_finalizar), 0) / finalizarValidos.length
           : 0;
 
+        // Bônus/desconto de ABANDONO DE ATENDIMENTO (ver cs/abandono.js):
+        // cliente interagiu até 16:50 (seg-qui) sem NENHUMA resposta até
+        // 17:30 do mesmo dia. Cada incidente vale -1, mas divide pelos
+        // MESMOS atendimentos avaliados do mês (notasRows.length) — não pela
+        // quantidade de incidentes — senão um analista com só 1 avaliação e
+        // 1 incidente cairia junto com quem tem 20 avaliações e 1 incidente.
+        // Exemplo do Reysner: 3 incidentes ÷ 20 atendimentos = -0,15.
+        let bonusAbandono = 0;
+        if (notasRows.length) {
+          const { rows: abandonoRows } = await pool.query(
+            `SELECT id FROM gam_abandono_incidentes WHERE mes = $1 AND analista_id = $2 AND status != 'indevida'`,
+            [mes, c.zappy_user_id]
+          );
+          bonusAbandono = abandonoRows.length ? -(abandonoRows.length / notasRows.length) : 0;
+        }
+
         const somaBase = notasRows.reduce((s, r) => {
           if (r.vel_status === 'indevida') {
             const semVelocidade = clamp(parseFloat(r.nota_cliente) + 0 + parseFloat(r.ajuste_reabertura), 0, 5);
@@ -2910,12 +2928,13 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
           return s + parseFloat(r.nota_final);
         }, 0);
         const mediaBase = somaBase / notasRows.length;
-        const media_individual = Number(Math.max(0, Math.min(5, mediaBase + bonusTransferencia + bonusAceite + bonusFinalizar)).toFixed(2));
+        const media_individual = Number(Math.max(0, Math.min(5, mediaBase + bonusTransferencia + bonusAceite + bonusFinalizar + bonusAbandono)).toFixed(2));
         // mediaBase exposta pra transparência (ver GET /gam/composicao-nota)
-        // — é a nota bruta antes dos 3 bônus mensais, pra dar pra mostrar
+        // — é a nota bruta antes dos 4 bônus mensais, pra dar pra mostrar
         // "sua nota final é X porque: base Y + transferência Z + aceite W +
-        // finalizar V", em vez desses números ficarem só numa resposta crua.
-        resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes: notasRows.length, mediaBase: Number(mediaBase.toFixed(2)), bonusTransferencia, bonusAceite, bonusFinalizar, fonte: 'tickets' });
+        // finalizar V + abandono U", em vez desses números ficarem só numa
+        // resposta crua.
+        resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes: notasRows.length, mediaBase: Number(mediaBase.toFixed(2)), bonusTransferencia, bonusAceite, bonusFinalizar, bonusAbandono, fonte: 'tickets' });
         if (!dryRun) {
           await pool.query(
             `INSERT INTO gam_notas (colaborador_id, mes, media_individual, avaliacoes, lancado_por)
@@ -3216,6 +3235,7 @@ router.post('/gam/recalcular-pontos', requireAdmin, async (req, res) => {
 router.get('/gam/relatorio-descontos', requireAdmin, async (req, res) => {
   try {
     await ensurePontuacaoSchema(pool);
+    await ensureAbandonoSchema(pool);
     const { mes, colaborador_id } = req.query;
     if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
     if (!colaborador_id) return res.status(400).json({ error: 'Informe "colaborador_id".' });
@@ -3224,7 +3244,7 @@ router.get('/gam/relatorio-descontos', requireAdmin, async (req, res) => {
       `SELECT nome, zappy_user_id FROM gam_colaboradores WHERE id = $1`, [colaborador_id]
     );
     if (!colabRows.length) return res.status(404).json({ error: 'Colaborador não encontrado.' });
-    if (!colabRows[0].zappy_user_id) return res.json({ colaborador: colabRows[0].nome, mes, tickets: [], aviso: 'Colaborador ainda não vinculado a um usuário do Zappy.' });
+    if (!colabRows[0].zappy_user_id) return res.json({ colaborador: colabRows[0].nome, mes, tickets: [], abandono: [], aviso: 'Colaborador ainda não vinculado a um usuário do Zappy.' });
 
     const { rows } = await pool.query(
       `SELECT p.papel, p.nota_cliente, p.ajuste_velocidade, p.ajuste_finalizar, p.ajuste_reabertura, p.ajuste_aceite, p.nota_final,
@@ -3235,7 +3255,16 @@ router.get('/gam/relatorio-descontos', requireAdmin, async (req, res) => {
        ORDER BY t.encerramento DESC NULLS LAST`,
       [mes, colabRows[0].zappy_user_id]
     );
-    res.json({ colaborador: colabRows[0].nome, mes, tickets: rows });
+    const { rows: abandono } = await pool.query(
+      `SELECT a.id, a.data, a.ultima_mensagem_cliente, a.ultima_mensagem_texto, a.status,
+              t.zappy_id, t.empresa_texto
+         FROM gam_abandono_incidentes a
+         JOIN cs_tickets t ON t.id = a.ticket_id
+        WHERE a.mes = $1 AND a.analista_id = $2
+        ORDER BY a.data DESC`,
+      [mes, colabRows[0].zappy_user_id]
+    );
+    res.json({ colaborador: colabRows[0].nome, mes, tickets: rows, abandono });
   } catch (err) {
     console.error('[gam] relatorio-descontos falhou:', err);
     res.status(500).json({ error: 'Erro ao gerar relatório.' });
@@ -3513,13 +3542,69 @@ router.patch('/gam/tickets-revisao-finalizar/:ticketId/:papel', requireAdmin, as
 });
 
 /**
+ * GET /api/data/gam/tickets-revisao-abandono — revisão de ABANDONO DE
+ * ATENDIMENTO (ver cs/abandono.js): cliente interagiu até 16:50 (seg-qui) e
+ * ninguém do escritório respondeu até 17:30 do mesmo dia. Diferente das
+ * outras 3 revisões, aqui a chave é (ticket, DIA) — um ticket parado vários
+ * dias gera um incidente por dia, cada um revisável separadamente. Marca
+ * "Devida" se realmente não teve resposta nenhuma (desconta), ou "Indevida"
+ * se por algum motivo não deveria contar (ex.: mensagem do cliente
+ * classificada errado como pendente, analista de folga programada com
+ * cobertura combinada, etc.).
+ */
+router.get('/gam/tickets-revisao-abandono', requireAdmin, async (req, res) => {
+  try {
+    await ensureAbandonoSchema(pool);
+    const { mes } = req.query;
+    if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Informe "mes" no formato AAAA-MM.' });
+    const status = ['pendente', 'devida', 'indevida'].includes(req.query.status) ? req.query.status : 'pendente';
+
+    const { rows } = await pool.query(
+      `SELECT a.id, a.data, a.analista, a.ultima_mensagem_cliente, a.ultima_mensagem_texto,
+              a.status AS revisao_status, a.revisado_por, a.revisado_em,
+              t.zappy_id, t.empresa_texto
+         FROM gam_abandono_incidentes a
+         JOIN cs_tickets t ON t.id = a.ticket_id
+        WHERE a.mes = $1 AND a.status = $2
+        ORDER BY a.data DESC, t.encerramento DESC NULLS LAST`,
+      [mes, status]
+    );
+    res.json({ data: rows });
+  } catch (err) {
+    console.error('[gam] tickets-revisao-abandono falhou:', err);
+    res.status(500).json({ error: 'Erro ao listar incidentes de abandono para revisão.' });
+  }
+});
+
+/** PATCH /api/data/gam/tickets-revisao-abandono/:id — marca devida/indevida. */
+router.patch('/gam/tickets-revisao-abandono/:id', requireAdmin, async (req, res) => {
+  try {
+    const { status_revisao } = req.body;
+    if (!['devida', 'indevida'].includes(status_revisao)) {
+      return res.status(400).json({ error: 'status_revisao deve ser "devida" ou "indevida".' });
+    }
+    await ensureAbandonoSchema(pool);
+    const { rows } = await pool.query(
+      `UPDATE gam_abandono_incidentes SET status = $2, revisado_por = $3, revisado_em = NOW() WHERE id = $1 RETURNING id`,
+      [req.params.id, status_revisao, req.user.name]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Não encontrado.' });
+    res.json({ ok: true, data: rows[0] });
+  } catch (err) {
+    console.error('[gam] PATCH tickets-revisao-abandono falhou:', err);
+    res.status(500).json({ error: 'Erro ao salvar revisão de abandono.' });
+  }
+});
+
+/**
  * GET /api/data/gam/ticket-busca?zappy_id=&mes= — busca direta por número de
- * ticket, pra usar nas 4 telas de revisão (nota/velocidade/aceite/
- * finalizar) sem depender do ticket estar na lista de pendentes filtrada.
- * Pedido do Reysner, 28/08/2026: às vezes o admin já sabe qual ticket quer
- * corrigir e não quer catar na lista. Devolve o ticket (pra revisão de nota)
- * + as linhas de gam_tickets_pontos daquele mês (pra revisão de velocidade/
- * aceite/finalizar, uma por papel), já com o status atual de cada revisão.
+ * ticket, pra usar nas 5 telas de revisão (nota/velocidade/aceite/
+ * finalizar/abandono) sem depender do ticket estar na lista de pendentes
+ * filtrada. Pedido do Reysner, 28/08/2026: às vezes o admin já sabe qual
+ * ticket quer corrigir e não quer catar na lista. Devolve o ticket (pra
+ * revisão de nota) + as linhas de gam_tickets_pontos daquele mês (pra
+ * revisão de velocidade/aceite/finalizar, uma por papel) + os incidentes de
+ * abandono daquele mês, já com o status atual de cada revisão.
  */
 router.get('/gam/ticket-busca', requireAdmin, async (req, res) => {
   try {
@@ -3551,7 +3636,21 @@ router.get('/gam/ticket-busca', requireAdmin, async (req, res) => {
         ORDER BY p.papel`,
       [ticket.id, mes]
     );
-    res.json({ ticket, pontos });
+
+    // Abandono não depende de nota do cliente nem de mês bater com
+    // gam_tickets_pontos — busca livre por ticket_id, filtrando pelo mesmo
+    // "mes" só pra manter o mesmo escopo das outras revisões na tela.
+    await ensureAbandonoSchema(pool);
+    const { rows: abandono } = await pool.query(
+      `SELECT id, data, analista, ultima_mensagem_cliente, ultima_mensagem_texto,
+              status AS abandono_status, revisado_por AS abandono_por, revisado_em AS abandono_em
+         FROM gam_abandono_incidentes
+        WHERE ticket_id = $1 AND mes = $2
+        ORDER BY data ASC`,
+      [ticket.id, mes]
+    );
+
+    res.json({ ticket, pontos, abandono });
   } catch (err) {
     console.error('[gam] ticket-busca falhou:', err);
     res.status(500).json({ error: 'Erro ao buscar ticket.' });

@@ -244,6 +244,7 @@ async function carregar() {
       linhaComposicao('Bônus/desconto de transferência (média)', comp.bonusTransferencia) +
       (comp.bonusAceite !== undefined ? linhaComposicao('Bônus/desconto de aceite do aguardando (média)', comp.bonusAceite) : '') +
       linhaComposicao('Bônus/desconto de /Finalizar + reabertura (média)', comp.bonusFinalizar) +
+      (comp.bonusAbandono !== undefined ? linhaComposicao('Desconto de abandono de atendimento (média)', comp.bonusAbandono) : '') +
       '<div class="comp-row total"><span>Nota final do mês (capada em 5)</span><span>' + Number(comp.media_individual).toFixed(2) + '</span></div>' +
       '<p style="font-size:12px;color:var(--gray-400);margin-top:12px">Baseada em ' + comp.avaliacoes + ' atendimento(s) avaliado(s) pelo cliente esse mês.</p>' +
     '</div>';

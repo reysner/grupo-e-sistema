@@ -5903,11 +5903,29 @@ const Gamificacao = (() => {
       box.innerHTML = '<p style="color:#e53e3e;font-size:12px;margin-top:6px">' + (corpo.error || 'Ticket não encontrado em ' + _mesLabel(mes) + '.') + '</p>';
       return;
     }
-    const { ticket, pontos } = await res.json();
-    box.innerHTML = _renderBuscaTicket(tipo, ticket, pontos, mes);
+    const { ticket, pontos, abandono } = await res.json();
+    box.innerHTML = _renderBuscaTicket(tipo, ticket, pontos, mes, abandono);
   }
 
-  function _renderBuscaTicket(tipo, ticket, pontos, mes) {
+  function _renderBuscaTicket(tipo, ticket, pontos, mes, abandono) {
+    if (tipo === 'abandono') {
+      const linhas = abandono || [];
+      if (!linhas.length) {
+        return '<p style="font-size:12px;color:var(--gray-400);margin-top:6px">Ticket #' + ticket.zappy_id + ' encontrado, mas sem incidente de abandono registrado em ' + _mesLabel(mes) + '.</p>';
+      }
+      return '<div class="table-wrap" style="margin-top:8px"><table class="data-table">' +
+        '<thead><tr><th>Ticket</th><th>Cliente</th><th>Dia</th><th>Status</th><th></th></tr></thead><tbody>' +
+        linhas.map(a => {
+          const status = a.abandono_status || 'pendente';
+          return '<tr><td>#' + ticket.zappy_id + '</td><td>' + (ticket.empresa_texto || '—') + '</td>' +
+            '<td>' + new Date(a.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) + '</td>' +
+            '<td style="font-size:11px;color:var(--gray-400)">' + status + (a.abandono_por ? ' — ' + a.abandono_por : '') + '</td>' +
+            '<td style="white-space:nowrap">' +
+              '<button class="btn btn-sm" ' + (status === 'devida' ? 'disabled title="Já está devida"' : '') + ' style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisaoBusca(\'abandono\',\'' + a.id + '\',null,\'devida\',\'' + mes + '\')">Devida</button> ' +
+              '<button class="btn btn-sm" ' + (status === 'indevida' ? 'disabled title="Já está indevida"' : '') + ' style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisaoBusca(\'abandono\',\'' + a.id + '\',null,\'indevida\',\'' + mes + '\')">Indevida</button>' +
+            '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }
     if (tipo === 'nota') {
       const status = ticket.revisao_nota_status || 'pendente';
       return '<div class="table-wrap" style="margin-top:8px"><table class="data-table">' +
@@ -5957,6 +5975,7 @@ const Gamificacao = (() => {
       velocidade: '/api/data/gam/tickets-revisao-velocidade/' + ticketId + '/' + papel,
       aceite: '/api/data/gam/tickets-revisao-aceite/' + ticketId + '/' + papel,
       finalizar: '/api/data/gam/tickets-revisao-finalizar/' + ticketId + '/' + papel,
+      abandono: '/api/data/gam/tickets-revisao-abandono/' + ticketId,
     };
     const res = await fetch(rotas[tipo], {
       method: 'PATCH',
@@ -5968,8 +5987,8 @@ const Gamificacao = (() => {
     await buscarTicketRevisao(tipo, mes);
     // Se o ticket também aparece na lista filtrada (pendente/devida/indevida)
     // logo abaixo, recarrega ela também pra não ficar desatualizada.
-    const recarregar = { nota: _carregarRevisaoNotas, velocidade: _carregarRevisaoVelocidade, aceite: _carregarRevisaoAceite, finalizar: _carregarRevisaoFinalizar }[tipo];
-    const idSelect = { nota: 'gam-revisao-status', velocidade: 'gam-revisao-vel-status', aceite: 'gam-revisao-aceite-status', finalizar: 'gam-revisao-fin-status' }[tipo];
+    const recarregar = { nota: _carregarRevisaoNotas, velocidade: _carregarRevisaoVelocidade, aceite: _carregarRevisaoAceite, finalizar: _carregarRevisaoFinalizar, abandono: _carregarRevisaoAbandono }[tipo];
+    const idSelect = { nota: 'gam-revisao-status', velocidade: 'gam-revisao-vel-status', aceite: 'gam-revisao-aceite-status', finalizar: 'gam-revisao-fin-status', abandono: 'gam-revisao-abandono-status' }[tipo];
     const statusAtual = document.getElementById(idSelect)?.value || 'pendente';
     if (recarregar) await recarregar(mes, statusAtual);
   }
@@ -6238,6 +6257,73 @@ const Gamificacao = (() => {
     } else App.Toast.err('Erro ao salvar.');
   }
 
+  // ── Revisão de ABANDONO DE ATENDIMENTO (ver cs/abandono.js) ─────────────────
+  // Cliente interagiu até 16:50 (seg-qui) e ninguém do escritório respondeu
+  // até 17:30 do mesmo dia. Diferente das outras 3 revisões, a chave aqui é
+  // (ticket, DIA) — um ticket parado vários dias gera um incidente por dia.
+  // Pedido do Reysner, 02/09/2026, a partir do ticket #47957.
+  async function abrirRevisaoAbandono() {
+    const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
+    App.Modal.open('Revisar abandono de atendimento — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
+      '<p style="font-size:13px;color:var(--gray-500)">Cliente mandou mensagem até 16:50 (segunda a quinta) e ninguém do escritório respondeu até 17:30 do mesmo dia — sem contar mensagem de fechamento tipo "ok, obrigado". Marca "Devida" se realmente ninguém respondeu, ou "Indevida" se por algum motivo não deveria contar. Um ticket parado vários dias gera um incidente por dia, revisável separadamente. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
+      _htmlBuscaTicket('abandono', mes) +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+        '<label style="font-size:12px;font-weight:700;color:var(--gray-500)">Mostrar:</label>' +
+        '<select id="gam-revisao-abandono-status" class="input" style="width:auto" onchange="Gamificacao._trocarStatusRevisaoAbandono(\'' + mes + '\')">' +
+          '<option value="pendente">Pendentes</option>' +
+          '<option value="devida">Já marcadas como devida</option>' +
+          '<option value="indevida">Já marcadas como indevida</option>' +
+        '</select>' +
+      '</div>' +
+      '<div id="gam-revisao-abandono-lista">Carregando...</div>' +
+    '</div>', null, { wide: true });
+    await _carregarRevisaoAbandono(mes, 'pendente');
+  }
+
+  function _trocarStatusRevisaoAbandono(mes) {
+    const status = document.getElementById('gam-revisao-abandono-status')?.value || 'pendente';
+    _carregarRevisaoAbandono(mes, status);
+  }
+
+  async function _carregarRevisaoAbandono(mes, status) {
+    const box = document.getElementById('gam-revisao-abandono-lista');
+    if (!box) return;
+    status = status || 'pendente';
+    box.innerHTML = 'Carregando...';
+    const res = await fetch('/api/data/gam/tickets-revisao-abandono?mes=' + mes + '&status=' + status, { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao carregar.</p>'; return; }
+    const { data } = await res.json();
+    const rotuloVazio = status === 'pendente' ? 'Nenhum incidente de abandono pendente de revisão' : 'Nenhum incidente marcado como ' + status;
+    if (!data.length) { box.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:16px">' + rotuloVazio + ' em ' + _mesLabel(mes) + '.</p>'; return; }
+    const mostrarQuem = status !== 'pendente';
+    box.innerHTML = '<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">' +
+      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Analista</th><th>Dia</th><th>Última mensagem do cliente (sem resposta)</th>' + (mostrarQuem ? '<th>Revisado por</th>' : '') + '<th></th></tr></thead><tbody>' +
+      data.map(r => `<tr data-id="${r.id}">` +
+        `<td>#${r.zappy_id}</td>` +
+        `<td>${r.empresa_texto || '—'}</td>` +
+        `<td>${r.analista || '—'}</td>` +
+        `<td>${new Date(r.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>` +
+        `<td style="font-size:12px;color:var(--gray-500)">${(r.ultima_mensagem_texto || '—').slice(0, 80)}</td>` +
+        (mostrarQuem ? `<td style="font-size:11px;color:var(--gray-400)">${r.revisado_por || '—'}${r.revisado_em ? '<br>' + new Date(r.revisado_em).toLocaleDateString('pt-BR') : ''}</td>` : '') +
+        `<td style="white-space:nowrap">` +
+          `<button class="btn btn-sm" ${status === 'devida' ? 'disabled title="Já está devida"' : ''} style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisaoAbandono('${r.id}','devida','${mes}','${status}')">Devida</button> ` +
+          `<button class="btn btn-sm" ${status === 'indevida' ? 'disabled title="Já está indevida"' : ''} style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisaoAbandono('${r.id}','indevida','${mes}','${status}')">Indevida</button>` +
+        `</td></tr>`
+      ).join('') + '</tbody></table></div>';
+  }
+
+  async function marcarRevisaoAbandono(id, novoStatus, mes, statusAtual) {
+    const res = await fetch('/api/data/gam/tickets-revisao-abandono/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ status_revisao: novoStatus })
+    });
+    if (res && res.ok) {
+      App.Toast.ok('Marcado como ' + novoStatus + '.');
+      await _carregarRevisaoAbandono(mes, statusAtual);
+    } else App.Toast.err('Erro ao salvar.');
+  }
+
   // ── Relatório de descontos por colaborador (transparência) — também serve
   // de Relatório Gerencial Mensal: individual (ticket a ticket) ou "Todos"
   // (composição comparada de todo mundo, pra apresentar à diretoria).
@@ -6288,6 +6374,7 @@ const Gamificacao = (() => {
       linha('Bônus/desconto de transferência (média)', c.bonusTransferencia) +
       (c.bonusAceite !== undefined ? linha('Bônus/desconto de aceite do aguardando (média)', c.bonusAceite) : '') +
       linha('Bônus/desconto de /Finalizar + reabertura (média)', c.bonusFinalizar) +
+      (c.bonusAbandono !== undefined ? linha('Desconto de abandono de atendimento (média)', c.bonusAbandono) : '') +
       '<div style="display:flex;justify-content:space-between;padding:8px 0 0;border-top:1px solid var(--gray-200);margin-top:6px"><span style="font-weight:700">Nota final do mês (capada em 5)</span><span style="font-weight:800;font-size:16px">' + Number(c.media_individual).toFixed(2) + '</span></div>' +
     '</div>';
   }
@@ -6311,16 +6398,26 @@ const Gamificacao = (() => {
       fetch('/api/data/gam/composicao-nota?mes=' + mes + '&colaborador_id=' + colaboradorId, { headers: { Authorization: 'Bearer ' + _tk() } }),
     ]);
     if (!resRel || !resRel.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao gerar relatório.</p>'; return; }
-    const { colaborador, tickets, aviso } = await resRel.json();
+    const { colaborador, tickets, abandono, aviso } = await resRel.json();
     _relatorioDescontosData = (tickets || []).map(t => ({ ...t, colaborador }));
     const composicao = resComp && resComp.ok ? await resComp.json() : null;
     const composicaoHtml = _renderComposicaoNota(composicao);
+    // Abandono não depende do ticket ter sido avaliado (pode ser um ticket
+    // ainda aberto) — por isso mostra mesmo quando não tem NENHUM ticket
+    // pontuado ainda, diferente do resto deste relatório.
+    const abandonoValidos = (abandono || []).filter(a => a.status !== 'indevida');
+    const abandonoHtml = abandonoValidos.length
+      ? '<div style="background:#fff5f5;border-radius:10px;padding:14px 16px;margin-bottom:14px">' +
+        '<p style="font-size:12px;font-weight:700;color:#c0362c;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">🚪 ' + abandonoValidos.length + ' incidente(s) de abandono de atendimento</p>' +
+        abandonoValidos.map(a => '<div style="font-size:12.5px;padding:3px 0">#' + a.zappy_id + ' — ' + (a.empresa_texto || '—') + ' — ' + new Date(a.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) + '</div>').join('') +
+        '</div>'
+      : '';
 
-    if (aviso) { box.innerHTML = composicaoHtml + '<p style="color:var(--gray-500)">' + aviso + '</p>'; return; }
-    if (!tickets.length) { box.innerHTML = composicaoHtml + '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum ticket pontuado pra ' + colaborador + ' em ' + _mesLabel(mes) + '.</p>'; return; }
+    if (aviso) { box.innerHTML = composicaoHtml + abandonoHtml + '<p style="color:var(--gray-500)">' + aviso + '</p>'; return; }
+    if (!tickets.length) { box.innerHTML = composicaoHtml + abandonoHtml + '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum ticket pontuado pra ' + colaborador + ' em ' + _mesLabel(mes) + '.</p>'; return; }
 
     const comDesconto = tickets.filter(t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0);
-    box.innerHTML = composicaoHtml +
+    box.innerHTML = composicaoHtml + abandonoHtml +
       '<p style="font-size:12.5px;color:var(--gray-500);margin:10px 0">' + comDesconto.length + ' de ' + tickets.length + ' ticket(s) com desconto de métrica esse mês.</p>' +
       '<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">' +
       '<thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota Cliente</th><th>Vel.</th><th>/Finalizar</th><th>Reabertura</th><th>Nota Final</th><th>Revisão</th></tr></thead><tbody>' +
@@ -6402,7 +6499,7 @@ const Gamificacao = (() => {
       colaboradorId: c.colaborador_id,
       posicao: i + 1, nome: c.nome, avaliacoes: c.avaliacoes || 0,
       mediaBase: c.mediaBase, bonusTransferencia: c.bonusTransferencia,
-      bonusAceite: c.bonusAceite, bonusFinalizar: c.bonusFinalizar,
+      bonusAceite: c.bonusAceite, bonusFinalizar: c.bonusFinalizar, bonusAbandono: c.bonusAbandono,
       notaFinal: c.notaFinalNum.toFixed(2),
     }));
 
@@ -6411,7 +6508,7 @@ const Gamificacao = (() => {
     box.innerHTML =
       '<p style="font-size:12.5px;color:var(--gray-500);margin:10px 0">' + _relatorioTodosData.length + ' colaborador(es) com nota em ' + _mesLabel(mes) + '. Nota final calculada agora (mesma fórmula de peso mínimo do ranking público), não depende de ninguém ter clicado "Aplicar essas notas" antes.</p>' +
       '<div class="table-wrap" style="max-height:440px;overflow-y:auto"><table class="data-table">' +
-      '<thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Bônus Transf.</th><th>Bônus Aceite</th><th>Bônus /Finalizar</th><th>Nota Final</th></tr></thead><tbody>' +
+      '<thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Bônus Transf.</th><th>Bônus Aceite</th><th>Bônus /Finalizar</th><th>Desc. Abandono</th><th>Nota Final</th></tr></thead><tbody>' +
       _relatorioTodosData.map(r =>
         `<tr>` +
           `<td>${r.posicao}º</td>` +
@@ -6421,6 +6518,7 @@ const Gamificacao = (() => {
           `<td style="color:${corBonus(r.bonusTransferencia)};font-weight:700">${fmtBonus(r.bonusTransferencia)}</td>` +
           `<td style="color:${corBonus(r.bonusAceite)};font-weight:700">${fmtBonus(r.bonusAceite)}</td>` +
           `<td style="color:${corBonus(r.bonusFinalizar)};font-weight:700">${fmtBonus(r.bonusFinalizar)}</td>` +
+          `<td style="color:${corBonus(r.bonusAbandono)};font-weight:700">${fmtBonus(r.bonusAbandono)}</td>` +
           `<td style="font-weight:800">${r.notaFinal}</td>` +
         `</tr>`
       ).join('') + '</tbody></table></div>';
@@ -6481,8 +6579,8 @@ const Gamificacao = (() => {
     const temDesconto = t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0;
     const detalhes = await Promise.all(_relatorioTodosData.map(async r => {
       const res = await fetch('/api/data/gam/relatorio-descontos?mes=' + mes + '&colaborador_id=' + r.colaboradorId, { headers: { Authorization: 'Bearer ' + token } });
-      const j = res && res.ok ? await res.json() : { tickets: [] };
-      return { ...r, tickets: (j.tickets || []).filter(temDesconto) };
+      const j = res && res.ok ? await res.json() : { tickets: [], abandono: [] };
+      return { ...r, tickets: (j.tickets || []).filter(temDesconto), abandono: (j.abandono || []).filter(a => a.status !== 'indevida') };
     }));
 
     const titulo = `Relatório Gerencial — Liga do Atendimento — ${_mesLabel(mes)}`;
@@ -6494,6 +6592,7 @@ const Gamificacao = (() => {
         `<td class="${Number(r.bonusTransferencia) < 0 ? 'neg' : ''}">${fmtBonus(r.bonusTransferencia)}</td>` +
         `<td class="${Number(r.bonusAceite) < 0 ? 'neg' : ''}">${fmtBonus(r.bonusAceite)}</td>` +
         `<td class="${Number(r.bonusFinalizar) < 0 ? 'neg' : ''}">${fmtBonus(r.bonusFinalizar)}</td>` +
+        `<td class="${Number(r.bonusAbandono) < 0 ? 'neg' : ''}">${fmtBonus(r.bonusAbandono)}</td>` +
         `<td class="final">${r.notaFinal}</td></tr>`
     ).join('');
 
@@ -6512,6 +6611,13 @@ const Gamificacao = (() => {
             `<td><b>${t.nota_final}</b></td></tr>`).join('') +
           `</tbody></table>`
         : `<p class="sem-desconto">Nenhum ticket com desconto de métrica esse mês — nota limpa.</p>`;
+      const tabelaAbandono = r.abandono.length
+        ? `<table class="tickets"><thead><tr><th>Ticket</th><th>Cliente</th><th>Dia</th><th>Última msg. do cliente sem resposta</th></tr></thead><tbody>` +
+          r.abandono.map(a => `<tr><td>#${a.zappy_id}</td><td>${a.empresa_texto || '—'}</td>` +
+            `<td>${new Date(a.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>` +
+            `<td>${(a.ultima_mensagem_texto || '').slice(0, 60)}</td></tr>`).join('') +
+          `</tbody></table>`
+        : '';
       return `<div class="pessoa">
         <div class="pessoa-header"><span class="pos">${r.posicao}º lugar</span><h2>${r.nome}</h2><span class="nota-final">${r.notaFinal}</span></div>
         <div class="composicao">
@@ -6519,10 +6625,12 @@ const Gamificacao = (() => {
           ${linhaComp('Bônus/desconto de transferência (média)', r.bonusTransferencia)}
           ${linhaComp('Bônus/desconto de aceite do aguardando (média)', r.bonusAceite)}
           ${linhaComp('Bônus/desconto de /Finalizar + reabertura (média)', r.bonusFinalizar)}
+          ${linhaComp('Desconto de abandono de atendimento (média)', r.bonusAbandono)}
           <div class="comp-linha total"><span>Nota final do mês</span><span>${r.notaFinal}</span></div>
         </div>
         <p class="tickets-titulo">${r.tickets.length} ticket(s) com desconto de métrica em ${r.avaliacoes} avaliado(s)</p>
         ${tabelaTickets}
+        ${r.abandono.length ? '<p class="tickets-titulo" style="margin-top:14px">' + r.abandono.length + ' incidente(s) de abandono de atendimento</p>' + tabelaAbandono : ''}
       </div>`;
     }).join('');
 
@@ -6558,7 +6666,7 @@ const Gamificacao = (() => {
     <div class="capa">
       <h1>Grupo-E — ${titulo}</h1>
       <p class="sub">Comparativo de todos os colaboradores com nota no mês, já com o ajuste de peso mínimo (mesma fórmula do ranking público). Gerado em ${new Date().toLocaleString('pt-BR')}.</p>
-      <table><thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Bônus Transf.</th><th>Bônus Aceite</th><th>Bônus /Finalizar</th><th>Nota Final</th></tr></thead>
+      <table><thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Bônus Transf.</th><th>Bônus Aceite</th><th>Bônus /Finalizar</th><th>Desc. Abandono</th><th>Nota Final</th></tr></thead>
       <tbody>${capaRows}</tbody></table>
       <p class="rodape">A partir da próxima página: uma seção detalhada por colaborador, na mesma ordem do ranking acima.</p>
     </div>
@@ -6588,8 +6696,8 @@ const Gamificacao = (() => {
 
   function _exportarRelatorioTodosCSV() {
     if (!_relatorioTodosData.length) { App.Toast.err('Gere o relatório primeiro.'); return; }
-    const cols = ['posicao', 'nome', 'avaliacoes', 'mediaBase', 'bonusTransferencia', 'bonusAceite', 'bonusFinalizar', 'notaFinal'];
-    const labels = { posicao: 'Posição', nome: 'Colaborador', avaliacoes: 'Avaliações', mediaBase: 'Nota Base', bonusTransferencia: 'Bônus Transferência', bonusAceite: 'Bônus Aceite', bonusFinalizar: 'Bônus /Finalizar', notaFinal: 'Nota Final' };
+    const cols = ['posicao', 'nome', 'avaliacoes', 'mediaBase', 'bonusTransferencia', 'bonusAceite', 'bonusFinalizar', 'bonusAbandono', 'notaFinal'];
+    const labels = { posicao: 'Posição', nome: 'Colaborador', avaliacoes: 'Avaliações', mediaBase: 'Nota Base', bonusTransferencia: 'Bônus Transferência', bonusAceite: 'Bônus Aceite', bonusFinalizar: 'Bônus /Finalizar', bonusAbandono: 'Desconto Abandono', notaFinal: 'Nota Final' };
     const header = cols.map(c => labels[c]).join(';');
     const rows = _relatorioTodosData.map(r => cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(';'));
     const csv = [header, ...rows].join('\n');
@@ -6712,6 +6820,7 @@ const Gamificacao = (() => {
     abrirRevisaoVelocidade, marcarRevisaoVelocidade, _trocarStatusRevisaoVelocidade,
     abrirRevisaoAceite, marcarRevisaoAceite, _trocarStatusRevisaoAceite,
     abrirRevisaoFinalizar, marcarRevisaoFinalizar, _trocarStatusRevisaoFinalizar,
+    abrirRevisaoAbandono, marcarRevisaoAbandono, _trocarStatusRevisaoAbandono,
     buscarTicketRevisao, marcarRevisaoBusca,
     abrirRelatorioDescontos, gerarRelatorioDescontos, exportarRelatorioDescontosCSV, exportarRelatorioDescontosPDF,
     recalcularPontos,
