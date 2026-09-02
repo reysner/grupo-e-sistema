@@ -41,6 +41,7 @@ const FRASES_FECHAMENTO = [
   'obrigado', 'obrigada', 'obg', 'valeu', 'agradeco', 'agradecida', 'agradecido',
   'muito obrigado', 'muito obrigada', 'tudo bem obrigado', 'tudo bem obrigada',
   'ok obrigado', 'ok obrigada', 'de nada', 'por nada', 'bom dia', 'boa tarde', 'boa noite',
+  'figurinha', // rótulo que o próprio Zappy usa pra sticker sem legenda — mesmo espírito de um 👍
   '👍', '🙏', '✅',
 ];
 const LIMITE_TAMANHO_FECHAMENTO = 40; // caracteres — mensagem curta, sem pedido novo junto
@@ -49,6 +50,9 @@ const LIMITE_TAMANHO_FECHAMENTO = 40; // caracteres — mensagem curta, sem pedi
 function pareceMensagemDeFechamento(texto) {
   const limpo = normalizarTexto(texto);
   if (!limpo) return true; // vazio (ex.: só áudio/figurinha, sem texto) — não força resposta
+  // Só um número de 1 a 5 = a nota da pesquisa de satisfação, não um pedido
+  // novo — mesmo critério já usado na regra de reabertura (ver pontuacao.js).
+  if (/^[1-5]$/.test(limpo)) return true;
   if (limpo.length > LIMITE_TAMANHO_FECHAMENTO) return false;
   return FRASES_FECHAMENTO.some(f => limpo === f || limpo.startsWith(f + ' ') || limpo.startsWith(f + ',') || limpo.startsWith(f + '!'));
 }
