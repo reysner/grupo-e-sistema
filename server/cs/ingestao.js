@@ -17,7 +17,7 @@ const { traduzirTicket } = require('./tradutorZappy');
 const { calcularSLA, calcularTrocas } = require('./slaEngine');
 const { garantirVinculo } = require('./vinculos');
 const { ensurePontuacaoSchema, recalcularPontosPendentes, persistirPontosTicket } = require('./pontuacao');
-const { ensureAbandonoSchema, recalcularAbandonoPendentes, persistirAbandonoTicket } = require('./abandono');
+const { ensureAbandonoSchema, recalcularAbandonoPendentes } = require('./abandono');
 
 const CHAVE_DATA_INICIO = 'ingestao_data_inicio';
 const CHAVE_ULTIMA_EXECUCAO = 'ingestao_ultima_execucao';
@@ -482,9 +482,12 @@ async function recalcularSlaTodos(pool, { agora = new Date(), loteSize = 300, on
         `UPDATE cs_tickets SET sla = $1, em_risco = $2, pior_status = $3, calculado_em = NOW(), updated_at = NOW() WHERE id = $4`,
         [novoSla, emRisco, piorStatus, ticket.id]
       );
-      // Reaproveita as mensagens já buscadas acima em vez de esperar o
-      // próximo ciclo de ingestão pegar o ticket como "pendente" de novo.
-      await persistirAbandonoTicket(pool, ticket.id).catch(() => {});
+      // NÃO chama persistirAbandonoTicket aqui — fica só pro ciclo periódico
+      // de ingestão (recalcularAbandonoPendentes). Rodar os dois juntos
+      // travou o banco (02/09/2026): o UPDATE acima bota updated_at=NOW() em
+      // TODO ticket do lote, e o ciclo de ingestão (a cada 5min) via de novo
+      // "pendente" nesses mesmos tickets — os dois processos brigando pelas
+      // mesmas linhas em paralelo, sem nunca esvaziar a fila.
       totalRecalculados++;
     }
 

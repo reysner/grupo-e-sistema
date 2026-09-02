@@ -197,7 +197,7 @@ async function persistirAbandonoTicket(pool, ticketId) {
  * ingestão. "Pendente" = já foi aceito por alguém e (nunca foi checado OU
  * mudou depois da última checagem).
  */
-async function recalcularAbandonoPendentes(pool, { limite = 100 } = {}) {
+async function recalcularAbandonoPendentes(pool, { limite = 30 } = {}) {
   await ensureAbandonoSchema(pool);
   const { rows: pendentes } = await pool.query(
     `SELECT id FROM cs_tickets
@@ -209,8 +209,19 @@ async function recalcularAbandonoPendentes(pool, { limite = 100 } = {}) {
   );
   let processados = 0;
   for (const t of pendentes) {
-    await persistirAbandonoTicket(pool, t.id);
-    processados++;
+    try {
+      // Trava de segurança: se um ticket específico travar (ex.: lock de
+      // banco), não pode derrubar o lote inteiro pros próximos ciclos —
+      // acontecido em 02/09/2026 quando isso rodava junto com o recálculo
+      // de SLA (os dois brigando pelas mesmas linhas, sem nunca terminar).
+      await Promise.race([
+        persistirAbandonoTicket(pool, t.id),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout de 20s')), 20000)),
+      ]);
+      processados++;
+    } catch (e) {
+      console.error('[CS] persistirAbandonoTicket falhou/travou pro ticket', t.id, '-', e.message);
+    }
   }
   return { candidatos: pendentes.length, processados };
 }
