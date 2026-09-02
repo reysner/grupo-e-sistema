@@ -5,7 +5,7 @@
  * Coração de todos os 5 relógios de SLA.
  * Calcula minutos ÚTEIS entre dois instantes, congelando o relógio:
  *   - fora do expediente
- *   - no almoço (11:30–12:30)
+ *   - no almoço (11:00–13:00)
  *   - em fins de semana
  *   - em feriados
  * Pontos facultativos CONTAM normalmente (decisão do escritório).
@@ -19,11 +19,11 @@ const TZ_OFFSET = '-03:00';
 // ── Expediente padrão por dia da semana (0=dom … 6=sáb) ───────────────────────
 const EXPEDIENTE_PADRAO = {
   0: [],                                       // domingo
-  1: [['07:30', '11:30'], ['12:30', '17:30']], // segunda
-  2: [['07:30', '11:30'], ['12:30', '17:30']], // terça
-  3: [['07:30', '11:30'], ['12:30', '17:30']], // quarta
-  4: [['07:30', '11:30'], ['12:30', '17:30']], // quinta
-  5: [['08:00', '11:30'], ['12:30', '17:00']], // sexta
+  1: [['07:30', '11:00'], ['13:00', '17:30']], // segunda
+  2: [['07:30', '11:00'], ['13:00', '17:30']], // terça
+  3: [['07:30', '11:00'], ['13:00', '17:30']], // quarta
+  4: [['07:30', '11:00'], ['13:00', '17:30']], // quinta
+  5: [['08:00', '11:00'], ['13:00', '17:00']], // sexta
   6: [],                                       // sábado
 };
 
