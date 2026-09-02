@@ -6407,9 +6407,16 @@ const Gamificacao = (() => {
     // pontuado ainda, diferente do resto deste relatório.
     const abandonoValidos = (abandono || []).filter(a => a.status !== 'indevida');
     const abandonoHtml = abandonoValidos.length
-      ? '<div style="background:#fff5f5;border-radius:10px;padding:14px 16px;margin-bottom:14px">' +
-        '<p style="font-size:12px;font-weight:700;color:#c0362c;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">🚪 ' + abandonoValidos.length + ' incidente(s) de abandono de atendimento</p>' +
-        abandonoValidos.map(a => '<div style="font-size:12.5px;padding:3px 0">#' + a.zappy_id + ' — ' + (a.empresa_texto || '—') + ' — ' + new Date(a.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) + '</div>').join('') +
+      ? '<div style="background:#fff5f5;border:1px solid #fed7d7;border-radius:10px;padding:14px 16px;margin-bottom:14px">' +
+        '<p style="font-size:12px;font-weight:700;color:#c0362c;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">🚪 ' + abandonoValidos.length + ' incidente(s) de abandono de atendimento</p>' +
+        '<div class="table-wrap"><table class="data-table" style="background:#fff"><thead><tr><th>Ticket</th><th>Cliente</th><th>Dia</th><th>Última mensagem do cliente sem resposta</th></tr></thead><tbody>' +
+        abandonoValidos.map(a =>
+          '<tr><td>#' + a.zappy_id + '</td>' +
+          '<td>' + (a.empresa_texto || '—') + '</td>' +
+          '<td style="white-space:nowrap">' + new Date(a.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) + '</td>' +
+          '<td style="font-size:12px;color:var(--gray-500)">' + (a.ultima_mensagem_texto || '—').slice(0, 100) + '</td></tr>'
+        ).join('') + '</tbody></table></div>' +
+        '<p style="font-size:11.5px;color:var(--gray-400);margin-top:8px">Revise cada um em "🚪 Revisar Abandono" se algum não deveria contar.</p>' +
         '</div>'
       : '';
 

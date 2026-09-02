@@ -317,7 +317,7 @@ body { font-family: var(--font); background: var(--gray-50); color: var(--gray-7
 }
 /* Variante larga — pra conteúdo com tabela (ex.: Revisar notas baixas,
    prévia do Auto-preencher) que fica espremido nos 440px padrão. */
-.modal-box.wide { max-width: 760px; }
+.modal-box.wide { max-width: 960px; }
 /* #modal-body normalmente vira um grid (display:grid no bodyHTML de cada
    chamador) — por padrão um item de grid/flex tem min-width:auto, então
    uma tabela larga em qualquer nível dentro dele EMPURRA o grid pra fora
