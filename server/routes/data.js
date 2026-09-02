@@ -6,7 +6,7 @@ const { requireAuth, requireAdmin, hashPassword, revokeAllUserTokens } = require
 const acessoriasClient = require('../acessoriasClient');
 const { criarClienteZappy } = require('../cs/zappyClient');
 const { ensurePontuacaoSchema, recalcularPontosDoMes, clamp } = require('../cs/pontuacao');
-const { ensureAbandonoSchema } = require('../cs/abandono');
+const { ensureAbandonoSchema, recalcularAbandonoDoMes } = require('../cs/abandono');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -3222,6 +3222,11 @@ router.post('/gam/recalcular-pontos', requireAdmin, async (req, res) => {
   try {
     const resultado = await recalcularPontosDoMes(pool, mes);
     console.log('[gam] Recálculo de pontos concluído:', mes, resultado);
+    // Recalcula abandono TAMBÉM, forçando (não só o que mudou) — senão um
+    // ticket já checado antes de uma correção na regra fica preso pra
+    // sempre com o resultado antigo (achado do Reysner, 02/09/2026).
+    const resultadoAbandono = await recalcularAbandonoDoMes(pool, mes);
+    console.log('[gam] Recálculo de abandono concluído:', mes, resultadoAbandono);
   } catch (e) {
     console.error('[gam] Recálculo de pontos falhou:', e);
   } finally {

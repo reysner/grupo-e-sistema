@@ -235,7 +235,43 @@ async function recalcularAbandonoPendentes(pool, { limite = 30 } = {}) {
   return { candidatos: pendentes.length, processados };
 }
 
+/**
+ * Reprocessa TODOS os tickets de cliente com aceite naquele mês, IGNORANDO
+ * o "já foi checado" — necessário sempre que a fórmula de detecção muda
+ * (mesmo padrão de recalcularPontosDoMes em pontuacao.js), senão um ticket
+ * já checado fica preso pra sempre com o resultado calculado pela versão
+ * antiga. O ciclo periódico (recalcularAbandonoPendentes) só pega ticket
+ * NOVO ou que mudou — não repega um já checado só porque o código mudou.
+ * Achado do Reysner, 02/09/2026: corrigi 2 vezes a regra de detecção e os
+ * mesmos 3 falsos positivos continuavam voltando, porque nada forçava
+ * essas linhas específicas a serem recalculadas.
+ */
+async function recalcularAbandonoDoMes(pool, mes) {
+  if (!mes || !/^\d{4}-\d{2}$/.test(mes)) throw new Error('mes deve estar no formato AAAA-MM');
+  await ensureAbandonoSchema(pool);
+  const { rows } = await pool.query(
+    `SELECT id FROM cs_tickets
+      WHERE aceite IS NOT NULL
+        AND TO_CHAR(COALESCE(encerramento, abertura), 'YYYY-MM') = $1`,
+    [mes]
+  );
+  let processados = 0;
+  for (const t of rows) {
+    try {
+      await Promise.race([
+        persistirAbandonoTicket(pool, t.id),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout de 20s')), 20000)),
+      ]);
+      processados++;
+    } catch (e) {
+      console.error('[CS] recalcularAbandonoDoMes: falhou/travou pro ticket', t.id, '-', e.message);
+    }
+  }
+  return { candidatos: rows.length, processados };
+}
+
 module.exports = {
   detectarIncidentesAbandono, pareceMensagemDeFechamento, FRASES_FECHAMENTO,
+  recalcularAbandonoDoMes,
   ensureAbandonoSchema, persistirAbandonoTicket, recalcularAbandonoPendentes,
 };
