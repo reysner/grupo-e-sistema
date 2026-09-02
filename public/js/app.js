@@ -6354,36 +6354,62 @@ const Gamificacao = (() => {
   async function _gerarRelatorioTodos(mes) {
     const box = document.getElementById('gam-rel-resultado');
     box.innerHTML = 'Carregando...';
-    const [resRanking, resComp] = await Promise.all([
-      fetch('/api/public/gamificacao?mes=' + mes),
+    // Calcula a nota final AQUI, em cima do mesmo dry-run que dá a base e os
+    // bônus — nunca lê o ranking público (gam_notas), que só é atualizado
+    // pelas 3 janelas do dia ou por um "Aplicar essas notas" manual. Antes
+    // este relatório misturava base/bônus ao vivo com uma nota final
+    // possivelmente velha, e podia sair inconsistente entre si (ex.:
+    // Guilherme marcado indevida na hora ainda aparecia com a nota final
+    // antiga, empatado ou até na frente de alguém com base maior — achado
+    // do Reysner, 02/09/2026). Reproduz a MESMA fórmula/desempate de
+    // publicRouter.get('/gamificacao') em data.js, só que com os números do
+    // instante em que o relatório é gerado.
+    const [resPeso, resComp] = await Promise.all([
+      fetch('/api/data/gam/config', { headers: { Authorization: 'Bearer ' + _tk() } }),
       fetch('/api/data/gam/notas/auto-preencher', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
         body: JSON.stringify({ mes, dryRun: true })
       }),
     ]);
-    if (!resRanking || !resRanking.ok || !resComp || !resComp.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao gerar relatório.</p>'; return; }
-    const ranking = (await resRanking.json()).ranking || [];
+    if (!resPeso || !resPeso.ok || !resComp || !resComp.ok) { box.innerHTML = '<p style="color:#e53e3e">Erro ao gerar relatório.</p>'; return; }
+    const pesoMinimo = (await resPeso.json()).peso_minimo ?? 10;
     const comp = (await resComp.json()).resultados || [];
-    const compPorId = Object.fromEntries(comp.map(c => [c.colaborador_id, c]));
 
-    if (!ranking.length) { box.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum colaborador com nota em ' + _mesLabel(mes) + '.</p>'; return; }
+    const comAval = comp.filter(c => c.avaliacoes > 0 && c.media_individual != null);
+    if (!comAval.length) { box.innerHTML = '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum colaborador com nota em ' + _mesLabel(mes) + '.</p>'; return; }
+    const mediaGeral = comAval.reduce((s, c) => s + Number(c.media_individual), 0) / comAval.length;
 
-    _relatorioTodosData = ranking.map((r, i) => {
-      const c = compPorId[r.id] || {};
-      return {
-        colaboradorId: r.id,
-        posicao: i + 1, nome: r.nome, avaliacoes: r.avaliacoes,
-        mediaBase: c.mediaBase, bonusTransferencia: c.bonusTransferencia,
-        bonusAceite: c.bonusAceite, bonusFinalizar: c.bonusFinalizar,
-        notaFinal: r.media,
-      };
+    const comNotaFinal = comAval.map(c => {
+      const media = Number(c.media_individual), aval = c.avaliacoes;
+      const notaFinal = ((media * aval) + (mediaGeral * pesoMinimo)) / (aval + pesoMinimo);
+      return { ...c, notaFinalNum: notaFinal };
     });
+    const menorNotaFinal = Math.min(...comNotaFinal.map(c => c.notaFinalNum));
+    const semAval = comp.filter(c => !(c.avaliacoes > 0 && c.media_individual != null))
+      .map(c => ({ ...c, notaFinalNum: menorNotaFinal }));
+
+    const todosOrdenados = [...comNotaFinal, ...semAval].sort((a, b) => {
+      const diff = b.notaFinalNum - a.notaFinalNum;
+      if (Math.abs(diff) >= 0.005) return diff;
+      if ((b.avaliacoes || 0) !== (a.avaliacoes || 0)) return (b.avaliacoes || 0) - (a.avaliacoes || 0);
+      const diffMi = Number(b.media_individual || 0) - Number(a.media_individual || 0);
+      if (Math.abs(diffMi) >= 0.005) return diffMi;
+      return a.nome.localeCompare(b.nome, 'pt-BR');
+    });
+
+    _relatorioTodosData = todosOrdenados.map((c, i) => ({
+      colaboradorId: c.colaborador_id,
+      posicao: i + 1, nome: c.nome, avaliacoes: c.avaliacoes || 0,
+      mediaBase: c.mediaBase, bonusTransferencia: c.bonusTransferencia,
+      bonusAceite: c.bonusAceite, bonusFinalizar: c.bonusFinalizar,
+      notaFinal: c.notaFinalNum.toFixed(2),
+    }));
 
     const fmtBonus = v => v === undefined ? '—' : (Number(v) === 0 ? '0,00' : (Number(v) > 0 ? '+' : '') + Number(v).toFixed(2));
     const corBonus = v => v === undefined ? 'var(--gray-400)' : (Number(v) < 0 ? '#c0362c' : (Number(v) > 0 ? '#38a169' : 'var(--gray-400)'));
     box.innerHTML =
-      '<p style="font-size:12.5px;color:var(--gray-500);margin:10px 0">' + ranking.length + ' colaborador(es) com nota em ' + _mesLabel(mes) + '. Nota final já com o ajuste de peso mínimo (mesma fórmula do ranking público).</p>' +
+      '<p style="font-size:12.5px;color:var(--gray-500);margin:10px 0">' + _relatorioTodosData.length + ' colaborador(es) com nota em ' + _mesLabel(mes) + '. Nota final calculada agora (mesma fórmula de peso mínimo do ranking público), não depende de ninguém ter clicado "Aplicar essas notas" antes.</p>' +
       '<div class="table-wrap" style="max-height:440px;overflow-y:auto"><table class="data-table">' +
       '<thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Bônus Transf.</th><th>Bônus Aceite</th><th>Bônus /Finalizar</th><th>Nota Final</th></tr></thead><tbody>' +
       _relatorioTodosData.map(r =>
