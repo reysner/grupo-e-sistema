@@ -3621,7 +3621,9 @@ router.get('/gam/ticket-busca', requireAdmin, async (req, res) => {
 
     const { rows: ticketRows } = await pool.query(
       `SELECT id, zappy_id, empresa_texto, encerramento, nota_avaliacao AS nota_cliente,
-              revisao_nota_status, revisao_nota_por, revisao_nota_em
+              revisao_nota_status, revisao_nota_por, revisao_nota_em,
+              analista, analista_id, analista_anterior, analista_anterior_id, transferencia, aceite,
+              abandono_calculado_em
          FROM cs_tickets WHERE zappy_id = $1`,
       [zappyId]
     );
