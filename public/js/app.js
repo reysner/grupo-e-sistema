@@ -6513,11 +6513,13 @@ const Gamificacao = (() => {
     const fmtBonus = v => v === undefined ? '—' : (Number(v) === 0 ? '0,00' : (Number(v) > 0 ? '+' : '') + Number(v).toFixed(2));
     const corBonus = v => v === undefined ? 'var(--gray-400)' : (Number(v) < 0 ? '#c0362c' : (Number(v) > 0 ? '#38a169' : 'var(--gray-400)'));
     box.innerHTML =
-      '<p style="font-size:12.5px;color:var(--gray-500);margin:10px 0">' + _relatorioTodosData.length + ' colaborador(es) com nota em ' + _mesLabel(mes) + '. Nota final calculada agora (mesma fórmula de peso mínimo do ranking público), não depende de ninguém ter clicado "Aplicar essas notas" antes.</p>' +
+      '<p style="font-size:12.5px;color:var(--gray-500);margin:10px 0">' + _relatorioTodosData.length + ' colaborador(es) com nota em ' + _mesLabel(mes) + '. Nota final calculada agora (mesma fórmula de peso mínimo do ranking público), não depende de ninguém ter clicado "Aplicar essas notas" antes. Quem tem algum desconto tem uma 🔍 pra ver os tickets.</p>' +
       '<div class="table-wrap" style="max-height:440px;overflow-y:auto"><table class="data-table">' +
-      '<thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Bônus Transf.</th><th>Bônus Aceite</th><th>Bônus /Finalizar</th><th>Desc. Abandono</th><th>Nota Final</th></tr></thead><tbody>' +
-      _relatorioTodosData.map(r =>
-        `<tr>` +
+      '<thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Bônus Transf.</th><th>Bônus Aceite</th><th>Bônus /Finalizar</th><th>Desc. Abandono</th><th>Nota Final</th><th></th></tr></thead><tbody>' +
+      _relatorioTodosData.map(r => {
+        const temDesconto = [r.bonusTransferencia, r.bonusAceite, r.bonusFinalizar, r.bonusAbandono].some(v => Number(v) < 0);
+        const idLinha = 'gam-todos-det-' + r.colaboradorId;
+        return `<tr>` +
           `<td>${r.posicao}º</td>` +
           `<td>${r.nome}</td>` +
           `<td>${r.avaliacoes}</td>` +
@@ -6527,8 +6529,53 @@ const Gamificacao = (() => {
           `<td style="color:${corBonus(r.bonusFinalizar)};font-weight:700">${fmtBonus(r.bonusFinalizar)}</td>` +
           `<td style="color:${corBonus(r.bonusAbandono)};font-weight:700">${fmtBonus(r.bonusAbandono)}</td>` +
           `<td style="font-weight:800">${r.notaFinal}</td>` +
-        `</tr>`
-      ).join('') + '</tbody></table></div>';
+          `<td>${temDesconto ? `<button class="btn btn-sm btn-ghost" onclick="Gamificacao._toggleDetalheTodos('${r.colaboradorId}','${mes}')" title="Ver tickets que geraram os descontos">🔍</button>` : ''}</td>` +
+        `</tr>` +
+        (temDesconto ? `<tr id="${idLinha}" style="display:none"><td colspan="10" style="background:var(--gray-50,#f7fafc)"></td></tr>` : '');
+      }).join('') + '</tbody></table></div>';
+  }
+
+  // Expande/recolhe, na própria tela "Todos", os tickets por trás dos
+  // descontos de um colaborador — sem precisar gerar o PDF inteiro nem
+  // trocar pro modo individual. Busca só na hora que abre (lazy).
+  async function _toggleDetalheTodos(colaboradorId, mes) {
+    const linha = document.getElementById('gam-todos-det-' + colaboradorId);
+    if (!linha) return;
+    if (linha.style.display !== 'none') { linha.style.display = 'none'; return; }
+    linha.style.display = '';
+    const celula = linha.querySelector('td');
+    if (celula.dataset.carregado) return;
+    celula.style.padding = '10px 14px';
+    celula.innerHTML = '<span style="font-size:12px;color:var(--gray-400)">Carregando tickets...</span>';
+    const res = await fetch('/api/data/gam/relatorio-descontos?mes=' + mes + '&colaborador_id=' + colaboradorId, { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { celula.innerHTML = '<span style="color:#e53e3e;font-size:12px">Erro ao carregar.</span>'; return; }
+    const { tickets, abandono } = await res.json();
+    const temDesconto = t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0;
+    const ticketsComDesconto = (tickets || []).filter(temDesconto);
+    const abandonoValidos = (abandono || []).filter(a => a.status !== 'indevida');
+
+    let html = '';
+    if (ticketsComDesconto.length) {
+      html += '<div class="table-wrap" style="margin-bottom:' + (abandonoValidos.length ? '10px' : '0') + '"><table class="data-table" style="background:#fff">' +
+        '<thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Vel.</th><th>/Finalizar</th><th>Nota Final</th><th>Revisão</th></tr></thead><tbody>' +
+        ticketsComDesconto.map(t =>
+          '<tr><td>#' + t.zappy_id + '</td><td>' + (t.empresa_texto || '—') + '</td><td>' + t.papel + '</td>' +
+          '<td style="' + (parseFloat(t.ajuste_velocidade) < 0 ? 'color:#c0362c;font-weight:700' : '') + '">' + t.ajuste_velocidade + '</td>' +
+          '<td style="' + (parseFloat(t.ajuste_finalizar) < 0 ? 'color:#c0362c;font-weight:700' : '') + '">' + t.ajuste_finalizar + '</td>' +
+          '<td><b>' + t.nota_final + '</b></td>' +
+          '<td style="font-size:11px;color:var(--gray-400)">' + (t.revisao_nota_status || 'pendente') + '</td></tr>'
+        ).join('') + '</tbody></table></div>';
+    }
+    if (abandonoValidos.length) {
+      html += '<div class="table-wrap"><table class="data-table" style="background:#fff"><thead><tr><th>Ticket (abandono)</th><th>Cliente</th><th>Dia</th><th>Última mensagem sem resposta</th></tr></thead><tbody>' +
+        abandonoValidos.map(a =>
+          '<tr><td>#' + a.zappy_id + '</td><td>' + (a.empresa_texto || '—') + '</td>' +
+          '<td>' + new Date(a.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) + '</td>' +
+          '<td style="font-size:12px;color:var(--gray-500)">' + (a.ultima_mensagem_texto || '—').slice(0, 80) + '</td></tr>'
+        ).join('') + '</tbody></table></div>';
+    }
+    celula.innerHTML = html || '<span style="font-size:12px;color:var(--gray-400)">Nenhum ticket com desconto encontrado.</span>';
+    celula.dataset.carregado = '1';
   }
 
   function exportarRelatorioDescontosPDF() {
@@ -6829,7 +6876,7 @@ const Gamificacao = (() => {
     abrirRevisaoFinalizar, marcarRevisaoFinalizar, _trocarStatusRevisaoFinalizar,
     abrirRevisaoAbandono, marcarRevisaoAbandono, _trocarStatusRevisaoAbandono,
     buscarTicketRevisao, marcarRevisaoBusca,
-    abrirRelatorioDescontos, gerarRelatorioDescontos, exportarRelatorioDescontosCSV, exportarRelatorioDescontosPDF,
+    abrirRelatorioDescontos, gerarRelatorioDescontos, exportarRelatorioDescontosCSV, exportarRelatorioDescontosPDF, _toggleDetalheTodos,
     recalcularPontos,
   };
 })();
