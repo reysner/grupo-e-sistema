@@ -6519,7 +6519,7 @@ const Gamificacao = (() => {
     box.innerHTML =
       '<p style="font-size:12.5px;color:var(--gray-500);margin:10px 0">' + _relatorioTodosData.length + ' colaborador(es) com nota em ' + _mesLabel(mes) + '. Nota final calculada agora (mesma fórmula de peso mínimo do ranking público), não depende de ninguém ter clicado "Aplicar essas notas" antes. Quem tem algum desconto tem uma 🔍 pra ver os tickets.</p>' +
       '<div class="table-wrap" style="max-height:440px;overflow-y:auto"><table class="data-table">' +
-      '<thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Bônus Transf.</th><th>Bônus Aceite</th><th>Bônus /Finalizar</th><th>Desc. Abandono</th><th>Nota Final</th><th></th></tr></thead><tbody>' +
+      '<thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Desc. Transf.</th><th>Desc. Aceite</th><th>Desc. /Finalizar</th><th>Desc. Abandono</th><th>Nota Final</th><th></th></tr></thead><tbody>' +
       _relatorioTodosData.map(r => {
         const temDesconto = [r.bonusTransferencia, r.bonusAceite, r.bonusFinalizar, r.bonusAbandono].some(v => Number(v) < 0);
         const idLinha = 'gam-todos-det-' + r.colaboradorId;
@@ -6726,7 +6726,7 @@ const Gamificacao = (() => {
     <div class="capa">
       <h1>Grupo-E — ${titulo}</h1>
       <p class="sub">Comparativo de todos os colaboradores com nota no mês, já com o ajuste de peso mínimo (mesma fórmula do ranking público). Gerado em ${new Date().toLocaleString('pt-BR')}.</p>
-      <table><thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Bônus Transf.</th><th>Bônus Aceite</th><th>Bônus /Finalizar</th><th>Desc. Abandono</th><th>Nota Final</th></tr></thead>
+      <table><thead><tr><th>#</th><th>Colaborador</th><th>Aval.</th><th>Nota Base</th><th>Desc. Transf.</th><th>Desc. Aceite</th><th>Desc. /Finalizar</th><th>Desc. Abandono</th><th>Nota Final</th></tr></thead>
       <tbody>${capaRows}</tbody></table>
       <p class="rodape">A partir da próxima página: uma seção detalhada por colaborador, na mesma ordem do ranking acima.</p>
     </div>
@@ -6757,7 +6757,7 @@ const Gamificacao = (() => {
   function _exportarRelatorioTodosCSV() {
     if (!_relatorioTodosData.length) { App.Toast.err('Gere o relatório primeiro.'); return; }
     const cols = ['posicao', 'nome', 'avaliacoes', 'mediaBase', 'bonusTransferencia', 'bonusAceite', 'bonusFinalizar', 'bonusAbandono', 'notaFinal'];
-    const labels = { posicao: 'Posição', nome: 'Colaborador', avaliacoes: 'Avaliações', mediaBase: 'Nota Base', bonusTransferencia: 'Bônus Transferência', bonusAceite: 'Bônus Aceite', bonusFinalizar: 'Bônus /Finalizar', bonusAbandono: 'Desconto Abandono', notaFinal: 'Nota Final' };
+    const labels = { posicao: 'Posição', nome: 'Colaborador', avaliacoes: 'Avaliações', mediaBase: 'Nota Base', bonusTransferencia: 'Desc. Transferência', bonusAceite: 'Desc. Aceite', bonusFinalizar: 'Desc. /Finalizar', bonusAbandono: 'Desconto Abandono', notaFinal: 'Nota Final' };
     const header = cols.map(c => labels[c]).join(';');
     const rows = _relatorioTodosData.map(r => cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(';'));
     const csv = [header, ...rows].join('\n');
