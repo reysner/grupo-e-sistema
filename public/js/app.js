@@ -5876,6 +5876,34 @@ const Gamificacao = (() => {
     box.innerHTML = html;
   }
 
+  // Aplica direto (sem prévia) — pedido do Reysner, 03/09/2026: ele estava
+  // toda hora tendo que pedir pro Claude rodar "Aplicar essas notas" pra
+  // sincronizar gam_notas (o ranking/tabela travam nesses valores gravados
+  // até esse endpoint rodar). Chama o MESMO endpoint dryRun:false de sempre.
+  async function sincronizarNotasAgora(btn) {
+    const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
+    if (!confirm('Aplicar agora a média mais recente do Zappy para ' + _mesLabel(mes) + ' no ranking? Isso grava direto, sem passar pela prévia.')) return;
+    const textoOriginal = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Sincronizando...'; }
+    try {
+      const res = await fetch('/api/data/gam/notas/auto-preencher', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+        body: JSON.stringify({ mes, dryRun: false })
+      });
+      if (res && res.ok) {
+        App.Toast.ok('Notas de ' + _mesLabel(mes) + ' sincronizadas!');
+        await _populateMesFilter();
+        await loadNotas();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        App.Toast.err(err.error || 'Erro ao sincronizar.');
+      }
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = textoOriginal || '⚡ Sincronizar Notas Agora'; }
+    }
+  }
+
   // ── Busca direta por número de ticket (reaproveitada nas 4 telas de revisão
   // abaixo) — pedido do Reysner, 28/08/2026: às vezes já se sabe qual ticket
   // corrigir e não quer catar na lista filtrada por pendente/devida/indevida.
@@ -6875,7 +6903,7 @@ const Gamificacao = (() => {
     vincularLogin, salvarVinculoLogin,
     abrirCriarLoginsEmLote, confirmarCriarLoginsEmLote,
     abrirMapaQualificacao, salvarMapaQualificacao,
-    abrirAutoPreencher, confirmarAutoPreencher,
+    abrirAutoPreencher, confirmarAutoPreencher, sincronizarNotasAgora,
     abrirRevisaoNotas, marcarRevisao, _trocarStatusRevisao,
     abrirRevisaoVelocidade, marcarRevisaoVelocidade, _trocarStatusRevisaoVelocidade,
     abrirRevisaoAceite, marcarRevisaoAceite, _trocarStatusRevisaoAceite,
