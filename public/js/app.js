@@ -5850,7 +5850,7 @@ const Gamificacao = (() => {
     App.Modal.open('Auto-preencher notas do mês (Zappy)', '<div style="display:grid;gap:14px">' +
       '<p style="font-size:13px;color:var(--gray-500)">Calcula a média mensal automaticamente a partir das qualificações do Zappy, para ' + _mesLabel(mes) + '. Só afeta colaboradores ativos vinculados a um usuário do Zappy — nada é gravado até você clicar em "Aplicar".</p>' +
       '<div id="gam-auto-preview" style="min-height:60px;display:flex;align-items:center;justify-content:center;color:var(--gray-400)">Calculando prévia...</div>' +
-    '</div>', null, { wide: true });
+    '</div>', null, { wide: true, noFooter: true });
 
     const res = await fetch('/api/data/gam/notas/auto-preencher', {
       method: 'POST',
@@ -5863,6 +5863,13 @@ const Gamificacao = (() => {
     const { resultados, rotulosNovos, aviso } = await res.json();
     if (aviso) { box.innerHTML = '<p style="color:var(--gray-500)">' + aviso + '</p>'; return; }
 
+    // Sai do estado "Calculando prévia..." (que era centralizado em flex-row)
+    // pra bloco normal — senão a tabela e o botão ficam lado a lado espremidos
+    // em vez de empilhados.
+    box.removeAttribute('style');
+    box.style.maxHeight = '55vh';
+    box.style.overflowY = 'auto';
+
     let html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Colaborador</th><th>Média calculada</th><th>Avaliações</th><th>Fonte</th></tr></thead><tbody>' +
       resultados.map(r => r.erro
         ? '<tr><td>' + r.nome + '</td><td colspan="3" style="color:#e53e3e;font-size:12px">' + r.erro + '</td></tr>'
@@ -5872,8 +5879,15 @@ const Gamificacao = (() => {
     if (rotulosNovos && rotulosNovos.length) {
       html += '<p style="color:#c9a227;font-size:12.5px;margin-top:10px">⚠️ Rótulo(s) novo(s) sem nota mapeada (ignorados no cálculo agora): ' + rotulosNovos.join(', ') + '. Configure em "Mapa de Qualificação" e rode de novo.</p>';
     }
-    html += '<button class="btn btn-primary" style="margin-top:14px" data-mes="' + mes + '" onclick="Gamificacao.confirmarAutoPreencher(this.dataset.mes)">✅ Aplicar essas notas</button>';
     box.innerHTML = html;
+
+    // Botão de ação fica FORA da área com scroll, sempre visível — presa
+    // dentro de #gam-auto-preview ele rolava junto com a tabela.
+    const acoes = document.createElement('div');
+    acoes.style.cssText = 'display:flex;gap:10px;margin-top:14px';
+    acoes.innerHTML = '<button class="btn btn-ghost" onclick="App.Modal.close()">Cancelar</button>' +
+      '<button class="btn btn-primary" data-mes="' + mes + '" onclick="Gamificacao.confirmarAutoPreencher(this.dataset.mes)">✅ Aplicar essas notas</button>';
+    box.insertAdjacentElement('afterend', acoes);
   }
 
   // Aplica direto (sem prévia) — pedido do Reysner, 03/09/2026: ele estava
