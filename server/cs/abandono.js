@@ -185,6 +185,18 @@ async function persistirAbandonoTicket(pool, ticketId) {
   }
 
   for (const inc of incidentes) {
+    // Atribui a quem estava DE VERDADE com o ticket na hora do incidente,
+    // não a quem está com ele agora — um ticket pode ser transferido DEPOIS
+    // do incidente (às vezes por causa dele, como o #47957: a Reysner só
+    // passou pro Max no dia seguinte, depois de notar que o Bruno tinha
+    // faltado — o abandono é do Bruno, não do Max). Só cobre 1 transferência
+    // (cs_tickets só guarda o par atual/anterior, não o histórico completo)
+    // — mesma limitação estrutural já documentada no resto do sistema.
+    const antesDaTransferencia = ticket.transferencia &&
+      new Date(inc.ultimaMensagemCliente) < new Date(ticket.transferencia);
+    const analista = antesDaTransferencia ? (ticket.analista_anterior || ticket.analista) : ticket.analista;
+    const analistaId = antesDaTransferencia ? (ticket.analista_anterior_id || ticket.analista_id) : ticket.analista_id;
+
     await pool.query(
       `INSERT INTO gam_abandono_incidentes
          (ticket_id, data, mes, analista, analista_id, ultima_mensagem_cliente, ultima_mensagem_texto)
@@ -192,7 +204,7 @@ async function persistirAbandonoTicket(pool, ticketId) {
        ON CONFLICT (ticket_id, data) DO UPDATE SET
          mes = $3, analista = $4, analista_id = $5,
          ultima_mensagem_cliente = $6, ultima_mensagem_texto = $7`,
-      [ticketId, inc.data, inc.data.slice(0, 7), ticket.analista, ticket.analista_id,
+      [ticketId, inc.data, inc.data.slice(0, 7), analista, analistaId,
        inc.ultimaMensagemCliente, inc.ultimaMensagemTexto]
     );
   }
