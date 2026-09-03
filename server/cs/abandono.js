@@ -37,13 +37,20 @@ function normalizarTexto(s) {
 // precisa ser curta E bater num desses padrões, pra não confundir com
 // "obrigado, mas ainda preciso de ajuda com..." (isso continua pendente).
 const FRASES_FECHAMENTO = [
-  'ok', 'okay', 'blz', 'beleza', 'certo', 'perfeito', 'show', 'entendido', 'entendi',
-  'combinado', 'fechado', 'combinado entao', 'combinamos',
-  'obrigado', 'obrigada', 'obg', 'valeu', 'agradeco', 'agradecida', 'agradecido',
-  'muito obrigado', 'muito obrigada', 'tudo bem obrigado', 'tudo bem obrigada',
-  'ok obrigado', 'ok obrigada', 'de nada', 'por nada', 'bom dia', 'boa tarde', 'boa noite',
+  // ── Confirmação/concordância ("entendi, sem pedido novo") ─────────────────
+  'ok', 'okay', 'blz', 'beleza', 'certo', 'tudo certo', 'ta certo', 'ta bom', 'ta otimo',
+  'perfeito', 'show', 'top', 'joia', 'maravilha', 'excelente', 'otimo', 'otima',
+  'entendido', 'entendi', 'compreendido', 'compreendi', 'ata', 'ah ta', 'sim senhor', 'sim senhora',
+  'combinado', 'combinamos', 'fechado', 'de acordo', 'confirmado', 'positivo',
+  'isso mesmo', 'isso ai', 'correto', 'recebido', 'sem problema', 'sem problemas', 'tranquilo',
+  // ── Agradecimento ──────────────────────────────────────────────────────────
+  'obrigado', 'obrigada', 'obg', 'vlw', 'valeu', 'agradeco', 'agradecida', 'agradecido',
+  'muito obrigado', 'muito obrigada', 'muito grato', 'muito grata', 'grato', 'grata',
+  'tudo bem obrigado', 'tudo bem obrigada', 'ok obrigado', 'ok obrigada', 'de nada', 'por nada',
+  // ── Saudação/despedida sem pedido junto ─────────────────────────────────────
+  'bom dia', 'boa tarde', 'boa noite', 'ate mais', 'ate logo', 'falou', 'tchau', 'abs',
   'figurinha', // rótulo que o próprio Zappy usa pra sticker sem legenda — mesmo espírito de um 👍
-  '👍', '🙏', '✅',
+  '👍', '🙏', '✅', '👌', '🙌', '😊',
 ];
 const LIMITE_TAMANHO_FECHAMENTO = 40; // caracteres — mensagem curta, sem pedido novo junto
 
