@@ -6423,13 +6423,13 @@ const Gamificacao = (() => {
     if (aviso) { box.innerHTML = composicaoHtml + abandonoHtml + '<p style="color:var(--gray-500)">' + aviso + '</p>'; return; }
     if (!tickets.length) { box.innerHTML = composicaoHtml + abandonoHtml + '<p style="text-align:center;color:var(--gray-400);padding:16px">Nenhum ticket pontuado pra ' + colaborador + ' em ' + _mesLabel(mes) + '.</p>'; return; }
 
-    const comDesconto = tickets.filter(t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0);
+    const comDesconto = tickets.filter(t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0 || parseFloat(t.ajuste_aceite) < 0);
     box.innerHTML = composicaoHtml + abandonoHtml +
       '<p style="font-size:12.5px;color:var(--gray-500);margin:10px 0">' + comDesconto.length + ' de ' + tickets.length + ' ticket(s) com desconto de métrica esse mês.</p>' +
       '<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">' +
-      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota Cliente</th><th>Vel.</th><th>/Finalizar</th><th>Reabertura</th><th>Nota Final</th><th>Revisão</th></tr></thead><tbody>' +
+      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota Cliente</th><th>Vel.</th><th>Aceite</th><th>/Finalizar</th><th>Reabertura</th><th>Nota Final</th><th>Revisão</th></tr></thead><tbody>' +
       tickets.map(t => {
-        const temDesconto = parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0;
+        const temDesconto = parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0 || parseFloat(t.ajuste_aceite) < 0;
         // O ajuste de velocidade só existe nos tiers +2/+1/-1 — um 0.0 aqui
         // nunca é "neutro calculado", é sempre "não tinha relógio de SLA pra
         // medir" (ex.: ticket aberto pelo próprio escritório). Deixa isso
@@ -6437,12 +6437,16 @@ const Gamificacao = (() => {
         const velTexto = parseFloat(t.ajuste_velocidade) === 0
           ? '<span style="color:var(--gray-400);font-style:italic">sem dado</span>'
           : t.ajuste_velocidade;
+        const aceiteTexto = t.ajuste_aceite == null
+          ? '<span style="color:var(--gray-400);font-style:italic">n/a</span>'
+          : t.ajuste_aceite;
         return `<tr style="${temDesconto ? 'background:#fff5f5' : ''}">` +
           `<td>#${t.zappy_id}</td>` +
           `<td>${t.empresa_texto || '—'}</td>` +
           `<td>${t.papel}</td>` +
           `<td>${t.nota_cliente ?? '—'}</td>` +
           `<td style="${parseFloat(t.ajuste_velocidade) < 0 ? 'color:#c0362c;font-weight:700' : ''}">${velTexto}</td>` +
+          `<td style="${parseFloat(t.ajuste_aceite) < 0 ? 'color:#c0362c;font-weight:700' : ''}">${aceiteTexto}</td>` +
           `<td>${t.ajuste_finalizar}</td>` +
           `<td style="${parseFloat(t.ajuste_reabertura) < 0 ? 'color:#c0362c;font-weight:700' : ''}">${t.ajuste_reabertura}</td>` +
           `<td style="font-weight:700">${t.nota_final}</td>` +
@@ -6550,17 +6554,18 @@ const Gamificacao = (() => {
     const res = await fetch('/api/data/gam/relatorio-descontos?mes=' + mes + '&colaborador_id=' + colaboradorId, { headers: { Authorization: 'Bearer ' + _tk() } });
     if (!res || !res.ok) { celula.innerHTML = '<span style="color:#e53e3e;font-size:12px">Erro ao carregar.</span>'; return; }
     const { tickets, abandono } = await res.json();
-    const temDesconto = t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0;
+    const temDesconto = t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0 || parseFloat(t.ajuste_aceite) < 0;
     const ticketsComDesconto = (tickets || []).filter(temDesconto);
     const abandonoValidos = (abandono || []).filter(a => a.status !== 'indevida');
 
     let html = '';
     if (ticketsComDesconto.length) {
       html += '<div class="table-wrap" style="margin-bottom:' + (abandonoValidos.length ? '10px' : '0') + '"><table class="data-table" style="background:#fff">' +
-        '<thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Vel.</th><th>/Finalizar</th><th>Nota Final</th><th>Revisão</th></tr></thead><tbody>' +
+        '<thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Vel.</th><th>Aceite</th><th>/Finalizar</th><th>Nota Final</th><th>Revisão</th></tr></thead><tbody>' +
         ticketsComDesconto.map(t =>
           '<tr><td>#' + t.zappy_id + '</td><td>' + (t.empresa_texto || '—') + '</td><td>' + t.papel + '</td>' +
           '<td style="' + (parseFloat(t.ajuste_velocidade) < 0 ? 'color:#c0362c;font-weight:700' : '') + '">' + t.ajuste_velocidade + '</td>' +
+          '<td style="' + (parseFloat(t.ajuste_aceite) < 0 ? 'color:#c0362c;font-weight:700' : '') + '">' + (t.ajuste_aceite ?? '—') + '</td>' +
           '<td style="' + (parseFloat(t.ajuste_finalizar) < 0 ? 'color:#c0362c;font-weight:700' : '') + '">' + t.ajuste_finalizar + '</td>' +
           '<td><b>' + t.nota_final + '</b></td>' +
           '<td style="font-size:11px;color:var(--gray-400)">' + (t.revisao_nota_status || 'pendente') + '</td></tr>'
@@ -6583,14 +6588,14 @@ const Gamificacao = (() => {
     if (!_relatorioDescontosData.length) { App.Toast.err('Gere o relatório primeiro.'); return; }
     const colaborador = _relatorioDescontosData[0].colaborador;
     const mes = document.getElementById('gam-rel-mes')?.value || '';
-    const comDesconto = _relatorioDescontosData.filter(t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0);
+    const comDesconto = _relatorioDescontosData.filter(t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0 || parseFloat(t.ajuste_aceite) < 0);
     const titulo = `Relatório de Descontos — ${colaborador} — ${_mesLabel(mes)}`;
     const velTexto = t => parseFloat(t.ajuste_velocidade) === 0 ? 'sem dado' : t.ajuste_velocidade;
     const rows = _relatorioDescontosData.map(t => {
-      const temDesconto = parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0;
+      const temDesconto = parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0 || parseFloat(t.ajuste_aceite) < 0;
       return `<tr${temDesconto ? ' style="background:#fdecec"' : ''}>` +
         `<td>#${t.zappy_id}</td><td>${t.empresa_texto || '—'}</td><td>${t.papel}</td>` +
-        `<td>${t.nota_cliente ?? '—'}</td><td>${velTexto(t)}</td><td>${t.ajuste_finalizar}</td>` +
+        `<td>${t.nota_cliente ?? '—'}</td><td>${velTexto(t)}</td><td>${t.ajuste_aceite ?? '—'}</td><td>${t.ajuste_finalizar}</td>` +
         `<td>${t.ajuste_reabertura}</td><td><b>${t.nota_final}</b></td><td>${t.revisao_nota_status || 'pendente'}</td></tr>`;
     }).join('');
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
@@ -6602,7 +6607,7 @@ const Gamificacao = (() => {
     @media print{body{margin:10px}}</style></head><body>
     <h1>Grupo-E — ${titulo}</h1>
     <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | ${comDesconto.length} de ${_relatorioDescontosData.length} ticket(s) com desconto de métrica</p>
-    <table><thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota Cliente</th><th>Vel.</th><th>/Finalizar</th><th>Reabertura</th><th>Nota Final</th><th>Revisão</th></tr></thead>
+    <table><thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota Cliente</th><th>Vel.</th><th>Aceite</th><th>/Finalizar</th><th>Reabertura</th><th>Nota Final</th><th>Revisão</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <script>window.onload=()=>{window.print();}<\/script></body></html>`;
     const win = window.open('', '_blank');
@@ -6630,7 +6635,7 @@ const Gamificacao = (() => {
 
     const mes = document.getElementById('gam-rel-mes')?.value || '';
     const token = _tk();
-    const temDesconto = t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0;
+    const temDesconto = t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0 || parseFloat(t.ajuste_aceite) < 0;
     const detalhes = await Promise.all(_relatorioTodosData.map(async r => {
       const res = await fetch('/api/data/gam/relatorio-descontos?mes=' + mes + '&colaborador_id=' + r.colaboradorId, { headers: { Authorization: 'Bearer ' + token } });
       const j = res && res.ok ? await res.json() : { tickets: [], abandono: [] };
@@ -6658,9 +6663,10 @@ const Gamificacao = (() => {
     };
     const secoesPessoas = detalhes.map(r => {
       const tabelaTickets = r.tickets.length
-        ? `<table class="tickets"><thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Vel.</th><th>/Finalizar</th><th>Nota Final</th></tr></thead><tbody>` +
+        ? `<table class="tickets"><thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Vel.</th><th>Aceite</th><th>/Finalizar</th><th>Nota Final</th></tr></thead><tbody>` +
           r.tickets.map(t => `<tr><td>#${t.zappy_id}</td><td>${t.empresa_texto || '—'}</td><td>${t.papel}</td>` +
             `<td class="${parseFloat(t.ajuste_velocidade) < 0 ? 'neg' : ''}">${t.ajuste_velocidade}</td>` +
+            `<td class="${parseFloat(t.ajuste_aceite) < 0 ? 'neg' : ''}">${t.ajuste_aceite ?? '—'}</td>` +
             `<td class="${parseFloat(t.ajuste_finalizar) < 0 ? 'neg' : ''}">${t.ajuste_finalizar}</td>` +
             `<td><b>${t.nota_final}</b></td></tr>`).join('') +
           `</tbody></table>`
