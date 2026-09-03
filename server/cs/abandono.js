@@ -38,6 +38,7 @@ function normalizarTexto(s) {
 // "obrigado, mas ainda preciso de ajuda com..." (isso continua pendente).
 const FRASES_FECHAMENTO = [
   'ok', 'okay', 'blz', 'beleza', 'certo', 'perfeito', 'show', 'entendido', 'entendi',
+  'combinado', 'fechado', 'combinado entao', 'combinamos',
   'obrigado', 'obrigada', 'obg', 'valeu', 'agradeco', 'agradecida', 'agradecido',
   'muito obrigado', 'muito obrigada', 'tudo bem obrigado', 'tudo bem obrigada',
   'ok obrigado', 'ok obrigada', 'de nada', 'por nada', 'bom dia', 'boa tarde', 'boa noite',
