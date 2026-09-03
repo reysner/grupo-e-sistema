@@ -81,8 +81,12 @@ const CORTES_POR_DIA = {
  * Detecta incidentes de abandono num ticket já ACEITO (não olha o tempo em
  * aguardando/bot — isso já é coberto pela regra de Aceite). Devolve um
  * incidente por dia coberto em que a condição bateu, mais antigo primeiro.
+ * `agora` existe pra NUNCA cravar o dia corrente antes do expediente dele
+ * ter realmente terminado — achado do Reysner, 03/09/2026: o #48026 do
+ * Douglas foi marcado incidente no meio da manhã do próprio dia, sem o
+ * Douglas ainda ter tido a chance de responder até o fim do expediente.
  */
-function detectarIncidentesAbandono(ticket, mensagens) {
+function detectarIncidentesAbandono(ticket, mensagens, agora = new Date()) {
   if (!ticket.aceite) return []; // nunca foi aceito por ninguém — não é "atendimento preso com alguém"
   const msgs = (mensagens || [])
     .filter(m => new Date(m.hora) >= new Date(ticket.aceite))
@@ -99,6 +103,7 @@ function detectarIncidentesAbandono(ticket, mensagens) {
     if (T.FERIADOS.has(dia)) continue;
     const corteCliente = T.instante(dia, cortes.cliente);
     const corteResposta = T.instante(dia, cortes.resposta);
+    if (agora < corteResposta) continue; // o expediente desse dia ainda não terminou — cedo demais pra cravar
 
     // Não é só a ÚLTIMA mensagem do cliente no dia que importa — é QUALQUER
     // mensagem dele que pareça um pedido de verdade (não um fechamento tipo
