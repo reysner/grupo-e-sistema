@@ -56,11 +56,16 @@ const LIMITE_TAMANHO_FECHAMENTO = 40; // caracteres — mensagem curta, sem pedi
 
 /** true se a mensagem parece só um agradecimento/encerramento, sem pedido pendente. */
 function pareceMensagemDeFechamento(texto) {
-  const limpo = normalizarTexto(texto);
-  if (!limpo) return true; // vazio (ex.: só áudio/figurinha, sem texto) — não força resposta
+  const bruto = normalizarTexto(texto);
+  if (!bruto) return true; // vazio (ex.: só áudio/figurinha, sem texto) — não força resposta
   // Só um número de 1 a 5 = a nota da pesquisa de satisfação, não um pedido
   // novo — mesmo critério já usado na regra de reabertura (ver pontuacao.js).
-  if (/^[1-5]$/.test(limpo)) return true;
+  if (/^[1-5]$/.test(bruto)) return true;
+  // Tira pontuação solta no início/fim ("Entendido.", "Ok!!", "...Combinado")
+  // antes de comparar — sem isso um simples ponto final derrubava o match e
+  // a mensagem contava como pedido pendente (achado do Reysner, 04/09/2026,
+  // ticket #48126: "Entendido." não batia com "entendido" da lista).
+  const limpo = bruto.replace(/^[.,!?;:…]+|[.,!?;:…]+$/g, '').trim();
   if (limpo.length > LIMITE_TAMANHO_FECHAMENTO) return false;
   return FRASES_FECHAMENTO.some(f => limpo === f || limpo.startsWith(f + ' ') || limpo.startsWith(f + ',') || limpo.startsWith(f + '!'));
 }
