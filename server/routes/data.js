@@ -2678,6 +2678,19 @@ router.get('/gam/nota-final-override', requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro ao listar travas.' }); }
 });
 
+// Limpa TODAS as travas de uma vez — pedido do Reysner, 04/09/2026: "quero
+// um botão que limpe tudo o que criamos aqui pra que o sistema a partir de
+// Janeiro esteja rodando sem travas e da forma correta". As travas de
+// Julho/Agosto/2026 foram uma correção pontual pra bater com pódios já
+// anunciados à equipe antes de revisões de nota baixa — não devem virar
+// hábito permanente. Não apaga nada de gam_notas, só as travas de exibição.
+router.delete('/gam/nota-final-override', requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`DELETE FROM gam_nota_final_override RETURNING id`);
+    res.json({ ok: true, removidas: rows.length });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao limpar travas.' }); }
+});
+
 router.delete('/gam/nota-final-override/:id', requireAdmin, async (req, res) => {
   try {
     await pool.query(`DELETE FROM gam_nota_final_override WHERE id = $1`, [req.params.id]);

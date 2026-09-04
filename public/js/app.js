@@ -6799,6 +6799,25 @@ const Gamificacao = (() => {
     App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
   }
 
+  // Limpa TODAS as travas manuais de pódio (gam_nota_final_override) de uma
+  // vez — pedido do Reysner, 04/09/2026: as travas de Julho/Agosto/2026
+  // foram uma correção pontual pra bater com pódios já anunciados à equipe
+  // antes de revisões de nota baixa mudarem o cálculo; não é pra virar
+  // hábito. Não mexe em gam_notas, só nas travas de exibição.
+  async function limparTravasNotaFinal() {
+    if (!confirm('Isso vai apagar TODAS as travas manuais de pódio (as correções de Julho/Agosto pra bater com o que já foi anunciado à equipe). As notas em si (gam_notas) não são afetadas — só a exibição do pódio desses meses volta a mostrar o valor calculado normal. Continuar?')) return;
+    const res = await fetch('/api/data/gam/nota-final-override', {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + _tk() }
+    });
+    if (res && res.ok) {
+      const { removidas } = await res.json();
+      App.Toast.ok(removidas + ' trava(s) removida(s). Pódios voltam a mostrar o cálculo normal.');
+    } else {
+      App.Toast.err('Erro ao limpar travas.');
+    }
+  }
+
   // ── Relatório da Temporada — retrospectiva completa desde o início do jogo
   // (o primeiro mês com nota lançada, hoje Maio/2026) pra apresentação à
   // diretoria/CEO/coordenação/equipe. Pedido do Reysner, 04/09/2026: "quero
@@ -7233,7 +7252,7 @@ const Gamificacao = (() => {
     vincularLogin, salvarVinculoLogin,
     abrirCriarLoginsEmLote, confirmarCriarLoginsEmLote,
     abrirMapaQualificacao, salvarMapaQualificacao,
-    abrirAutoPreencher, confirmarAutoPreencher, sincronizarNotasAgora, abrirRelatorioTemporada,
+    abrirAutoPreencher, confirmarAutoPreencher, sincronizarNotasAgora, abrirRelatorioTemporada, limparTravasNotaFinal,
     abrirRevisaoNotas, marcarRevisao, _trocarStatusRevisao,
     abrirRevisaoVelocidade, marcarRevisaoVelocidade, _trocarStatusRevisaoVelocidade,
     abrirRevisaoAceite, marcarRevisaoAceite, _trocarStatusRevisaoAceite,
