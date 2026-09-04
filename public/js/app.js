@@ -6421,6 +6421,20 @@ const Gamificacao = (() => {
     '</div>';
   }
 
+  // Qual status de revisão mostrar numa linha de ticket que pode ter VÁRIOS
+  // descontos diferentes (velocidade/aceite/finalizar/nota do cliente) —
+  // antes essas tabelas sempre mostravam t.revisao_nota_status (revisão da
+  // NOTA), mesmo quando o desconto vermelho na linha era de velocidade ou
+  // aceite, então uma linha já marcada "indevida" em "Revisar velocidade"
+  // continuava aparecendo como "pendente" aqui (achado do Reysner, 04/09/2026).
+  // Prioridade: mostra o status do desconto que de fato está ativo na linha.
+  function _statusRevisaoLinha(t) {
+    if (parseFloat(t.ajuste_velocidade) < 0) return t.vel_revisao_status || 'pendente';
+    if (parseFloat(t.ajuste_aceite) < 0) return t.aceite_revisao_status || 'pendente';
+    if (parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0) return t.finalizar_revisao_status || 'pendente';
+    return t.revisao_nota_status || 'pendente';
+  }
+
   async function gerarRelatorioDescontos() {
     const colaboradorId = document.getElementById('gam-rel-colab')?.value;
     const mes = document.getElementById('gam-rel-mes')?.value;
@@ -6492,7 +6506,7 @@ const Gamificacao = (() => {
           `<td>${t.ajuste_finalizar}</td>` +
           `<td style="${parseFloat(t.ajuste_reabertura) < 0 ? 'color:#c0362c;font-weight:700' : ''}">${t.ajuste_reabertura}</td>` +
           `<td style="font-weight:700">${t.nota_final}</td>` +
-          `<td style="font-size:11px;color:var(--gray-400)">${t.revisao_nota_status || 'pendente'}</td>` +
+          `<td style="font-size:11px;color:var(--gray-400)">${_statusRevisaoLinha(t)}</td>` +
         `</tr>`;
       }).join('') + '</tbody></table></div>';
   }
@@ -6596,7 +6610,11 @@ const Gamificacao = (() => {
     const res = await fetch('/api/data/gam/relatorio-descontos?mes=' + mes + '&colaborador_id=' + colaboradorId, { headers: { Authorization: 'Bearer ' + _tk() } });
     if (!res || !res.ok) { celula.innerHTML = '<span style="color:#e53e3e;font-size:12px">Erro ao carregar.</span>'; return; }
     const { tickets, abandono } = await res.json();
-    const temDesconto = t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0 || parseFloat(t.ajuste_aceite) < 0;
+    // Só mostra quem ainda está contando de verdade — um desconto já marcado
+    // "indevida" (em Revisar velocidade/Aceite/Finalizar) some daqui igual ao
+    // abandono já fazia, em vez de continuar listado (pedido do Reysner,
+    // 04/09/2026: "precisa apagar dali também").
+    const temDesconto = t => (parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0 || parseFloat(t.ajuste_aceite) < 0) && _statusRevisaoLinha(t) !== 'indevida';
     const ticketsComDesconto = (tickets || []).filter(temDesconto);
     const abandonoValidos = (abandono || []).filter(a => a.status !== 'indevida');
 
@@ -6610,7 +6628,7 @@ const Gamificacao = (() => {
           '<td style="' + (parseFloat(t.ajuste_aceite) < 0 ? 'color:#c0362c;font-weight:700' : '') + '">' + (t.ajuste_aceite ?? '—') + '</td>' +
           '<td style="' + (parseFloat(t.ajuste_finalizar) < 0 ? 'color:#c0362c;font-weight:700' : '') + '">' + t.ajuste_finalizar + '</td>' +
           '<td><b>' + t.nota_final + '</b></td>' +
-          '<td style="font-size:11px;color:var(--gray-400)">' + (t.revisao_nota_status || 'pendente') + '</td></tr>'
+          '<td style="font-size:11px;color:var(--gray-400)">' + _statusRevisaoLinha(t) + '</td></tr>'
         ).join('') + '</tbody></table></div>';
     }
     if (abandonoValidos.length) {
@@ -6638,7 +6656,7 @@ const Gamificacao = (() => {
       return `<tr${temDesconto ? ' style="background:#fdecec"' : ''}>` +
         `<td>#${t.zappy_id}</td><td>${t.empresa_texto || '—'}</td><td>${t.papel}</td>` +
         `<td>${t.nota_cliente ?? '—'}</td><td>${velTexto(t)}</td><td>${t.ajuste_aceite ?? '—'}</td><td>${t.ajuste_finalizar}</td>` +
-        `<td>${t.ajuste_reabertura}</td><td><b>${t.nota_final}</b></td><td>${t.revisao_nota_status || 'pendente'}</td></tr>`;
+        `<td>${t.ajuste_reabertura}</td><td><b>${t.nota_final}</b></td><td>${_statusRevisaoLinha(t)}</td></tr>`;
     }).join('');
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
     <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
@@ -6677,7 +6695,8 @@ const Gamificacao = (() => {
 
     const mes = document.getElementById('gam-rel-mes')?.value || '';
     const token = _tk();
-    const temDesconto = t => parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0 || parseFloat(t.ajuste_aceite) < 0;
+    // Mesmo critério do toggle na tela: exclui o que já foi marcado indevida.
+    const temDesconto = t => (parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0 || parseFloat(t.ajuste_aceite) < 0) && _statusRevisaoLinha(t) !== 'indevida';
     const detalhes = await Promise.all(_relatorioTodosData.map(async r => {
       const res = await fetch('/api/data/gam/relatorio-descontos?mes=' + mes + '&colaborador_id=' + r.colaboradorId, { headers: { Authorization: 'Bearer ' + token } });
       const j = res && res.ok ? await res.json() : { tickets: [], abandono: [] };
@@ -6786,7 +6805,7 @@ const Gamificacao = (() => {
     const cols = ['colaborador', 'zappy_id', 'empresa_texto', 'papel', 'nota_cliente', 'ajuste_velocidade', 'ajuste_finalizar', 'ajuste_reabertura', 'nota_final', 'revisao_nota_status'];
     const labels = { colaborador: 'Colaborador', zappy_id: 'Ticket', empresa_texto: 'Cliente', papel: 'Papel', nota_cliente: 'Nota Cliente', ajuste_velocidade: 'Desconto Velocidade', ajuste_finalizar: 'Ajuste Finalizar', ajuste_reabertura: 'Desconto Reabertura', nota_final: 'Nota Final', revisao_nota_status: 'Revisão' };
     const header = cols.map(c => labels[c]).join(';');
-    const rows = _relatorioDescontosData.map(r => cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(';'));
+    const rows = _relatorioDescontosData.map(r => cols.map(c => `"${String((c === 'revisao_nota_status' ? _statusRevisaoLinha(r) : r[c]) ?? '').replace(/"/g, '""')}"`).join(';'));
     const csv = [header, ...rows].join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
