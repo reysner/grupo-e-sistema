@@ -2979,7 +2979,6 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
       }
 
       const media_individual = avaliacoes > 0 ? Number((somaPonderada / avaliacoes).toFixed(2)) : null;
-      resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes, detalhamento, fonte: 'qualificacao' });
 
       if (!dryRun) {
         if (media_individual != null && avaliacoes > 0) {
@@ -2990,20 +2989,43 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
              DO UPDATE SET media_individual=$3, avaliacoes=$4, lancado_por=$5, updated_at=NOW()`,
             [c.id, mes, media_individual, avaliacoes, `Automático (Zappy) — ${lancadoPor}`]
           );
+          resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes, detalhamento, fonte: 'qualificacao' });
         } else {
-          // Sem nota nenhuma (nem tickets, nem qualificação) — grava
-          // avaliacoes=0 mesmo assim, senão o colaborador some da consulta
-          // do ranking (INNER JOIN em gam_notas) e nunca recebe a "menor
-          // nota do grupo" — regra que já existe pro Modelo Inicial e o
-          // Reysner confirmou que vale igual pro Modelo Atualizado.
-          await pool.query(
-            `INSERT INTO gam_notas (colaborador_id, mes, media_individual, avaliacoes, lancado_por)
-             VALUES ($1,$2,0,0,$3)
-             ON CONFLICT (colaborador_id, mes)
-             DO UPDATE SET media_individual=0, avaliacoes=0, lancado_por=$3, updated_at=NOW()`,
-            [c.id, mes, `Automático (Zappy) — ${lancadoPor}`]
+          // Sem nota nenhuma agora (nem tickets, nem qualificação retornada
+          // pelo Zappy pra esse período) — trava de segurança adicionada
+          // 04/09/2026 depois de um incidente real: rodar isso pra um mês
+          // ANTIGO (a API de qualificação do Zappy parece ter uma janela de
+          // consulta limitada — não retorna mais nada pra meses de vários
+          // meses atrás) apagou o Maio e Junho/2026 de 20 colaboradores,
+          // sobrescrevendo nota/avaliações REAIS por 0/0 sem nenhum jeito de
+          // desfazer (gam_notas não entra no backup automático). A partir de
+          // agora: só grava 0/0 se JÁ NÃO HAVIA nada de valor gravado antes
+          // (evita sumir da consulta pro Modelo Inicial, como já era) — se
+          // já existia avaliacoes>0, PRESERVA o valor antigo em vez de
+          // apagar, e só sinaliza no resultado pra alguém ver.
+          const { rows: existente } = await pool.query(
+            `SELECT media_individual, avaliacoes FROM gam_notas WHERE colaborador_id=$1 AND mes=$2`,
+            [c.id, mes]
           );
+          if (existente.length && parseInt(existente[0].avaliacoes) > 0) {
+            resultados.push({
+              colaborador_id: c.id, nome: c.nome, media_individual: parseFloat(existente[0].media_individual),
+              avaliacoes: parseInt(existente[0].avaliacoes), detalhamento, fonte: 'qualificacao',
+              aviso: 'Zappy não retornou dado nenhum pra esse período agora — nota anterior PRESERVADA (não foi sobrescrita por zero).'
+            });
+          } else {
+            await pool.query(
+              `INSERT INTO gam_notas (colaborador_id, mes, media_individual, avaliacoes, lancado_por)
+               VALUES ($1,$2,0,0,$3)
+               ON CONFLICT (colaborador_id, mes)
+               DO UPDATE SET media_individual=0, avaliacoes=0, lancado_por=$3, updated_at=NOW()`,
+              [c.id, mes, `Automático (Zappy) — ${lancadoPor}`]
+            );
+            resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes, detalhamento, fonte: 'qualificacao' });
+          }
         }
+      } else {
+        resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes, detalhamento, fonte: 'qualificacao' });
       }
   }
 
