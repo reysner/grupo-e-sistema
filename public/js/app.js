@@ -6799,6 +6799,303 @@ const Gamificacao = (() => {
     App.Toast.ok('PDF gerado — use Ctrl+P para salvar!');
   }
 
+  // ── Relatório da Temporada — retrospectiva completa desde o início do jogo
+  // (o primeiro mês com nota lançada, hoje Maio/2026) pra apresentação à
+  // diretoria/CEO/coordenação/equipe. Pedido do Reysner, 04/09/2026: "quero
+  // um relatório gerencial detalhadíssimo... como se fosse o dia da
+  // apresentação... precisa atualizar o banco e trazer todos os dados
+  // levantados antes de criar o relatório". Por isso, antes de montar
+  // qualquer coisa, sincroniza (grava de verdade, dryRun:false) TODOS os
+  // meses da temporada com a fórmula/dados atuais — não confia em gam_notas
+  // parado (mesmo problema já visto com Elma/João/Max/Douglas nesta sessão).
+  // Reaproveita /api/public/gamificacao (a mesma fonte do ranking público e
+  // do card "Consolidado Geral") em vez de reimplementar a fórmula de peso
+  // mínimo — depois de sincronizar, ela já reflete os dados certos.
+  function _mesCurto(mes) {
+    const nomesc = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    const [ano, m] = mes.split('-');
+    return nomesc[parseInt(m)] + '/' + ano.slice(2);
+  }
+
+  async function abrirRelatorioTemporada() {
+    if (!confirm('Isso vai atualizar as notas de TODOS os meses da temporada (recalculando com os dados mais recentes de cada um) e só depois montar o relatório completo pra apresentação. Pode levar um minuto ou dois. Continuar?')) return;
+
+    const win = window.open('', '_blank');
+    if (!win) { App.Toast.err('Permita popups para gerar o relatório.'); return; }
+    const setStatus = (msg) => {
+      win.document.open();
+      win.document.write('<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Gerando relatório da temporada…</title></head>' +
+        '<body style="font-family:Arial,sans-serif;padding:60px;color:#5c675f;background:#f7fafc">' +
+        '<h2 style="color:#1a4233">🏆 Montando o Relatório da Temporada…</h2><p>' + msg + '</p></body></html>');
+      win.document.close();
+    };
+    setStatus('Descobrindo os meses da temporada...');
+
+    try {
+      const token = _tk();
+      const baseRes = await fetch('/api/public/gamificacao', { cache: 'no-store' });
+      if (!baseRes.ok) throw new Error('Não consegui ler o ranking público.');
+      const base = await baseRes.json();
+      const meses = [...(base.meses || [])].sort(); // ascendente (mais antigo primeiro)
+      if (!meses.length) { setStatus('Nenhum mês com nota lançada ainda — nada pra colocar no relatório.'); return; }
+      if (base.mostrarConsolidado === false) {
+        setStatus('O card "Consolidado Geral" está desligado (botão "👁️ Consolidado Geral" no topo da tela de Gamificação). Ligue ele primeiro — é dele que sai o campeão da temporada — e gere de novo.');
+        return;
+      }
+
+      // 1) Atualiza o banco: recalcula e GRAVA (dryRun:false) cada mês da
+      // temporada antes de montar qualquer número do relatório.
+      for (let i = 0; i < meses.length; i++) {
+        setStatus('Atualizando ' + _mesLabel(meses[i]) + ' (' + (i + 1) + ' de ' + meses.length + ')...');
+        await fetch('/api/data/gam/notas/auto-preencher', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify({ mes: meses[i], dryRun: false })
+        }).catch(() => {});
+      }
+
+      // 2) Busca o ranking de CADA mês (campeão do mês + evolução) — já
+      // recém-gravado no passo acima. O consolidado da temporada inteira
+      // (campeão geral) vem junto em qualquer uma dessas respostas.
+      setStatus('Buscando os resultados de cada mês (' + meses.length + ' meses)...');
+      const porMes = {};
+      for (const mes of meses) {
+        const r = await fetch('/api/public/gamificacao?mes=' + mes, { cache: 'no-store' });
+        porMes[mes] = r.ok ? await r.json() : { ranking: [], consolidado: [], mediaGeral: null };
+      }
+      const consolidado = porMes[meses[meses.length - 1]].consolidado || [];
+
+      setStatus('Montando o documento...');
+      _montarRelatorioTemporada(win, meses, porMes, consolidado, base.inicioGamificacao);
+    } catch (e) {
+      console.error('[gam] relatório da temporada falhou:', e);
+      setStatus('Erro ao gerar o relatório: ' + (e.message || e) + '. Feche esta aba e tente de novo.');
+    }
+  }
+
+  function _montarRelatorioTemporada(win, meses, porMes, consolidado, inicioGamificacao) {
+    const hoje = new Date().toLocaleString('pt-BR');
+    const periodo = _mesLabel(meses[0]) + ' a ' + _mesLabel(meses[meses.length - 1]);
+
+    // Campeão de cada mês (ranking já vem ordenado — [0] é o 1º lugar).
+    const mesesInfo = meses.map(mes => {
+      const d = porMes[mes];
+      return { mes, ranking: d.ranking || [], mediaGeral: d.mediaGeral, campeao: (d.ranking || [])[0] || null };
+    });
+
+    // Total de avaliações de cliente recebidas na temporada inteira (soma
+    // simples das avaliações de cada colaborador em cada mês, sem duplicar).
+    const totalAvaliacoes = mesesInfo.reduce((s, mi) => s + mi.ranking.reduce((s2, r) => s2 + (r.avaliacoes || 0), 0), 0);
+
+    // Quantas vezes cada nome foi campeão do mês.
+    const titulosPorNome = {};
+    mesesInfo.forEach(mi => { if (mi.campeao) titulosPorNome[mi.campeao.nome] = (titulosPorNome[mi.campeao.nome] || 0) + 1; });
+
+    // Trajetória mês a mês de cada colaborador do consolidado (pra evolução
+    // e destaques) — null quando a pessoa ainda nem existia/não tinha nota
+    // lançada naquele mês (diferente de "avaliado com nota baixa").
+    const trajetoria = {};
+    consolidado.forEach(c => {
+      trajetoria[c.nome] = meses.map(mes => {
+        const row = (porMes[mes].ranking || []).find(r => r.nome === c.nome);
+        return row ? { mes, nota: parseFloat(row.media), avaliacoes: row.avaliacoes } : null;
+      });
+    });
+
+    // Maior evolução: primeiro e último mês em que a pessoa TEVE avaliação
+    // de verdade (avaliacoes>0) — precisa de pelo menos 2 pontos assim.
+    const evolucoes = consolidado.map(c => {
+      const pontos = trajetoria[c.nome].filter(p => p && p.avaliacoes > 0);
+      if (pontos.length < 2) return null;
+      const primeiro = pontos[0], ultimo = pontos[pontos.length - 1];
+      return { nome: c.nome, delta: ultimo.nota - primeiro.nota, de: primeiro, para: ultimo };
+    }).filter(Boolean).sort((a, b) => b.delta - a.delta);
+
+    // Mais consistente = mais meses com avaliação de verdade (participação
+    // real, não só presença no cadastro).
+    const presenca = consolidado.map(c => ({
+      nome: c.nome,
+      mesesComAvaliacao: trajetoria[c.nome].filter(p => p && p.avaliacoes > 0).length
+    })).sort((a, b) => b.mesesComAvaliacao - a.mesesComAvaliacao);
+
+    const medalha = i => i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + 'º';
+
+    const podioHtml = consolidado.slice(0, 3).map((c, i) => `
+      <div class="podio-card podio-${i + 1}">
+        <div class="podio-medalha">${medalha(i)}</div>
+        <div class="podio-nome">${c.nome}</div>
+        <div class="podio-nota">${c.media_geral}</div>
+        <div class="podio-legenda">${c.meses_avaliados} mes(es) na temporada</div>
+      </div>`).join('');
+
+    const rankingRows = consolidado.map((c, i) => `
+      <tr class="${i < 3 ? 'destaque' : ''}"><td>${medalha(i)}</td><td>${c.nome}</td>
+        <td><b>${c.media_geral}</b></td><td>${c.meses_avaliados}</td>
+        <td>${titulosPorNome[c.nome] || 0}</td></tr>`).join('');
+
+    const campeoesMesRows = mesesInfo.map(mi => mi.campeao ? `
+      <tr><td>${_mesLabel(mi.mes)}</td><td>🏆 ${mi.campeao.nome}</td><td><b>${mi.campeao.media}</b></td>
+        <td>${mi.ranking.length}</td><td>${mi.mediaGeral ?? '—'}</td></tr>`
+      : `<tr><td>${_mesLabel(mi.mes)}</td><td colspan="4" style="color:#94a3b8">Sem avaliações lançadas nesse mês.</td></tr>`
+    ).join('');
+
+    const evolucaoHeader = meses.map(m => '<th>' + _mesCurto(m) + '</th>').join('');
+    const evolucaoRows = consolidado.map(c => {
+      const cels = trajetoria[c.nome].map(p =>
+        p ? '<td class="' + (p.avaliacoes > 0 ? '' : 'sem-aval') + '">' + p.nota.toFixed(2) + '</td>' : '<td class="vazio">—</td>'
+      ).join('');
+      return `<tr><td>${c.nome}</td>${cels}</tr>`;
+    }).join('');
+
+    const top3Perfis = consolidado.slice(0, 3).map((c, i) => {
+      const linha = trajetoria[c.nome].map((p, idx) =>
+        (p ? p.nota.toFixed(2) + (p.avaliacoes > 0 ? '' : '*') : '—')
+      ).join(' → ');
+      const ev = evolucoes.find(e => e.nome === c.nome);
+      return `<div class="perfil">
+        <div class="perfil-header"><span class="perfil-medalha">${medalha(i)}</span><h3>${c.nome}</h3><span class="perfil-nota">${c.media_geral}</span></div>
+        <p class="perfil-linha"><b>Trajetória (${_mesCurto(meses[0])} → ${_mesCurto(meses[meses.length - 1])}):</b> ${linha}</p>
+        <p class="perfil-linha"><b>Meses avaliados na temporada:</b> ${c.meses_avaliados} de ${meses.length}</p>
+        <p class="perfil-linha"><b>Vezes campeão(ã) do mês:</b> ${titulosPorNome[c.nome] || 0}</p>
+        ${ev ? '<p class="perfil-linha"><b>Evolução no período:</b> ' + ev.de.nota.toFixed(2) + ' (' + _mesCurto(ev.de.mes) + ') → ' + ev.para.nota.toFixed(2) + ' (' + _mesCurto(ev.para.mes) + ') — ' + (ev.delta >= 0 ? '+' : '') + ev.delta.toFixed(2) + '</p>' : ''}
+      </div>`;
+    }).join('');
+
+    const destaqueEvolucao = evolucoes[0];
+    const destaqueConsistencia = presenca[0];
+
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Liga do Atendimento — Relatório da Temporada</title>
+    <style>
+      @page { size: A4; margin: 1.6cm; }
+      *{box-sizing:border-box}
+      body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;margin:0;color:#1e293b}
+      h1{font-size:20px;color:#1a4233;margin:0 0 4px}
+      h2{font-size:17px;color:#1a4233;margin:0 0 10px;border-bottom:2px solid #1a4233;padding-bottom:6px}
+      h3{font-size:15px;color:#1a4233;margin:0}
+      p.sub{color:#64748b;font-size:12px;margin:0 0 6px}
+      section{page-break-before:always;padding-top:6px}
+      section:first-child{page-break-before:auto}
+      table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:4px}
+      th{background:#1a4233;color:#fff;padding:8px 9px;text-align:left;font-weight:700}
+      td{padding:7px 9px;border-bottom:1px solid #e2e8f0}
+      tr:nth-child(even) td{background:#f8fafc}
+      tr.destaque td{background:#fff8e1!important;font-weight:700}
+      td.sem-aval{color:#94a3b8;font-style:italic}
+      td.vazio{color:#cbd5e1;text-align:center}
+      .rodape{font-size:9.5px;color:#94a3b8;margin-top:24px;border-top:1px solid #e2e8f0;padding-top:10px}
+      /* Capa */
+      .capa{page-break-before:avoid;background:#1a4233;color:#fff;min-height:24.5cm;margin:-1.6cm;padding:3.5cm 2.5cm;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+      .capa .troféu{font-size:64px;margin-bottom:18px}
+      .capa h1{color:#fff;font-size:32px;margin-bottom:6px}
+      .capa .subtitulo{font-size:17px;color:#d4c88a;margin-bottom:36px}
+      .capa .periodo{font-size:14px;background:rgba(255,255,255,.1);padding:10px 22px;border-radius:30px;margin-bottom:44px}
+      .capa .publico{font-size:12px;color:#cfd8d3;max-width:420px;line-height:1.7}
+      .capa .publico b{color:#fff}
+      .capa .gerado{position:absolute;bottom:2.2cm;font-size:10.5px;color:#8ea597}
+      /* Pódio */
+      .podio{display:flex;gap:14px;justify-content:center;margin:18px 0 26px}
+      .podio-card{flex:1;max-width:190px;background:#f7fafc;border-radius:12px;padding:20px 14px;text-align:center;border:1px solid #e2e8f0}
+      .podio-1{background:#fff8e1;border-color:#e9d38a;transform:translateY(-8px)}
+      .podio-medalha{font-size:34px}
+      .podio-nome{font-weight:800;font-size:14px;color:#1a4233;margin:8px 0 4px}
+      .podio-nota{font-size:22px;font-weight:800;color:#1a4233}
+      .podio-legenda{font-size:10.5px;color:#64748b;margin-top:4px}
+      .numeros{display:flex;gap:12px;margin:16px 0 24px}
+      .numero-card{flex:1;background:#f7fafc;border-radius:10px;padding:14px;text-align:center}
+      .numero-card .valor{font-size:22px;font-weight:800;color:#1a4233}
+      .numero-card .rotulo{font-size:10.5px;color:#64748b;margin-top:2px}
+      .metodologia ul{margin:0;padding-left:18px;font-size:11.5px;line-height:1.8}
+      .metodologia li b{color:#1a4233}
+      .destaque-box{background:#f0fff4;border:1px solid #c6f6d5;border-radius:10px;padding:14px 16px;margin-bottom:12px}
+      .destaque-box .titulo{font-size:11px;font-weight:700;color:#38a169;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+      .destaque-box .conteudo{font-size:13px;color:#1e293b}
+      /* Perfis top 3 */
+      .perfil{background:#f7fafc;border-radius:10px;padding:16px 18px;margin-bottom:14px}
+      .perfil-header{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+      .perfil-medalha{font-size:22px}
+      .perfil-header .perfil-nota{margin-left:auto;font-size:20px;font-weight:800;color:#1a4233}
+      .perfil-linha{font-size:11.5px;margin:4px 0;color:#334155}
+      @media print{body{margin:0}}
+    </style></head><body>
+
+    <section class="capa">
+      <div class="troféu">🏆</div>
+      <h1>Liga do Atendimento</h1>
+      <div class="subtitulo">Relatório da Temporada</div>
+      <div class="periodo">${periodo}</div>
+      <div class="publico">Apresentação para <b>CEO, Diretoria, Coordenação, Supervisão e Equipe</b> — retrospectiva completa da gamificação do Sucesso do Cliente desde o início do jogo.</div>
+      <div class="gerado">Gerado em ${hoje} • Grupo-E</div>
+    </section>
+
+    <section>
+      <h2>🏆 Campeã(o) da Temporada</h2>
+      <p class="sub">Nota consolidada = média simples da nota final de cada mês da temporada (com o ajuste de peso mínimo), do primeiro mês do jogo até hoje. Quem não teve avaliação num mês entra com a menor nota final daquele mês, pra não sumir da conta.</p>
+      <div class="podio">${podioHtml}</div>
+      <div class="numeros">
+        <div class="numero-card"><div class="valor">${meses.length}</div><div class="rotulo">meses de temporada</div></div>
+        <div class="numero-card"><div class="valor">${consolidado.length}</div><div class="rotulo">colaboradores participantes</div></div>
+        <div class="numero-card"><div class="valor">${totalAvaliacoes}</div><div class="rotulo">avaliações de clientes recebidas</div></div>
+        <div class="numero-card"><div class="valor">${periodo.split(' a ')[0]}</div><div class="rotulo">início do jogo</div></div>
+      </div>
+    </section>
+
+    <section class="metodologia">
+      <h2>📐 Como a nota é calculada (resumo)</h2>
+      <ul>
+        <li><b>Base:</b> a nota que o próprio cliente dá na pesquisa de satisfação do Zappy, de 1 a 5.</li>
+        <li><b>Ajustes de comportamento</b> (velocidade de resposta/transferência, tempo de aceite do aguardando, encerramento correto e abandono de atendimento) somam ou descontam em cima dessa base — sempre como <b>média mensal</b>, nunca como soma direta, pra não punir por volume.</li>
+        <li><b>Peso mínimo:</b> quem tem poucas avaliações no mês tem a nota final puxada pra mais perto da média do time, pra uma amostra pequena não distorcer o ranking.</li>
+        <li><b>Revisão manual:</b> todo desconto de comportamento e toda nota abaixo de 5 passam por revisão de um gestor antes de virar ponto definitivo — nada é automático de verdade até alguém confirmar.</li>
+        <li><b>Consolidado da temporada:</b> média simples da nota final de cada mês, do início do jogo até hoje.</li>
+      </ul>
+      <p class="sub" style="margin-top:10px">Detalhamento completo, com exemplos numéricos de cada regra, disponível na página pública "Como funciona a pontuação".</p>
+    </section>
+
+    <section>
+      <h2>📅 Campeã(o) de cada mês</h2>
+      <table><thead><tr><th>Mês</th><th>Campeã(o) do mês</th><th>Nota final</th><th>Participantes</th><th>Média do time</th></tr></thead>
+      <tbody>${campeoesMesRows}</tbody></table>
+    </section>
+
+    <section>
+      <h2>📈 Evolução por colaborador (nota final por mês)</h2>
+      <p class="sub">"—" = ainda não estava no time / sem nota lançada nesse mês. Nota em itálico = mês sem avaliação de cliente (entrou com a menor nota do time daquele mês, não reflete desempenho real).</p>
+      <table><thead><tr><th>Colaborador</th>${evolucaoHeader}</tr></thead>
+      <tbody>${evolucaoRows}</tbody></table>
+    </section>
+
+    <section>
+      <h2>🥇 Ranking Final Consolidado da Temporada</h2>
+      <table><thead><tr><th>#</th><th>Colaborador</th><th>Nota consolidada</th><th>Meses avaliados</th><th>Títulos de mês</th></tr></thead>
+      <tbody>${rankingRows}</tbody></table>
+    </section>
+
+    <section>
+      <h2>✨ Destaques da temporada</h2>
+      ${destaqueEvolucao ? `<div class="destaque-box"><div class="titulo">🚀 Maior evolução</div><div class="conteudo"><b>${destaqueEvolucao.nome}</b> saiu de ${destaqueEvolucao.de.nota.toFixed(2)} em ${_mesLabel(destaqueEvolucao.de.mes)} pra ${destaqueEvolucao.para.nota.toFixed(2)} em ${_mesLabel(destaqueEvolucao.para.mes)} — ${destaqueEvolucao.delta >= 0 ? '+' : ''}${destaqueEvolucao.delta.toFixed(2)} na nota final.</div></div>` : ''}
+      ${destaqueConsistencia ? `<div class="destaque-box"><div class="titulo">🎯 Maior consistência</div><div class="conteudo"><b>${destaqueConsistencia.nome}</b> teve avaliação de cliente em ${destaqueConsistencia.mesesComAvaliacao} de ${meses.length} meses da temporada — presença real, mês após mês.</div></div>` : ''}
+      ${Object.keys(titulosPorNome).length ? `<div class="destaque-box"><div class="titulo">🏆 Mais títulos mensais</div><div class="conteudo">${Object.entries(titulosPorNome).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([n,q])=>'<b>'+n+'</b> ('+q+' mês(es))').join(' · ')}</div></div>` : ''}
+    </section>
+
+    <section>
+      <h2>🎖️ Pódio da Temporada — perfil dos 3 primeiros</h2>
+      ${top3Perfis || '<p class="sub">Sem colaboradores suficientes pra montar o pódio ainda.</p>'}
+    </section>
+
+    <section>
+      <h2>🔍 Transparência do processo</h2>
+      <p style="font-size:12px;line-height:1.7">Nenhum ponto ou desconto vira definitivo sozinho: toda nota abaixo de 5 e todo ajuste de comportamento (velocidade, aceite, encerramento, abandono) passam por revisão manual de um gestor antes de contar pra valer — o sistema só detecta e sinaliza, quem decide é sempre uma pessoa. Casos considerados indevidos (interação robótica, contato que não é cliente de verdade, desconto que não refletia a realidade do atendimento) são retirados do cálculo daquele mês. Dúvidas sobre como a nota de alguém específico foi calculada podem ser conferidas ticket a ticket em "Relatório de Descontos".</p>
+      <p class="rodape">Liga do Atendimento — Grupo-E — Relatório da Temporada gerado automaticamente em ${hoje}, com os dados de ${periodo} recém-sincronizados do Zappy.</p>
+    </section>
+
+    <script>window.onload=()=>{window.print();}<\/script></body></html>`;
+
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    App.Toast.ok('Relatório da temporada gerado — use Ctrl+P para salvar em PDF!');
+  }
+
   function exportarRelatorioDescontosCSV() {
     if (_relatorioModoTodos) { _exportarRelatorioTodosCSV(); return; }
     if (!_relatorioDescontosData.length) { App.Toast.err('Gere o relatório primeiro.'); return; }
@@ -6936,7 +7233,7 @@ const Gamificacao = (() => {
     vincularLogin, salvarVinculoLogin,
     abrirCriarLoginsEmLote, confirmarCriarLoginsEmLote,
     abrirMapaQualificacao, salvarMapaQualificacao,
-    abrirAutoPreencher, confirmarAutoPreencher, sincronizarNotasAgora,
+    abrirAutoPreencher, confirmarAutoPreencher, sincronizarNotasAgora, abrirRelatorioTemporada,
     abrirRevisaoNotas, marcarRevisao, _trocarStatusRevisao,
     abrirRevisaoVelocidade, marcarRevisaoVelocidade, _trocarStatusRevisaoVelocidade,
     abrirRevisaoAceite, marcarRevisaoAceite, _trocarStatusRevisaoAceite,
