@@ -2204,6 +2204,17 @@ publicRouter.get('/gamificacao', async (req, res) => {
     )`).catch(()=>{});
     await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('peso_minimo', 10) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
     await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('mostrar_consolidado', 1) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
+    // Trava manual de nota final do mês (ver uso mais abaixo) — corrige o
+    // pódio de um mês já anunciado à equipe sem afetar o Consolidado Geral.
+    await pool.query(`CREATE TABLE IF NOT EXISTS gam_nota_final_override (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      colaborador_id UUID NOT NULL REFERENCES gam_colaboradores(id) ON DELETE CASCADE,
+      mes VARCHAR(7) NOT NULL,
+      nota_final NUMERIC(4,2) NOT NULL,
+      motivo TEXT,
+      criado_por TEXT, criado_em TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(colaborador_id, mes)
+    )`).catch(()=>{});
 
     const pesoR = await pool.query(`SELECT valor FROM gam_config WHERE chave = 'peso_minimo'`);
     const pesoMinimo = pesoR.rows[0] ? parseFloat(pesoR.rows[0].valor) : 10;
@@ -2244,6 +2255,22 @@ publicRouter.get('/gamificacao', async (req, res) => {
       const notaFinal = ((media * aval) + (mediaGeralSimples * pesoMinimo)) / (aval + pesoMinimo);
       return { id: r.id, nome: r.nome, media: notaFinal, mediaIndividual: media, avaliacoes: aval };
     });
+
+    // Trava manual de nota final — SÓ pro pódio/ranking do MÊS exibido, nunca
+    // usada no Consolidado Geral (esse recalcula cada mês do zero direto de
+    // gam_notas, ver bloco "consolidado" abaixo, que não passa por aqui).
+    // Pedido do Reysner, 04/09/2026: Julho já tinha sido apresentado à equipe
+    // com um pódio específico (Elma 4,98 / Bruno 4,97 / Douglas 4,96) antes
+    // de revisões de nota baixa terem sido feitas depois; trava o que já foi
+    // anunciado sem impedir que o consolidado da temporada reflita as
+    // revisões de verdade.
+    const { rows: overridesRows } = await pool.query(
+      `SELECT colaborador_id, nota_final FROM gam_nota_final_override WHERE mes = $1`, [mesAtual]
+    ).catch(() => ({ rows: [] }));
+    if (overridesRows.length) {
+      const overrideMap = Object.fromEntries(overridesRows.map(o => [o.colaborador_id, parseFloat(o.nota_final)]));
+      comNotaFinal.forEach(r => { if (overrideMap[r.id] != null) r.media = overrideMap[r.id]; });
+    }
 
     // 2º passo: menor nota FINAL (após fórmula) — é o que os zerados recebem
     const menorNotaFinal = comNotaFinal.length ? Math.min(...comNotaFinal.map(r => r.media)) : 0;
@@ -2615,6 +2642,47 @@ router.delete('/gam/notas/:id', requireAdmin, async (req, res) => {
     await pool.query(`DELETE FROM gam_notas WHERE id = $1`, [req.params.id]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao excluir.' }); }
+});
+
+// ── Trava manual de nota final do mês (gam_nota_final_override) ────────────
+// Corrige o PÓDIO/ranking de um mês já anunciado à equipe sem mexer no dado
+// bruto (gam_notas) — o Consolidado Geral continua recalculando cada mês
+// direto de gam_notas, então não é afetado por essa trava. Pedido do
+// Reysner, 04/09/2026: travar Julho no pódio já apresentado (Elma/Bruno/
+// Douglas) mesmo depois de revisões de nota baixa terem mudado o cálculo
+// "real" — sem impedir que o consolidado da temporada reflita as revisões.
+router.post('/gam/nota-final-override', requireAdmin, async (req, res) => {
+  try {
+    const { colaborador_id, mes, nota_final, motivo } = req.body;
+    if (!colaborador_id || !mes || nota_final == null)
+      return res.status(400).json({ error: 'colaborador_id, mes e nota_final são obrigatórios.' });
+    if (nota_final < 0 || nota_final > 5) return res.status(400).json({ error: 'nota_final deve estar entre 0 e 5.' });
+    await pool.query(
+      `INSERT INTO gam_nota_final_override (colaborador_id, mes, nota_final, motivo, criado_por)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (colaborador_id, mes) DO UPDATE SET nota_final=$3, motivo=$4, criado_por=$5, criado_em=NOW()`,
+      [colaborador_id, mes, nota_final, motivo || null, req.user.name]
+    );
+    res.status(201).json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao gravar trava de nota final.' }); }
+});
+
+router.get('/gam/nota-final-override', requireAdmin, async (req, res) => {
+  try {
+    const { mes } = req.query;
+    const { rows } = await pool.query(
+      `SELECT o.*, c.nome FROM gam_nota_final_override o JOIN gam_colaboradores c ON c.id = o.colaborador_id
+       WHERE ($1::varchar IS NULL OR o.mes = $1) ORDER BY o.mes DESC, c.nome ASC`, [mes || null]
+    );
+    res.json({ data: rows });
+  } catch (err) { res.status(500).json({ error: 'Erro ao listar travas.' }); }
+});
+
+router.delete('/gam/nota-final-override/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM gam_nota_final_override WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir trava.' }); }
 });
 
 // ── Automação da nota mensal via Zappy — "Modelo Atualizado" fase 1 ─────────
