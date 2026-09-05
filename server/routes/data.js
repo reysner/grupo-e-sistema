@@ -2318,9 +2318,13 @@ publicRouter.get('/gamificacao', async (req, res) => {
       .filter(r => parseInt(r.avaliacoes) === 0)
       .map(r => ({ id: r.id, nome: r.nome, media: menorNotaFinal, mediaIndividual: 0, avaliacoes: 0 }));
 
-    // Ranking completo ordenado por nota final
+    // Ranking completo ordenado por nota final — 4 casas decimais (não só 2)
+    // pra dar pra distinguir gente que empataria arredondado, ex.: no
+    // Relatório da Temporada / relatórios gerenciais. A página pública
+    // (gamificacao.html) já faz o próprio toFixed(2) na exibição, então
+    // aumentar a precisão aqui não muda o que a equipe vê lá.
     const ranking = [...comNotaFinal, ...semNotaFinal]
-      .map(r => ({ ...r, media: parseFloat(r.media).toFixed(2) }))
+      .map(r => ({ ...r, media: parseFloat(r.media).toFixed(4) }))
       .sort((a,b) => {
         // Critério principal: maior nota final
         const diff = parseFloat(b.media) - parseFloat(a.media);
@@ -2397,7 +2401,12 @@ publicRouter.get('/gamificacao', async (req, res) => {
         const media = notas.reduce((s,n) => s+n, 0) / notas.length;
         return {
           nome: nomesPorId[id],
-          media_geral: media.toFixed(2),
+          // 4 casas decimais (pedido do Reysner, 05/09/2026) — com só 2, o
+          // pódio da temporada pode empatar (ex.: Guilherme/João/Max todos
+          // em 4,94) sem dar pra mostrar quem realmente ganhou. A página
+          // pública re-arredonda pra 2 na exibição, então isso só aumenta
+          // a precisão nos relatórios (Relatório da Temporada etc.).
+          media_geral: media.toFixed(4),
           meses_avaliados: notas.length,
           total_avaliacoes: 0
         };

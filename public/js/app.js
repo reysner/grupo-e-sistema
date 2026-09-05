@@ -6979,14 +6979,14 @@ const Gamificacao = (() => {
     const evolucaoHeader = meses.map(m => '<th>' + _mesCurto(m) + '</th>').join('');
     const evolucaoRows = consolidado.map(c => {
       const cels = trajetoria[c.nome].map(p =>
-        p ? '<td class="' + (p.avaliacoes > 0 ? '' : 'sem-aval') + '">' + p.nota.toFixed(2) + '</td>' : '<td class="vazio">—</td>'
+        p ? '<td class="' + (p.avaliacoes > 0 ? '' : 'sem-aval') + '">' + p.nota.toFixed(4) + '</td>' : '<td class="vazio">—</td>'
       ).join('');
       return `<tr><td>${c.nome}</td>${cels}</tr>`;
     }).join('');
 
     const top3Perfis = consolidado.slice(0, 3).map((c, i) => {
       const linha = trajetoria[c.nome].map((p, idx) =>
-        (p ? p.nota.toFixed(2) + (p.avaliacoes > 0 ? '' : '*') : '—')
+        (p ? p.nota.toFixed(4) + (p.avaliacoes > 0 ? '' : '*') : '—')
       ).join(' → ');
       const ev = evolucoes.find(e => e.nome === c.nome);
       return `<div class="perfil">
@@ -6994,7 +6994,7 @@ const Gamificacao = (() => {
         <p class="perfil-linha"><b>Trajetória (${_mesCurto(meses[0])} → ${_mesCurto(meses[meses.length - 1])}):</b> ${linha}</p>
         <p class="perfil-linha"><b>Meses avaliados na temporada:</b> ${c.meses_avaliados} de ${meses.length}</p>
         <p class="perfil-linha"><b>Vezes campeão(ã) do mês:</b> ${titulosPorNome[c.nome] || 0}</p>
-        ${ev ? '<p class="perfil-linha"><b>Evolução no período:</b> ' + ev.de.nota.toFixed(2) + ' (' + _mesCurto(ev.de.mes) + ') → ' + ev.para.nota.toFixed(2) + ' (' + _mesCurto(ev.para.mes) + ') — ' + (ev.delta >= 0 ? '+' : '') + ev.delta.toFixed(2) + '</p>' : ''}
+        ${ev ? '<p class="perfil-linha"><b>Evolução no período:</b> ' + ev.de.nota.toFixed(4) + ' (' + _mesCurto(ev.de.mes) + ') → ' + ev.para.nota.toFixed(4) + ' (' + _mesCurto(ev.para.mes) + ') — ' + (ev.delta >= 0 ? '+' : '') + ev.delta.toFixed(4) + '</p>' : ''}
       </div>`;
     }).join('');
 
@@ -7109,7 +7109,7 @@ const Gamificacao = (() => {
 
     <section>
       <h2>✨ Destaques da temporada</h2>
-      ${destaqueEvolucao ? `<div class="destaque-box"><div class="titulo">🚀 Maior evolução</div><div class="conteudo"><b>${destaqueEvolucao.nome}</b> saiu de ${destaqueEvolucao.de.nota.toFixed(2)} em ${_mesLabel(destaqueEvolucao.de.mes)} pra ${destaqueEvolucao.para.nota.toFixed(2)} em ${_mesLabel(destaqueEvolucao.para.mes)} — ${destaqueEvolucao.delta >= 0 ? '+' : ''}${destaqueEvolucao.delta.toFixed(2)} na nota final.</div></div>` : ''}
+      ${destaqueEvolucao ? `<div class="destaque-box"><div class="titulo">🚀 Maior evolução</div><div class="conteudo"><b>${destaqueEvolucao.nome}</b> saiu de ${destaqueEvolucao.de.nota.toFixed(4)} em ${_mesLabel(destaqueEvolucao.de.mes)} pra ${destaqueEvolucao.para.nota.toFixed(4)} em ${_mesLabel(destaqueEvolucao.para.mes)} — ${destaqueEvolucao.delta >= 0 ? '+' : ''}${destaqueEvolucao.delta.toFixed(4)} na nota final.</div></div>` : ''}
       ${destaqueConsistencia ? `<div class="destaque-box"><div class="titulo">🎯 Maior consistência</div><div class="conteudo"><b>${destaqueConsistencia.nome}</b> teve avaliação de cliente em ${destaqueConsistencia.mesesComAvaliacao} de ${meses.length} meses da temporada — presença real, mês após mês.</div></div>` : ''}
       ${Object.keys(titulosPorNome).length ? `<div class="destaque-box"><div class="titulo">🏆 Mais títulos mensais</div><div class="conteudo">${Object.entries(titulosPorNome).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([n,q])=>'<b>'+n+'</b> ('+q+' mês(es))').join(' · ')}</div></div>` : ''}
     </section>
