@@ -3448,12 +3448,16 @@ router.get('/gam/tickets-revisao', requireAdmin, async (req, res) => {
 router.patch('/gam/tickets-revisao/:id', requireAdmin, async (req, res) => {
   try {
     const { status_revisao } = req.body;
-    if (!['devida', 'indevida'].includes(status_revisao)) {
-      return res.status(400).json({ error: 'status_revisao deve ser "devida" ou "indevida".' });
+    if (!['devida', 'indevida', 'pendente'].includes(status_revisao)) {
+      return res.status(400).json({ error: 'status_revisao deve ser "devida", "indevida" ou "pendente".' });
     }
+    // "pendente" reabre a revisão (limpa a decisão anterior) — pedido do
+    // Reysner, 05/09/2026: quis reverter uma marcação de indevida pra
+    // decidir de novo manualmente, em vez de ficar preso na decisão antiga.
+    const valor = status_revisao === 'pendente' ? null : status_revisao;
     const { rows } = await pool.query(
       `UPDATE cs_tickets SET revisao_nota_status = $2, revisao_nota_por = $3, revisao_nota_em = NOW() WHERE id = $1 RETURNING id`,
-      [req.params.id, status_revisao, req.user.name]
+      [req.params.id, valor, req.user.name]
     );
     if (!rows.length) return res.status(404).json({ error: 'Não encontrado.' });
     res.json({ ok: true, data: rows[0] });
