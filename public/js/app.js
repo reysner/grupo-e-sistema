@@ -6830,6 +6830,14 @@ const Gamificacao = (() => {
   // Reaproveita /api/public/gamificacao (a mesma fonte do ranking público e
   // do card "Consolidado Geral") em vez de reimplementar a fórmula de peso
   // mínimo — depois de sincronizar, ela já reflete os dados certos.
+  // Meses com o pódio congelado manualmente (gam_nota_final_override) pra
+  // bater com o que já foi anunciado à equipe — o Relatório da Temporada
+  // NUNCA re-sincroniza esses meses (só lê o que já está gravado), senão
+  // desfaz o congelamento toda vez que alguém gera o relatório. Ajustar
+  // aqui se algum outro mês precisar do mesmo tratamento no futuro, ou
+  // esvaziar quando não precisar mais congelar nada.
+  const MESES_SEM_SINCRONIZAR = ['2026-07'];
+
   function _mesCurto(mes) {
     const nomesc = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
     const [ano, m] = mes.split('-');
@@ -6863,8 +6871,18 @@ const Gamificacao = (() => {
       }
 
       // 1) Atualiza o banco: recalcula e GRAVA (dryRun:false) cada mês da
-      // temporada antes de montar qualquer número do relatório.
+      // temporada antes de montar qualquer número do relatório — EXCETO os
+      // meses congelados (ver MESES_SEM_SINCRONIZAR abaixo). Achado do
+      // Reysner, 05/09/2026: gerar o relatório re-sincronizava Julho com a
+      // fórmula completa (aceite/velocidade/finalizar/abandono), desfazendo
+      // o congelamento manual "só nota bruta do Zappy" que ele já tinha
+      // pedido pra bater com o pódio já anunciado — toda vez que alguém
+      // gerava o relatório, precisava corrigir Julho nota a nota de novo.
       for (let i = 0; i < meses.length; i++) {
+        if (MESES_SEM_SINCRONIZAR.includes(meses[i])) {
+          setStatus(_mesLabel(meses[i]) + ' está congelado (pódio já anunciado) — pulando sincronização...');
+          continue;
+        }
         setStatus('Atualizando ' + _mesLabel(meses[i]) + ' (' + (i + 1) + ' de ' + meses.length + ')...');
         await fetch('/api/data/gam/notas/auto-preencher', {
           method: 'POST',
