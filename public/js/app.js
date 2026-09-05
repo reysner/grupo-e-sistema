@@ -7062,7 +7062,7 @@ const Gamificacao = (() => {
       <h2>📐 Como a nota é calculada (resumo)</h2>
       <ul>
         <li><b>Base:</b> a nota que o próprio cliente dá na pesquisa de satisfação do Zappy, de 1 a 5.</li>
-        <li><b>Ajustes de comportamento</b> (velocidade de resposta/transferência, tempo de aceite do aguardando, encerramento correto e abandono de atendimento) só <b>descontam</b> em cima dessa base — nunca somam bônus além da nota do cliente — sempre como <b>média mensal</b>, nunca como soma direta, pra não punir por volume.</li>
+        <li><b>Ajustes de comportamento</b> (velocidade de resposta/transferência, tempo de aceite do aguardando, encerramento correto e abandono de atendimento) só <b>descontam</b> em cima dessa base — sempre como <b>média mensal</b>, nunca como soma direta, pra não punir por volume.</li>
         <li><b>Peso mínimo:</b> quem tem poucas avaliações no mês tem a nota final puxada pra mais perto da média do time, pra uma amostra pequena não distorcer o ranking.</li>
         <li><b>Revisão manual:</b> todo desconto de comportamento e toda nota abaixo de 5 passam por revisão de um gestor antes de virar ponto definitivo — nada é automático de verdade até alguém confirmar.</li>
         <li><b>Consolidado da temporada:</b> média simples da nota final de cada mês, do início do jogo até hoje.</li>

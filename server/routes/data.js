@@ -1996,7 +1996,11 @@ async function gerarBackupCompleto() {
   const [
     atendimentos, gestao, insatisfacoes, sensiveis,
     pesquisas, recuperacoes, clientes, honorarios,
-    eventos, investimentos, notificacoes, log
+    eventos, investimentos, notificacoes, log,
+    csVinculos, csTickets, gamColaboradores, gamNotas,
+    gamNotaFinalOverride, gamTicketsPontos, gamAbandonoIncidentes,
+    gamVelocidadeRevisoes, gamAceiteRevisoes, gamFinalizarRevisoes,
+    gamQualificacaoMapa, gamConfig,
   ] = await Promise.all([
     pool.query('SELECT * FROM atendimentos ORDER BY created_at').catch(()=>({rows:[]})),
     pool.query('SELECT * FROM gestao_clientes ORDER BY created_at').catch(()=>({rows:[]})),
@@ -2010,13 +2014,32 @@ async function gerarBackupCompleto() {
     pool.query('SELECT * FROM investimentos ORDER BY created_at').catch(()=>({rows:[]})),
     pool.query('SELECT * FROM notificacoes ORDER BY created_at').catch(()=>({rows:[]})),
     pool.query('SELECT * FROM log_atividades ORDER BY created_at DESC LIMIT 1000').catch(()=>({rows:[]})),
+    // ── Sucesso do Cliente / Gamificação — incluídas 05/09/2026 depois do
+    // Reysner perguntar se corríamos o risco de perder essa base do mesmo
+    // jeito que perdemos Maio/Junho (ali foi a API do Zappy que expirou;
+    // aqui seria o NOSSO banco, sem backup nenhum até agora). cs_mensagens
+    // fica de fora de propósito (é o histórico de chat inteiro, grande
+    // demais pra esse backup diário e não essencial pra reconstruir nota/
+    // pontuação — só os campos abaixo bastam pra isso).
+    pool.query('SELECT * FROM cs_vinculos ORDER BY created_at').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM cs_tickets ORDER BY ingerido_em').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM gam_colaboradores ORDER BY created_at').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM gam_notas ORDER BY mes, colaborador_id').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM gam_nota_final_override ORDER BY mes, colaborador_id').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM gam_tickets_pontos ORDER BY calculado_em').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM gam_abandono_incidentes ORDER BY mes, data').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM gam_velocidade_revisoes').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM gam_aceite_revisoes').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM gam_finalizar_revisoes').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM gam_qualificacao_mapa ORDER BY created_at').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM gam_config').catch(()=>({rows:[]})),
   ]);
 
   return {
     meta: {
       sistema: 'Grupo-E',
       gerado_em: new Date().toISOString(),
-      versao: '1.0',
+      versao: '1.1',
       totais: {
         atendimentos: atendimentos.rows.length,
         gestao: gestao.rows.length,
@@ -2027,6 +2050,9 @@ async function gerarBackupCompleto() {
         clientes: clientes.rows.length,
         honorarios: honorarios.rows.length,
         investimentos: investimentos.rows.length,
+        cs_tickets: csTickets.rows.length,
+        gam_notas: gamNotas.rows.length,
+        gam_tickets_pontos: gamTicketsPontos.rows.length,
       }
     },
     dados: {
@@ -2042,6 +2068,18 @@ async function gerarBackupCompleto() {
       investimentos: investimentos.rows,
       notificacoes: notificacoes.rows,
       log_atividades: log.rows,
+      cs_vinculos: csVinculos.rows,
+      cs_tickets: csTickets.rows,
+      gam_colaboradores: gamColaboradores.rows,
+      gam_notas: gamNotas.rows,
+      gam_nota_final_override: gamNotaFinalOverride.rows,
+      gam_tickets_pontos: gamTicketsPontos.rows,
+      gam_abandono_incidentes: gamAbandonoIncidentes.rows,
+      gam_velocidade_revisoes: gamVelocidadeRevisoes.rows,
+      gam_aceite_revisoes: gamAceiteRevisoes.rows,
+      gam_finalizar_revisoes: gamFinalizarRevisoes.rows,
+      gam_qualificacao_mapa: gamQualificacaoMapa.rows,
+      gam_config: gamConfig.rows,
     }
   };
 }

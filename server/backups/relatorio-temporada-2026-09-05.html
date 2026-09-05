@@ -1,0 +1,228 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Liga do Atendimento — Relatório da Temporada</title>
+    <style>
+      @page { size: A4; margin: 1.6cm; }
+      *{box-sizing:border-box}
+      body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;margin:0;color:#1e293b}
+      h1{font-size:20px;color:#1a4233;margin:0 0 4px}
+      h2{font-size:17px;color:#1a4233;margin:0 0 10px;border-bottom:2px solid #1a4233;padding-bottom:6px}
+      h3{font-size:15px;color:#1a4233;margin:0}
+      p.sub{color:#64748b;font-size:12px;margin:0 0 6px}
+      section{page-break-before:always;padding-top:6px}
+      section:first-child{page-break-before:auto}
+      table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:4px}
+      th{background:#1a4233;color:#fff;padding:8px 9px;text-align:left;font-weight:700}
+      td{padding:7px 9px;border-bottom:1px solid #e2e8f0}
+      tr:nth-child(even) td{background:#f8fafc}
+      tr.destaque td{background:#fff8e1!important;font-weight:700}
+      td.sem-aval{color:#94a3b8;font-style:italic}
+      td.vazio{color:#cbd5e1;text-align:center}
+      .rodape{font-size:9.5px;color:#94a3b8;margin-top:24px;border-top:1px solid #e2e8f0;padding-top:10px}
+      /* Capa */
+      .capa{page-break-before:avoid;background:#1a4233;color:#fff;min-height:24.5cm;margin:-1.6cm;padding:3.5cm 2.5cm;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+      .capa .troféu{font-size:64px;margin-bottom:18px}
+      .capa h1{color:#fff;font-size:32px;margin-bottom:6px}
+      .capa .subtitulo{font-size:17px;color:#d4c88a;margin-bottom:36px}
+      .capa .periodo{font-size:14px;background:rgba(255,255,255,.1);padding:10px 22px;border-radius:30px;margin-bottom:44px}
+      .capa .publico{font-size:12px;color:#cfd8d3;max-width:420px;line-height:1.7}
+      .capa .publico b{color:#fff}
+      .capa .gerado{position:absolute;bottom:2.2cm;font-size:10.5px;color:#8ea597}
+      /* Pódio */
+      .podio{display:flex;gap:14px;justify-content:center;margin:18px 0 26px}
+      .podio-card{flex:1;max-width:190px;background:#f7fafc;border-radius:12px;padding:20px 14px;text-align:center;border:1px solid #e2e8f0}
+      .podio-1{background:#fff8e1;border-color:#e9d38a;transform:translateY(-8px)}
+      .podio-medalha{font-size:34px}
+      .podio-nome{font-weight:800;font-size:14px;color:#1a4233;margin:8px 0 4px}
+      .podio-nota{font-size:22px;font-weight:800;color:#1a4233}
+      .podio-legenda{font-size:10.5px;color:#64748b;margin-top:4px}
+      .numeros{display:flex;gap:12px;margin:16px 0 24px}
+      .numero-card{flex:1;background:#f7fafc;border-radius:10px;padding:14px;text-align:center}
+      .numero-card .valor{font-size:22px;font-weight:800;color:#1a4233}
+      .numero-card .rotulo{font-size:10.5px;color:#64748b;margin-top:2px}
+      .metodologia ul{margin:0;padding-left:18px;font-size:11.5px;line-height:1.8}
+      .metodologia li b{color:#1a4233}
+      .destaque-box{background:#f0fff4;border:1px solid #c6f6d5;border-radius:10px;padding:14px 16px;margin-bottom:12px}
+      .destaque-box .titulo{font-size:11px;font-weight:700;color:#38a169;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+      .destaque-box .conteudo{font-size:13px;color:#1e293b}
+      /* Perfis top 3 */
+      .perfil{background:#f7fafc;border-radius:10px;padding:16px 18px;margin-bottom:14px}
+      .perfil-header{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+      .perfil-medalha{font-size:22px}
+      .perfil-header .perfil-nota{margin-left:auto;font-size:20px;font-weight:800;color:#1a4233}
+      .perfil-linha{font-size:11.5px;margin:4px 0;color:#334155}
+      @media print{body{margin:0}}
+    </style></head><body>
+
+    <section class="capa">
+      <div class="troféu">🏆</div>
+      <h1>Liga do Atendimento</h1>
+      <div class="subtitulo">Relatório da Temporada</div>
+      <div class="periodo">Maio/2026 a Setembro/2026</div>
+      <div class="publico">Apresentação para <b>CEO, Diretoria, Coordenação, Supervisão e Equipe</b> — retrospectiva completa da gamificação do Sucesso do Cliente desde o início do jogo.</div>
+      <div class="gerado">Gerado em 05/09/2026, 13:09:17 • Grupo-E</div>
+    </section>
+
+    <section>
+      <h2>🏆 Campeã(o) da Temporada</h2>
+      <p class="sub">Nota consolidada = média simples da nota final de cada mês da temporada (com o ajuste de peso mínimo), do primeiro mês do jogo até hoje. Quem não teve avaliação num mês entra com a menor nota final daquele mês, pra não sumir da conta.</p>
+      <div class="podio">
+      <div class="podio-card podio-1">
+        <div class="podio-medalha">🥇</div>
+        <div class="podio-nome">Max</div>
+        <div class="podio-nota">4.94</div>
+        <div class="podio-legenda">5 mes(es) na temporada</div>
+      </div>
+      <div class="podio-card podio-2">
+        <div class="podio-medalha">🥈</div>
+        <div class="podio-nome">Guilherme</div>
+        <div class="podio-nota">4.93</div>
+        <div class="podio-legenda">5 mes(es) na temporada</div>
+      </div>
+      <div class="podio-card podio-3">
+        <div class="podio-medalha">🥉</div>
+        <div class="podio-nome">João</div>
+        <div class="podio-nota">4.92</div>
+        <div class="podio-legenda">5 mes(es) na temporada</div>
+      </div></div>
+      <div class="numeros">
+        <div class="numero-card"><div class="valor">5</div><div class="rotulo">meses de temporada</div></div>
+        <div class="numero-card"><div class="valor">19</div><div class="rotulo">colaboradores participantes</div></div>
+        <div class="numero-card"><div class="valor">1041</div><div class="rotulo">avaliações de clientes recebidas</div></div>
+        <div class="numero-card"><div class="valor">Maio/2026</div><div class="rotulo">início do jogo</div></div>
+      </div>
+    </section>
+
+    <section class="metodologia">
+      <h2>📐 Como a nota é calculada (resumo)</h2>
+      <ul>
+        <li><b>Base:</b> a nota que o próprio cliente dá na pesquisa de satisfação do Zappy, de 1 a 5.</li>
+        <li><b>Ajustes de comportamento</b> (velocidade de resposta/transferência, tempo de aceite do aguardando, encerramento correto e abandono de atendimento) só <b>descontam</b> em cima dessa base — nunca somam bônus além da nota do cliente — sempre como <b>média mensal</b>, nunca como soma direta, pra não punir por volume.</li>
+        <li><b>Peso mínimo:</b> quem tem poucas avaliações no mês tem a nota final puxada pra mais perto da média do time, pra uma amostra pequena não distorcer o ranking.</li>
+        <li><b>Revisão manual:</b> todo desconto de comportamento e toda nota abaixo de 5 passam por revisão de um gestor antes de virar ponto definitivo — nada é automático de verdade até alguém confirmar.</li>
+        <li><b>Consolidado da temporada:</b> média simples da nota final de cada mês, do início do jogo até hoje.</li>
+      </ul>
+      <p class="sub" style="margin-top:10px">Detalhamento completo, com exemplos numéricos de cada regra, disponível na página pública "Como funciona a pontuação".</p>
+    </section>
+
+    <section>
+      <h2>📅 Campeã(o) de cada mês</h2>
+      <table><thead><tr><th>Mês</th><th>Campeã(o) do mês</th><th>Nota final</th><th>Participantes</th><th>Média do time</th></tr></thead>
+      <tbody>
+      <tr><td>Maio/2026</td><td>🏆 Ivone</td><td><b>4.90</b></td>
+        <td>19</td><td>4.85</td></tr>
+      <tr><td>Junho/2026</td><td>🏆 João</td><td><b>4.94</b></td>
+        <td>19</td><td>4.89</td></tr>
+      <tr><td>Julho/2026</td><td>🏆 Elma</td><td><b>4.98</b></td>
+        <td>19</td><td>4.89</td></tr>
+      <tr><td>Agosto/2026</td><td>🏆 Max</td><td><b>5.00</b></td>
+        <td>19</td><td>4.97</td></tr>
+      <tr><td>Setembro/2026</td><td>🏆 Max</td><td><b>4.95</b></td>
+        <td>19</td><td>4.88</td></tr></tbody></table>
+    </section>
+
+    <section>
+      <h2>📈 Evolução por colaborador (nota final por mês)</h2>
+      <p class="sub">"—" = ainda não estava no time / sem nota lançada nesse mês. Nota em itálico = mês sem avaliação de cliente (entrou com a menor nota do time daquele mês, não reflete desempenho real).</p>
+      <table><thead><tr><th>Colaborador</th><th>Mai/26</th><th>Jun/26</th><th>Jul/26</th><th>Ago/26</th><th>Set/26</th></tr></thead>
+      <tbody><tr><td>Max</td><td class="">4.89</td><td class="">4.87</td><td class="">4.88</td><td class="">5.00</td><td class="">4.95</td></tr><tr><td>Guilherme</td><td class="">4.90</td><td class="">4.91</td><td class="">4.91</td><td class="">4.99</td><td class="">4.93</td></tr><tr><td>João</td><td class="">4.88</td><td class="">4.94</td><td class="">4.91</td><td class="">4.99</td><td class="">4.91</td></tr><tr><td>Douglas</td><td class="">4.80</td><td class="">4.92</td><td class="">4.96</td><td class="">4.98</td><td class="">4.91</td></tr><tr><td>Leila</td><td class="">4.87</td><td class="">4.92</td><td class="">4.90</td><td class="">4.93</td><td class="">4.92</td></tr><tr><td>Polyanna</td><td class="">4.88</td><td class="">4.84</td><td class="">4.86</td><td class="">4.99</td><td class="">4.89</td></tr><tr><td>Eva</td><td class="">4.88</td><td class="">4.83</td><td class="">4.86</td><td class="">4.92</td><td class="">4.91</td></tr><tr><td>Rodrigo</td><td class="">4.76</td><td class="">4.92</td><td class="">4.84</td><td class="">4.98</td><td class="">4.90</td></tr><tr><td>Tayone</td><td class="">4.88</td><td class="">4.92</td><td class="">4.90</td><td class="">4.98</td><td class="">4.90</td></tr><tr><td>Ivone</td><td class="">4.90</td><td class="">4.93</td><td class="">4.92</td><td class="">4.98</td><td class="sem-aval">4.74</td></tr><tr><td>Kelen</td><td class="">4.89</td><td class="">4.93</td><td class="">4.74</td><td class="">4.97</td><td class="">4.93</td></tr><tr><td>Bruno</td><td class="">4.87</td><td class="">4.92</td><td class="">4.97</td><td class="">4.99</td><td class="">4.80</td></tr><tr><td>Elma</td><td class="">4.87</td><td class="">4.91</td><td class="">4.98</td><td class="">4.89</td><td class="">4.85</td></tr><tr><td>Sueimy</td><td class="">4.84</td><td class="">4.92</td><td class="">4.88</td><td class="sem-aval">4.89</td><td class="sem-aval">4.74</td></tr><tr><td>Ketlen</td><td class="sem-aval">4.76</td><td class="sem-aval">4.83</td><td class="sem-aval">4.74</td><td class="">4.98</td><td class="">4.74</td></tr><tr><td>Luciana</td><td class="">4.83</td><td class="">4.83</td><td class="sem-aval">4.74</td><td class="">4.91</td><td class="sem-aval">4.74</td></tr><tr><td>Maria Eduarda</td><td class="">4.76</td><td class="">4.83</td><td class="sem-aval">4.74</td><td class="">4.98</td><td class="sem-aval">4.74</td></tr><tr><td>Nathania</td><td class="sem-aval">4.76</td><td class="">4.83</td><td class="sem-aval">4.74</td><td class="">4.98</td><td class="sem-aval">4.74</td></tr><tr><td>Dila</td><td class="">4.76</td><td class="">4.83</td><td class="sem-aval">4.74</td><td class="sem-aval">4.89</td><td class="sem-aval">4.74</td></tr></tbody></table>
+    </section>
+
+    <section>
+      <h2>🥇 Ranking Final Consolidado da Temporada</h2>
+      <table><thead><tr><th>#</th><th>Colaborador</th><th>Nota consolidada</th><th>Meses avaliados</th><th>Títulos de mês</th></tr></thead>
+      <tbody>
+      <tr class="destaque"><td>🥇</td><td>Max</td>
+        <td><b>4.94</b></td><td>5</td>
+        <td>2</td></tr>
+      <tr class="destaque"><td>🥈</td><td>Guilherme</td>
+        <td><b>4.93</b></td><td>5</td>
+        <td>0</td></tr>
+      <tr class="destaque"><td>🥉</td><td>João</td>
+        <td><b>4.92</b></td><td>5</td>
+        <td>1</td></tr>
+      <tr class=""><td>4º</td><td>Douglas</td>
+        <td><b>4.91</b></td><td>5</td>
+        <td>0</td></tr>
+      <tr class=""><td>5º</td><td>Leila</td>
+        <td><b>4.91</b></td><td>5</td>
+        <td>0</td></tr>
+      <tr class=""><td>6º</td><td>Polyanna</td>
+        <td><b>4.91</b></td><td>5</td>
+        <td>0</td></tr>
+      <tr class=""><td>7º</td><td>Eva</td>
+        <td><b>4.90</b></td><td>5</td>
+        <td>0</td></tr>
+      <tr class=""><td>8º</td><td>Rodrigo</td>
+        <td><b>4.90</b></td><td>5</td>
+        <td>0</td></tr>
+      <tr class=""><td>9º</td><td>Tayone</td>
+        <td><b>4.90</b></td><td>5</td>
+        <td>0</td></tr>
+      <tr class=""><td>10º</td><td>Ivone</td>
+        <td><b>4.89</b></td><td>5</td>
+        <td>1</td></tr>
+      <tr class=""><td>11º</td><td>Kelen</td>
+        <td><b>4.89</b></td><td>5</td>
+        <td>0</td></tr>
+      <tr class=""><td>12º</td><td>Bruno</td>
+        <td><b>4.88</b></td><td>5</td>
+        <td>0</td></tr>
+      <tr class=""><td>13º</td><td>Elma</td>
+        <td><b>4.86</b></td><td>5</td>
+        <td>1</td></tr>
+      <tr class=""><td>14º</td><td>Sueimy</td>
+        <td><b>4.86</b></td><td>5</td>
+        <td>0</td></tr>
+      <tr class=""><td>15º</td><td>Ketlen</td>
+        <td><b>4.81</b></td><td>5</td>
+        <td>0</td></tr>
+      <tr class=""><td>16º</td><td>Luciana</td>
+        <td><b>4.81</b></td><td>5</td>
+        <td>0</td></tr>
+      <tr class=""><td>17º</td><td>Maria Eduarda</td>
+        <td><b>4.81</b></td><td>5</td>
+        <td>0</td></tr>
+      <tr class=""><td>18º</td><td>Nathania</td>
+        <td><b>4.81</b></td><td>5</td>
+        <td>0</td></tr>
+      <tr class=""><td>19º</td><td>Dila</td>
+        <td><b>4.79</b></td><td>5</td>
+        <td>0</td></tr></tbody></table>
+    </section>
+
+    <section>
+      <h2>✨ Destaques da temporada</h2>
+      <div class="destaque-box"><div class="titulo">🚀 Maior evolução</div><div class="conteudo"><b>Maria Eduarda</b> saiu de 4.76 em Maio/2026 pra 4.98 em Agosto/2026 — +0.22 na nota final.</div></div>
+      <div class="destaque-box"><div class="titulo">🎯 Maior consistência</div><div class="conteudo"><b>Max</b> teve avaliação de cliente em 5 de 5 meses da temporada — presença real, mês após mês.</div></div>
+      <div class="destaque-box"><div class="titulo">🏆 Mais títulos mensais</div><div class="conteudo"><b>Max</b> (2 mês(es)) · <b>Ivone</b> (1 mês(es)) · <b>João</b> (1 mês(es))</div></div>
+    </section>
+
+    <section>
+      <h2>🎖️ Pódio da Temporada — perfil dos 3 primeiros</h2>
+      <div class="perfil">
+        <div class="perfil-header"><span class="perfil-medalha">🥇</span><h3>Max</h3><span class="perfil-nota">4.94</span></div>
+        <p class="perfil-linha"><b>Trajetória (Mai/26 → Set/26):</b> 4.89 → 4.87 → 4.88 → 5.00 → 4.95</p>
+        <p class="perfil-linha"><b>Meses avaliados na temporada:</b> 5 de 5</p>
+        <p class="perfil-linha"><b>Vezes campeão(ã) do mês:</b> 2</p>
+        <p class="perfil-linha"><b>Evolução no período:</b> 4.89 (Mai/26) → 4.95 (Set/26) — +0.06</p>
+      </div><div class="perfil">
+        <div class="perfil-header"><span class="perfil-medalha">🥈</span><h3>Guilherme</h3><span class="perfil-nota">4.93</span></div>
+        <p class="perfil-linha"><b>Trajetória (Mai/26 → Set/26):</b> 4.90 → 4.91 → 4.91 → 4.99 → 4.93</p>
+        <p class="perfil-linha"><b>Meses avaliados na temporada:</b> 5 de 5</p>
+        <p class="perfil-linha"><b>Vezes campeão(ã) do mês:</b> 0</p>
+        <p class="perfil-linha"><b>Evolução no período:</b> 4.90 (Mai/26) → 4.93 (Set/26) — +0.03</p>
+      </div><div class="perfil">
+        <div class="perfil-header"><span class="perfil-medalha">🥉</span><h3>João</h3><span class="perfil-nota">4.92</span></div>
+        <p class="perfil-linha"><b>Trajetória (Mai/26 → Set/26):</b> 4.88 → 4.94 → 4.91 → 4.99 → 4.91</p>
+        <p class="perfil-linha"><b>Meses avaliados na temporada:</b> 5 de 5</p>
+        <p class="perfil-linha"><b>Vezes campeão(ã) do mês:</b> 1</p>
+        <p class="perfil-linha"><b>Evolução no período:</b> 4.88 (Mai/26) → 4.91 (Set/26) — +0.03</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>🔍 Transparência do processo</h2>
+      <p style="font-size:12px;line-height:1.7">Nenhum ponto ou desconto vira definitivo sozinho: toda nota abaixo de 5 e todo ajuste de comportamento (velocidade, aceite, encerramento, abandono) passam por revisão manual de um gestor antes de contar pra valer — o sistema só detecta e sinaliza, quem decide é sempre uma pessoa. Casos considerados indevidos (interação robótica, contato que não é cliente de verdade, desconto que não refletia a realidade do atendimento) são retirados do cálculo daquele mês. Dúvidas sobre como a nota de alguém específico foi calculada podem ser conferidas ticket a ticket em "Relatório de Descontos".</p>
+      <p class="rodape">Liga do Atendimento — Grupo-E — Relatório da Temporada gerado automaticamente em 05/09/2026, 13:09:17, com os dados de Maio/2026 a Setembro/2026 recém-sincronizados do Zappy.</p>
+    </section>
+
+    </body></html>
