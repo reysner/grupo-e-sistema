@@ -99,7 +99,21 @@ async function rodar(config, opcoes = {}) {
   const desde = opcoes.desde || config.desde;
   limparCache();
 
-  let inativas = await acessoriasClient.listarEmpresasInativasDesde({ token: config.acessoriasToken, desde });
+  // A API do Acessórias às vezes derruba a conexão no meio da paginação
+  // (`fetch failed`). Num job noturno sem ninguém olhando, tenta de novo
+  // algumas vezes antes de desistir (recomeça da página 1 — tudo bem).
+  let inativas;
+  for (let tentativa = 1; ; tentativa++) {
+    try {
+      inativas = await acessoriasClient.listarEmpresasInativasDesde({ token: config.acessoriasToken, desde });
+      break;
+    } catch (e) {
+      if (tentativa >= 4) throw e;
+      const espera = tentativa * 15000;
+      console.warn(`[arquivoMorto] falha ao buscar inativas (tentativa ${tentativa}): ${e.message} — nova tentativa em ${espera / 1000}s`);
+      await new Promise(r => setTimeout(r, espera));
+    }
+  }
 
   // filtro pontual (--empresa / --cnpj): processa só ela e IGNORA o estado
   let ignorarEstado = false;

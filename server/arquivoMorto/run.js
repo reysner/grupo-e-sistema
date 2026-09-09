@@ -67,5 +67,10 @@ async function main() {
 
 main().catch(e => {
   console.error('[arquivoMorto] ERRO FATAL:', e && e.stack || e);
+  // `fetch failed` esconde o motivo real no .cause — mostra (ex.: ENOTFOUND,
+  // ECONNRESET, timeout na API do Acessórias, proxy corporativo bloqueando).
+  for (let c = e && e.cause; c; c = c.cause) {
+    console.error('  causa:', c && (c.stack || c.message || c));
+  }
   process.exit(2);
 });
