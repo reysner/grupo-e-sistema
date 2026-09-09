@@ -36,6 +36,12 @@ function carregarConfig() {
   const DRV = obrigatorio('ARQUIVO_MORTO_DRIVE_MOUNT');    // H:\Drives compartilhados
   const EMPRESAS = sob(UNC, 'EMPRESAS');
 
+  // Os Drives Compartilhados vindos da migração rclone têm aninhamento duplo:
+  // dentro do Drive "<nome>" existe uma pasta "<nome>" e o conteúdo real está
+  // nela. Confirmado no diag (cada um com 1 subpasta homônima). `drvDuplo`
+  // aponta pro nível certo.
+  const drvDuplo = nome => sob(DRV, nome, nome);
+
   return {
     // ── Acessórias ──────────────────────────────────────────────────────────
     acessoriasToken: obrigatorio('ACESSORIAS_API_TOKEN'),
@@ -55,17 +61,17 @@ function carregarConfig() {
       // 2024: pasta local do ano + as 5 "Anos Anteriores 2024" no Drive
       ano2024: [
         sob(EMPRESAS, '2024'),
-        sob(DRV, 'EMPRESAS - ANOS ANTERIORES 2024 - A a F'),
-        sob(DRV, 'EMPRESAS - ANOS ANTERIORES 2024 - G a L'),
-        sob(DRV, 'EMPRESAS - ANOS ANTERIORES 2024 - M a R'),
-        sob(DRV, 'EMPRESAS - ANOS ANTERIORES 2024 - S a T'),
-        sob(DRV, 'EMPRESAS - ANOS ANTERIORES 2024 - U a Z'),
+        drvDuplo('EMPRESAS - ANOS ANTERIORES 2024 - A a F'),
+        drvDuplo('EMPRESAS - ANOS ANTERIORES 2024 - G a L'),
+        drvDuplo('EMPRESAS - ANOS ANTERIORES 2024 - M a R'),
+        drvDuplo('EMPRESAS - ANOS ANTERIORES 2024 - S a T'),
+        drvDuplo('EMPRESAS - ANOS ANTERIORES 2024 - U a Z'),
       ],
       ano2025: [sob(EMPRESAS, '2025')],
       ano2026: [sob(EMPRESAS, '2026')],
       legalizacao: sob(EMPRESAS, 'LEGALIZACAO'),
       certificadosPj: sob(UNC, 'DEPARTAMENTO LEGALIZACAO', 'CERTIFICADOS PJ'),
-      sucessoDoCliente: sob(DRV, 'EMPRESAS - SUCESSO DO CLIENTE', 'EMPRESAS - SUCESSO DO CLIENTE'),
+      sucessoDoCliente: drvDuplo('EMPRESAS - SUCESSO DO CLIENTE'),
     },
 
     // ── Destinos ──────────────────────────────────────────────────────────
@@ -74,11 +80,11 @@ function carregarConfig() {
       localBase: sob(EMPRESAS, 'EMPRESAS - ARQUIVO MORTO'),
       // Drive: dividido por faixa de letra inicial do nome.
       driveBasePorFaixa: {
-        'A a D': sob(DRV, 'EMPRESAS - ARQUIVO MORTO A a D'),
-        'E a L': sob(DRV, 'EMPRESAS - ARQUIVO MORTO E a L'),
-        'M a R': sob(DRV, 'EMPRESAS - ARQUIVO MORTO M a R'),
-        'S a T': sob(DRV, 'EMPRESAS - ARQUIVO MORTO S a T'),
-        'U a Z': sob(DRV, 'EMPRESAS - ARQUIVO MORTO U a Z'),
+        'A a D': drvDuplo('EMPRESAS - ARQUIVO MORTO A a D'),
+        'E a L': drvDuplo('EMPRESAS - ARQUIVO MORTO E a L'),
+        'M a R': drvDuplo('EMPRESAS - ARQUIVO MORTO M a R'),
+        'S a T': drvDuplo('EMPRESAS - ARQUIVO MORTO S a T'),
+        'U a Z': drvDuplo('EMPRESAS - ARQUIVO MORTO U a Z'),
       },
     },
 
