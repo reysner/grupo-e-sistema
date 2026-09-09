@@ -2,3 +2,5 @@ server/backups/
 server/arquivoMorto/.env
 server/arquivoMorto/estado/
 server/arquivoMorto/logs/
+
+diag.txt

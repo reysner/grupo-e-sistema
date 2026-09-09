@@ -18,7 +18,7 @@ const empresa = arg ? arg.slice(10).replace(/^["']|["']$/g, '') : null;
 const alvo = empresa ? normalizar(empresa) : null;
 const tokensAlvo = alvo ? alvo.split(' ').filter(t => t.length >= 2) : [];
 
-async function inspecionar(rotulo, dir) {
+async function inspecionar(rotulo, dir, listarTudo = false) {
   let nomes;
   try {
     const ents = await fsp.readdir(longPath(dir), { withFileTypes: true });
@@ -28,6 +28,10 @@ async function inspecionar(rotulo, dir) {
     return;
   }
   console.log(`\n[${rotulo}]\n  ${dir}\n  ✅ ${nomes.length} subpasta(s)`);
+  if (listarTudo) {
+    for (const n of nomes) console.log(`      "${n}"`);
+    return;
+  }
   if (alvo) {
     const exato = nomes.filter(n => normalizar(n) === alvo);
     if (exato.length) { console.log(`  🎯 match exato: ${exato.join(' | ')}`); return; }
@@ -49,6 +53,15 @@ async function inspecionar(rotulo, dir) {
 (async () => {
   const c = carregarConfig();
   if (empresa) console.log(`Alvo: "${empresa}"  ->  normalizado: "${alvo}"  ->  faixa: "${faixaDeLetra(alvo)}"`);
+
+  console.log('\n==================== RAÍZES (o que existe de verdade) ====================');
+  const path = require('path');
+  const drv = process.env.ARQUIVO_MORTO_DRIVE_MOUNT;
+  const unc = process.env.ARQUIVO_MORTO_UNC_ROOT;
+  await inspecionar('DRIVE_MOUNT (Drives compartilhados)', drv, true);
+  await inspecionar('DRIVE_MOUNT pai (H:\\ ou equivalente)', path.win32.dirname(drv), true);
+  await inspecionar('UNC_ROOT', unc, true);
+  await inspecionar('UNC_ROOT\\EMPRESAS (só os que começam com "EMPRESAS -")', path.win32.join(unc, 'EMPRESAS'));
 
   console.log('\n==================== ORIGENS ====================');
   for (let i = 0; i < c.origens.ano2024.length; i++) await inspecionar(`2024 [${i}]`, c.origens.ano2024[i]);
