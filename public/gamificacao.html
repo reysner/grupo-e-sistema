@@ -243,6 +243,13 @@
         const consolidadoCard = document.getElementById('consolidado-card');
         if (consolidadoCard) consolidadoCard.style.display = data.mostrarConsolidado === false ? 'none' : '';
 
+        // Seletor "filtrar por meses anteriores" também pode ser ocultado pelo
+        // painel interno (pedido do Reysner, 10/09/2026) — quando desligado, a
+        // API vem com permitirFiltroMeses:false; some o dropdown e a página
+        // mostra só o mês corrente.
+        const filtroMes = document.querySelector('.filtro-mes');
+        if (filtroMes) filtroMes.style.display = data.permitirFiltroMeses === false ? 'none' : '';
+
         if (data.inicioGamificacao) {
           document.getElementById('inicio-label').textContent = 'Desde ' + fmtMesLabel(data.inicioGamificacao);
         }

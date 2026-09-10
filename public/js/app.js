@@ -5421,6 +5421,7 @@ const Gamificacao = (() => {
   let _colaboradores = [];
   let _pesoMinimo = 10;
   let _mostrarConsolidado = true; // liga/desliga o card "Consolidado Geral" na página pública
+  let _permitirFiltroMeses = true; // liga/desliga o seletor "meses anteriores" na página pública
 
   function _mesAtual() { return new Date().toISOString().slice(0,7); }
 
@@ -5445,7 +5446,9 @@ const Gamificacao = (() => {
       const d = await res.json();
       _pesoMinimo = d.peso_minimo;
       _mostrarConsolidado = d.mostrar_consolidado !== false;
+      _permitirFiltroMeses = d.permitir_filtro_meses !== false;
       _atualizarBotaoConsolidado();
+      _atualizarBotaoFiltroMeses();
     }
   }
 
@@ -5454,6 +5457,13 @@ const Gamificacao = (() => {
     if (!btn) return;
     btn.textContent = _mostrarConsolidado ? '👁️ Consolidado Geral: Visível' : '🚫 Consolidado Geral: Oculto';
     btn.style.color = _mostrarConsolidado ? '' : '#e53e3e';
+  }
+
+  function _atualizarBotaoFiltroMeses() {
+    const btn = document.getElementById('gam-btn-filtro-meses');
+    if (!btn) return;
+    btn.textContent = _permitirFiltroMeses ? '👁️ Filtrar Meses Anteriores: Visível' : '🚫 Filtrar Meses Anteriores: Oculto';
+    btn.style.color = _permitirFiltroMeses ? '' : '#e53e3e';
   }
 
   /**
@@ -5478,6 +5488,30 @@ const Gamificacao = (() => {
       App.Toast.ok(novoValor ? 'Consolidado Geral agora está visível na página pública.' : 'Consolidado Geral ocultado da página pública.');
     } else {
       App.Toast.err('Erro ao alterar visibilidade do Consolidado Geral.');
+    }
+  }
+
+  /**
+   * Liga/desliga o seletor "Filtrar por meses anteriores" na página pública
+   * de Gamificação — pedido do Reysner (10/09/2026): "já existe um botão que
+   * oculta o consolidado geral, agora quero que oculte filtrar por meses
+   * anteriores". Desligado, a página pública esconde o dropdown de meses e
+   * mostra só o mês corrente. Mesmo padrão do toggleConsolidado: reaproveita
+   * PATCH /api/data/gam/config enviando só permitir_filtro_meses.
+   */
+  async function toggleFiltroMeses() {
+    const novoValor = !_permitirFiltroMeses;
+    const res = await fetch('/api/data/gam/config', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ permitir_filtro_meses: novoValor })
+    });
+    if (res && res.ok) {
+      _permitirFiltroMeses = novoValor;
+      _atualizarBotaoFiltroMeses();
+      App.Toast.ok(novoValor ? 'Filtro de meses anteriores agora está visível na página pública.' : 'Filtro de meses anteriores ocultado da página pública.');
+    } else {
+      App.Toast.err('Erro ao alterar visibilidade do filtro de meses.');
     }
   }
 
@@ -7269,7 +7303,7 @@ const Gamificacao = (() => {
   return {
     load, loadNotas, excluirNota,
     loadFormLancamento, salvarLote,
-    abrirConfig, salvarConfig, toggleConsolidado,
+    abrirConfig, salvarConfig, toggleConsolidado, toggleFiltroMeses,
     abrirColaboradores, adicionarColaborador, toggleColaborador, excluirColaborador, toggleRegraAceite,
     vincularZappy, salvarVinculoZappy,
     vincularLogin, salvarVinculoLogin,

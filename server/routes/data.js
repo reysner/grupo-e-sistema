@@ -2242,6 +2242,7 @@ publicRouter.get('/gamificacao', async (req, res) => {
     )`).catch(()=>{});
     await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('peso_minimo', 10) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
     await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('mostrar_consolidado', 1) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
+    await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('permitir_filtro_meses', 1) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
     // Trava manual de nota final do mês (ver uso mais abaixo) — corrige o
     // pódio de um mês já anunciado à equipe sem afetar o Consolidado Geral.
     await pool.query(`CREATE TABLE IF NOT EXISTS gam_nota_final_override (
@@ -2262,6 +2263,12 @@ publicRouter.get('/gamificacao', async (req, res) => {
     // o cálculo inteiro (evita recalcular nota final mês a mês à toa).
     const mostrarR = await pool.query(`SELECT valor FROM gam_config WHERE chave = 'mostrar_consolidado'`);
     const mostrarConsolidado = mostrarR.rows[0] ? parseFloat(mostrarR.rows[0].valor) !== 0 : true;
+
+    // Liga/desliga o seletor "Filtrar por meses anteriores" na página pública
+    // (pedido do Reysner, 10/09/2026). Desligado, a página só mostra o mês
+    // corrente e esconde o dropdown de meses. Mesmo padrão do mostrar_consolidado.
+    const filtroMesesR = await pool.query(`SELECT valor FROM gam_config WHERE chave = 'permitir_filtro_meses'`);
+    const permitirFiltroMeses = filtroMesesR.rows[0] ? parseFloat(filtroMesesR.rows[0].valor) !== 0 : true;
 
     // Determina o mês a usar: se não veio na query, usa o ÚLTIMO mês com notas lançadas
     let { mes } = req.query;
@@ -2434,6 +2441,7 @@ publicRouter.get('/gamificacao', async (req, res) => {
       mediaGeral,
       consolidado,
       mostrarConsolidado,
+      permitirFiltroMeses,
       meses: meses.rows.map(r => r.mes),
       inicioGamificacao: inicio.rows[0]?.primeiro_mes || null,
     });
@@ -2472,6 +2480,11 @@ async function ensureGamTables() {
   // (1 = mostrar, 0 = ocultar); default ligado, pra não mudar o comportamento
   // de quem nunca mexeu nisso.
   await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('mostrar_consolidado', 1) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
+  // Liga/desliga o seletor "Filtrar por meses anteriores" na página pública —
+  // pedido do Reysner (10/09/2026): "já existe um botão que oculta o consolidado
+  // geral, agora quero que oculte filtrar por meses anteriores". Mesmo esquema
+  // chave/valor (1 = permite filtrar, 0 = só mês corrente); default ligado.
+  await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('permitir_filtro_meses', 1) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
 
   // ── Automação da nota mensal via Zappy (Modelo Atualizado — fase 1) ────────
   // A API pública do Zappy não dá nota por ticket (ver nota em zappyClient.js),
@@ -2577,6 +2590,11 @@ async function getMostrarConsolidado() {
   return r.rows[0] ? parseFloat(r.rows[0].valor) !== 0 : true;
 }
 
+async function getPermitirFiltroMeses() {
+  const r = await pool.query(`SELECT valor FROM gam_config WHERE chave = 'permitir_filtro_meses'`);
+  return r.rows[0] ? parseFloat(r.rows[0].valor) !== 0 : true;
+}
+
 // Fórmula de média ponderada com peso mínimo (Bayesian average)
 function notaFinal(mediaIndividual, avaliacoes, mediaGeral, pesoMinimo) {
   if (avaliacoes === 0) return null;
@@ -2589,7 +2607,8 @@ router.get('/gam/config', requireAdmin, async (req, res) => {
     await ensureGamTables();
     const peso = await getPesoMinimo();
     const mostrarConsolidado = await getMostrarConsolidado();
-    res.json({ peso_minimo: peso, mostrar_consolidado: mostrarConsolidado });
+    const permitirFiltroMeses = await getPermitirFiltroMeses();
+    res.json({ peso_minimo: peso, mostrar_consolidado: mostrarConsolidado, permitir_filtro_meses: permitirFiltroMeses });
   } catch (err) { res.status(500).json({ error: 'Erro ao buscar configuração.' }); }
 });
 
@@ -2598,8 +2617,8 @@ router.get('/gam/config', requireAdmin, async (req, res) => {
 // o peso mínimo, e vice-versa).
 router.patch('/gam/config', requireAdmin, async (req, res) => {
   try {
-    const { peso_minimo, mostrar_consolidado } = req.body;
-    if (peso_minimo == null && mostrar_consolidado == null) {
+    const { peso_minimo, mostrar_consolidado, permitir_filtro_meses } = req.body;
+    if (peso_minimo == null && mostrar_consolidado == null && permitir_filtro_meses == null) {
       return res.status(400).json({ error: 'Nenhum campo para atualizar.' });
     }
     if (peso_minimo != null) {
@@ -2615,6 +2634,13 @@ router.patch('/gam/config', requireAdmin, async (req, res) => {
         `INSERT INTO gam_config (chave, valor) VALUES ('mostrar_consolidado', $1)
          ON CONFLICT (chave) DO UPDATE SET valor = $1`,
         [mostrar_consolidado ? 1 : 0]
+      );
+    }
+    if (permitir_filtro_meses != null) {
+      await pool.query(
+        `INSERT INTO gam_config (chave, valor) VALUES ('permitir_filtro_meses', $1)
+         ON CONFLICT (chave) DO UPDATE SET valor = $1`,
+        [permitir_filtro_meses ? 1 : 0]
       );
     }
     res.json({ ok: true });
