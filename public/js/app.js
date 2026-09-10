@@ -5533,12 +5533,15 @@ const Gamificacao = (() => {
 
     const comNotaFinal = [...comNotaFinalCalc, ...semNotaFinalCalc]
       .sort((a, b) => {
-        // Critério principal: maior nota final
+        // Critério principal: maior nota final. Empate só vale se for
+        // igual de verdade (até a 4ª casa) — mesma mudança do sort do
+        // ranking público (10/09/2026): 0,005 era faixa de empate larga
+        // demais e deixava quem tinha média real maior atrás.
         const diff = b.notaFinal - a.notaFinal;
-        if (Math.abs(diff) >= 0.005) return diff;
+        if (Math.abs(diff) >= 0.00005) return diff;
         // Desempate 1: maior número de avaliações
         if (parseInt(b.avaliacoes) !== parseInt(a.avaliacoes)) return parseInt(b.avaliacoes) - parseInt(a.avaliacoes);
-        // Desempate 2: maior média individual
+        // Desempate 2: maior média individual (NUMERIC(4,2), 2 casas reais)
         const diffMi = parseFloat(b.media_individual) - parseFloat(a.media_individual);
         if (Math.abs(diffMi) >= 0.005) return diffMi;
         // Desempate 3: ordem alfabética
@@ -6554,8 +6557,10 @@ const Gamificacao = (() => {
       .map(c => ({ ...c, notaFinalNum: menorNotaFinal }));
 
     const todosOrdenados = [...comNotaFinal, ...semAval].sort((a, b) => {
+      // Decidido pela nota final real, sem faixa de empate (10/09/2026 —
+      // ver ranking público). Empate alfabético só até a 4ª casa igual.
       const diff = b.notaFinalNum - a.notaFinalNum;
-      if (Math.abs(diff) >= 0.005) return diff;
+      if (Math.abs(diff) >= 0.00005) return diff;
       if ((b.avaliacoes || 0) !== (a.avaliacoes || 0)) return (b.avaliacoes || 0) - (a.avaliacoes || 0);
       const diffMi = Number(b.media_individual || 0) - Number(a.media_individual || 0);
       if (Math.abs(diffMi) >= 0.005) return diffMi;

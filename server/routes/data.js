@@ -2326,12 +2326,17 @@ publicRouter.get('/gamificacao', async (req, res) => {
     const ranking = [...comNotaFinal, ...semNotaFinal]
       .map(r => ({ ...r, media: parseFloat(r.media).toFixed(4) }))
       .sort((a,b) => {
-        // Critério principal: maior nota final
+        // Critério principal: maior nota final. Só cai nos desempates em
+        // empate REAL até a 4ª casa — antes o limite era 0,005 (metade do
+        // centésimo), calibrado pra quando a nota tinha 2 casas; com 4 casas
+        // isso virava uma "faixa de empate" larga e podia deixar quem tinha
+        // 4,9461 atrás de quem tinha 4,9426 (pedido do Reysner, 10/09/2026).
         const diff = parseFloat(b.media) - parseFloat(a.media);
-        if (Math.abs(diff) >= 0.005) return diff;
+        if (Math.abs(diff) >= 0.00005) return diff;
         // Desempate 1: maior número de avaliações
         if (b.avaliacoes !== a.avaliacoes) return b.avaliacoes - a.avaliacoes;
-        // Desempate 2: maior média individual
+        // Desempate 2: maior média individual (essa é NUMERIC(4,2), 2 casas
+        // de verdade — 0,005 continua sendo o limite certo aqui)
         const diffMi = parseFloat(b.mediaIndividual) - parseFloat(a.mediaIndividual);
         if (Math.abs(diffMi) >= 0.005) return diffMi;
         // Desempate 3: ordem alfabética
@@ -2411,8 +2416,11 @@ publicRouter.get('/gamificacao', async (req, res) => {
           total_avaliacoes: 0
         };
       }).sort((a,b) => {
+        // Decidido pela média real (4 casas), sem faixa de empate — só cai
+        // pro alfabético em empate exato até a 4ª casa. Ver comentário no
+        // sort do ranking mensal acima (mesma mudança, 10/09/2026).
         const diff = parseFloat(b.media_geral) - parseFloat(a.media_geral);
-        if (Math.abs(diff) >= 0.005) return diff;
+        if (Math.abs(diff) >= 0.00005) return diff;
         return a.nome.localeCompare(b.nome, 'pt-BR');
       });
     }
