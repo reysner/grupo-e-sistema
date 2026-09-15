@@ -2585,6 +2585,44 @@ async function ensureGamTables() {
     UNIQUE (ticket_id, papel)
   )`).catch(()=>{});
   await pool.query(`ALTER TABLE gam_finalizar_revisoes ADD COLUMN IF NOT EXISTS override_analista_id TEXT`).catch(()=>{});
+
+  // ── Mês fechado (pedido do Reysner, 15/09/2026) ───────────────────────────
+  // "quando fechasse o mês e definirmos o pódio e o ganhador, não mexe mais
+  // no mês, ficando definido da forma que apresentamos" — trava GERAL e
+  // permanente pra um mês: nenhuma sincronização (job diário, "Sincronizar
+  // Notas Agora", "Auto-preencher (Zappy)", "Relatório da Temporada") pode
+  // mais GRAVAR nota pra ele. A trava não recalcula nada na hora de fechar —
+  // só impede escritas dali pra frente, então o que já está gravado em
+  // gam_notas (e qualquer override de pódio) fica exatamente como estava no
+  // momento do fechamento, os "valores já definidos". Ver uso em
+  // executarAutoPreencher, logo abaixo. Substitui o antigo array fixo
+  // MESES_SEM_SINCRONIZAR do front-end (só cobria Julho, hardcoded) por um
+  // mecanismo geral, dinâmico, aplicado no núcleo do cálculo — não só na
+  // tela do Relatório da Temporada.
+  await pool.query(`CREATE TABLE IF NOT EXISTS gam_meses_fechados (
+    mes VARCHAR(7) PRIMARY KEY,
+    fechado_por TEXT,
+    fechado_em TIMESTAMPTZ DEFAULT NOW()
+  )`).catch(()=>{});
+  // Maio, Junho (valores históricos restaurados manualmente, sem dado de
+  // ticket — "não pode alterar as notas de maio e junho", pedido explícito
+  // do Reysner) e Julho (pódio já anunciado com metodologia própria de nota
+  // bruta) vêm PROTEGIDOS por padrão, sem precisar clicar em nada.
+  await pool.query(`INSERT INTO gam_meses_fechados (mes, fechado_por) VALUES
+    ('2026-05', 'Sistema (protegido por padrão)'),
+    ('2026-06', 'Sistema (protegido por padrão)'),
+    ('2026-07', 'Sistema (protegido por padrão)')
+    ON CONFLICT (mes) DO NOTHING`).catch(()=>{});
+}
+
+async function getMesesFechados() {
+  const r = await pool.query(`SELECT mes FROM gam_meses_fechados ORDER BY mes`);
+  return r.rows.map(row => row.mes);
+}
+
+async function isMesFechado(mes) {
+  const r = await pool.query(`SELECT 1 FROM gam_meses_fechados WHERE mes = $1`, [mes]);
+  return r.rows.length > 0;
 }
 
 async function getPesoMinimo() {
@@ -2672,6 +2710,41 @@ router.patch('/gam/config', requireAdmin, async (req, res) => {
     }
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao salvar configuração.' }); }
+});
+
+// ── Mês fechado (admin) ──────────────────────────────────────────────────────
+// "Fechar" trava PERMANENTEMENTE a gravação de nota pra esse mês (ver guard
+// em executarAutoPreencher) — pra usar depois que o pódio já foi definido e
+// apresentado. "Reabrir" é a saída de emergência se precisar corrigir algo
+// depois (mesmo espírito do "Limpar Travas de Pódio" que já existia).
+router.get('/gam/meses-fechados', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    res.json({ data: await getMesesFechados() });
+  } catch (err) { res.status(500).json({ error: 'Erro ao listar meses fechados.' }); }
+});
+
+router.post('/gam/mes/:mes/fechar', requireAdmin, async (req, res) => {
+  try {
+    const { mes } = req.params;
+    if (!/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Mês inválido, use AAAA-MM.' });
+    await ensureGamTables();
+    await pool.query(
+      `INSERT INTO gam_meses_fechados (mes, fechado_por) VALUES ($1, $2)
+       ON CONFLICT (mes) DO UPDATE SET fechado_por = $2, fechado_em = NOW()`,
+      [mes, req.user.name]
+    );
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao fechar o mês.' }); }
+});
+
+router.post('/gam/mes/:mes/reabrir', requireAdmin, async (req, res) => {
+  try {
+    const { mes } = req.params;
+    if (!/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: 'Mês inválido, use AAAA-MM.' });
+    await pool.query(`DELETE FROM gam_meses_fechados WHERE mes = $1`, [mes]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao reabrir o mês.' }); }
 });
 
 // ── Colaboradores (admin) ──────────────────────────────────────────────────
@@ -2982,6 +3055,18 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
   await ensurePontuacaoSchema(pool);
   await ensureAbandonoSchema(pool);
   if (!mes || !/^\d{4}-\d{2}$/.test(mes)) throw new Error('Informe "mes" no formato AAAA-MM.');
+
+  // Mês fechado (pedido do Reysner, 15/09/2026): "quando fechasse o mês e
+  // definirmos o pódio, não mexe mais nele" — sai ANTES de qualquer consulta
+  // ao Zappy ou gravação, pra qualquer chamador (job diário, Sincronizar
+  // Notas Agora, Auto-preencher, Relatório da Temporada). Vale tanto pra
+  // gravação quanto pra PRÉVIA (dryRun) — um mês fechado nem deveria gastar
+  // uma chamada ao Zappy só pra mostrar um número que não pode ser aplicado
+  // mesmo. Ver gam_meses_fechados em ensureGamTables.
+  if (await isMesFechado(mes)) {
+    return { dryRun: !!dryRun, mes, resultados: [], rotulosNovos: [], fechado: true,
+      aviso: `${mes} está fechado — o pódio já foi definido e apresentado, então nenhuma sincronização grava nota nova pra esse mês. Reabra em "Fechar/Reabrir Mês" se precisar corrigir algo.` };
+  }
 
   const { rows: colaboradores } = await pool.query(
     `SELECT id, nome, zappy_user_id, aplica_regra_aceite FROM gam_colaboradores WHERE ativo = true AND zappy_user_id IS NOT NULL ORDER BY nome ASC`

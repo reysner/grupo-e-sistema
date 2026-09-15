@@ -5943,6 +5943,8 @@ const Gamificacao = (() => {
         body: JSON.stringify({ mes, dryRun: false })
       });
       if (res && res.ok) {
+        const data = await res.json();
+        if (data.fechado) { App.Toast.err(data.aviso || (mes + ' está fechado — nada foi gravado.')); return; }
         App.Toast.ok('Notas de ' + _mesLabel(mes) + ' sincronizadas!');
         await _populateMesFilter();
         await loadNotas();
@@ -5952,6 +5954,34 @@ const Gamificacao = (() => {
       }
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = textoOriginal || '⚡ Sincronizar Notas Agora'; }
+    }
+  }
+
+  /**
+   * Fecha ou reabre o mês selecionado em "Mês de referência" — pedido do
+   * Reysner, 15/09/2026: "quando fechasse o mês e definirmos o pódio e o
+   * ganhador, não mexe mais no mês, ficando definido da forma que
+   * apresentamos". Fechado, NENHUMA sincronização (job diário, Sincronizar
+   * Notas Agora, Auto-preencher, Relatório da Temporada) grava nota nova
+   * nesse mês — os valores atuais (e qualquer override de pódio) ficam
+   * travados exatamente como estão. Reabrir é a saída de emergência se
+   * precisar corrigir algo depois. Ver guard em executarAutoPreencher
+   * (server/routes/data.js).
+   */
+  async function abrirFecharMes() {
+    const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
+    const fechados = await _buscarMesesFechados();
+    const estaFechado = fechados.includes(mes);
+    if (estaFechado) {
+      if (!confirm('O mês ' + _mesLabel(mes) + ' está FECHADO. Quer reabrir? A partir daí, sincronizações voltam a poder gravar nota nesse mês.')) return;
+      const res = await fetch('/api/data/gam/mes/' + mes + '/reabrir', { method: 'POST', headers: { Authorization: 'Bearer ' + _tk() } });
+      if (res && res.ok) App.Toast.ok(_mesLabel(mes) + ' reaberto — sincronizações voltam a valer pra ele.');
+      else App.Toast.err('Erro ao reabrir o mês.');
+    } else {
+      if (!confirm('Fechar ' + _mesLabel(mes) + '? A partir de agora NENHUMA sincronização (job diário, Sincronizar Notas Agora, Auto-preencher, Relatório da Temporada) vai mais gravar nota nesse mês — ele fica travado exatamente como está hoje, com o pódio já definido. Dá pra reabrir depois se precisar corrigir algo.')) return;
+      const res = await fetch('/api/data/gam/mes/' + mes + '/fechar', { method: 'POST', headers: { Authorization: 'Bearer ' + _tk() } });
+      if (res && res.ok) App.Toast.ok(_mesLabel(mes) + ' fechado — não será mais alterado por nenhuma sincronização.');
+      else App.Toast.err('Erro ao fechar o mês.');
     }
   }
 
@@ -6975,13 +7005,22 @@ const Gamificacao = (() => {
   // Reaproveita /api/public/gamificacao (a mesma fonte do ranking público e
   // do card "Consolidado Geral") em vez de reimplementar a fórmula de peso
   // mínimo — depois de sincronizar, ela já reflete os dados certos.
-  // Meses com o pódio congelado manualmente (gam_nota_final_override) pra
-  // bater com o que já foi anunciado à equipe — o Relatório da Temporada
-  // NUNCA re-sincroniza esses meses (só lê o que já está gravado), senão
-  // desfaz o congelamento toda vez que alguém gera o relatório. Ajustar
-  // aqui se algum outro mês precisar do mesmo tratamento no futuro, ou
-  // esvaziar quando não precisar mais congelar nada.
-  const MESES_SEM_SINCRONIZAR = ['2026-07'];
+  // Meses FECHADOS (ver "🔒 Fechar/Reabrir Mês", pedido do Reysner,
+  // 15/09/2026: "quando fechasse o mês... não mexe mais nele, ficando
+  // definido da forma que apresentamos") — o Relatório da Temporada NUNCA
+  // re-sincroniza esses meses (só lê o que já está gravado), senão desfaz o
+  // pódio já anunciado toda vez que alguém gera o relatório. Antes era um
+  // array fixo só com Julho hardcoded aqui; agora vem de
+  // /api/data/gam/meses-fechados — dinâmico, e vale pra qualquer mês que for
+  // fechado dali pra frente, sem precisar editar código. O backend
+  // (executarAutoPreencher) também recusa a gravação de qualquer jeito —
+  // isso aqui só evita a chamada desnecessária e mostra a mensagem certa.
+  async function _buscarMesesFechados() {
+    const res = await fetch('/api/data/gam/meses-fechados', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) return [];
+    const { data } = await res.json();
+    return data || [];
+  }
 
   function _mesCurto(mes) {
     const nomesc = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -6990,7 +7029,7 @@ const Gamificacao = (() => {
   }
 
   async function abrirRelatorioTemporada() {
-    if (!confirm('Isso vai atualizar as notas de TODOS os meses da temporada (recalculando com os dados mais recentes de cada um) e só depois montar o relatório completo pra apresentação. Pode levar um minuto ou dois. Continuar?')) return;
+    if (!confirm('Isso vai atualizar as notas dos meses ABERTOS da temporada (recalculando com os dados mais recentes de cada um) — meses fechados (pódio já definido) não são tocados — e só depois montar o relatório completo pra apresentação. Pode levar um minuto ou dois. Continuar?')) return;
 
     const win = window.open('', '_blank');
     if (!win) { App.Toast.err('Permita popups para gerar o relatório.'); return; }
@@ -7017,15 +7056,17 @@ const Gamificacao = (() => {
 
       // 1) Atualiza o banco: recalcula e GRAVA (dryRun:false) cada mês da
       // temporada antes de montar qualquer número do relatório — EXCETO os
-      // meses congelados (ver MESES_SEM_SINCRONIZAR abaixo). Achado do
-      // Reysner, 05/09/2026: gerar o relatório re-sincronizava Julho com a
-      // fórmula completa (aceite/velocidade/finalizar/abandono), desfazendo
-      // o congelamento manual "só nota bruta do Zappy" que ele já tinha
-      // pedido pra bater com o pódio já anunciado — toda vez que alguém
-      // gerava o relatório, precisava corrigir Julho nota a nota de novo.
+      // meses FECHADOS. Achado do Reysner, 05/09/2026: gerar o relatório
+      // re-sincronizava Julho com a fórmula completa, desfazendo o
+      // congelamento manual que ele já tinha pedido pra bater com o pódio já
+      // anunciado — toda vez que alguém gerava o relatório, precisava
+      // corrigir Julho nota a nota de novo. Por isso o backend
+      // (executarAutoPreencher) já recusa gravar em mês fechado sozinho;
+      // aqui só evita a chamada à toa e mostra a mensagem certa no status.
+      const mesesFechados = await _buscarMesesFechados();
       for (let i = 0; i < meses.length; i++) {
-        if (MESES_SEM_SINCRONIZAR.includes(meses[i])) {
-          setStatus(_mesLabel(meses[i]) + ' está congelado (pódio já anunciado) — pulando sincronização...');
+        if (mesesFechados.includes(meses[i])) {
+          setStatus(_mesLabel(meses[i]) + ' está fechado (pódio já definido) — pulando sincronização...');
           continue;
         }
         setStatus('Atualizando ' + _mesLabel(meses[i]) + ' (' + (i + 1) + ' de ' + meses.length + ')...');
@@ -7316,6 +7357,8 @@ const Gamificacao = (() => {
       body: JSON.stringify({ mes, dryRun: false })
     });
     if (res && res.ok) {
+      const data = await res.json();
+      if (data.fechado) { App.Toast.err(data.aviso || (mes + ' está fechado — nada foi gravado.')); return; }
       App.Modal.close();
       App.Toast.ok('Notas de ' + _mesLabel(mes) + ' auto-preenchidas!');
       await _populateMesFilter();
@@ -7415,7 +7458,7 @@ const Gamificacao = (() => {
     vincularLogin, salvarVinculoLogin,
     abrirCriarLoginsEmLote, confirmarCriarLoginsEmLote,
     abrirMapaQualificacao, salvarMapaQualificacao,
-    abrirAutoPreencher, confirmarAutoPreencher, sincronizarNotasAgora, abrirRelatorioTemporada, limparTravasNotaFinal,
+    abrirAutoPreencher, confirmarAutoPreencher, sincronizarNotasAgora, abrirRelatorioTemporada, limparTravasNotaFinal, abrirFecharMes,
     abrirRevisaoNotas, marcarRevisao, _trocarStatusRevisao, reatribuirRevisao,
     abrirRevisaoVelocidade, marcarRevisaoVelocidade, _trocarStatusRevisaoVelocidade, reatribuirRevisaoVelocidade,
     abrirRevisaoAceite, marcarRevisaoAceite, _trocarStatusRevisaoAceite, reatribuirRevisaoAceite,
