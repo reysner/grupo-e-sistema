@@ -160,6 +160,10 @@ async function ensureAbandonoSchema(pool) {
     UNIQUE (ticket_id, data)
   )`).catch(() => {});
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gam_abandono_mes_analista ON gam_abandono_incidentes (mes, analista_id)`).catch(() => {});
+  // Reatribuição de analista (pedido do Reysner, 15/09/2026) — quando
+  // preenchido, o incidente conta pra esse zappy_user_id em vez do analista
+  // que o Zappy registrou no ticket. Ver executarAutoPreencher em routes/data.js.
+  await pool.query(`ALTER TABLE gam_abandono_incidentes ADD COLUMN IF NOT EXISTS override_analista_id TEXT`).catch(() => {});
 }
 
 /**

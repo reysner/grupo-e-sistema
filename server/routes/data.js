@@ -2544,6 +2544,11 @@ async function ensureGamTables() {
     revisado_em TIMESTAMPTZ,
     UNIQUE (ticket_id, papel)
   )`).catch(()=>{});
+  // Reatribuição de analista (pedido do Reysner, 15/09/2026) — quando
+  // preenchido, o desconto de velocidade dessa linha conta pro
+  // zappy_user_id aqui em vez de quem o Zappy registrou como dono do
+  // ticket. Ver comentário completo em executarAutoPreencher.
+  await pool.query(`ALTER TABLE gam_velocidade_revisoes ADD COLUMN IF NOT EXISTS override_analista_id TEXT`).catch(()=>{});
 
   // ── Revisão do ACEITE do aguardando (separada da revisão de velocidade) ──
   // Pedido do Reysner: em situações que parecem bot/marketing/envio de
@@ -2562,6 +2567,7 @@ async function ensureGamTables() {
     revisado_em TIMESTAMPTZ,
     UNIQUE (ticket_id, papel)
   )`).catch(()=>{});
+  await pool.query(`ALTER TABLE gam_aceite_revisoes ADD COLUMN IF NOT EXISTS override_analista_id TEXT`).catch(()=>{});
 
   // ── Revisão do /FINALIZAR + REABERTURA (regra combinada, 28/08/2026) ─────
   // Mesmo padrão de gam_aceite_revisoes: quando 'indevida', o desconto some
@@ -2578,11 +2584,32 @@ async function ensureGamTables() {
     revisado_em TIMESTAMPTZ,
     UNIQUE (ticket_id, papel)
   )`).catch(()=>{});
+  await pool.query(`ALTER TABLE gam_finalizar_revisoes ADD COLUMN IF NOT EXISTS override_analista_id TEXT`).catch(()=>{});
 }
 
 async function getPesoMinimo() {
   const r = await pool.query(`SELECT valor FROM gam_config WHERE chave = 'peso_minimo'`);
   return r.rows[0] ? parseFloat(r.rows[0].valor) : 10;
+}
+
+/**
+ * Resolve um `novo_colaborador_id` (UUID de gam_colaboradores, o que o
+ * front-end manda no seletor "Trocar analista") pro zappy_user_id que as
+ * revisões de fato armazenam em override_analista_id — é o zappy_user_id
+ * que casa com gam_tickets_pontos.analista_id / gam_abandono_incidentes.analista_id.
+ * Devolve null se novoColaboradorId vier vazio (reatribuição sendo removida).
+ * Lança erro com .status=400 se o colaborador não existir ou não tiver
+ * zappy_user_id vinculado (não dá pra reatribuir pra alguém sem vínculo).
+ */
+async function resolverNovoAnalistaId(novoColaboradorId) {
+  if (!novoColaboradorId) return null;
+  const { rows } = await pool.query(
+    `SELECT zappy_user_id FROM gam_colaboradores WHERE id = $1`,
+    [novoColaboradorId]
+  );
+  if (!rows.length) { const e = new Error('Colaborador não encontrado.'); e.status = 400; throw e; }
+  if (!rows[0].zappy_user_id) { const e = new Error('Esse colaborador ainda não está vinculado a um usuário do Zappy.'); e.status = 400; throw e; }
+  return rows[0].zappy_user_id;
 }
 
 async function getMostrarConsolidado() {
@@ -3001,16 +3028,32 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
       // parte da nota_final por ticket, ver bonusFinalizar abaixo); pra
       // transferiu, exclui a linha inteira da média (o ajuste_velocidade É
       // a nota_final desse papel, não tem "resto" pra manter).
+      // Reatribuição de analista (pedido do Reysner, 15/09/2026): em cada uma
+      // das 5 revisões (nota baixa, velocidade, aceite, finalizar, abandono)
+      // dá pra trocar QUEM responde por aquele item, quando o Zappy atribui
+      // o ticket/desconto à pessoa errada (ex.: ticket aparece "Único" da
+      // Ivone, mas o atraso real foi no aceite da Elma antes de transferir,
+      // e o Zappy não registrou isso como uma transferência formal). Cada
+      // tabela de revisão ganhou uma coluna override_analista_id — quando
+      // preenchida, o item conta pra ESSA pessoa em vez da original. Nota
+      // baixa e Abandono são "linha inteira": COALESCE(override, dono
+      // original) decide de quem é o item, igual pros dois lados (sai de
+      // quem tinha e entra em quem recebeu). Velocidade e Finalizar são
+      // PARCIAIS (moram dentro da mesma linha que a nota do cliente) — a
+      // pessoa original mantém a nota do cliente, só o desconto específico
+      // muda de dono, virando um item a mais na média de bônus (mesmo
+      // princípio de "média, não soma" dos outros bônus).
       const { rows: notasRows } = await pool.query(
         `SELECT p.nota_final, p.nota_cliente, p.ajuste_velocidade, p.ajuste_finalizar, p.ajuste_reabertura,
-                COALESCE(vr.status, 'pendente') AS vel_status,
-                COALESCE(fr.status, 'pendente') AS finalizar_status
+                COALESCE(vr.status, 'pendente') AS vel_status, vr.override_analista_id AS vel_override,
+                COALESCE(fr.status, 'pendente') AS finalizar_status, fr.override_analista_id AS fin_override
          FROM gam_tickets_pontos p
          JOIN cs_tickets t ON t.id = p.ticket_id
          LEFT JOIN gam_velocidade_revisoes vr ON vr.ticket_id = p.ticket_id AND vr.papel = p.papel
          LEFT JOIN gam_finalizar_revisoes fr ON fr.ticket_id = p.ticket_id AND fr.papel = p.papel
-         WHERE p.mes = $1 AND p.analista_id = $2 AND p.papel IN ('recebeu','unico')
-           AND COALESCE(t.revisao_nota_status, 'pendente') != 'indevida'`,
+         WHERE p.mes = $1 AND p.papel IN ('recebeu','unico')
+           AND COALESCE(t.revisao_nota_status, 'pendente') != 'indevida'
+           AND COALESCE(t.revisao_nota_override_analista_id, p.analista_id) = $2`,
         [mes, c.zappy_user_id]
       );
       if (notasRows.length) {
@@ -3018,11 +3061,27 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
           `SELECT p.ajuste_velocidade FROM gam_tickets_pontos p
            LEFT JOIN gam_velocidade_revisoes vr ON vr.ticket_id = p.ticket_id AND vr.papel = p.papel
            WHERE p.mes = $1 AND p.analista_id = $2 AND p.papel = 'transferiu'
-             AND COALESCE(vr.status, 'pendente') != 'indevida'`,
+             AND COALESCE(vr.status, 'pendente') != 'indevida'
+             AND (vr.override_analista_id IS NULL OR vr.override_analista_id = $2)`,
           [mes, c.zappy_user_id]
         );
-        const bonusTransferencia = bonusRows.length
-          ? bonusRows.reduce((s, r) => s + parseFloat(r.ajuste_velocidade), 0) / bonusRows.length
+        // Descontos de velocidade REATRIBUÍDOS pra esse colaborador (de
+        // qualquer papel — transferiu, recebeu ou único de OUTRA pessoa)
+        // via revisão "Trocar analista". Entram na mesma média de
+        // transferência: é um desconto que não veio de um ticket seu, mas
+        // que a revisão decidiu que é sua responsabilidade real.
+        const { rows: realocadosVelocidadeRows } = await pool.query(
+          `SELECT p.ajuste_velocidade FROM gam_tickets_pontos p
+           JOIN gam_velocidade_revisoes vr ON vr.ticket_id = p.ticket_id AND vr.papel = p.papel
+           WHERE p.mes = $1 AND vr.override_analista_id = $2 AND vr.status = 'devida' AND p.analista_id != $2`,
+          [mes, c.zappy_user_id]
+        );
+        const velocidadeTodos = [
+          ...bonusRows.map(r => parseFloat(r.ajuste_velocidade)),
+          ...realocadosVelocidadeRows.map(r => parseFloat(r.ajuste_velocidade)),
+        ];
+        const bonusTransferencia = velocidadeTodos.length
+          ? velocidadeTodos.reduce((s, v) => s + v, 0) / velocidadeTodos.length
           : 0;
 
         // Bônus/desconto de ACEITE do aguardando — só pra colaboradores com
@@ -3034,15 +3093,17 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
         // gam_aceite_revisoes (separada de gam_velocidade_revisoes): exclui
         // contatos marcados como bot/marketing/currículo etc. — "indevida"
         // aqui não é sobre o desconto ter sido justo, é sobre o ticket nem
-        // dever entrar na amostra da métrica.
+        // dever entrar na amostra da métrica. COALESCE(override, dono
+        // original): reatribuição move o aceite inteiro pra outra pessoa.
         let bonusAceite = 0;
         if (c.aplica_regra_aceite) {
           const { rows: aceiteRows } = await pool.query(
             `SELECT p.ajuste_aceite FROM gam_tickets_pontos p
              LEFT JOIN gam_aceite_revisoes ar ON ar.ticket_id = p.ticket_id AND ar.papel = p.papel
-             WHERE p.mes = $1 AND p.analista_id = $2 AND p.papel IN ('transferiu','unico')
+             WHERE p.mes = $1 AND p.papel IN ('transferiu','unico')
                AND p.ajuste_aceite IS NOT NULL
-               AND COALESCE(ar.status, 'pendente') != 'indevida'`,
+               AND COALESCE(ar.status, 'pendente') != 'indevida'
+               AND COALESCE(ar.override_analista_id, p.analista_id) = $2`,
             [mes, c.zappy_user_id]
           );
           if (aceiteRows.length) {
@@ -3055,15 +3116,27 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
         // sempre neutro; não avisou -> -1 só se o cliente voltou a chamar
         // nos 30min. Mesma lógica de média (não soma) de transferência/
         // aceite, e pelo mesmo motivo: evitar que o teto de 5 por ticket
-        // mascare o desconto. Reaproveita notasRows (já traz
-        // ajuste_finalizar + finalizar_status) — mesmo conjunto de tickets
-        // (recebeu/unico, nota não-indevida) que forma a mediaBase logo
-        // abaixo. gam_finalizar_revisoes: exclui reaberturas que não
-        // refletiam um encerramento mal feito (ex.: cliente voltou por um
-        // assunto novo, sem relação com o fechamento).
-        const finalizarValidos = notasRows.filter(r => r.finalizar_status !== 'indevida');
-        const bonusFinalizar = finalizarValidos.length
-          ? finalizarValidos.reduce((s, r) => s + parseFloat(r.ajuste_finalizar), 0) / finalizarValidos.length
+        // mascare o desconto. Reaproveita notasRows pros próprios (já traz
+        // ajuste_finalizar + finalizar_status/fin_override), mais uma
+        // consulta à parte pros REATRIBUÍDOS de outras pessoas (mesmo
+        // esquema da velocidade acima). gam_finalizar_revisoes: exclui
+        // reaberturas que não refletiam um encerramento mal feito (ex.:
+        // cliente voltou por um assunto novo, sem relação com o fechamento).
+        const finalizarValidosProprios = notasRows.filter(r =>
+          r.finalizar_status !== 'indevida' && (!r.fin_override || r.fin_override === c.zappy_user_id)
+        );
+        const { rows: realocadosFinalizarRows } = await pool.query(
+          `SELECT p.ajuste_finalizar FROM gam_tickets_pontos p
+           JOIN gam_finalizar_revisoes fr ON fr.ticket_id = p.ticket_id AND fr.papel = p.papel
+           WHERE p.mes = $1 AND fr.override_analista_id = $2 AND fr.status = 'devida' AND p.analista_id != $2`,
+          [mes, c.zappy_user_id]
+        );
+        const finalizarTodos = [
+          ...finalizarValidosProprios.map(r => parseFloat(r.ajuste_finalizar)),
+          ...realocadosFinalizarRows.map(r => parseFloat(r.ajuste_finalizar)),
+        ];
+        const bonusFinalizar = finalizarTodos.length
+          ? finalizarTodos.reduce((s, v) => s + v, 0) / finalizarTodos.length
           : 0;
 
         // Bônus/desconto de ABANDONO DE ATENDIMENTO (ver cs/abandono.js):
@@ -3073,17 +3146,21 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
         // quantidade de incidentes — senão um analista com só 1 avaliação e
         // 1 incidente cairia junto com quem tem 20 avaliações e 1 incidente.
         // Exemplo do Reysner: 3 incidentes ÷ 20 atendimentos = -0,15.
+        // COALESCE(override, dono original): reatribuição move o incidente
+        // inteiro pra outra pessoa (sai de quem tinha, entra em quem recebeu).
         let bonusAbandono = 0;
         if (notasRows.length) {
           const { rows: abandonoRows } = await pool.query(
-            `SELECT id FROM gam_abandono_incidentes WHERE mes = $1 AND analista_id = $2 AND status != 'indevida'`,
+            `SELECT id FROM gam_abandono_incidentes
+             WHERE mes = $1 AND status != 'indevida' AND COALESCE(override_analista_id, analista_id) = $2`,
             [mes, c.zappy_user_id]
           );
           bonusAbandono = abandonoRows.length ? -(abandonoRows.length / notasRows.length) : 0;
         }
 
         const somaBase = notasRows.reduce((s, r) => {
-          if (r.vel_status === 'indevida') {
+          const velReatribuida = r.vel_override && r.vel_override !== c.zappy_user_id;
+          if (r.vel_status === 'indevida' || velReatribuida) {
             const semVelocidade = clamp(parseFloat(r.nota_cliente) + 0 + parseFloat(r.ajuste_reabertura), 0, 5);
             return s + semVelocidade;
           }
@@ -3095,7 +3172,8 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
         // — é a nota bruta antes dos 4 bônus mensais, pra dar pra mostrar
         // "sua nota final é X porque: base Y + transferência Z + aceite W +
         // finalizar V + abandono U", em vez desses números ficarem só numa
-        // resposta crua.
+        // resposta crua. bonusTransferencia e bonusFinalizar já incluem os
+        // itens reatribuídos a esse colaborador.
         resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes: notasRows.length, mediaBase: Number(mediaBase.toFixed(2)), bonusTransferencia, bonusAceite, bonusFinalizar, bonusAbandono, fonte: 'tickets' });
         if (!dryRun) {
           await pool.query(
@@ -3508,15 +3586,17 @@ router.get('/gam/tickets-revisao', requireAdmin, async (req, res) => {
     }
 
     const { rows } = await pool.query(
-      `SELECT id, zappy_id, empresa_texto, analista, nota_avaliacao AS nota_cliente, encerramento,
-              revisao_nota_status, revisao_nota_por, revisao_nota_em,
-              (nota_avaliacao < 5) AS nota_baixa
-       FROM cs_tickets
-       WHERE nota_avaliacao IS NOT NULL
-         AND COALESCE(revisao_nota_status, 'pendente') = $2
-         AND TO_CHAR(COALESCE(encerramento, abertura), 'YYYY-MM') = $1
-         AND (nota_avaliacao < 5${condicaoInterno})
-       ORDER BY encerramento DESC NULLS LAST`,
+      `SELECT t.id, t.zappy_id, t.empresa_texto, t.analista, t.nota_avaliacao AS nota_cliente, t.encerramento,
+              t.revisao_nota_status, t.revisao_nota_por, t.revisao_nota_em,
+              (t.nota_avaliacao < 5) AS nota_baixa,
+              t.revisao_nota_override_analista_id AS override_analista_id, oc.nome AS override_analista_nome
+       FROM cs_tickets t
+       LEFT JOIN gam_colaboradores oc ON oc.zappy_user_id = t.revisao_nota_override_analista_id
+       WHERE t.nota_avaliacao IS NOT NULL
+         AND COALESCE(t.revisao_nota_status, 'pendente') = $2
+         AND TO_CHAR(COALESCE(t.encerramento, t.abertura), 'YYYY-MM') = $1
+         AND (t.nota_avaliacao < 5${condicaoInterno})
+       ORDER BY t.encerramento DESC NULLS LAST`,
       params
     );
     res.json({ data: rows });
@@ -3526,25 +3606,40 @@ router.get('/gam/tickets-revisao', requireAdmin, async (req, res) => {
   }
 });
 
+/**
+ * PATCH /api/data/gam/tickets-revisao/:id — marca devida/indevida/pendente,
+ * e opcionalmente reatribui a NOTA (nota do cliente + tudo que anda na mesma
+ * linha: velocidade, finalizar) pra outro colaborador via `novo_colaborador_id`
+ * (UUID de gam_colaboradores — só aceito junto com status_revisao='devida';
+ * reatribuir uma nota que nem vai contar não faz sentido). Mandar
+ * novo_colaborador_id=null limpa uma reatribuição anterior sem mudar o status.
+ */
 router.patch('/gam/tickets-revisao/:id', requireAdmin, async (req, res) => {
   try {
-    const { status_revisao } = req.body;
+    const { status_revisao, novo_colaborador_id } = req.body;
     if (!['devida', 'indevida', 'pendente'].includes(status_revisao)) {
       return res.status(400).json({ error: 'status_revisao deve ser "devida", "indevida" ou "pendente".' });
+    }
+    if (novo_colaborador_id && status_revisao !== 'devida') {
+      return res.status(400).json({ error: 'Só dá pra reatribuir junto com status "devida".' });
     }
     // "pendente" reabre a revisão (limpa a decisão anterior) — pedido do
     // Reysner, 05/09/2026: quis reverter uma marcação de indevida pra
     // decidir de novo manualmente, em vez de ficar preso na decisão antiga.
+    // "pendente" também limpa qualquer reatribuição anterior.
     const valor = status_revisao === 'pendente' ? null : status_revisao;
+    const novoAnalistaId = valor === null ? null : await resolverNovoAnalistaId(novo_colaborador_id);
     const { rows } = await pool.query(
-      `UPDATE cs_tickets SET revisao_nota_status = $2, revisao_nota_por = $3, revisao_nota_em = NOW() WHERE id = $1 RETURNING id`,
-      [req.params.id, valor, req.user.name]
+      `UPDATE cs_tickets SET revisao_nota_status = $2, revisao_nota_por = $3, revisao_nota_em = NOW(),
+              revisao_nota_override_analista_id = $4
+       WHERE id = $1 RETURNING id`,
+      [req.params.id, valor, req.user.name, novoAnalistaId]
     );
     if (!rows.length) return res.status(404).json({ error: 'Não encontrado.' });
     res.json({ ok: true, data: rows[0] });
   } catch (err) {
     console.error('[gam] PATCH tickets-revisao falhou:', err);
-    res.status(500).json({ error: 'Erro ao salvar revisão.' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Erro ao salvar revisão.' });
   }
 });
 
@@ -3566,10 +3661,12 @@ router.get('/gam/tickets-revisao-velocidade', requireAdmin, async (req, res) => 
     const { rows } = await pool.query(
       `SELECT p.ticket_id, p.papel, p.analista, p.ajuste_velocidade, p.nota_final,
               t.zappy_id, t.empresa_texto, t.encerramento,
-              vr.status AS revisao_status, vr.revisado_por, vr.revisado_em
+              vr.status AS revisao_status, vr.revisado_por, vr.revisado_em,
+              vr.override_analista_id, oc.nome AS override_analista_nome
          FROM gam_tickets_pontos p
          JOIN cs_tickets t ON t.id = p.ticket_id
          LEFT JOIN gam_velocidade_revisoes vr ON vr.ticket_id = p.ticket_id AND vr.papel = p.papel
+         LEFT JOIN gam_colaboradores oc ON oc.zappy_user_id = vr.override_analista_id
         WHERE p.mes = $1
           AND p.ajuste_velocidade < 0
           AND COALESCE(vr.status, 'pendente') = $2
@@ -3583,30 +3680,39 @@ router.get('/gam/tickets-revisao-velocidade', requireAdmin, async (req, res) => 
   }
 });
 
-/** PATCH /api/data/gam/tickets-revisao-velocidade/:ticketId/:papel — marca devida/indevida. */
+/**
+ * PATCH /api/data/gam/tickets-revisao-velocidade/:ticketId/:papel — marca
+ * devida/indevida, e opcionalmente reatribui SÓ o desconto (não a nota do
+ * cliente) pra outro colaborador via `novo_colaborador_id` (UUID de
+ * gam_colaboradores — só junto com status_revisao='devida').
+ */
 router.patch('/gam/tickets-revisao-velocidade/:ticketId/:papel', requireAdmin, async (req, res) => {
   try {
-    const { status_revisao } = req.body;
+    const { status_revisao, novo_colaborador_id } = req.body;
     if (!['devida', 'indevida'].includes(status_revisao)) {
       return res.status(400).json({ error: 'status_revisao deve ser "devida" ou "indevida".' });
+    }
+    if (novo_colaborador_id && status_revisao !== 'devida') {
+      return res.status(400).json({ error: 'Só dá pra reatribuir junto com status "devida".' });
     }
     const { papel } = req.params;
     if (!['transferiu', 'recebeu', 'unico'].includes(papel)) {
       return res.status(400).json({ error: 'papel inválido.' });
     }
     await ensureGamTables();
+    const novoAnalistaId = await resolverNovoAnalistaId(novo_colaborador_id);
     const { rows } = await pool.query(
-      `INSERT INTO gam_velocidade_revisoes (ticket_id, papel, status, revisado_por, revisado_em)
-       VALUES ($1, $2, $3, $4, NOW())
+      `INSERT INTO gam_velocidade_revisoes (ticket_id, papel, status, revisado_por, revisado_em, override_analista_id)
+       VALUES ($1, $2, $3, $4, NOW(), $5)
        ON CONFLICT (ticket_id, papel) DO UPDATE SET
-         status = $3, revisado_por = $4, revisado_em = NOW()
+         status = $3, revisado_por = $4, revisado_em = NOW(), override_analista_id = $5
        RETURNING id`,
-      [req.params.ticketId, papel, status_revisao, req.user.name]
+      [req.params.ticketId, papel, status_revisao, req.user.name, novoAnalistaId]
     );
     res.json({ ok: true, data: rows[0] });
   } catch (err) {
     console.error('[gam] PATCH tickets-revisao-velocidade falhou:', err);
-    res.status(500).json({ error: 'Erro ao salvar revisão de velocidade.' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Erro ao salvar revisão de velocidade.' });
   }
 });
 
@@ -3630,11 +3736,13 @@ router.get('/gam/tickets-revisao-aceite', requireAdmin, async (req, res) => {
     const { rows } = await pool.query(
       `SELECT p.ticket_id, p.papel, p.analista, p.ajuste_aceite, p.nota_final,
               t.zappy_id, t.empresa_texto, t.encerramento,
-              ar.status AS revisao_status, ar.revisado_por, ar.revisado_em
+              ar.status AS revisao_status, ar.revisado_por, ar.revisado_em,
+              ar.override_analista_id, oc.nome AS override_analista_nome
          FROM gam_tickets_pontos p
          JOIN cs_tickets t ON t.id = p.ticket_id
          JOIN gam_colaboradores c ON c.zappy_user_id = p.analista_id
          LEFT JOIN gam_aceite_revisoes ar ON ar.ticket_id = p.ticket_id AND ar.papel = p.papel
+         LEFT JOIN gam_colaboradores oc ON oc.zappy_user_id = ar.override_analista_id
         WHERE p.mes = $1
           AND p.ajuste_aceite < 0
           AND c.aplica_regra_aceite = true
@@ -3649,30 +3757,39 @@ router.get('/gam/tickets-revisao-aceite', requireAdmin, async (req, res) => {
   }
 });
 
-/** PATCH /api/data/gam/tickets-revisao-aceite/:ticketId/:papel — marca devida/indevida. */
+/**
+ * PATCH /api/data/gam/tickets-revisao-aceite/:ticketId/:papel — marca
+ * devida/indevida, e opcionalmente reatribui o aceite pra outro colaborador
+ * via `novo_colaborador_id` (UUID de gam_colaboradores — só junto com
+ * status_revisao='devida').
+ */
 router.patch('/gam/tickets-revisao-aceite/:ticketId/:papel', requireAdmin, async (req, res) => {
   try {
-    const { status_revisao } = req.body;
+    const { status_revisao, novo_colaborador_id } = req.body;
     if (!['devida', 'indevida'].includes(status_revisao)) {
       return res.status(400).json({ error: 'status_revisao deve ser "devida" ou "indevida".' });
+    }
+    if (novo_colaborador_id && status_revisao !== 'devida') {
+      return res.status(400).json({ error: 'Só dá pra reatribuir junto com status "devida".' });
     }
     const { papel } = req.params;
     if (!['transferiu', 'unico'].includes(papel)) {
       return res.status(400).json({ error: 'papel inválido.' });
     }
     await ensureGamTables();
+    const novoAnalistaId = await resolverNovoAnalistaId(novo_colaborador_id);
     const { rows } = await pool.query(
-      `INSERT INTO gam_aceite_revisoes (ticket_id, papel, status, revisado_por, revisado_em)
-       VALUES ($1, $2, $3, $4, NOW())
+      `INSERT INTO gam_aceite_revisoes (ticket_id, papel, status, revisado_por, revisado_em, override_analista_id)
+       VALUES ($1, $2, $3, $4, NOW(), $5)
        ON CONFLICT (ticket_id, papel) DO UPDATE SET
-         status = $3, revisado_por = $4, revisado_em = NOW()
+         status = $3, revisado_por = $4, revisado_em = NOW(), override_analista_id = $5
        RETURNING id`,
-      [req.params.ticketId, papel, status_revisao, req.user.name]
+      [req.params.ticketId, papel, status_revisao, req.user.name, novoAnalistaId]
     );
     res.json({ ok: true, data: rows[0] });
   } catch (err) {
     console.error('[gam] PATCH tickets-revisao-aceite falhou:', err);
-    res.status(500).json({ error: 'Erro ao salvar revisão de aceite.' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Erro ao salvar revisão de aceite.' });
   }
 });
 
@@ -3696,10 +3813,12 @@ router.get('/gam/tickets-revisao-finalizar', requireAdmin, async (req, res) => {
     const { rows } = await pool.query(
       `SELECT p.ticket_id, p.papel, p.analista, p.ajuste_finalizar, p.nota_final,
               t.zappy_id, t.empresa_texto, t.encerramento,
-              fr.status AS revisao_status, fr.revisado_por, fr.revisado_em
+              fr.status AS revisao_status, fr.revisado_por, fr.revisado_em,
+              fr.override_analista_id, oc.nome AS override_analista_nome
          FROM gam_tickets_pontos p
          JOIN cs_tickets t ON t.id = p.ticket_id
          LEFT JOIN gam_finalizar_revisoes fr ON fr.ticket_id = p.ticket_id AND fr.papel = p.papel
+         LEFT JOIN gam_colaboradores oc ON oc.zappy_user_id = fr.override_analista_id
         WHERE p.mes = $1
           AND p.ajuste_finalizar < 0
           AND COALESCE(fr.status, 'pendente') = $2
@@ -3713,30 +3832,39 @@ router.get('/gam/tickets-revisao-finalizar', requireAdmin, async (req, res) => {
   }
 });
 
-/** PATCH /api/data/gam/tickets-revisao-finalizar/:ticketId/:papel — marca devida/indevida. */
+/**
+ * PATCH /api/data/gam/tickets-revisao-finalizar/:ticketId/:papel — marca
+ * devida/indevida, e opcionalmente reatribui SÓ o desconto pra outro
+ * colaborador via `novo_colaborador_id` (UUID de gam_colaboradores — só
+ * junto com status_revisao='devida').
+ */
 router.patch('/gam/tickets-revisao-finalizar/:ticketId/:papel', requireAdmin, async (req, res) => {
   try {
-    const { status_revisao } = req.body;
+    const { status_revisao, novo_colaborador_id } = req.body;
     if (!['devida', 'indevida'].includes(status_revisao)) {
       return res.status(400).json({ error: 'status_revisao deve ser "devida" ou "indevida".' });
+    }
+    if (novo_colaborador_id && status_revisao !== 'devida') {
+      return res.status(400).json({ error: 'Só dá pra reatribuir junto com status "devida".' });
     }
     const { papel } = req.params;
     if (!['recebeu', 'unico'].includes(papel)) {
       return res.status(400).json({ error: 'papel inválido.' });
     }
     await ensureGamTables();
+    const novoAnalistaId = await resolverNovoAnalistaId(novo_colaborador_id);
     const { rows } = await pool.query(
-      `INSERT INTO gam_finalizar_revisoes (ticket_id, papel, status, revisado_por, revisado_em)
-       VALUES ($1, $2, $3, $4, NOW())
+      `INSERT INTO gam_finalizar_revisoes (ticket_id, papel, status, revisado_por, revisado_em, override_analista_id)
+       VALUES ($1, $2, $3, $4, NOW(), $5)
        ON CONFLICT (ticket_id, papel) DO UPDATE SET
-         status = $3, revisado_por = $4, revisado_em = NOW()
+         status = $3, revisado_por = $4, revisado_em = NOW(), override_analista_id = $5
        RETURNING id`,
-      [req.params.ticketId, papel, status_revisao, req.user.name]
+      [req.params.ticketId, papel, status_revisao, req.user.name, novoAnalistaId]
     );
     res.json({ ok: true, data: rows[0] });
   } catch (err) {
     console.error('[gam] PATCH tickets-revisao-finalizar falhou:', err);
-    res.status(500).json({ error: 'Erro ao salvar revisão de finalizar/reabertura.' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Erro ao salvar revisão de finalizar/reabertura.' });
   }
 });
 
@@ -3761,9 +3889,11 @@ router.get('/gam/tickets-revisao-abandono', requireAdmin, async (req, res) => {
     const { rows } = await pool.query(
       `SELECT a.id, a.data, a.analista, a.ultima_mensagem_cliente, a.ultima_mensagem_texto,
               a.status AS revisao_status, a.revisado_por, a.revisado_em,
-              t.zappy_id, t.empresa_texto
+              t.zappy_id, t.empresa_texto,
+              a.override_analista_id, oc.nome AS override_analista_nome
          FROM gam_abandono_incidentes a
          JOIN cs_tickets t ON t.id = a.ticket_id
+         LEFT JOIN gam_colaboradores oc ON oc.zappy_user_id = a.override_analista_id
         WHERE a.mes = $1 AND a.status = $2
         ORDER BY a.data DESC, t.encerramento DESC NULLS LAST`,
       [mes, status]
@@ -3775,23 +3905,33 @@ router.get('/gam/tickets-revisao-abandono', requireAdmin, async (req, res) => {
   }
 });
 
-/** PATCH /api/data/gam/tickets-revisao-abandono/:id — marca devida/indevida. */
+/**
+ * PATCH /api/data/gam/tickets-revisao-abandono/:id — marca devida/indevida,
+ * e opcionalmente reatribui o incidente inteiro pra outro colaborador via
+ * `novo_colaborador_id` (UUID de gam_colaboradores — só junto com
+ * status_revisao='devida').
+ */
 router.patch('/gam/tickets-revisao-abandono/:id', requireAdmin, async (req, res) => {
   try {
-    const { status_revisao } = req.body;
+    const { status_revisao, novo_colaborador_id } = req.body;
     if (!['devida', 'indevida'].includes(status_revisao)) {
       return res.status(400).json({ error: 'status_revisao deve ser "devida" ou "indevida".' });
     }
+    if (novo_colaborador_id && status_revisao !== 'devida') {
+      return res.status(400).json({ error: 'Só dá pra reatribuir junto com status "devida".' });
+    }
     await ensureAbandonoSchema(pool);
+    const novoAnalistaId = await resolverNovoAnalistaId(novo_colaborador_id);
     const { rows } = await pool.query(
-      `UPDATE gam_abandono_incidentes SET status = $2, revisado_por = $3, revisado_em = NOW() WHERE id = $1 RETURNING id`,
-      [req.params.id, status_revisao, req.user.name]
+      `UPDATE gam_abandono_incidentes SET status = $2, revisado_por = $3, revisado_em = NOW(), override_analista_id = $4
+       WHERE id = $1 RETURNING id`,
+      [req.params.id, status_revisao, req.user.name, novoAnalistaId]
     );
     if (!rows.length) return res.status(404).json({ error: 'Não encontrado.' });
     res.json({ ok: true, data: rows[0] });
   } catch (err) {
     console.error('[gam] PATCH tickets-revisao-abandono falhou:', err);
-    res.status(500).json({ error: 'Erro ao salvar revisão de abandono.' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Erro ao salvar revisão de abandono.' });
   }
 });
 
@@ -3816,6 +3956,7 @@ router.get('/gam/ticket-busca', requireAdmin, async (req, res) => {
     const { rows: ticketRows } = await pool.query(
       `SELECT id, zappy_id, empresa_texto, encerramento, nota_avaliacao AS nota_cliente,
               revisao_nota_status, revisao_nota_por, revisao_nota_em,
+              revisao_nota_override_analista_id AS nota_override_analista_id,
               analista, analista_id, analista_anterior, analista_anterior_id, transferencia, aceite,
               abandono_calculado_em
          FROM cs_tickets WHERE zappy_id = $1`,
@@ -3826,9 +3967,9 @@ router.get('/gam/ticket-busca', requireAdmin, async (req, res) => {
 
     const { rows: pontos } = await pool.query(
       `SELECT p.papel, p.analista, p.ajuste_velocidade, p.ajuste_aceite, p.ajuste_finalizar, p.nota_final,
-              vr.status AS vel_status, vr.revisado_por AS vel_por, vr.revisado_em AS vel_em,
-              ar.status AS aceite_status, ar.revisado_por AS aceite_por, ar.revisado_em AS aceite_em,
-              fr.status AS finalizar_status, fr.revisado_por AS finalizar_por, fr.revisado_em AS finalizar_em
+              vr.status AS vel_status, vr.revisado_por AS vel_por, vr.revisado_em AS vel_em, vr.override_analista_id AS vel_override_analista_id,
+              ar.status AS aceite_status, ar.revisado_por AS aceite_por, ar.revisado_em AS aceite_em, ar.override_analista_id AS aceite_override_analista_id,
+              fr.status AS finalizar_status, fr.revisado_por AS finalizar_por, fr.revisado_em AS finalizar_em, fr.override_analista_id AS finalizar_override_analista_id
          FROM gam_tickets_pontos p
          LEFT JOIN gam_velocidade_revisoes vr ON vr.ticket_id = p.ticket_id AND vr.papel = p.papel
          LEFT JOIN gam_aceite_revisoes ar ON ar.ticket_id = p.ticket_id AND ar.papel = p.papel
@@ -3844,7 +3985,8 @@ router.get('/gam/ticket-busca', requireAdmin, async (req, res) => {
     await ensureAbandonoSchema(pool);
     const { rows: abandono } = await pool.query(
       `SELECT id, data, analista, ultima_mensagem_cliente, ultima_mensagem_texto,
-              status AS abandono_status, revisado_por AS abandono_por, revisado_em AS abandono_em
+              status AS abandono_status, revisado_por AS abandono_por, revisado_em AS abandono_em,
+              override_analista_id AS abandono_override_analista_id
          FROM gam_abandono_incidentes
         WHERE ticket_id = $1 AND mes = $2
         ORDER BY data ASC`,

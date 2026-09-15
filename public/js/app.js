@@ -5998,8 +5998,10 @@ const Gamificacao = (() => {
           const status = a.abandono_status || 'pendente';
           return '<tr><td>#' + ticket.zappy_id + '</td><td>' + (ticket.empresa_texto || '—') + '</td>' +
             '<td>' + new Date(a.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) + '</td>' +
-            '<td style="font-size:11px;color:var(--gray-400)">' + status + (a.abandono_por ? ' — ' + a.abandono_por : '') + '</td>' +
+            '<td style="font-size:11px;color:var(--gray-400)">' + status + (a.abandono_por ? ' — ' + a.abandono_por : '') + _reatribuidoLabel(_nomeColaboradorPorZappyId(a.abandono_override_analista_id)) + '</td>' +
             '<td style="white-space:nowrap">' +
+              _selectTrocarAnalistaHtml('busca-' + a.id) +
+              '<button class="btn btn-sm" style="background:#ebf8ff;color:#3182ce;border:1px solid #bee3f8" onclick="Gamificacao.reatribuirRevisaoBusca(\'abandono\',\'' + a.id + '\',null,\'' + mes + '\')">🔀 Reatribuir</button> ' +
               '<button class="btn btn-sm" ' + (status === 'devida' ? 'disabled title="Já está devida"' : '') + ' style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisaoBusca(\'abandono\',\'' + a.id + '\',null,\'devida\',\'' + mes + '\')">Devida</button> ' +
               '<button class="btn btn-sm" ' + (status === 'indevida' ? 'disabled title="Já está indevida"' : '') + ' style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisaoBusca(\'abandono\',\'' + a.id + '\',null,\'indevida\',\'' + mes + '\')">Indevida</button>' +
             '</td></tr>';
@@ -6011,8 +6013,10 @@ const Gamificacao = (() => {
         '<thead><tr><th>Ticket</th><th>Cliente</th><th>Nota</th><th>Status</th><th></th></tr></thead><tbody>' +
         '<tr><td>#' + ticket.zappy_id + '</td><td>' + (ticket.empresa_texto || '—') + '</td>' +
         '<td style="font-weight:700">' + (ticket.nota_cliente ?? '—') + '</td>' +
-        '<td style="font-size:11px;color:var(--gray-400)">' + status + (ticket.revisao_nota_por ? ' — ' + ticket.revisao_nota_por : '') + '</td>' +
+        '<td style="font-size:11px;color:var(--gray-400)">' + status + (ticket.revisao_nota_por ? ' — ' + ticket.revisao_nota_por : '') + _reatribuidoLabel(_nomeColaboradorPorZappyId(ticket.nota_override_analista_id)) + '</td>' +
         '<td style="white-space:nowrap">' +
+          _selectTrocarAnalistaHtml('busca-' + ticket.id) +
+          '<button class="btn btn-sm" style="background:#ebf8ff;color:#3182ce;border:1px solid #bee3f8" onclick="Gamificacao.reatribuirRevisaoBusca(\'nota\',\'' + ticket.id + '\',null,\'' + mes + '\')">🔀 Reatribuir</button> ' +
           '<button class="btn btn-sm" ' + (status === 'devida' ? 'disabled title="Já está devida"' : '') + ' style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisaoBusca(\'nota\',\'' + ticket.id + '\',null,\'devida\',\'' + mes + '\')">Devida</button> ' +
           '<button class="btn btn-sm" ' + (status === 'indevida' ? 'disabled title="Já está indevida"' : '') + ' style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisaoBusca(\'nota\',\'' + ticket.id + '\',null,\'indevida\',\'' + mes + '\')">Indevida</button>' +
         '</td></tr></tbody></table></div>';
@@ -6020,6 +6024,7 @@ const Gamificacao = (() => {
     const campoAjuste = { velocidade: 'ajuste_velocidade', aceite: 'ajuste_aceite', finalizar: 'ajuste_finalizar' }[tipo];
     const campoStatus = { velocidade: 'vel_status', aceite: 'aceite_status', finalizar: 'finalizar_status' }[tipo];
     const campoPor = { velocidade: 'vel_por', aceite: 'aceite_por', finalizar: 'finalizar_por' }[tipo];
+    const campoOverride = { velocidade: 'vel_override_analista_id', aceite: 'aceite_override_analista_id', finalizar: 'finalizar_override_analista_id' }[tipo];
     const papelLabel = tipo === 'aceite'
       ? { transferiu: 'Transferiu', unico: 'Único' }
       : tipo === 'finalizar'
@@ -6040,15 +6045,17 @@ const Gamificacao = (() => {
           '<td>' + (p.analista || '—') + '</td>' +
           '<td>' + (papelLabel[p.papel] || p.papel) + '</td>' +
           '<td style="font-weight:700;color:' + (parseFloat(p[campoAjuste]) < 0 ? '#c0362c' : 'var(--gray-500)') + '">' + p[campoAjuste] + '</td>' +
-          '<td style="font-size:11px;color:var(--gray-400)">' + status + (p[campoPor] ? ' — ' + p[campoPor] : '') + '</td>' +
+          '<td style="font-size:11px;color:var(--gray-400)">' + status + (p[campoPor] ? ' — ' + p[campoPor] : '') + _reatribuidoLabel(_nomeColaboradorPorZappyId(p[campoOverride])) + '</td>' +
           '<td style="white-space:nowrap">' +
+            _selectTrocarAnalistaHtml('busca-' + ticket.id + '-' + p.papel) +
+            '<button class="btn btn-sm" style="background:#ebf8ff;color:#3182ce;border:1px solid #bee3f8" onclick="Gamificacao.reatribuirRevisaoBusca(\'' + tipo + '\',\'' + ticket.id + '\',\'' + p.papel + '\',\'' + mes + '\')">🔀 Reatribuir</button> ' +
             '<button class="btn btn-sm" ' + (status === 'devida' ? 'disabled title="Já está devida"' : '') + ' style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisaoBusca(\'' + tipo + '\',\'' + ticket.id + '\',\'' + p.papel + '\',\'devida\',\'' + mes + '\')">Devida</button> ' +
             '<button class="btn btn-sm" ' + (status === 'indevida' ? 'disabled title="Já está indevida"' : '') + ' style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisaoBusca(\'' + tipo + '\',\'' + ticket.id + '\',\'' + p.papel + '\',\'indevida\',\'' + mes + '\')">Indevida</button>' +
           '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
 
-  async function marcarRevisaoBusca(tipo, ticketId, papel, novoStatus, mes) {
+  async function marcarRevisaoBusca(tipo, ticketId, papel, novoStatus, mes, novoColaboradorId) {
     const rotas = {
       nota: '/api/data/gam/tickets-revisao/' + ticketId,
       velocidade: '/api/data/gam/tickets-revisao-velocidade/' + ticketId + '/' + papel,
@@ -6059,10 +6066,10 @@ const Gamificacao = (() => {
     const res = await fetch(rotas[tipo], {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
-      body: JSON.stringify({ status_revisao: novoStatus })
+      body: JSON.stringify({ status_revisao: novoStatus, novo_colaborador_id: novoColaboradorId || null })
     });
-    if (!res || !res.ok) { App.Toast.err('Erro ao salvar.'); return; }
-    App.Toast.ok('Marcado como ' + novoStatus + '.');
+    if (!res || !res.ok) { App.Toast.err((await res?.json().catch(()=>({})))?.error || 'Erro ao salvar.'); return; }
+    App.Toast.ok(novoColaboradorId ? 'Reatribuído.' : 'Marcado como ' + novoStatus + '.');
     await buscarTicketRevisao(tipo, mes);
     // Se o ticket também aparece na lista filtrada (pendente/devida/indevida)
     // logo abaixo, recarrega ela também pra não ficar desatualizada.
@@ -6072,8 +6079,63 @@ const Gamificacao = (() => {
     if (recarregar) await recarregar(mes, statusAtual);
   }
 
+  function reatribuirRevisaoBusca(tipo, ticketId, papel, mes) {
+    const rowId = 'busca-' + ticketId + (papel ? '-' + papel : '');
+    const novoId = _lerColaboradorSelecionado(rowId);
+    if (!novoId) return;
+    marcarRevisaoBusca(tipo, ticketId, papel, 'devida', mes, novoId);
+  }
+
+  // ── Reatribuição de analista nas revisões (pedido do Reysner, 15/09/2026) ──
+  // Nas 5 telas de revisão (nota baixa, velocidade, aceite, finalizar,
+  // abandono), além de Devida/Indevida agora dá pra "Trocar analista": quando
+  // o Zappy atribui o ticket/desconto à pessoa errada (ex.: ticket aparece
+  // "Único" de quem atendeu por último, mas o atraso real foi no aceite de
+  // quem estava na fila antes de transferir, e o Zappy não registrou isso
+  // como transferência formal), escolhe o colaborador certo no seletor e
+  // clica em "Reatribuir" — o item passa a contar pra essa pessoa (sempre
+  // como "Devida", já que reatribuir um item que nem vai contar não faz
+  // sentido). Ver executarAutoPreencher em server/routes/data.js pra como
+  // isso entra no cálculo.
+  async function _carregarColaboradoresParaSelect() {
+    if (_colaboradores.length) return;
+    const res = await fetch('/api/data/gam/colaboradores', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (res && res.ok) {
+      const { data } = await res.json();
+      _colaboradores = (data || []).filter(c => c.ativo && c.zappy_user_id);
+    }
+  }
+
+  function _selectTrocarAnalistaHtml(rowId) {
+    const opcoes = _colaboradores.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+    return `<select id="gam-troca-${rowId}" class="input" style="width:auto;font-size:11px;padding:3px 6px;margin-right:4px" title="Reatribuir este item pra outro colaborador">` +
+      `<option value="">Trocar analista p/...</option>${opcoes}</select>`;
+  }
+
+  function _lerColaboradorSelecionado(rowId) {
+    const sel = document.getElementById('gam-troca-' + rowId);
+    const val = sel ? sel.value : '';
+    if (!val) { App.Toast.err('Selecione o colaborador pra reatribuir.'); return null; }
+    return val;
+  }
+
+  function _reatribuidoLabel(nome) {
+    return nome ? `<div style="font-size:11px;color:#3182ce;margin-top:2px">↪ Reatribuído: ${nome}</div>` : '';
+  }
+
+  // A busca por ticket (_renderBuscaTicket) só traz o zappy_user_id do
+  // override (não o nome já resolvido, como as 5 listas principais trazem
+  // via JOIN) — resolve pelo _colaboradores já carregado antes de abrir a
+  // busca (ver abrirRevisaoX), sem precisar de outra chamada ao servidor.
+  function _nomeColaboradorPorZappyId(zappyId) {
+    if (!zappyId) return '';
+    const c = _colaboradores.find(c => c.zappy_user_id === zappyId);
+    return c ? c.nome : '';
+  }
+
   // ── Revisão de nota baixa (Ticket / Cliente / Nota) ─────────────────────────
   async function abrirRevisaoNotas() {
+    await _carregarColaboradoresParaSelect();
     const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
     App.Modal.open('Revisar notas baixas — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
       '<p style="font-size:13px;color:var(--gray-500)">Tickets com nota do cliente abaixo de 5, e também tickets com nota 5 cujo contato pode ser alguém da própria equipe (nome bate com um usuário do Zappy — possível avaliação combinada). Marca "Devida" se a nota reflete a realidade (conta normalmente), ou "Indevida" se não reflete (ex.: interação robótica/IA, ou avaliação de colega) — aí ela sai do cálculo da nota mensal. A nota é atribuída só a quem encerrou o atendimento — quem só transferiu não é afetado por essa revisão. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
@@ -6113,26 +6175,34 @@ const Gamificacao = (() => {
         `<td>#${r.zappy_id}</td>` +
         `<td>${r.empresa_texto || '—'}</td>` +
         `<td style="font-weight:700">${r.nota_cliente}</td>` +
-        `<td>${r.analista || '—'}</td>` +
+        `<td>${r.analista || '—'}${_reatribuidoLabel(r.override_analista_nome)}</td>` +
         `<td>${r.nota_baixa ? '<span style="font-size:11px;color:var(--gray-400)">Nota baixa</span>' : '<span style="font-size:11px;color:#c9a227;font-weight:700">⚠️ Contato pode ser da equipe</span>'}</td>` +
         (mostrarQuem ? `<td style="font-size:11px;color:var(--gray-400)">${r.revisao_nota_por || '—'}${r.revisao_nota_em ? '<br>' + new Date(r.revisao_nota_em).toLocaleDateString('pt-BR') : ''}</td>` : '') +
         `<td style="white-space:nowrap">` +
+          _selectTrocarAnalistaHtml(r.id) +
+          `<button class="btn btn-sm" style="background:#ebf8ff;color:#3182ce;border:1px solid #bee3f8" onclick="Gamificacao.reatribuirRevisao('${r.id}','${mes}','${status}')">🔀 Reatribuir</button> ` +
           `<button class="btn btn-sm" ${status === 'devida' ? 'disabled title="Já está devida"' : ''} style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisao('${r.id}','devida','${mes}','${status}')">Devida</button> ` +
           `<button class="btn btn-sm" ${status === 'indevida' ? 'disabled title="Já está indevida"' : ''} style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisao('${r.id}','indevida','${mes}','${status}')">Indevida</button>` +
         `</td></tr>`
       ).join('') + '</tbody></table></div>';
   }
 
-  async function marcarRevisao(id, novoStatus, mes, statusAtual) {
+  async function marcarRevisao(id, novoStatus, mes, statusAtual, novoColaboradorId) {
     const res = await fetch('/api/data/gam/tickets-revisao/' + id, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
-      body: JSON.stringify({ status_revisao: novoStatus })
+      body: JSON.stringify({ status_revisao: novoStatus, novo_colaborador_id: novoColaboradorId || null })
     });
     if (res && res.ok) {
-      App.Toast.ok('Marcado como ' + novoStatus + '.');
+      App.Toast.ok(novoColaboradorId ? 'Nota reatribuída.' : 'Marcado como ' + novoStatus + '.');
       await _carregarRevisaoNotas(mes, statusAtual);
-    } else App.Toast.err('Erro ao salvar.');
+    } else App.Toast.err((await res?.json().catch(()=>({})))?.error || 'Erro ao salvar.');
+  }
+
+  function reatribuirRevisao(id, mes, statusAtual) {
+    const novoId = _lerColaboradorSelecionado(id);
+    if (!novoId) return;
+    marcarRevisao(id, 'devida', mes, statusAtual, novoId);
   }
 
   // ── Revisão de DESCONTO DE VELOCIDADE (diferente da revisão de nota) ───────
@@ -6142,8 +6212,9 @@ const Gamificacao = (() => {
   // desconto de velocidade não refletia a realidade.
   async function abrirRevisaoVelocidade() {
     const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
+    await _carregarColaboradoresParaSelect();
     App.Modal.open('Revisar descontos de velocidade — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
-      '<p style="font-size:13px;color:var(--gray-500)">Tickets com desconto de velocidade (transferência ou tempo de resposta). Marca "Devida" se o desconto reflete a realidade (o analista realmente ficou parado), ou "Indevida" se não reflete (ex.: estava esperando o cliente mandar algo, como um documento ou valor) — aí o desconto sai do cálculo daquele papel específico, sem afetar o resto do ticket. Existe tanto pra quem recebeu/atendeu quanto pra quem só transferiu. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
+      '<p style="font-size:13px;color:var(--gray-500)">Tickets com desconto de velocidade (transferência ou tempo de resposta). Marca "Devida" se o desconto reflete a realidade (o analista realmente ficou parado), ou "Indevida" se não reflete (ex.: estava esperando o cliente mandar algo, como um documento ou valor) — aí o desconto sai do cálculo daquele papel específico, sem afetar o resto do ticket. Existe tanto pra quem recebeu/atendeu quanto pra quem só transferiu. Se o desconto é real mas a culpa é de OUTRA pessoa (ex.: o atraso foi no aceite de quem estava na fila antes de transferir), usa "Trocar analista" — o desconto passa a contar pra quem você escolher, sem mexer na nota do cliente. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
       _htmlBuscaTicket('velocidade', mes) +
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<label style="font-size:12px;font-weight:700;color:var(--gray-500)">Mostrar:</label>' +
@@ -6180,27 +6251,35 @@ const Gamificacao = (() => {
       data.map(r => `<tr data-id="${r.ticket_id}-${r.papel}">` +
         `<td>#${r.zappy_id}</td>` +
         `<td>${r.empresa_texto || '—'}</td>` +
-        `<td>${r.analista || '—'}</td>` +
+        `<td>${r.analista || '—'}${_reatribuidoLabel(r.override_analista_nome)}</td>` +
         `<td>${papelLabel[r.papel] || r.papel}</td>` +
         `<td style="font-weight:700;color:#c0362c">${r.ajuste_velocidade}</td>` +
         (mostrarQuem ? `<td style="font-size:11px;color:var(--gray-400)">${r.revisado_por || '—'}${r.revisado_em ? '<br>' + new Date(r.revisado_em).toLocaleDateString('pt-BR') : ''}</td>` : '') +
         `<td style="white-space:nowrap">` +
+          _selectTrocarAnalistaHtml(r.ticket_id + '-' + r.papel) +
+          `<button class="btn btn-sm" style="background:#ebf8ff;color:#3182ce;border:1px solid #bee3f8" onclick="Gamificacao.reatribuirRevisaoVelocidade('${r.ticket_id}','${r.papel}','${mes}','${status}')">🔀 Reatribuir</button> ` +
           `<button class="btn btn-sm" ${status === 'devida' ? 'disabled title="Já está devida"' : ''} style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisaoVelocidade('${r.ticket_id}','${r.papel}','devida','${mes}','${status}')">Devida</button> ` +
           `<button class="btn btn-sm" ${status === 'indevida' ? 'disabled title="Já está indevida"' : ''} style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisaoVelocidade('${r.ticket_id}','${r.papel}','indevida','${mes}','${status}')">Indevida</button>` +
         `</td></tr>`
       ).join('') + '</tbody></table></div>';
   }
 
-  async function marcarRevisaoVelocidade(ticketId, papel, novoStatus, mes, statusAtual) {
+  async function marcarRevisaoVelocidade(ticketId, papel, novoStatus, mes, statusAtual, novoColaboradorId) {
     const res = await fetch('/api/data/gam/tickets-revisao-velocidade/' + ticketId + '/' + papel, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
-      body: JSON.stringify({ status_revisao: novoStatus })
+      body: JSON.stringify({ status_revisao: novoStatus, novo_colaborador_id: novoColaboradorId || null })
     });
     if (res && res.ok) {
-      App.Toast.ok('Marcado como ' + novoStatus + '.');
+      App.Toast.ok(novoColaboradorId ? 'Desconto reatribuído.' : 'Marcado como ' + novoStatus + '.');
       await _carregarRevisaoVelocidade(mes, statusAtual);
-    } else App.Toast.err('Erro ao salvar.');
+    } else App.Toast.err((await res?.json().catch(()=>({})))?.error || 'Erro ao salvar.');
+  }
+
+  function reatribuirRevisaoVelocidade(ticketId, papel, mes, statusAtual) {
+    const novoId = _lerColaboradorSelecionado(ticketId + '-' + papel);
+    if (!novoId) return;
+    marcarRevisaoVelocidade(ticketId, papel, 'devida', mes, statusAtual, novoId);
   }
 
   // ── Revisão do ACEITE do aguardando (separada da revisão de velocidade) ────
@@ -6209,8 +6288,9 @@ const Gamificacao = (() => {
   // sistema não tem como saber isso sozinho, então fica marcável na mão.
   async function abrirRevisaoAceite() {
     const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
+    await _carregarColaboradoresParaSelect();
     App.Modal.open('Revisar aceite do aguardando — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
-      '<p style="font-size:13px;color:var(--gray-500)">Tickets com desconto de aceite do aguardando (só conta pra colaboradores com a regra ligada). Marca "Devida" se é um cliente de verdade esperando atendimento, ou "Indevida" se parece bot/marketing/envio de currículo/spam — aí o ticket sai do cálculo da média de aceite, sem afetar mais nada. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
+      '<p style="font-size:13px;color:var(--gray-500)">Tickets com desconto de aceite do aguardando (só conta pra colaboradores com a regra ligada). Marca "Devida" se é um cliente de verdade esperando atendimento, ou "Indevida" se parece bot/marketing/envio de currículo/spam — aí o ticket sai do cálculo da média de aceite, sem afetar mais nada. Se o atraso foi de OUTRA pessoa (ex.: quem estava de fato na fila antes de transferir), usa "Trocar analista". Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
       _htmlBuscaTicket('aceite', mes) +
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<label style="font-size:12px;font-weight:700;color:var(--gray-500)">Mostrar:</label>' +
@@ -6247,27 +6327,35 @@ const Gamificacao = (() => {
       data.map(r => `<tr data-id="${r.ticket_id}-${r.papel}">` +
         `<td>#${r.zappy_id}</td>` +
         `<td>${r.empresa_texto || '—'}</td>` +
-        `<td>${r.analista || '—'}</td>` +
+        `<td>${r.analista || '—'}${_reatribuidoLabel(r.override_analista_nome)}</td>` +
         `<td>${papelLabel[r.papel] || r.papel}</td>` +
         `<td style="font-weight:700;color:${parseFloat(r.ajuste_aceite) < 0 ? '#c0362c' : 'var(--gray-500)'}">${r.ajuste_aceite}</td>` +
         (mostrarQuem ? `<td style="font-size:11px;color:var(--gray-400)">${r.revisado_por || '—'}${r.revisado_em ? '<br>' + new Date(r.revisado_em).toLocaleDateString('pt-BR') : ''}</td>` : '') +
         `<td style="white-space:nowrap">` +
+          _selectTrocarAnalistaHtml(r.ticket_id + '-' + r.papel) +
+          `<button class="btn btn-sm" style="background:#ebf8ff;color:#3182ce;border:1px solid #bee3f8" onclick="Gamificacao.reatribuirRevisaoAceite('${r.ticket_id}','${r.papel}','${mes}','${status}')">🔀 Reatribuir</button> ` +
           `<button class="btn btn-sm" ${status === 'devida' ? 'disabled title="Já está devida"' : ''} style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisaoAceite('${r.ticket_id}','${r.papel}','devida','${mes}','${status}')">Devida</button> ` +
           `<button class="btn btn-sm" ${status === 'indevida' ? 'disabled title="Já está indevida"' : ''} style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisaoAceite('${r.ticket_id}','${r.papel}','indevida','${mes}','${status}')">Indevida</button>` +
         `</td></tr>`
       ).join('') + '</tbody></table></div>';
   }
 
-  async function marcarRevisaoAceite(ticketId, papel, novoStatus, mes, statusAtual) {
+  async function marcarRevisaoAceite(ticketId, papel, novoStatus, mes, statusAtual, novoColaboradorId) {
     const res = await fetch('/api/data/gam/tickets-revisao-aceite/' + ticketId + '/' + papel, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
-      body: JSON.stringify({ status_revisao: novoStatus })
+      body: JSON.stringify({ status_revisao: novoStatus, novo_colaborador_id: novoColaboradorId || null })
     });
     if (res && res.ok) {
-      App.Toast.ok('Marcado como ' + novoStatus + '.');
+      App.Toast.ok(novoColaboradorId ? 'Aceite reatribuído.' : 'Marcado como ' + novoStatus + '.');
       await _carregarRevisaoAceite(mes, statusAtual);
-    } else App.Toast.err('Erro ao salvar.');
+    } else App.Toast.err((await res?.json().catch(()=>({})))?.error || 'Erro ao salvar.');
+  }
+
+  function reatribuirRevisaoAceite(ticketId, papel, mes, statusAtual) {
+    const novoId = _lerColaboradorSelecionado(ticketId + '-' + papel);
+    if (!novoId) return;
+    marcarRevisaoAceite(ticketId, papel, 'devida', mes, statusAtual, novoId);
   }
 
   // ── Revisão do /FINALIZAR + REABERTURA (regra combinada) ───────────────────
@@ -6275,8 +6363,9 @@ const Gamificacao = (() => {
   // (ex.: cliente voltou por um assunto novo, sem relação com o fechamento).
   async function abrirRevisaoFinalizar() {
     const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
+    await _carregarColaboradoresParaSelect();
     App.Modal.open('Revisar /Finalizar + reabertura — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
-      '<p style="font-size:13px;color:var(--gray-500)">Tickets com desconto de encerramento (não avisou certo E o cliente voltou a chamar em até 30 min). Marca "Devida" se a reabertura realmente mostra que o encerramento confundiu o cliente, ou "Indevida" se o cliente voltou por outro motivo (ex.: um assunto novo, sem relação com o fechamento) — aí o ticket sai do cálculo da média, sem afetar mais nada. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
+      '<p style="font-size:13px;color:var(--gray-500)">Tickets com desconto de encerramento (não avisou certo E o cliente voltou a chamar em até 30 min). Marca "Devida" se a reabertura realmente mostra que o encerramento confundiu o cliente, ou "Indevida" se o cliente voltou por outro motivo (ex.: um assunto novo, sem relação com o fechamento) — aí o ticket sai do cálculo da média, sem afetar mais nada. Se o encerramento malfeito foi de OUTRA pessoa, usa "Trocar analista". Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
       _htmlBuscaTicket('finalizar', mes) +
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<label style="font-size:12px;font-weight:700;color:var(--gray-500)">Mostrar:</label>' +
@@ -6313,27 +6402,35 @@ const Gamificacao = (() => {
       data.map(r => `<tr data-id="${r.ticket_id}-${r.papel}">` +
         `<td>#${r.zappy_id}</td>` +
         `<td>${r.empresa_texto || '—'}</td>` +
-        `<td>${r.analista || '—'}</td>` +
+        `<td>${r.analista || '—'}${_reatribuidoLabel(r.override_analista_nome)}</td>` +
         `<td>${papelLabel[r.papel] || r.papel}</td>` +
         `<td style="font-weight:700;color:#c0362c">${r.ajuste_finalizar}</td>` +
         (mostrarQuem ? `<td style="font-size:11px;color:var(--gray-400)">${r.revisado_por || '—'}${r.revisado_em ? '<br>' + new Date(r.revisado_em).toLocaleDateString('pt-BR') : ''}</td>` : '') +
         `<td style="white-space:nowrap">` +
+          _selectTrocarAnalistaHtml(r.ticket_id + '-' + r.papel) +
+          `<button class="btn btn-sm" style="background:#ebf8ff;color:#3182ce;border:1px solid #bee3f8" onclick="Gamificacao.reatribuirRevisaoFinalizar('${r.ticket_id}','${r.papel}','${mes}','${status}')">🔀 Reatribuir</button> ` +
           `<button class="btn btn-sm" ${status === 'devida' ? 'disabled title="Já está devida"' : ''} style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisaoFinalizar('${r.ticket_id}','${r.papel}','devida','${mes}','${status}')">Devida</button> ` +
           `<button class="btn btn-sm" ${status === 'indevida' ? 'disabled title="Já está indevida"' : ''} style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisaoFinalizar('${r.ticket_id}','${r.papel}','indevida','${mes}','${status}')">Indevida</button>` +
         `</td></tr>`
       ).join('') + '</tbody></table></div>';
   }
 
-  async function marcarRevisaoFinalizar(ticketId, papel, novoStatus, mes, statusAtual) {
+  async function marcarRevisaoFinalizar(ticketId, papel, novoStatus, mes, statusAtual, novoColaboradorId) {
     const res = await fetch('/api/data/gam/tickets-revisao-finalizar/' + ticketId + '/' + papel, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
-      body: JSON.stringify({ status_revisao: novoStatus })
+      body: JSON.stringify({ status_revisao: novoStatus, novo_colaborador_id: novoColaboradorId || null })
     });
     if (res && res.ok) {
-      App.Toast.ok('Marcado como ' + novoStatus + '.');
+      App.Toast.ok(novoColaboradorId ? 'Desconto reatribuído.' : 'Marcado como ' + novoStatus + '.');
       await _carregarRevisaoFinalizar(mes, statusAtual);
-    } else App.Toast.err('Erro ao salvar.');
+    } else App.Toast.err((await res?.json().catch(()=>({})))?.error || 'Erro ao salvar.');
+  }
+
+  function reatribuirRevisaoFinalizar(ticketId, papel, mes, statusAtual) {
+    const novoId = _lerColaboradorSelecionado(ticketId + '-' + papel);
+    if (!novoId) return;
+    marcarRevisaoFinalizar(ticketId, papel, 'devida', mes, statusAtual, novoId);
   }
 
   // ── Revisão de ABANDONO DE ATENDIMENTO (ver cs/abandono.js) ─────────────────
@@ -6343,8 +6440,9 @@ const Gamificacao = (() => {
   // Pedido do Reysner, 02/09/2026, a partir do ticket #47957.
   async function abrirRevisaoAbandono() {
     const mes = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
+    await _carregarColaboradoresParaSelect();
     App.Modal.open('Revisar abandono de atendimento — ' + _mesLabel(mes), '<div style="display:grid;gap:14px">' +
-      '<p style="font-size:13px;color:var(--gray-500)">Cliente mandou mensagem até 16:50 (segunda a quinta) e ninguém do escritório respondeu até 17:30 do mesmo dia — sem contar mensagem de fechamento tipo "ok, obrigado". Marca "Devida" se realmente ninguém respondeu, ou "Indevida" se por algum motivo não deveria contar. Um ticket parado vários dias gera um incidente por dia, revisável separadamente. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
+      '<p style="font-size:13px;color:var(--gray-500)">Cliente mandou mensagem até 16:50 (segunda a quinta) e ninguém do escritório respondeu até 17:30 do mesmo dia — sem contar mensagem de fechamento tipo "ok, obrigado". Marca "Devida" se realmente ninguém respondeu, ou "Indevida" se por algum motivo não deveria contar. Se o incidente é real mas o responsável de verdade era OUTRA pessoa (ex.: quem estava de folga com cobertura combinada era outro), usa "Trocar analista". Um ticket parado vários dias gera um incidente por dia, revisável separadamente. Já decidiu errado? Troca pra "Já decididas" abaixo e reclassifica.</p>' +
       _htmlBuscaTicket('abandono', mes) +
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<label style="font-size:12px;font-weight:700;color:var(--gray-500)">Mostrar:</label>' +
@@ -6380,27 +6478,35 @@ const Gamificacao = (() => {
       data.map(r => `<tr data-id="${r.id}">` +
         `<td>#${r.zappy_id}</td>` +
         `<td>${r.empresa_texto || '—'}</td>` +
-        `<td>${r.analista || '—'}</td>` +
+        `<td>${r.analista || '—'}${_reatribuidoLabel(r.override_analista_nome)}</td>` +
         `<td>${new Date(r.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>` +
         `<td style="font-size:12px;color:var(--gray-500)">${(r.ultima_mensagem_texto || '—').slice(0, 80)}</td>` +
         (mostrarQuem ? `<td style="font-size:11px;color:var(--gray-400)">${r.revisado_por || '—'}${r.revisado_em ? '<br>' + new Date(r.revisado_em).toLocaleDateString('pt-BR') : ''}</td>` : '') +
         `<td style="white-space:nowrap">` +
+          _selectTrocarAnalistaHtml(r.id) +
+          `<button class="btn btn-sm" style="background:#ebf8ff;color:#3182ce;border:1px solid #bee3f8" onclick="Gamificacao.reatribuirRevisaoAbandono('${r.id}','${mes}','${status}')">🔀 Reatribuir</button> ` +
           `<button class="btn btn-sm" ${status === 'devida' ? 'disabled title="Já está devida"' : ''} style="background:#f0fff4;color:#38a169;border:1px solid #c6f6d5" onclick="Gamificacao.marcarRevisaoAbandono('${r.id}','devida','${mes}','${status}')">Devida</button> ` +
           `<button class="btn btn-sm" ${status === 'indevida' ? 'disabled title="Já está indevida"' : ''} style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7" onclick="Gamificacao.marcarRevisaoAbandono('${r.id}','indevida','${mes}','${status}')">Indevida</button>` +
         `</td></tr>`
       ).join('') + '</tbody></table></div>';
   }
 
-  async function marcarRevisaoAbandono(id, novoStatus, mes, statusAtual) {
+  async function marcarRevisaoAbandono(id, novoStatus, mes, statusAtual, novoColaboradorId) {
     const res = await fetch('/api/data/gam/tickets-revisao-abandono/' + id, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
-      body: JSON.stringify({ status_revisao: novoStatus })
+      body: JSON.stringify({ status_revisao: novoStatus, novo_colaborador_id: novoColaboradorId || null })
     });
     if (res && res.ok) {
-      App.Toast.ok('Marcado como ' + novoStatus + '.');
+      App.Toast.ok(novoColaboradorId ? 'Incidente reatribuído.' : 'Marcado como ' + novoStatus + '.');
       await _carregarRevisaoAbandono(mes, statusAtual);
-    } else App.Toast.err('Erro ao salvar.');
+    } else App.Toast.err((await res?.json().catch(()=>({})))?.error || 'Erro ao salvar.');
+  }
+
+  function reatribuirRevisaoAbandono(id, mes, statusAtual) {
+    const novoId = _lerColaboradorSelecionado(id);
+    if (!novoId) return;
+    marcarRevisaoAbandono(id, 'devida', mes, statusAtual, novoId);
   }
 
   // ── Relatório de descontos por colaborador (transparência) — também serve
@@ -7310,12 +7416,12 @@ const Gamificacao = (() => {
     abrirCriarLoginsEmLote, confirmarCriarLoginsEmLote,
     abrirMapaQualificacao, salvarMapaQualificacao,
     abrirAutoPreencher, confirmarAutoPreencher, sincronizarNotasAgora, abrirRelatorioTemporada, limparTravasNotaFinal,
-    abrirRevisaoNotas, marcarRevisao, _trocarStatusRevisao,
-    abrirRevisaoVelocidade, marcarRevisaoVelocidade, _trocarStatusRevisaoVelocidade,
-    abrirRevisaoAceite, marcarRevisaoAceite, _trocarStatusRevisaoAceite,
-    abrirRevisaoFinalizar, marcarRevisaoFinalizar, _trocarStatusRevisaoFinalizar,
-    abrirRevisaoAbandono, marcarRevisaoAbandono, _trocarStatusRevisaoAbandono,
-    buscarTicketRevisao, marcarRevisaoBusca,
+    abrirRevisaoNotas, marcarRevisao, _trocarStatusRevisao, reatribuirRevisao,
+    abrirRevisaoVelocidade, marcarRevisaoVelocidade, _trocarStatusRevisaoVelocidade, reatribuirRevisaoVelocidade,
+    abrirRevisaoAceite, marcarRevisaoAceite, _trocarStatusRevisaoAceite, reatribuirRevisaoAceite,
+    abrirRevisaoFinalizar, marcarRevisaoFinalizar, _trocarStatusRevisaoFinalizar, reatribuirRevisaoFinalizar,
+    abrirRevisaoAbandono, marcarRevisaoAbandono, _trocarStatusRevisaoAbandono, reatribuirRevisaoAbandono,
+    buscarTicketRevisao, marcarRevisaoBusca, reatribuirRevisaoBusca,
     abrirRelatorioDescontos, gerarRelatorioDescontos, exportarRelatorioDescontosCSV, exportarRelatorioDescontosPDF, _toggleDetalheTodos,
     recalcularPontos,
   };

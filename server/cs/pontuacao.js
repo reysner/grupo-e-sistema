@@ -287,6 +287,11 @@ async function ensurePontuacaoSchema(pool) {
   await pool.query(`ALTER TABLE cs_tickets ADD COLUMN IF NOT EXISTS revisao_nota_status TEXT DEFAULT 'pendente'`).catch(()=>{});
   await pool.query(`ALTER TABLE cs_tickets ADD COLUMN IF NOT EXISTS revisao_nota_por TEXT`).catch(()=>{});
   await pool.query(`ALTER TABLE cs_tickets ADD COLUMN IF NOT EXISTS revisao_nota_em TIMESTAMPTZ`).catch(()=>{});
+  // Reatribuição de analista na revisão de nota baixa (pedido do Reysner,
+  // 15/09/2026) — quando preenchido, a nota do cliente (e tudo que anda
+  // junto na mesma linha: velocidade, finalizar) conta pra esse
+  // zappy_user_id em vez de quem o Zappy registrou como dono do ticket.
+  await pool.query(`ALTER TABLE cs_tickets ADD COLUMN IF NOT EXISTS revisao_nota_override_analista_id TEXT`).catch(()=>{});
   await pool.query(`CREATE TABLE IF NOT EXISTS gam_tickets_pontos (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ticket_id UUID NOT NULL REFERENCES cs_tickets(id) ON DELETE CASCADE,
