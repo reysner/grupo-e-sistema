@@ -44,7 +44,7 @@ router.post('/legalizacao/certificados/importar-certiseguro', async (req, res) =
           await pool.query(
             `INSERT INTO legalizacao_certificados (cliente_id, tipo, titular_nome, titular_documento, data_vencimento, fonte, criado_por)
              VALUES ($1,'pj',$2,$3,$4,'certiseguro',$5)
-             ON CONFLICT (cliente_id) WHERE tipo = 'pj' DO UPDATE SET
+             ON CONFLICT (cliente_id) WHERE tipo = 'pj' AND cliente_id IS NOT NULL DO UPDATE SET
                data_vencimento = $4, fonte = 'certiseguro', atualizado_em = NOW(),
                notificado_vencimento_em = CASE WHEN $4 IS DISTINCT FROM legalizacao_certificados.data_vencimento THEN NULL ELSE legalizacao_certificados.notificado_vencimento_em END`,
             [clienteId, cli[0].nome_empresa, cli[0].cnpj, dataVencimento, 'CertiSeguro (sync automático)']
@@ -4959,7 +4959,7 @@ router.put('/legalizacao/certificados/:clienteId', async (req, res) => {
     const { rows } = await pool.query(
       `INSERT INTO legalizacao_certificados (cliente_id, tipo, titular_nome, titular_documento, data_vencimento, observacoes, criado_por)
        VALUES ($1,'pj',$2,$3,$4,$5,$6)
-       ON CONFLICT (cliente_id) WHERE tipo = 'pj' DO UPDATE SET
+       ON CONFLICT (cliente_id) WHERE tipo = 'pj' AND cliente_id IS NOT NULL DO UPDATE SET
          data_vencimento = $4, observacoes = $5, atualizado_em = NOW(),
          notificado_vencimento_em = CASE WHEN $4 IS DISTINCT FROM legalizacao_certificados.data_vencimento THEN NULL ELSE legalizacao_certificados.notificado_vencimento_em END
        RETURNING id`,
