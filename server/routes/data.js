@@ -4560,14 +4560,27 @@ router.get('/legalizacao/diagnostico-acessorias', requireAdmin, async (req, res)
   try {
     const token = process.env.ACESSORIAS_API_TOKEN;
     if (!token) return res.status(500).json({ error: 'ACESSORIAS_API_TOKEN não configurado.' });
-    const cnpj = String(req.query.cnpj || '').replace(/\D/g, '');
-    if (!cnpj) return res.status(400).json({ error: 'Informe "cnpj".' });
-    const resp = await fetch(`https://api.acessorias.com/companies/${cnpj}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(15000),
-    });
+    let url;
+    if (req.query.listall) {
+      // ListAll com registrationData é o que já traz Regime/GrupoDeEmpresas
+      // hoje (ver acessoriasClient.buscarPagina) — testa se CNAE só aparece
+      // aqui, não no endpoint de empresa única.
+      url = `https://api.acessorias.com/companies/ListAll?ativa=S&Pagina=1&registrationData`;
+    } else {
+      const cnpj = String(req.query.cnpj || '').replace(/\D/g, '');
+      if (!cnpj) return res.status(400).json({ error: 'Informe "cnpj" ou "listall=1".' });
+      url = `https://api.acessorias.com/companies/${cnpj}${req.query.registrationData ? '?registrationData' : ''}`;
+    }
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
     const bruto = await resp.json().catch(() => null);
-    res.json({ status: resp.status, bruto, camposComCnaeOuAtividade: bruto ? Object.keys(bruto).filter(k => /cnae|atividade/i.test(k)) : [] });
+    const amostra = Array.isArray(bruto) ? bruto[0] : bruto;
+    res.json({
+      status: resp.status,
+      totalRetornado: Array.isArray(bruto) ? bruto.length : undefined,
+      amostra,
+      todasAsChaves: amostra ? Object.keys(amostra) : [],
+      camposComCnaeOuAtividade: amostra ? Object.keys(amostra).filter(k => /cnae|atividade/i.test(k)) : [],
+    });
   } catch (err) { res.status(500).json({ error: err.message || 'Erro ao consultar Acessórias.' }); }
 });
 
