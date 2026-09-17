@@ -4548,41 +4548,15 @@ router.get('/churn', requireAdmin, async (req, res) => {
 
 const LEGAL_DIAS_ALERTA = 30;
 
-/**
- * TEMPORÁRIO — GET /api/data/legalizacao/diagnostico-acessorias?cnpj=
- * Só pra descobrir se a API do Acessórias tem algum campo de CNAE cru que
- * `empresaParaCliente` (acessoriasClient.js) ainda não mapeia — nenhum dos
- * campos hoje usados (Regime, GrupoDeEmpresas, ClienteDesde...) inclui
- * CNAE. Devolve o JSON bruto da API, sem passar pelo mapeamento. Remover
- * depois de decidir se dá pra automatizar "Sanitário exigível" por CNAE.
- */
-router.get('/legalizacao/diagnostico-acessorias', requireAdmin, async (req, res) => {
-  try {
-    const token = process.env.ACESSORIAS_API_TOKEN;
-    if (!token) return res.status(500).json({ error: 'ACESSORIAS_API_TOKEN não configurado.' });
-    let url;
-    if (req.query.listall) {
-      // ListAll com registrationData é o que já traz Regime/GrupoDeEmpresas
-      // hoje (ver acessoriasClient.buscarPagina) — testa se CNAE só aparece
-      // aqui, não no endpoint de empresa única.
-      url = `https://api.acessorias.com/companies/ListAll?ativa=S&Pagina=1&registrationData`;
-    } else {
-      const cnpj = String(req.query.cnpj || '').replace(/\D/g, '');
-      if (!cnpj) return res.status(400).json({ error: 'Informe "cnpj" ou "listall=1".' });
-      url = `https://api.acessorias.com/companies/${cnpj}${req.query.registrationData ? '?registrationData' : ''}`;
-    }
-    const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
-    const bruto = await resp.json().catch(() => null);
-    const amostra = Array.isArray(bruto) ? bruto[0] : bruto;
-    res.json({
-      status: resp.status,
-      totalRetornado: Array.isArray(bruto) ? bruto.length : undefined,
-      amostra,
-      todasAsChaves: amostra ? Object.keys(amostra) : [],
-      camposComCnaeOuAtividade: amostra ? Object.keys(amostra).filter(k => /cnae|atividade/i.test(k)) : [],
-    });
-  } catch (err) { res.status(500).json({ error: err.message || 'Erro ao consultar Acessórias.' }); }
-});
+// Diagnóstico rodado em 17/09/2026 (removido depois de confirmar): a API do
+// Acessórias (endpoint único e ListAll com registrationData) NÃO tem CNAE em
+// nenhuma resposta — campos disponíveis são só ID, Identificador, Razao,
+// Fantasia, Status, Telefone, UF, ClienteDesde, ClienteAte, DataDoCadastro,
+// Honorario, DtLastDH, Regime, GrupoDeEmpresas. Por isso "Alvará Sanitário
+// exigível" não dá pra automatizar por CNAE — mas isso não precisa de campo
+// nenhum: como cada alvará é um registro que o admin cria manualmente, só
+// não se cria o registro de Sanitário pra quem não precisa (ex.: prestador
+// de serviço sem contato com alimento/saúde). O CRUD já resolve isso sozinho.
 
 async function ensureLegalizacaoSchema() {
   await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_alvaras (
@@ -4601,6 +4575,19 @@ async function ensureLegalizacaoSchema() {
   )`).catch(()=>{});
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_legal_alvaras_cliente ON legalizacao_alvaras (cliente_id)`).catch(()=>{});
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_legal_alvaras_vencimento ON legalizacao_alvaras (data_vencimento)`).catch(()=>{});
+  // Resultado da última consulta automática ao portal da prefeitura (hoje só
+  // Uberlândia-MG/Ciclo7 — ver server/legalizacao/ciclo7Uberlandia.js).
+  // Pedido do Reysner, 17/09/2026: o alvará mostra 3 estados — "Vencido"
+  // (passou da data e NÃO tem solicitação de renovação em andamento),
+  // "A vencer" (dentro do prazo) e "Solicitação" (tem protocolo de
+  // renovação em andamento na prefeitura — esse estado tem PRIORIDADE sobre
+  // os outros dois, já que uma renovação em curso é mais relevante que só
+  // saber se venceu). Clicar em qualquer um mostra o detalhe (data de
+  // vencimento, ou o andamento por secretaria).
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS ultima_consulta_status TEXT`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS ultima_consulta_resumo TEXT`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS ultima_consulta_data_solicitacao TEXT`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS ultima_consulta_em TIMESTAMPTZ`).catch(()=>{});
 
   await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_certificados (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -4627,19 +4614,31 @@ const LEGAL_STATUS_SQL = `CASE
   ELSE 'ok'
 END`;
 
+// Mesma coisa, mas pra ALVARÁS — "solicitacao" (protocolo de renovação em
+// andamento na prefeitura, achado via consulta automática) tem prioridade
+// sobre vencido/vencendo/ok. Ver ALTER TABLE ultima_consulta_status acima.
+const LEGAL_STATUS_ALVARA_SQL = `CASE
+  WHEN a.ultima_consulta_status = 'solicitacao_andamento' THEN 'solicitacao'
+  WHEN a.data_vencimento IS NULL THEN 'sem_data'
+  WHEN a.data_vencimento < CURRENT_DATE THEN 'vencido'
+  WHEN a.data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA} days' THEN 'vencendo'
+  ELSE 'ok'
+END`;
+
 /** GET /api/data/legalizacao/resumo — contadores pro painel (cards). */
 router.get('/legalizacao/resumo', async (req, res) => {
   try {
     await ensureLegalizacaoSchema();
-    const q = async (tabela) => {
-      const { rows } = await pool.query(
-        `SELECT ${LEGAL_STATUS_SQL} AS status, COUNT(*) AS qtd FROM ${tabela} GROUP BY 1`
-      );
-      const porStatus = { vencido: 0, vencendo: 0, ok: 0, sem_data: 0 };
-      rows.forEach(r => { porStatus[r.status] = parseInt(r.qtd); });
-      return porStatus;
-    };
-    const [alvaras, certificados] = await Promise.all([q('legalizacao_alvaras'), q('legalizacao_certificados')]);
+    const { rows: rowsAlvaras } = await pool.query(
+      `SELECT ${LEGAL_STATUS_ALVARA_SQL} AS status, COUNT(*) AS qtd FROM legalizacao_alvaras a GROUP BY 1`
+    );
+    const alvaras = { vencido: 0, vencendo: 0, ok: 0, sem_data: 0, solicitacao: 0 };
+    rowsAlvaras.forEach(r => { alvaras[r.status] = parseInt(r.qtd); });
+    const { rows: rowsCert } = await pool.query(
+      `SELECT ${LEGAL_STATUS_SQL} AS status, COUNT(*) AS qtd FROM legalizacao_certificados GROUP BY 1`
+    );
+    const certificados = { vencido: 0, vencendo: 0, ok: 0, sem_data: 0 };
+    rowsCert.forEach(r => { certificados[r.status] = parseInt(r.qtd); });
     res.json({ diasAlerta: LEGAL_DIAS_ALERTA, alvaras, certificados });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar resumo de legalização.' }); }
 });
@@ -4650,7 +4649,7 @@ router.get('/legalizacao/alvaras', async (req, res) => {
     await ensureLegalizacaoSchema();
     const { status, tipo, busca } = req.query;
     const params = [];
-    let q = `SELECT a.*, ${LEGAL_STATUS_SQL} AS status, c.nome_empresa, c.cnpj, c.codigo
+    let q = `SELECT a.*, ${LEGAL_STATUS_ALVARA_SQL} AS status, c.nome_empresa, c.cnpj, c.codigo
       FROM legalizacao_alvaras a
       LEFT JOIN clientes c ON c.id::text = a.cliente_id
       WHERE 1=1`;
@@ -4661,6 +4660,54 @@ router.get('/legalizacao/alvaras', async (req, res) => {
     const filtradas = status && status !== 'todos' ? rows.filter(r => r.status === status) : rows;
     res.json({ data: filtradas });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar alvarás.' }); }
+});
+
+/**
+ * POST /api/data/legalizacao/alvaras/:id/consultar-prefeitura — roda a
+ * consulta automática no portal da prefeitura (hoje só Uberlândia-MG/
+ * Ciclo7, ver ciclo7Uberlandia.js) pro CNPJ do cliente dono do alvará, e
+ * grava o resultado em ultima_consulta_* — isso é o que faz o badge do
+ * alvará virar "Solicitação" na listagem (ver LEGAL_STATUS_ALVARA_SQL).
+ * Só funciona pra CNPJ de Uberlândia-MG hoje; outras cidades voltam
+ * "indisponível" (mantém o link manual como alternativa).
+ */
+router.post('/legalizacao/alvaras/:id/consultar-prefeitura', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const { rows } = await pool.query(
+      `SELECT a.*, c.cnpj, c.nome_empresa FROM legalizacao_alvaras a
+       LEFT JOIN clientes c ON c.id::text = a.cliente_id WHERE a.id = $1`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Alvará não encontrado.' });
+    const alvara = rows[0];
+    if (!alvara.cnpj) return res.status(400).json({ error: 'Cliente sem CNPJ cadastrado.' });
+
+    const { consultarAlvaraUberlandia } = require('../legalizacao/ciclo7Uberlandia');
+    const resultado = await consultarAlvaraUberlandia(alvara.cnpj);
+    const bloco = alvara.tipo === 'funcionamento' ? resultado.funcionamento : resultado.sanitario;
+
+    let ultimaConsultaStatus = null, resumo = null, dataSolicitacao = null;
+    if (resultado.nadaEncontrado || !bloco || !bloco.encontrado) {
+      resumo = (bloco && resultado.erros && resultado.erros[0]) || 'Nada encontrado no portal da prefeitura nos últimos 5 anos.';
+    } else {
+      ultimaConsultaStatus = 'solicitacao_andamento';
+      dataSolicitacao = bloco.solicitacao;
+      const pareceres = (bloco.pareceres || []).map(p => `${p.secretaria}: ${p.parecer}`).join(' · ');
+      resumo = `${bloco.servico || 'Solicitação'} (${bloco.solicitacao || '—'}, nº ${bloco.numeroPlanilha || '—'})${bloco.statusGeral ? ' — ' + bloco.statusGeral : ''}${pareceres ? ' — ' + pareceres : ''}`;
+    }
+
+    await pool.query(
+      `UPDATE legalizacao_alvaras SET ultima_consulta_status = $2, ultima_consulta_resumo = $3,
+              ultima_consulta_data_solicitacao = $4, ultima_consulta_em = NOW()
+       WHERE id = $1`,
+      [req.params.id, ultimaConsultaStatus, resumo, dataSolicitacao]
+    );
+    res.json({ ok: true, encontrado: !!ultimaConsultaStatus, resumo, dataSolicitacao, anoConsultado: resultado.ano, anosVarridos: resultado.anosVarridos });
+  } catch (err) {
+    console.error('[legalizacao] consultar-prefeitura falhou:', err);
+    res.status(500).json({ error: err.message || 'Erro ao consultar a prefeitura.' });
+  }
 });
 
 router.post('/legalizacao/alvaras', async (req, res) => {
@@ -4683,10 +4730,14 @@ router.patch('/legalizacao/alvaras/:id', requireAdmin, async (req, res) => {
   try {
     const { tipo, orgao, link, numero, data_vencimento, observacoes } = req.body;
     if (tipo && !['funcionamento', 'sanitario'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
+    // Atualizar a data de vencimento à mão significa "já sei a data nova" —
+    // limpa a marca de "Solicitação em andamento" (ver consultar-prefeitura
+    // acima), senão o badge continuava preso no estado antigo.
     const { rows } = await pool.query(
       `UPDATE legalizacao_alvaras SET
          tipo = COALESCE($2, tipo), orgao = $3, link = $4, numero = $5,
-         data_vencimento = $6, observacoes = $7, atualizado_em = NOW()
+         data_vencimento = $6, observacoes = $7, atualizado_em = NOW(),
+         ultima_consulta_status = CASE WHEN $6 IS NOT NULL THEN NULL ELSE ultima_consulta_status END
        WHERE id = $1 RETURNING id`,
       [req.params.id, tipo || null, orgao || null, link || null, numero || null, data_vencimento || null, observacoes || null]
     );
