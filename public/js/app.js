@@ -358,6 +358,7 @@ const App = (() => {
     admin:'Administração de Usuários',
     'sucesso-cliente':'Sucesso do Cliente',
     'analise-inteligente':'Análise Inteligente',
+    legalizacao:'Legalização',
   };
 
   const Nav = {
@@ -386,6 +387,7 @@ const App = (() => {
       if (page === 'admin')        (window.Admin || Admin)?.load();
       if (page === 'sucesso-cliente') window.SucessoCliente?.load();
       if (page === 'analise-inteligente') window.AnaliseInteligente?.load();
+      if (page === 'legalizacao') window.Legalizacao?.load();
       return false;
     },
   };
@@ -5412,6 +5414,304 @@ const CAC = (() => {
 })();
 
 window.CAC = CAC;
+
+
+
+// ── Módulo Legalização (Alvarás + Certificados Digitais) ──────────────────────
+// Pedido do Reysner, 17/09/2026: acompanhar vencimento de Alvará de
+// Funcionamento, Alvará Sanitário e Certificado Digital (PJ/PF). v1 é
+// cadastro manual — sem doc da API CertiSeguro ainda, e a API do Acessórias
+// não tem CNAE nem vencimento de nada disso (confirmado, ver comentário em
+// server/routes/data.js). Alvará tem consulta automática de status pro
+// portal da Prefeitura de Uberlândia-MG (Ciclo7) — atalho de pesquisa, não
+// substitui a data cadastrada.
+const Legalizacao = (() => {
+  const _tk = () => localStorage.getItem('ge_token') || '';
+  let _clientes = [];
+  let _alvaras = [];
+  let _certificados = [];
+
+  const STATUS_INFO = {
+    vencido:     { cor: '#c0362c', bg: '#fff5f5', label: '🔴 Vencido' },
+    vencendo:    { cor: '#c9a227', bg: '#fffbe6', label: '🟡 Vencendo' },
+    solicitacao: { cor: '#3182ce', bg: '#ebf8ff', label: '🔵 Solicitação' },
+    ok:          { cor: '#38a169', bg: '#f0fff4', label: '🟢 Em dia' },
+    sem_data:    { cor: '#718096', bg: '#f7fafc', label: '⚪ Sem data' },
+  };
+
+  function _fmtData(d) {
+    if (!d) return null;
+    return new Date(d + 'T00:00:00').toLocaleDateString('pt-BR');
+  }
+
+  async function load() {
+    await _carregarClientes();
+    await Promise.all([_carregarResumo(), _carregarAlvaras(), _carregarCertificados()]);
+  }
+
+  async function _carregarClientes() {
+    if (_clientes.length) return;
+    const res = await fetch('/api/data/clientes?status=ativo', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) return;
+    const { data } = await res.json();
+    _clientes = (data || []).sort((a, b) => (a.nome_empresa || '').localeCompare(b.nome_empresa || '', 'pt-BR'));
+  }
+
+  function _optionsClientes(selecionadoId) {
+    return '<option value="">Selecione a empresa...</option>' +
+      _clientes.map(c => `<option value="${c.id}" ${c.id === selecionadoId ? 'selected' : ''}>${c.nome_empresa} — ${c.cnpj}</option>`).join('');
+  }
+
+  async function _carregarResumo() {
+    const res = await fetch('/api/data/legalizacao/resumo', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) return;
+    const { alvaras, certificados } = await res.json();
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('legal-qtd-vencido', (alvaras.vencido || 0) + (certificados.vencido || 0));
+    set('legal-qtd-vencendo', (alvaras.vencendo || 0) + (certificados.vencendo || 0));
+    set('legal-qtd-solicitacao', alvaras.solicitacao || 0);
+    set('legal-qtd-ok', (alvaras.ok || 0) + (certificados.ok || 0));
+  }
+
+  function _badge(status, detalheHtml, rowId) {
+    const m = STATUS_INFO[status] || STATUS_INFO.sem_data;
+    return `<span onclick="Legalizacao._toggleDetalhe('${rowId}')" style="cursor:pointer;font-weight:700;color:${m.cor};background:${m.bg};padding:3px 10px;border-radius:12px;font-size:12px;display:inline-block;white-space:nowrap">${m.label}</span>` +
+      `<div id="${rowId}" hidden style="font-size:12px;color:var(--gray-500);margin-top:5px;max-width:260px">${detalheHtml}</div>`;
+  }
+
+  function _toggleDetalhe(rowId) {
+    const el = document.getElementById(rowId);
+    if (el) el.hidden = !el.hidden;
+  }
+
+  // ── ALVARÁS ─────────────────────────────────────────────────────────────
+  async function _carregarAlvaras() {
+    const res = await fetch('/api/data/legalizacao/alvaras', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) return;
+    const { data } = await res.json();
+    _alvaras = data || [];
+    filtrarAlvaras();
+  }
+
+  function filtrarAlvaras() {
+    const tbody = document.getElementById('legal-alv-tbody');
+    if (!tbody) return;
+    const busca = (document.getElementById('legal-alv-busca')?.value || '').toLowerCase().trim();
+    const tipo = document.getElementById('legal-alv-tipo')?.value || 'todos';
+    const status = document.getElementById('legal-alv-status')?.value || 'todos';
+    let lista = _alvaras;
+    if (tipo !== 'todos') lista = lista.filter(a => a.tipo === tipo);
+    if (status !== 'todos') lista = lista.filter(a => a.status === status);
+    if (busca) lista = lista.filter(a => (a.nome_empresa || '').toLowerCase().includes(busca) || (a.cnpj || '').includes(busca));
+    if (!lista.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum alvará encontrado.</td></tr>'; return; }
+    const tipoLabel = { funcionamento: 'Funcionamento', sanitario: 'Sanitário' };
+    tbody.innerHTML = lista.map(a => {
+      const rowId = 'alv-det-' + a.id;
+      let detalhe;
+      if (a.status === 'solicitacao') {
+        detalhe = (a.ultima_consulta_resumo || 'Solicitação em andamento.') +
+          (a.ultima_consulta_data_solicitacao ? `<br><b>Data da solicitação:</b> ${a.ultima_consulta_data_solicitacao}` : '');
+      } else if (a.data_vencimento) {
+        detalhe = '<b>Vencimento:</b> ' + _fmtData(a.data_vencimento);
+      } else {
+        detalhe = 'Nenhuma data cadastrada ainda.';
+      }
+      if (a.observacoes) detalhe += `<br><i>${a.observacoes}</i>`;
+      return `<tr>` +
+        `<td><b>${a.nome_empresa || '—'}</b><div style="font-size:11px;color:var(--gray-400)">${a.cnpj || ''}</div></td>` +
+        `<td>${tipoLabel[a.tipo] || a.tipo}</td>` +
+        `<td>${_badge(a.status, detalhe, rowId)}</td>` +
+        `<td style="font-size:12px;color:var(--gray-500)">${a.orgao || '—'}</td>` +
+        `<td>${a.link ? `<a href="${a.link}" target="_blank" rel="noopener" style="font-size:12px">🔗 Prefeitura</a>` : '—'}</td>` +
+        `<td style="white-space:nowrap">` +
+          `<button class="btn btn-sm" style="background:#ebf8ff;color:#3182ce;border:1px solid #bee3f8" onclick="Legalizacao.consultarPrefeitura('${a.id}')" title="Consulta automática no portal da Prefeitura (hoje só Uberlândia-MG)">🔍</button> ` +
+          `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:var(--gray-500)" onclick="Legalizacao.abrirFormAlvara('${a.id}')" title="Editar">✏️</button> ` +
+          `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e" onclick="Legalizacao.excluirAlvara('${a.id}')" title="Excluir">🗑</button>` +
+        `</td></tr>`;
+    }).join('');
+  }
+
+  function abrirFormAlvara(id) {
+    const a = id ? _alvaras.find(x => x.id === id) : null;
+    App.Modal.open(a ? 'Editar Alvará' : 'Novo Alvará', `<div style="display:grid;gap:12px">
+      <div class="field"><label>Empresa <span class="req">*</span></label>
+        <select id="legal-alv-cliente" class="input" ${a ? 'disabled' : ''}>${_optionsClientes(a?.cliente_id)}</select>
+        ${a ? '<div style="font-size:11px;color:var(--gray-400);margin-top:4px">Não dá pra trocar a empresa de um alvará já cadastrado — exclua e crie de novo se precisar.</div>' : ''}
+      </div>
+      <div class="field"><label>Tipo <span class="req">*</span></label>
+        <select id="legal-alv-form-tipo" class="input">
+          <option value="funcionamento" ${a?.tipo === 'funcionamento' ? 'selected' : ''}>Alvará de Funcionamento</option>
+          <option value="sanitario" ${a?.tipo === 'sanitario' ? 'selected' : ''}>Alvará Sanitário</option>
+        </select>
+      </div>
+      <div class="field"><label>Data de vencimento</label><input id="legal-alv-form-venc" class="input" type="date" value="${a?.data_vencimento || ''}" /></div>
+      <div class="field"><label>Link da Prefeitura (consulta/renovação)</label><input id="legal-alv-form-link" class="input" type="text" placeholder="https://..." value="${a?.link || ''}" /></div>
+      <div class="field"><label>Órgão / Município</label><input id="legal-alv-form-orgao" class="input" type="text" placeholder="Ex.: Prefeitura de Uberlândia/MG" value="${a?.orgao || ''}" /></div>
+      <div class="field"><label>Número do alvará</label><input id="legal-alv-form-numero" class="input" type="text" value="${a?.numero || ''}" /></div>
+      <div class="field"><label>Observações</label><textarea id="legal-alv-form-obs" class="input" rows="2">${a?.observacoes || ''}</textarea></div>
+    </div>`, () => salvarAlvara(id));
+  }
+
+  async function salvarAlvara(id) {
+    const body = {
+      cliente_id: document.getElementById('legal-alv-cliente')?.value,
+      tipo: document.getElementById('legal-alv-form-tipo')?.value,
+      data_vencimento: document.getElementById('legal-alv-form-venc')?.value || null,
+      link: document.getElementById('legal-alv-form-link')?.value?.trim() || null,
+      orgao: document.getElementById('legal-alv-form-orgao')?.value?.trim() || null,
+      numero: document.getElementById('legal-alv-form-numero')?.value?.trim() || null,
+      observacoes: document.getElementById('legal-alv-form-obs')?.value?.trim() || null,
+    };
+    if (!id && !body.cliente_id) { App.Toast.err('Selecione a empresa.'); return; }
+    const res = await fetch('/api/data/legalizacao/alvaras' + (id ? '/' + id : ''), {
+      method: id ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify(body)
+    });
+    if (res && res.ok) {
+      App.Modal.close();
+      App.Toast.ok(id ? 'Alvará atualizado.' : 'Alvará cadastrado.');
+      await _carregarAlvaras();
+      await _carregarResumo();
+    } else {
+      const err = await res?.json().catch(() => ({}));
+      App.Toast.err(err?.error || 'Erro ao salvar alvará.');
+    }
+  }
+
+  async function excluirAlvara(id) {
+    if (!confirm('Excluir este alvará? Essa ação não pode ser desfeita.')) return;
+    const res = await fetch('/api/data/legalizacao/alvaras/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + _tk() } });
+    if (res && res.ok) { App.Toast.ok('Alvará excluído.'); await _carregarAlvaras(); await _carregarResumo(); }
+    else App.Toast.err('Erro ao excluir.');
+  }
+
+  /**
+   * Roda a consulta automática no Ciclo7 (Uberlândia-MG) — pedido do
+   * Reysner, 17/09/2026. Só funciona pra CNPJ de Uberlândia; outras cidades
+   * voltam erro (continuam só com o link manual). Varre até 5 anos pra
+   * trás, pode levar alguns segundos.
+   */
+  async function consultarPrefeitura(id) {
+    App.Toast.ok('Consultando o portal da Prefeitura... pode levar alguns segundos.');
+    const res = await fetch('/api/data/legalizacao/alvaras/' + id + '/consultar-prefeitura', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + _tk() }
+    });
+    const data = await res?.json().catch(() => ({}));
+    if (res && res.ok) {
+      App.Toast.ok(data.encontrado ? 'Solicitação em andamento encontrada!' : 'Nada encontrado nos últimos 5 anos — status não mudou.');
+      await _carregarAlvaras();
+      await _carregarResumo();
+    } else {
+      App.Toast.err(data?.error || 'Erro ao consultar a prefeitura.');
+    }
+  }
+
+  // ── CERTIFICADOS DIGITAIS ───────────────────────────────────────────────
+  async function _carregarCertificados() {
+    const res = await fetch('/api/data/legalizacao/certificados', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) return;
+    const { data } = await res.json();
+    _certificados = data || [];
+    filtrarCertificados();
+  }
+
+  function filtrarCertificados() {
+    const tbody = document.getElementById('legal-cert-tbody');
+    if (!tbody) return;
+    const busca = (document.getElementById('legal-cert-busca')?.value || '').toLowerCase().trim();
+    const tipo = document.getElementById('legal-cert-tipo')?.value || 'todos';
+    const status = document.getElementById('legal-cert-status')?.value || 'todos';
+    let lista = _certificados;
+    if (tipo !== 'todos') lista = lista.filter(c => c.tipo === tipo);
+    if (status !== 'todos') lista = lista.filter(c => c.status === status);
+    if (busca) lista = lista.filter(c =>
+      (c.titular_nome || '').toLowerCase().includes(busca) ||
+      (c.titular_documento || '').includes(busca) ||
+      (c.nome_empresa || '').toLowerCase().includes(busca));
+    if (!lista.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum certificado encontrado.</td></tr>'; return; }
+    tbody.innerHTML = lista.map(c => {
+      const rowId = 'cert-det-' + c.id;
+      let detalhe = c.data_vencimento ? '<b>Vencimento:</b> ' + _fmtData(c.data_vencimento) : 'Nenhuma data cadastrada ainda.';
+      if (c.nome_empresa) detalhe += `<br><b>Vinculado a:</b> ${c.nome_empresa}`;
+      if (c.observacoes) detalhe += `<br><i>${c.observacoes}</i>`;
+      return `<tr>` +
+        `<td><b>${c.titular_nome}</b></td>` +
+        `<td>${c.tipo.toUpperCase()}</td>` +
+        `<td style="font-size:12px;color:var(--gray-500)">${c.titular_documento || '—'}</td>` +
+        `<td>${_badge(c.status, detalhe, rowId)}</td>` +
+        `<td style="white-space:nowrap">` +
+          `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:var(--gray-500)" onclick="Legalizacao.abrirFormCertificado('${c.id}')" title="Editar">✏️</button> ` +
+          `<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e" onclick="Legalizacao.excluirCertificado('${c.id}')" title="Excluir">🗑</button>` +
+        `</td></tr>`;
+    }).join('');
+  }
+
+  function abrirFormCertificado(id) {
+    const c = id ? _certificados.find(x => x.id === id) : null;
+    App.Modal.open(c ? 'Editar Certificado' : 'Novo Certificado Digital', `<div style="display:grid;gap:12px">
+      <div class="field"><label>Tipo <span class="req">*</span></label>
+        <select id="legal-cert-form-tipo" class="input" onchange="Legalizacao._toggleClienteCertificado()">
+          <option value="pj" ${c?.tipo === 'pj' ? 'selected' : ''}>PJ (empresa)</option>
+          <option value="pf" ${c?.tipo === 'pf' ? 'selected' : ''}>PF (pessoa física, ex.: sócio)</option>
+        </select>
+      </div>
+      <div class="field" id="legal-cert-form-cliente-wrap"><label>Empresa vinculada (opcional pra PF)</label>
+        <select id="legal-cert-form-cliente" class="input">${_optionsClientes(c?.cliente_id)}</select>
+      </div>
+      <div class="field"><label>Titular (nome da empresa ou da pessoa) <span class="req">*</span></label><input id="legal-cert-form-titular" class="input" type="text" value="${c?.titular_nome || ''}" /></div>
+      <div class="field"><label>CNPJ ou CPF</label><input id="legal-cert-form-doc" class="input" type="text" value="${c?.titular_documento || ''}" /></div>
+      <div class="field"><label>Data de vencimento</label><input id="legal-cert-form-venc" class="input" type="date" value="${c?.data_vencimento || ''}" /></div>
+      <div class="field"><label>Observações</label><textarea id="legal-cert-form-obs" class="input" rows="2">${c?.observacoes || ''}</textarea></div>
+    </div>`, () => salvarCertificado(id));
+  }
+
+  function _toggleClienteCertificado() {
+    // Só cosmético — PF normalmente não tem empresa vinculada, mas deixa
+    // disponível (ex.: sócio de um cliente específico) em vez de esconder.
+  }
+
+  async function salvarCertificado(id) {
+    const body = {
+      cliente_id: document.getElementById('legal-cert-form-cliente')?.value || null,
+      tipo: document.getElementById('legal-cert-form-tipo')?.value,
+      titular_nome: document.getElementById('legal-cert-form-titular')?.value?.trim(),
+      titular_documento: document.getElementById('legal-cert-form-doc')?.value?.trim() || null,
+      data_vencimento: document.getElementById('legal-cert-form-venc')?.value || null,
+      observacoes: document.getElementById('legal-cert-form-obs')?.value?.trim() || null,
+    };
+    if (!body.titular_nome) { App.Toast.err('Informe o titular do certificado.'); return; }
+    const res = await fetch('/api/data/legalizacao/certificados' + (id ? '/' + id : ''), {
+      method: id ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify(body)
+    });
+    if (res && res.ok) {
+      App.Modal.close();
+      App.Toast.ok(id ? 'Certificado atualizado.' : 'Certificado cadastrado.');
+      await _carregarCertificados();
+      await _carregarResumo();
+    } else {
+      const err = await res?.json().catch(() => ({}));
+      App.Toast.err(err?.error || 'Erro ao salvar certificado.');
+    }
+  }
+
+  async function excluirCertificado(id) {
+    if (!confirm('Excluir este certificado? Essa ação não pode ser desfeita.')) return;
+    const res = await fetch('/api/data/legalizacao/certificados/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + _tk() } });
+    if (res && res.ok) { App.Toast.ok('Certificado excluído.'); await _carregarCertificados(); await _carregarResumo(); }
+    else App.Toast.err('Erro ao excluir.');
+  }
+
+  return {
+    load, filtrarAlvaras, filtrarCertificados, _toggleDetalhe,
+    abrirFormAlvara, salvarAlvara, excluirAlvara, consultarPrefeitura,
+    abrirFormCertificado, salvarCertificado, excluirCertificado, _toggleClienteCertificado,
+  };
+})();
+
+window.Legalizacao = Legalizacao;
 
 
 

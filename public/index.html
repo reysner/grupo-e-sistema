@@ -88,6 +88,9 @@
         <a class="nav-item admin-only" data-page="cac" href="#">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/><path d="M8 12h4"/></svg>CAC / Investimentos
         </a>
+        <a class="nav-item admin-only" data-page="legalizacao" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M12 3l8 4v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V7l8-4Z"/></svg>Legalização
+        </a>
         <div class="nav-sep"></div>
         <a class="nav-item admin-only" data-page="gamificacao" href="#">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0012 0V2Z"/></svg>Gamificação
@@ -964,6 +967,7 @@
               <option value="gestao">Gestão de Clientes</option>
               <option value="insatisfacao">Insatisfação</option>
               <option value="carteira">Carteira</option>
+              <option value="legalizacao">Legalização</option>
               <option value="admin">Administração</option>
             </select>
             <select id="log-user-filter" onchange="Log.carregar()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer">
@@ -987,6 +991,92 @@
                 <tbody id="log-tbody"><tr><td colspan="5" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
               </table>
               <div id="log-pagination"></div>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- LEGALIZAÇÃO -->
+        <section id="page-legalizacao" class="page admin-only" hidden>
+
+          <!-- RESUMO -->
+          <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:20px">
+            <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:18px" id="legal-card-vencido">
+              <div style="font-size:11px;font-weight:700;color:#c0362c;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🔴 Vencidos</div>
+              <div id="legal-qtd-vencido" style="font-size:26px;font-weight:800;color:var(--g700)">—</div>
+            </div>
+            <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:18px" id="legal-card-vencendo">
+              <div style="font-size:11px;font-weight:700;color:#c9a227;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🟡 Vencendo em 30 dias</div>
+              <div id="legal-qtd-vencendo" style="font-size:26px;font-weight:800;color:var(--g700)">—</div>
+            </div>
+            <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:18px" id="legal-card-solicitacao">
+              <div style="font-size:11px;font-weight:700;color:#3182ce;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🔵 Solicitação em andamento</div>
+              <div id="legal-qtd-solicitacao" style="font-size:26px;font-weight:800;color:var(--g700)">—</div>
+            </div>
+            <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:18px" id="legal-card-ok">
+              <div style="font-size:11px;font-weight:700;color:#38a169;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🟢 Em dia</div>
+              <div id="legal-qtd-ok" style="font-size:26px;font-weight:800;color:var(--g700)">—</div>
+            </div>
+          </div>
+
+          <!-- ALVARÁS -->
+          <div class="form-card" style="margin-bottom:20px">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+              <h2 class="form-title" style="margin:0">Alvarás (Funcionamento e Sanitário)</h2>
+              <button class="btn btn-success btn-sm" onclick="Legalizacao.abrirFormAlvara()" style="font-weight:600">+ Novo Alvará</button>
+            </div>
+            <div class="form-accent"></div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0">
+              <input id="legal-alv-busca" type="text" placeholder="🔍 Buscar empresa ou CNPJ..." oninput="Legalizacao.filtrarAlvaras()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;min-width:220px;flex:1;max-width:300px" />
+              <select id="legal-alv-tipo" onchange="Legalizacao.filtrarAlvaras()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer">
+                <option value="todos">Todos os tipos</option>
+                <option value="funcionamento">Funcionamento</option>
+                <option value="sanitario">Sanitário</option>
+              </select>
+              <select id="legal-alv-status" onchange="Legalizacao.filtrarAlvaras()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer">
+                <option value="todos">Todos os status</option>
+                <option value="vencido">🔴 Vencido</option>
+                <option value="vencendo">🟡 Vencendo em 30 dias</option>
+                <option value="solicitacao">🔵 Solicitação em andamento</option>
+                <option value="ok">🟢 Em dia</option>
+                <option value="sem_data">⚪ Sem data cadastrada</option>
+              </select>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Empresa</th><th>Tipo</th><th>Status</th><th>Órgão</th><th>Link</th><th></th></tr></thead>
+                <tbody id="legal-alv-tbody"><tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- CERTIFICADOS DIGITAIS -->
+          <div class="form-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+              <h2 class="form-title" style="margin:0">Certificados Digitais (PJ e PF)</h2>
+              <button class="btn btn-success btn-sm" onclick="Legalizacao.abrirFormCertificado()" style="font-weight:600">+ Novo Certificado</button>
+            </div>
+            <div class="form-accent"></div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0">
+              <input id="legal-cert-busca" type="text" placeholder="🔍 Buscar empresa, titular ou documento..." oninput="Legalizacao.filtrarCertificados()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;min-width:220px;flex:1;max-width:300px" />
+              <select id="legal-cert-tipo" onchange="Legalizacao.filtrarCertificados()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer">
+                <option value="todos">PJ e PF</option>
+                <option value="pj">PJ</option>
+                <option value="pf">PF</option>
+              </select>
+              <select id="legal-cert-status" onchange="Legalizacao.filtrarCertificados()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer">
+                <option value="todos">Todos os status</option>
+                <option value="vencido">🔴 Vencido</option>
+                <option value="vencendo">🟡 Vencendo em 30 dias</option>
+                <option value="ok">🟢 Em dia</option>
+                <option value="sem_data">⚪ Sem data cadastrada</option>
+              </select>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Titular</th><th>Tipo</th><th>Documento</th><th>Status</th><th></th></tr></thead>
+                <tbody id="legal-cert-tbody"><tr><td colspan="5" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
+              </table>
             </div>
           </div>
 
