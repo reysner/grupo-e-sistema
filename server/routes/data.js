@@ -3150,11 +3150,22 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
              AND (vr.override_analista_id IS NULL OR vr.override_analista_id = $2)`,
           [mes, c.zappy_user_id]
         );
+        // Descontos de velocidade dos PRÓPRIOS tickets recebeu/unico (pedido
+        // do Reysner, 17/09/2026 — ticket #48308: cliente deu nota 4, um
+        // atraso de +30min derrubava a nota_final EXIBIDA pra 3, parecendo
+        // que o cliente tinha dado 3. Antes só a métrica de transferência
+        // virava média separada; agora TODA velocidade (transferiu, recebeu,
+        // unico) segue o mesmo modelo — nota_final do ticket é sempre a nota
+        // real do cliente, ver cs/pontuacao.js). Reaproveita notasRows (já
+        // filtrado pela nota-dona efetiva) — só olha vel_status/vel_override.
+        const velocidadeProprioNotasRows = notasRows.filter(r =>
+          r.vel_status !== 'indevida' && (!r.vel_override || r.vel_override === c.zappy_user_id)
+        );
         // Descontos de velocidade REATRIBUÍDOS pra esse colaborador (de
         // qualquer papel — transferiu, recebeu ou único de OUTRA pessoa)
-        // via revisão "Trocar analista". Entram na mesma média de
-        // transferência: é um desconto que não veio de um ticket seu, mas
-        // que a revisão decidiu que é sua responsabilidade real.
+        // via revisão "Trocar analista". Entram na mesma média: é um
+        // desconto que não veio de um ticket seu, mas que a revisão decidiu
+        // que é sua responsabilidade real.
         const { rows: realocadosVelocidadeRows } = await pool.query(
           `SELECT p.ajuste_velocidade FROM gam_tickets_pontos p
            JOIN gam_velocidade_revisoes vr ON vr.ticket_id = p.ticket_id AND vr.papel = p.papel
@@ -3163,6 +3174,7 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
         );
         const velocidadeTodos = [
           ...bonusRows.map(r => parseFloat(r.ajuste_velocidade)),
+          ...velocidadeProprioNotasRows.map(r => parseFloat(r.ajuste_velocidade)),
           ...realocadosVelocidadeRows.map(r => parseFloat(r.ajuste_velocidade)),
         ];
         const bonusTransferencia = velocidadeTodos.length
@@ -3243,22 +3255,19 @@ async function executarAutoPreencher(mes, { dryRun = true, lancadoPor = 'Automá
           bonusAbandono = abandonoRows.length ? -(abandonoRows.length / notasRows.length) : 0;
         }
 
-        const somaBase = notasRows.reduce((s, r) => {
-          const velReatribuida = r.vel_override && r.vel_override !== c.zappy_user_id;
-          if (r.vel_status === 'indevida' || velReatribuida) {
-            const semVelocidade = clamp(parseFloat(r.nota_cliente) + 0 + parseFloat(r.ajuste_reabertura), 0, 5);
-            return s + semVelocidade;
-          }
-          return s + parseFloat(r.nota_final);
-        }, 0);
+        // nota_final já é sempre a nota real do cliente (ver cs/pontuacao.js,
+        // 17/09/2026) — mediaBase é só a média simples, sem precisar
+        // neutralizar velocidade aqui (isso virou bonusTransferencia acima).
+        const somaBase = notasRows.reduce((s, r) => s + parseFloat(r.nota_final), 0);
         const mediaBase = somaBase / notasRows.length;
         const media_individual = Number(Math.max(0, Math.min(5, mediaBase + bonusTransferencia + bonusAceite + bonusFinalizar + bonusAbandono)).toFixed(2));
         // mediaBase exposta pra transparência (ver GET /gam/composicao-nota)
         // — é a nota bruta antes dos 4 bônus mensais, pra dar pra mostrar
         // "sua nota final é X porque: base Y + transferência Z + aceite W +
         // finalizar V + abandono U", em vez desses números ficarem só numa
-        // resposta crua. bonusTransferencia e bonusFinalizar já incluem os
-        // itens reatribuídos a esse colaborador.
+        // resposta crua. bonusTransferencia (agora inclui TODA velocidade,
+        // não só transferência) e bonusFinalizar já incluem os itens
+        // reatribuídos a esse colaborador.
         resultados.push({ colaborador_id: c.id, nome: c.nome, media_individual, avaliacoes: notasRows.length, mediaBase: Number(mediaBase.toFixed(2)), bonusTransferencia, bonusAceite, bonusFinalizar, bonusAbandono, fonte: 'tickets' });
         if (!dryRun) {
           await pool.query(

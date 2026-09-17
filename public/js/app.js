@@ -6891,7 +6891,7 @@ const Gamificacao = (() => {
     return '<div style="background:var(--gray-50,#f7fafc);border-radius:10px;padding:14px 16px;margin-bottom:14px">' +
       '<p style="font-size:12px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Composição da nota do mês</p>' +
       '<div style="display:flex;justify-content:space-between;padding:4px 0"><span>Nota base (média dos tickets, já com velocidade)</span><span style="font-weight:700">' + Number(c.mediaBase).toFixed(2) + '</span></div>' +
-      linha('Bônus/desconto de transferência (média)', c.bonusTransferencia) +
+      linha('Bônus/desconto de velocidade (média)', c.bonusTransferencia) +
       (c.bonusAceite !== undefined ? linha('Bônus/desconto de aceite do aguardando (média)', c.bonusAceite) : '') +
       linha('Bônus/desconto de /Finalizar + reabertura (média)', c.bonusFinalizar) +
       (c.bonusAbandono !== undefined ? linha('Desconto de abandono de atendimento (média)', c.bonusAbandono) : '') +
@@ -7223,7 +7223,7 @@ const Gamificacao = (() => {
         <div class="pessoa-header"><span class="pos">${r.posicao}º lugar</span><h2>${r.nome}</h2><span class="nota-final">${r.notaFinal}</span></div>
         <div class="composicao">
           <div class="comp-linha"><span>Nota base (média dos tickets)</span><span>${r.mediaBase !== undefined ? Number(r.mediaBase).toFixed(2) : '—'}</span></div>
-          ${linhaComp('Bônus/desconto de transferência (média)', r.bonusTransferencia)}
+          ${linhaComp('Bônus/desconto de velocidade (média)', r.bonusTransferencia)}
           ${linhaComp('Bônus/desconto de aceite do aguardando (média)', r.bonusAceite)}
           ${linhaComp('Bônus/desconto de /Finalizar + reabertura (média)', r.bonusFinalizar)}
           ${linhaComp('Desconto de abandono de atendimento (média)', r.bonusAbandono)}
@@ -7643,7 +7643,7 @@ const Gamificacao = (() => {
   function _exportarRelatorioTodosCSV() {
     if (!_relatorioTodosData.length) { App.Toast.err('Gere o relatório primeiro.'); return; }
     const cols = ['posicao', 'nome', 'avaliacoes', 'mediaBase', 'bonusTransferencia', 'bonusAceite', 'bonusFinalizar', 'bonusAbandono', 'notaFinal'];
-    const labels = { posicao: 'Posição', nome: 'Colaborador', avaliacoes: 'Avaliações', mediaBase: 'Nota Base', bonusTransferencia: 'Desc. Transferência', bonusAceite: 'Desc. Aceite', bonusFinalizar: 'Desc. /Finalizar', bonusAbandono: 'Desconto Abandono', notaFinal: 'Nota Final' };
+    const labels = { posicao: 'Posição', nome: 'Colaborador', avaliacoes: 'Avaliações', mediaBase: 'Nota Base', bonusTransferencia: 'Desc. Velocidade', bonusAceite: 'Desc. Aceite', bonusFinalizar: 'Desc. /Finalizar', bonusAbandono: 'Desconto Abandono', notaFinal: 'Nota Final' };
     const header = cols.map(c => labels[c]).join(';');
     const rows = _relatorioTodosData.map(r => cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(';'));
     const csv = [header, ...rows].join('\n');

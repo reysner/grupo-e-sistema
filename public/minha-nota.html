@@ -241,7 +241,7 @@ async function carregar() {
     html += '<div class="card">' +
       '<p class="card-title">Composição da sua nota — ' + mesLabel(mes) + '</p>' +
       '<div class="comp-row"><span>Nota base (média dos atendimentos, já com velocidade)</span><span class="comp-val">' + Number(comp.mediaBase).toFixed(2) + '</span></div>' +
-      linhaComposicao('Bônus/desconto de transferência (média)', comp.bonusTransferencia) +
+      linhaComposicao('Bônus/desconto de velocidade (média)', comp.bonusTransferencia) +
       (comp.bonusAceite !== undefined ? linhaComposicao('Bônus/desconto de aceite do aguardando (média)', comp.bonusAceite) : '') +
       linhaComposicao('Bônus/desconto de /Finalizar + reabertura (média)', comp.bonusFinalizar) +
       (comp.bonusAbandono !== undefined ? linhaComposicao('Desconto de abandono de atendimento (média)', comp.bonusAbandono) : '') +

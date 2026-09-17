@@ -207,9 +207,17 @@ function calcularPontosTicket(ticket, mensagens = []) {
   }
 
   // ── Papel "recebeu" (se transferido) ou "unico" (se não) ─────────────────
-  // Métrica 1 (velocidade de resposta desse papel, direto na nota_final) +
-  // métricas 2+4 combinadas (/Finalizar + reabertura, ver ajusteFinalizar
-  // abaixo — vira média mensal separada, não entra na nota_final).
+  // Métrica 1 (velocidade de resposta desse papel) + métricas 2+4
+  // combinadas (/Finalizar + reabertura, ver ajusteFinalizar abaixo) — as
+  // DUAS viram média mensal separada (bonusVelocidadeRecebeuUnico e
+  // bonusFinalizar em executarAutoPreencher, routes/data.js), NÃO entram na
+  // nota_final do ticket. Mudança pedida pelo Reysner (17/09/2026, ticket
+  // #48308: cliente deu nota 4, o atraso de +30min derrubava a nota_final
+  // exibida pra 3 — parecia que o CLIENTE tinha dado 3, distorcendo o
+  // histórico de avaliação de cada ticket). Antes de 17/09/2026 entrava
+  // direto (clamp(notaCliente + ajusteVelocidade, 0, 5)) — só a velocidade
+  // desse papel fazia isso; aceite/transferência/finalizar já eram média
+  // separada desde antes. Ver `notaFinal` abaixo.
   const relVelocidade = foiTransferido ? porTipo('departamento') : porTipo('aceite');
   const ajusteVelocidade2 = tierVelocidade(relVelocidade ? relVelocidade.minutos_uteis : null);
 
@@ -263,9 +271,10 @@ function calcularPontosTicket(ticket, mensagens = []) {
     // fica null (não 0 — null é "não se aplica a esse papel", pra AVG()
     // ignorar em vez de contar como zero).
     ajusteAceite: foiTransferido ? null : ajusteAceite,
-    // Nem ajusteFinalizar nem ajusteReabertura entram aqui — os dois viraram
-    // a mesma média mensal separada (ver comentário acima).
-    notaFinal: clamp(notaCliente + (ajusteVelocidade2 ?? 0), 0, 5),
+    // notaFinal = a nota REAL do cliente, sem desconto nenhum embutido —
+    // ajusteVelocidade (e ajusteFinalizar) viram média mensal separada em
+    // vez de distorcer o valor exibido por ticket (ver comentário acima).
+    notaFinal: notaCliente,
   });
 
   return linhas.map(l => ({ ...l, notaCliente }));
