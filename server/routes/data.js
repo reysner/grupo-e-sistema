@@ -9,6 +9,84 @@ const { ensurePontuacaoSchema, recalcularPontosDoMes, clamp } = require('../cs/p
 const { ensureAbandonoSchema, recalcularAbandonoDoMes } = require('../cs/abandono');
 
 const router = express.Router();
+
+/**
+ * POST /api/data/legalizacao/certificados/importar-certiseguro — recebe a
+ * lista de certificados (CNPJ/CPF + validade) trazida pelo script local que
+ * roda numa estação do escritório com o IP liberado na CertiSeguro (ver
+ * server/legalizacao/certiseguroSync.js). Chamada máquina-a-máquina,
+ * autenticada por token compartilhado — por isso fica ANTES do
+ * `router.use(requireAuth)` abaixo, que exigiria sessão de usuário logado.
+ */
+router.post('/legalizacao/certificados/importar-certiseguro', async (req, res) => {
+  try {
+    const tokenEsperado = process.env.CERTISEGURO_SYNC_TOKEN;
+    if (!tokenEsperado) return res.status(503).json({ error: 'Sincronização CertiSeguro não configurada (variável CERTISEGURO_SYNC_TOKEN ausente no servidor).' });
+    if (req.get('X-Sync-Token') !== tokenEsperado) return res.status(401).json({ error: 'Token de sincronização inválido.' });
+
+    await ensureLegalizacaoSchema();
+    const lista = Array.isArray(req.body.certificados) ? req.body.certificados : [];
+    let atualizados = 0, criados = 0, ignorados = 0;
+
+    for (const item of lista) {
+      const doc = String(item.cnpj || item.documento || '').replace(/\D/g, '');
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(item.validade || '').trim());
+      if (!doc || !m) { ignorados++; continue; }
+      const dataVencimento = `${m[3]}-${m[2]}-${m[1]}`;
+      const nome = item.nome_amigavel || item.nome || null;
+
+      if (doc.length === 14) {
+        const { rows: cli } = await pool.query(
+          `SELECT id, nome_empresa, cnpj FROM clientes WHERE regexp_replace(cnpj, '\\D', '', 'g') = $1 LIMIT 1`, [doc]
+        );
+        if (cli.length) {
+          const clienteId = String(cli[0].id);
+          await pool.query(
+            `INSERT INTO legalizacao_certificados (cliente_id, tipo, titular_nome, titular_documento, data_vencimento, fonte, criado_por)
+             VALUES ($1,'pj',$2,$3,$4,'certiseguro',$5)
+             ON CONFLICT (cliente_id) WHERE tipo = 'pj' DO UPDATE SET
+               data_vencimento = $4, fonte = 'certiseguro', atualizado_em = NOW(),
+               notificado_vencimento_em = CASE WHEN $4 IS DISTINCT FROM legalizacao_certificados.data_vencimento THEN NULL ELSE legalizacao_certificados.notificado_vencimento_em END`,
+            [clienteId, cli[0].nome_empresa, cli[0].cnpj, dataVencimento, 'CertiSeguro (sync automático)']
+          );
+          atualizados++;
+          continue;
+        }
+      }
+
+      // Não bateu com nenhum cliente ativo (ou é CPF) — tenta achar um certificado PF/avulso já cadastrado com esse documento.
+      const { rows: existente } = await pool.query(
+        `SELECT id FROM legalizacao_certificados WHERE regexp_replace(titular_documento, '\\D', '', 'g') = $1 LIMIT 1`, [doc]
+      );
+      if (existente.length) {
+        await pool.query(
+          `UPDATE legalizacao_certificados SET data_vencimento = $2, fonte = 'certiseguro', atualizado_em = NOW(),
+             notificado_vencimento_em = CASE WHEN $2 IS DISTINCT FROM data_vencimento THEN NULL ELSE notificado_vencimento_em END
+           WHERE id = $1`,
+          [existente[0].id, dataVencimento]
+        );
+        atualizados++;
+      } else if (nome) {
+        await pool.query(
+          `INSERT INTO legalizacao_certificados (cliente_id, tipo, titular_nome, titular_documento, data_vencimento, fonte, criado_por)
+           VALUES (NULL,'pf',$1,$2,$3,'certiseguro',$4)`,
+          [nome, doc, dataVencimento, 'CertiSeguro (sync automático)']
+        );
+        criados++;
+      } else {
+        ignorados++;
+      }
+    }
+
+    await registrarLog('sync', 'CertiSeguro (sync automático)', 'importar', 'legalizacao',
+      `Sincronização CertiSeguro: ${atualizados} atualizado(s), ${criados} criado(s), ${ignorados} ignorado(s) de ${lista.length} certificado(s).`, req);
+    res.json({ ok: true, atualizados, criados, ignorados, total: lista.length });
+  } catch (err) {
+    console.error('[legalizacao] importar-certiseguro falhou:', err);
+    res.status(500).json({ error: err.message || 'Erro ao importar certificados da CertiSeguro.' });
+  }
+});
+
 router.use(requireAuth);
 
 async function registrarLog(userId, userName, acao, modulo, descricao, req) {
@@ -4931,83 +5009,6 @@ router.delete('/legalizacao/certificados/:id', requireAdmin, async (req, res) =>
     await registrarLog(req.user.id, req.user.name, 'excluir', 'legalizacao', 'Certificado excluído', req);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao excluir certificado.' }); }
-});
-
-/**
- * POST /api/data/legalizacao/certificados/importar-certiseguro — recebe a
- * lista de certificados (CNPJ/CPF + validade) trazida pelo script local que
- * roda dentro da rede do escritório (só de lá dá pra falar com a API da
- * CertiSeguro — ver server/legalizacao/certiseguroSync.js). Chamada
- * máquina-a-máquina, autenticada por token compartilhado, não por sessão de
- * usuário admin.
- */
-router.post('/legalizacao/certificados/importar-certiseguro', async (req, res) => {
-  try {
-    const tokenEsperado = process.env.CERTISEGURO_SYNC_TOKEN;
-    if (!tokenEsperado) return res.status(503).json({ error: 'Sincronização CertiSeguro não configurada (variável CERTISEGURO_SYNC_TOKEN ausente no servidor).' });
-    if (req.get('X-Sync-Token') !== tokenEsperado) return res.status(401).json({ error: 'Token de sincronização inválido.' });
-
-    await ensureLegalizacaoSchema();
-    const lista = Array.isArray(req.body.certificados) ? req.body.certificados : [];
-    let atualizados = 0, criados = 0, ignorados = 0;
-
-    for (const item of lista) {
-      const doc = String(item.cnpj || item.documento || '').replace(/\D/g, '');
-      const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(item.validade || '').trim());
-      if (!doc || !m) { ignorados++; continue; }
-      const dataVencimento = `${m[3]}-${m[2]}-${m[1]}`;
-      const nome = item.nome_amigavel || item.nome || null;
-
-      if (doc.length === 14) {
-        const { rows: cli } = await pool.query(
-          `SELECT id, nome_empresa, cnpj FROM clientes WHERE regexp_replace(cnpj, '\\D', '', 'g') = $1 LIMIT 1`, [doc]
-        );
-        if (cli.length) {
-          const clienteId = String(cli[0].id);
-          await pool.query(
-            `INSERT INTO legalizacao_certificados (cliente_id, tipo, titular_nome, titular_documento, data_vencimento, fonte, criado_por)
-             VALUES ($1,'pj',$2,$3,$4,'certiseguro',$5)
-             ON CONFLICT (cliente_id) WHERE tipo = 'pj' DO UPDATE SET
-               data_vencimento = $4, fonte = 'certiseguro', atualizado_em = NOW(),
-               notificado_vencimento_em = CASE WHEN $4 IS DISTINCT FROM legalizacao_certificados.data_vencimento THEN NULL ELSE legalizacao_certificados.notificado_vencimento_em END`,
-            [clienteId, cli[0].nome_empresa, cli[0].cnpj, dataVencimento, 'CertiSeguro (sync automático)']
-          );
-          atualizados++;
-          continue;
-        }
-      }
-
-      // Não bateu com nenhum cliente ativo (ou é CPF) — tenta achar um certificado PF/avulso já cadastrado com esse documento.
-      const { rows: existente } = await pool.query(
-        `SELECT id FROM legalizacao_certificados WHERE regexp_replace(titular_documento, '\\D', '', 'g') = $1 LIMIT 1`, [doc]
-      );
-      if (existente.length) {
-        await pool.query(
-          `UPDATE legalizacao_certificados SET data_vencimento = $2, fonte = 'certiseguro', atualizado_em = NOW(),
-             notificado_vencimento_em = CASE WHEN $2 IS DISTINCT FROM data_vencimento THEN NULL ELSE notificado_vencimento_em END
-           WHERE id = $1`,
-          [existente[0].id, dataVencimento]
-        );
-        atualizados++;
-      } else if (nome) {
-        await pool.query(
-          `INSERT INTO legalizacao_certificados (cliente_id, tipo, titular_nome, titular_documento, data_vencimento, fonte, criado_por)
-           VALUES (NULL,'pf',$1,$2,$3,'certiseguro',$4)`,
-          [nome, doc, dataVencimento, 'CertiSeguro (sync automático)']
-        );
-        criados++;
-      } else {
-        ignorados++;
-      }
-    }
-
-    await registrarLog('sync', 'CertiSeguro (sync automático)', 'importar', 'legalizacao',
-      `Sincronização CertiSeguro: ${atualizados} atualizado(s), ${criados} criado(s), ${ignorados} ignorado(s) de ${lista.length} certificado(s).`, req);
-    res.json({ ok: true, atualizados, criados, ignorados, total: lista.length });
-  } catch (err) {
-    console.error('[legalizacao] importar-certiseguro falhou:', err);
-    res.status(500).json({ error: err.message || 'Erro ao importar certificados da CertiSeguro.' });
-  }
 });
 
 /**

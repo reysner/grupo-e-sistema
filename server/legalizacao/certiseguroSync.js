@@ -4,10 +4,20 @@
  * Sincroniza vencimentos de certificado digital (PJ e PF) a partir da API
  * da CertiSeguro — pedido do Reysner, 17/09/2026.
  *
- * A API da CertiSeguro roda em REDE INTERNA do escritório (confirmado pelo
- * Reysner) — o Render não alcança. Por isso este script é standalone e
- * precisa rodar numa ESTAÇÃO WINDOWS de dentro da rede, do mesmo jeito que
- * server/arquivoMorto/ roda (Agendador de Tarefas). Ele faz 2 chamadas:
+ * ATUALIZADO 17/09/2026: a instalação da CertiSeguro aqui é modo NUVEM (ver
+ * certiseguro.Certi no perfil do Windows) — a API real fica em
+ * https://app.certiseguro.com.br/apicertiseguro (HTTPS padrão, porta 443). A
+ * doc oficial fala em http://IP_CERTISEGURO:8090/apicertiseguro, mas isso é
+ * só pro caso on-premises; testado ao vivo, a porta 8090 desse domínio apenas
+ * redireciona (301) pra URL acima. NÃO é local — é a nuvem da própria
+ * CertiSeguro, protegida por whitelist de IP (ver "IPs Remotos Permitidos"
+ * no painel → Configurações → Configurar API). Por isso o IP de quem roda
+ * este script precisa estar cadastrado lá.
+ *
+ * Mesmo assim, o script continua standalone (não faz parte do server Express
+ * do Render) — roda numa ESTAÇÃO WINDOWS do escritório, mesmo padrão de
+ * server/arquivoMorto/ (Agendador de Tarefas), porque foi o IP dela que
+ * cadastramos na whitelist. Ele faz 2 chamadas:
  *
  *   1) POST em CERTISEGURO_URL com vID=listcert → traz TODOS os certificados
  *      cadastrados (nome, cnpj/cpf, validade) numa única chamada — dispensa
