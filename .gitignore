@@ -2,5 +2,6 @@ server/backups/
 server/arquivoMorto/.env
 server/arquivoMorto/estado/
 server/arquivoMorto/logs/
+server/legalizacao/.env
 
 diag.txt
