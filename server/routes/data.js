@@ -4525,6 +4525,235 @@ router.get('/churn', requireAdmin, async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ── LEGALIZAÇÃO ──────────────────────────────────────────────────────────────
+// Módulo novo (pedido do Reysner, 17/09/2026): acompanha vencimento de
+// Alvarás (Funcionamento e Sanitário) e Certificados Digitais (PJ e PF).
+//
+// v1 é cadastro MANUAL de propósito: a API do Acessórias só traz dado
+// cadastral (CNPJ, razão social, regime — ver acessoriasClient.js), não tem
+// vencimento de alvará nem de certificado; e não há integração com a
+// CERTISEGURO ainda (sem documentação/credenciais). O campo `fonte` já vem
+// pronto ('manual' por enquanto) pra quando uma dessas integrações entrar,
+// sem precisar mudar a estrutura da tabela.
+//
+// Cada alvará é sempre de um cliente da Carteira (`cliente_id`). Certificado
+// pode ser de um cliente (PJ) OU de uma pessoa avulsa sem cadastro na
+// Carteira (PF, ex.: sócio) — por isso `cliente_id` é opcional ali e existe
+// `titular_nome`/`titular_documento` pra cobrir os dois casos.
+//
+// "Vencendo" = dentro dos próximos 30 dias (LEGAL_DIAS_ALERTA abaixo) —
+// ajustar aqui se o Reysner pedir outro prazo.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const LEGAL_DIAS_ALERTA = 30;
+
+/**
+ * TEMPORÁRIO — GET /api/data/legalizacao/diagnostico-acessorias?cnpj=
+ * Só pra descobrir se a API do Acessórias tem algum campo de CNAE cru que
+ * `empresaParaCliente` (acessoriasClient.js) ainda não mapeia — nenhum dos
+ * campos hoje usados (Regime, GrupoDeEmpresas, ClienteDesde...) inclui
+ * CNAE. Devolve o JSON bruto da API, sem passar pelo mapeamento. Remover
+ * depois de decidir se dá pra automatizar "Sanitário exigível" por CNAE.
+ */
+router.get('/legalizacao/diagnostico-acessorias', requireAdmin, async (req, res) => {
+  try {
+    const token = process.env.ACESSORIAS_API_TOKEN;
+    if (!token) return res.status(500).json({ error: 'ACESSORIAS_API_TOKEN não configurado.' });
+    const cnpj = String(req.query.cnpj || '').replace(/\D/g, '');
+    if (!cnpj) return res.status(400).json({ error: 'Informe "cnpj".' });
+    const resp = await fetch(`https://api.acessorias.com/companies/${cnpj}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    const bruto = await resp.json().catch(() => null);
+    res.json({ status: resp.status, bruto, camposComCnaeOuAtividade: bruto ? Object.keys(bruto).filter(k => /cnae|atividade/i.test(k)) : [] });
+  } catch (err) { res.status(500).json({ error: err.message || 'Erro ao consultar Acessórias.' }); }
+});
+
+async function ensureLegalizacaoSchema() {
+  await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_alvaras (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cliente_id TEXT NOT NULL,
+    tipo TEXT NOT NULL CHECK (tipo IN ('funcionamento','sanitario')),
+    orgao TEXT,
+    link TEXT,
+    numero TEXT,
+    data_vencimento DATE,
+    observacoes TEXT,
+    fonte TEXT NOT NULL DEFAULT 'manual',
+    criado_por TEXT,
+    criado_em TIMESTAMPTZ DEFAULT NOW(),
+    atualizado_em TIMESTAMPTZ DEFAULT NOW()
+  )`).catch(()=>{});
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_legal_alvaras_cliente ON legalizacao_alvaras (cliente_id)`).catch(()=>{});
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_legal_alvaras_vencimento ON legalizacao_alvaras (data_vencimento)`).catch(()=>{});
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_certificados (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cliente_id TEXT,
+    tipo TEXT NOT NULL CHECK (tipo IN ('pj','pf')),
+    titular_nome TEXT NOT NULL,
+    titular_documento TEXT,
+    data_vencimento DATE,
+    observacoes TEXT,
+    fonte TEXT NOT NULL DEFAULT 'manual',
+    criado_por TEXT,
+    criado_em TIMESTAMPTZ DEFAULT NOW(),
+    atualizado_em TIMESTAMPTZ DEFAULT NOW()
+  )`).catch(()=>{});
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_legal_cert_cliente ON legalizacao_certificados (cliente_id)`).catch(()=>{});
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_legal_cert_vencimento ON legalizacao_certificados (data_vencimento)`).catch(()=>{});
+}
+
+/** SQL de status compartilhado pelas listagens — mesmo critério em todo o módulo. */
+const LEGAL_STATUS_SQL = `CASE
+  WHEN data_vencimento IS NULL THEN 'sem_data'
+  WHEN data_vencimento < CURRENT_DATE THEN 'vencido'
+  WHEN data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA} days' THEN 'vencendo'
+  ELSE 'ok'
+END`;
+
+/** GET /api/data/legalizacao/resumo — contadores pro painel (cards). */
+router.get('/legalizacao/resumo', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const q = async (tabela) => {
+      const { rows } = await pool.query(
+        `SELECT ${LEGAL_STATUS_SQL} AS status, COUNT(*) AS qtd FROM ${tabela} GROUP BY 1`
+      );
+      const porStatus = { vencido: 0, vencendo: 0, ok: 0, sem_data: 0 };
+      rows.forEach(r => { porStatus[r.status] = parseInt(r.qtd); });
+      return porStatus;
+    };
+    const [alvaras, certificados] = await Promise.all([q('legalizacao_alvaras'), q('legalizacao_certificados')]);
+    res.json({ diasAlerta: LEGAL_DIAS_ALERTA, alvaras, certificados });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar resumo de legalização.' }); }
+});
+
+/** GET /api/data/legalizacao/alvaras?status=&tipo=&busca= */
+router.get('/legalizacao/alvaras', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const { status, tipo, busca } = req.query;
+    const params = [];
+    let q = `SELECT a.*, ${LEGAL_STATUS_SQL} AS status, c.nome_empresa, c.cnpj, c.codigo
+      FROM legalizacao_alvaras a
+      LEFT JOIN clientes c ON c.id::text = a.cliente_id
+      WHERE 1=1`;
+    if (tipo && tipo !== 'todos') { params.push(tipo); q += ` AND a.tipo = $${params.length}`; }
+    if (busca) { params.push('%' + busca + '%'); q += ` AND (c.nome_empresa ILIKE $${params.length} OR c.cnpj ILIKE $${params.length})`; }
+    q += ` ORDER BY a.data_vencimento ASC NULLS LAST`;
+    const { rows } = await pool.query(q, params);
+    const filtradas = status && status !== 'todos' ? rows.filter(r => r.status === status) : rows;
+    res.json({ data: filtradas });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar alvarás.' }); }
+});
+
+router.post('/legalizacao/alvaras', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const { cliente_id, tipo, orgao, link, numero, data_vencimento, observacoes } = req.body;
+    if (!cliente_id || !tipo) return res.status(400).json({ error: 'Selecione o cliente e o tipo de alvará.' });
+    if (!['funcionamento', 'sanitario'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
+    const { rows } = await pool.query(
+      `INSERT INTO legalizacao_alvaras (cliente_id, tipo, orgao, link, numero, data_vencimento, observacoes, criado_por)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [cliente_id, tipo, orgao || null, link || null, numero || null, data_vencimento || null, observacoes || null, req.user.name]
+    );
+    await registrarLog(req.user.id, req.user.name, 'criar', 'legalizacao', `Alvará (${tipo}) cadastrado`, req);
+    res.status(201).json({ ok: true, id: rows[0].id });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao cadastrar alvará.' }); }
+});
+
+router.patch('/legalizacao/alvaras/:id', requireAdmin, async (req, res) => {
+  try {
+    const { tipo, orgao, link, numero, data_vencimento, observacoes } = req.body;
+    if (tipo && !['funcionamento', 'sanitario'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
+    const { rows } = await pool.query(
+      `UPDATE legalizacao_alvaras SET
+         tipo = COALESCE($2, tipo), orgao = $3, link = $4, numero = $5,
+         data_vencimento = $6, observacoes = $7, atualizado_em = NOW()
+       WHERE id = $1 RETURNING id`,
+      [req.params.id, tipo || null, orgao || null, link || null, numero || null, data_vencimento || null, observacoes || null]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Alvará não encontrado.' });
+    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', 'Alvará atualizado', req);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao atualizar alvará.' }); }
+});
+
+router.delete('/legalizacao/alvaras/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM legalizacao_alvaras WHERE id = $1`, [req.params.id]);
+    await registrarLog(req.user.id, req.user.name, 'excluir', 'legalizacao', 'Alvará excluído', req);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir alvará.' }); }
+});
+
+/** GET /api/data/legalizacao/certificados?status=&tipo=&busca= */
+router.get('/legalizacao/certificados', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const { status, tipo, busca } = req.query;
+    const params = [];
+    let q = `SELECT ce.*, ${LEGAL_STATUS_SQL} AS status, c.nome_empresa, c.cnpj AS cliente_cnpj, c.codigo
+      FROM legalizacao_certificados ce
+      LEFT JOIN clientes c ON c.id::text = ce.cliente_id
+      WHERE 1=1`;
+    if (tipo && tipo !== 'todos') { params.push(tipo); q += ` AND ce.tipo = $${params.length}`; }
+    if (busca) {
+      params.push('%' + busca + '%');
+      q += ` AND (ce.titular_nome ILIKE $${params.length} OR ce.titular_documento ILIKE $${params.length} OR c.nome_empresa ILIKE $${params.length})`;
+    }
+    q += ` ORDER BY ce.data_vencimento ASC NULLS LAST`;
+    const { rows } = await pool.query(q, params);
+    const filtradas = status && status !== 'todos' ? rows.filter(r => r.status === status) : rows;
+    res.json({ data: filtradas });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar certificados.' }); }
+});
+
+router.post('/legalizacao/certificados', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const { cliente_id, tipo, titular_nome, titular_documento, data_vencimento, observacoes } = req.body;
+    if (!tipo || !titular_nome) return res.status(400).json({ error: 'Informe o tipo e o titular do certificado.' });
+    if (!['pj', 'pf'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
+    const { rows } = await pool.query(
+      `INSERT INTO legalizacao_certificados (cliente_id, tipo, titular_nome, titular_documento, data_vencimento, observacoes, criado_por)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [cliente_id || null, tipo, titular_nome, titular_documento || null, data_vencimento || null, observacoes || null, req.user.name]
+    );
+    await registrarLog(req.user.id, req.user.name, 'criar', 'legalizacao', `Certificado (${tipo.toUpperCase()}) cadastrado`, req);
+    res.status(201).json({ ok: true, id: rows[0].id });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao cadastrar certificado.' }); }
+});
+
+router.patch('/legalizacao/certificados/:id', requireAdmin, async (req, res) => {
+  try {
+    const { tipo, titular_nome, titular_documento, data_vencimento, observacoes } = req.body;
+    if (tipo && !['pj', 'pf'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
+    const { rows } = await pool.query(
+      `UPDATE legalizacao_certificados SET
+         tipo = COALESCE($2, tipo), titular_nome = COALESCE($3, titular_nome), titular_documento = $4,
+         data_vencimento = $5, observacoes = $6, atualizado_em = NOW()
+       WHERE id = $1 RETURNING id`,
+      [req.params.id, tipo || null, titular_nome || null, titular_documento || null, data_vencimento || null, observacoes || null]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Certificado não encontrado.' });
+    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', 'Certificado atualizado', req);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao atualizar certificado.' }); }
+});
+
+router.delete('/legalizacao/certificados/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM legalizacao_certificados WHERE id = $1`, [req.params.id]);
+    await registrarLog(req.user.id, req.user.name, 'excluir', 'legalizacao', 'Certificado excluído', req);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao excluir certificado.' }); }
+});
+
 module.exports = router;
 
 
