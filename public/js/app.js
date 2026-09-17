@@ -5631,7 +5631,8 @@ const Legalizacao = (() => {
     });
     const data = await res?.json().catch(() => ({}));
     if (res && res.ok) {
-      App.Toast.ok(data.encontrado ? 'Solicitação em andamento encontrada!' : 'Nada encontrado nos últimos 5 anos — status não mudou.');
+      App.Toast.ok(data.vencimentoEncontrado ? `Vencimento encontrado: ${data.vencimentoEncontrado.split('-').reverse().join('/')}!`
+        : data.encontrado ? 'Solicitação em andamento encontrada!' : 'Nada encontrado nos últimos 5 anos — status não mudou.');
       await _carregarAlvaras();
       await _carregarResumo();
     } else {

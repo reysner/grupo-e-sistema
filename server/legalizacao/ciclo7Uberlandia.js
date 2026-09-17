@@ -4,27 +4,46 @@
  * Consulta de andamento de Alvará (Funcionamento + Sanitário) no portal
  * Ciclo7 da Prefeitura de Uberlândia-MG — pedido do Reysner, 17/09/2026.
  *
- * IMPORTANTE — o que isso NÃO é: não existe uma "data de vencimento"
- * consultável nesse portal. Ele mostra o STATUS do último protocolo/
- * solicitação de cada tipo de alvará (ex.: "Renovação Alvará de
- * Funcionamento" — Secretaria de Planejamento: Liberado, Secretaria de
- * Posturas: Em Andamento), filtrado por ANO da solicitação — não dá pra
- * saber de cara em qual ano está o protocolo mais recente, por isso a busca
- * varre os últimos N anos (do atual pra trás) até achar alguma coisa.
+ * ATUALIZADO no mesmo dia (17/09/2026): o Reysner descobriu que o botão
+ * "Imprimir" do resultado da busca gera uma CERTIDÃO (PDF, via relatório
+ * BIRT/jCompany) que TEM a data de vencimento de verdade (ex.:
+ * "Vencimento: 07/05/2030"). Então dá sim pra automatizar a data — não só
+ * o status do protocolo — CONFIRMADO funcionando (testado contra o portal
+ * real, ver `vencimentoEncontrado` no resultado):
+ *   1) busca normal (evento=F9-Pesquisar) acha o alvará;
+ *   2) na MESMA sessão, um 2º POST com evento="Gerar Certidão" devolve um
+ *      campo oculto `relatorioGravacao` com a URL do relatório (às vezes
+ *      entre aspas simples, cuidado ao trocar o regex);
+ *   3) baixa esse relatório em __format=pdf e lê o texto com pdf-parse —
+ *      o texto sai FORA de ordem visual (o rótulo "Vencimento" e a data
+ *      em si podem ficar ~60 caracteres separados, com outro campo no
+ *      meio), por isso testa cada ocorrência da palavra até achar uma
+ *      data por perto (ver extrairVencimentoDoPdf).
+ * SÓ tenta isso quando exatamente UM tipo (Funcionamento OU Sanitário) foi
+ * encontrado nesse ano — o botão "Gerar Certidão" não recebe parâmetro
+ * dizendo qual tipo, então com os dois juntos não dá pra saber com certeza
+ * qual PDF ele geraria; nesse caso ambíguo fica só no status do protocolo,
+ * pra nunca gravar a data no tipo errado.
+ * Isso só funciona quando o portal ACHA o alvará (raro pra quem não é de
+ * Uberlândia) — nesses casos a função devolve só o status do protocolo,
+ * como antes. A extração do PDF é tratada como best-effort (try/catch) —
+ * se o layout do relatório mudar ou o texto não aparecer, cai pra status
+ * de protocolo sem quebrar a consulta inteira.
  *
- * Isso é só um ATALHO DE PESQUISA pro admin conferir rapidamente o status —
- * NÃO substitui a data de vencimento cadastrada manualmente em
- * legalizacao_alvaras (essa continua sendo a fonte usada pros alertas de
- * cor do painel).
+ * Isso continua sendo um ATALHO DE PESQUISA/PREENCHIMENTO — não substitui
+ * a data cadastrada em legalizacao_alvaras (o admin sempre pode corrigir).
  *
- * Portal é uma aplicação Java/Struts antiga (framework "PLC") — não tem API,
- * só HTML renderizado no servidor. Reproduz aqui o mesmo POST que o
+ * Portal é uma aplicação Java antiga (framework "jCompany"/"PLC") — não tem
+ * API, só HTML renderizado no servidor. Reproduz aqui os mesmos POSTs que o
  * navegador faz (campos descobertos inspecionando o form real em
  * ciclo7.uberlandia.mg.gov.br), com sessão via cookie JSESSIONID.
  */
 
+const pdfParse = require('pdf-parse');
+
 const BASE_URL = 'https://ciclo7.uberlandia.mg.gov.br/ciclo7';
 const TIMEOUT_MS = 15000;
+const TIMEOUT_PDF_MS = 25000;
 
 /** Separa um CNPJ (com ou sem máscara) nas 3 partes que o formulário pede. */
 function partesCnpj(cnpjBruto) {
@@ -129,6 +148,87 @@ function parseErros(html) {
 }
 
 /**
+ * 2º POST na MESMA sessão (mesmo cookie, mesmos dados de busca) trocando
+ * `evento` pra "Gerar Certidão" — é o que o botão "Imprimir" da tela de
+ * resultado dispara (achado inspecionando `onclick="btgerarCertidao.click()"`
+ * no HTML). O portal usa o alvará que ficou "atual" na sessão do passo
+ * anterior (não tem parâmetro explícito de qual linha — por isso os dois
+ * POSTs precisam ser sequenciais, mesma sessão, sem pular a busca antes).
+ * Devolve a URL do relatório (do campo oculto `relatorioGravacao`) ou null.
+ */
+async function gerarCertidaoUrl({ base, filial, dv }, ano, cookie) {
+  const body = new URLSearchParams({
+    detCorrPlc: '', detCorrPlcPaginado: '', lookupCorrentePlc: '', navSetaFocoPlc: '',
+    inputTituloPagina: 'Consulta Acompanhamento de Alvará',
+    modoPlc: 'consultaPlc', indExcDetPlc: '', ordenacaoPlc: '', classeLookupAtualizar: '',
+    evento: 'Gerar Certidão',
+    codigoEstabelecimento_Arg: '',
+    numeroCgcCpfPessoaStr: base,
+    numeroCgcFilialStr: filial,
+    dvCgcCpfPessoaStr: dv,
+    ano: String(ano),
+    relatorioGravacao: '',
+  });
+  const resp = await fetch(`${BASE_URL}/consultaalvaracon.do`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
+    body: body.toString(),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  const html = await resp.text();
+  // Esse campo às vezes vem entre aspas simples ('...'), não duplas — achado
+  // testando de verdade (regex só com aspas duplas nunca batia). E a URL vem
+  // com "&amp;" (HTML-encoded), precisa decodificar antes de usar.
+  const match = /name="relatorioGravacao"[^>]*value=(?:"([^"]*)"|'([^']*)')/.exec(html);
+  const url = match ? (match[1] || match[2]) : null;
+  if (!url) return null;
+  const urlDecodificada = url.replace(/&amp;/g, '&');
+  // O portal gera a URL em http:// — força https:// (o site todo já serve
+  // por https, e fetch de http a partir daqui pode cair em redirecionamento
+  // estranho ou, num navegador, em bloqueio de conteúdo misto).
+  return urlDecodificada.replace(/^http:\/\//, 'https://');
+}
+
+/** Baixa o relatório em PDF e tenta achar "Vencimento: DD/MM/AAAA" no texto extraído. Devolve AAAA-MM-DD ou null. */
+async function extrairVencimentoDoPdf(urlRelatorio, cookie) {
+  const url = urlRelatorio.includes('__format=') ? urlRelatorio : urlRelatorio + '&__format=pdf';
+  const resp = await fetch(url, {
+    headers: { Cookie: cookie },
+    signal: AbortSignal.timeout(TIMEOUT_PDF_MS),
+  });
+  if (process.env.DEBUG_CICLO7) console.error('[ciclo7] pdf resp:', resp.status, resp.headers.get('content-type'));
+  if (!resp.ok) return null;
+  const buf = Buffer.from(await resp.arrayBuffer());
+  if (resp.headers.get('content-type') && !resp.headers.get('content-type').includes('pdf')) return null;
+  const { text } = await pdfParse(buf);
+  if (process.env.DEBUG_CICLO7) console.error('[ciclo7] texto pdf (primeiros 500):', text.slice(0,500));
+  // pdf-parse extrai o texto na ordem em que os glyphs foram desenhados no
+  // PDF, não necessariamente na ordem visual — testado com a certidão de
+  // Funcionamento real: o rótulo "Vencimento" sai numa linha, e a DATA em
+  // si só aparece ~60 caracteres depois, sozinha na própria linha (com
+  // "Pessoa/CNPJ/Emissão" de outro campo da tabela no meio, fora de ordem).
+  // "vencimento" também aparece solto em frases do rodapé (ex.: "...até no
+  // mínimo 30 dias antes do vencimento") — por isso testa TODA ocorrência
+  // da palavra, não só a primeira, até achar uma data por perto. Em cada
+  // uma: 1º tenta o caso simples ("Vencimento: DD/MM/AAAA" direto, pra
+  // outros relatórios/templates, ex. Sanitário, que podem sair diferente);
+  // se não achar, cai pra "primeira data sozinha numa linha dentro de uma
+  // janela depois da palavra".
+  let match = null;
+  for (const m of text.matchAll(/Vencimento/gi)) {
+    const idx = m.index;
+    const direto = /Vencimento:?\s*(\d{2})\/(\d{2})\/(\d{4})/i.exec(text.slice(idx, idx + 40));
+    if (direto) { match = direto; break; }
+    const janela = text.slice(idx, idx + 300);
+    const isolada = /(?:^|\n)\s*(\d{2})\/(\d{2})\/(\d{4})\s*(?:\n|$)/.exec(janela);
+    if (isolada) { match = isolada; break; }
+  }
+  if (!match) return null;
+  const [, dia, mes, anoV] = match;
+  return `${anoV}-${mes}-${dia}`;
+}
+
+/**
  * Busca no Ciclo7 os últimos `anos` (padrão 5) a partir do ano atual, ano a
  * ano, PARANDO no primeiro ano em que achar QUALQUER dado (Funcionamento
  * OU Sanitário) — mesmo critério que o Reysner descreveu usando o portal na
@@ -151,7 +251,34 @@ async function consultarAlvaraUberlandia(cnpj, { anos = 5 } = {}) {
     const erros = parseErros(html);
     const achouAlgo = (funcionamento && funcionamento.encontrado) || (sanitario && sanitario.encontrado);
     ultimoResultado = { ano, funcionamento, sanitario, erros };
-    if (achouAlgo) return { ...ultimoResultado, cnpj, anosVarridos: i + 1 };
+    if (achouAlgo) {
+      // Best-effort: tenta pegar a data de vencimento REAL via "Gerar
+      // Certidão" (PDF) na mesma sessão que acabou de achar o resultado.
+      // Nunca deixa isso quebrar a resposta — se falhar (layout mudou,
+      // timeout, o alvará não tem certidão gerável), segue só com o status
+      // do protocolo, que já é útil sozinho.
+      //
+      // IMPORTANTE (achado do Reysner, 17/09/2026): o botão "Gerar
+      // Certidão" do portal NÃO recebe parâmetro dizendo qual tipo de
+      // alvará — ele gera o relatório do que "está na tela" pro servidor,
+      // e isso não dá pra confirmar com certeza de fora quando os DOIS
+      // tipos (Funcionamento E Sanitário) aparecem juntos na mesma busca.
+      // Por segurança, SÓ tenta a extração quando exatamente UM dos dois
+      // foi encontrado nesse ano — ambíguo (os dois juntos) fica só com o
+      // status do protocolo mesmo, pra nunca arriscar gravar a data errada
+      // no tipo errado.
+      const ambiguo = !!(funcionamento && funcionamento.encontrado) && !!(sanitario && sanitario.encontrado);
+      if (!ambiguo) try {
+        const urlCertidao = await gerarCertidaoUrl(partes, ano, cookie);
+        if (process.env.DEBUG_CICLO7) console.error('[ciclo7] urlCertidao:', urlCertidao);
+        if (urlCertidao) {
+          const vencimento = await extrairVencimentoDoPdf(urlCertidao, cookie);
+          if (process.env.DEBUG_CICLO7) console.error('[ciclo7] vencimento extraido:', vencimento);
+          if (vencimento) ultimoResultado.vencimentoEncontrado = vencimento;
+        }
+      } catch (e) { if (process.env.DEBUG_CICLO7) console.error('[ciclo7] certidão falhou:', e); }
+      return { ...ultimoResultado, cnpj, anosVarridos: i + 1 };
+    }
   }
   return { ...ultimoResultado, cnpj, anosVarridos: anos, nadaEncontrado: true };
 }

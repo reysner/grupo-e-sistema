@@ -4755,10 +4755,14 @@ router.put('/legalizacao/alvaras/:clienteId/:tipo', async (req, res) => {
 /**
  * POST /api/data/legalizacao/alvaras/:clienteId/:tipo/consultar-prefeitura
  * — roda a consulta automática no portal da prefeitura (hoje só
- * Uberlândia-MG/Ciclo7, ver ciclo7Uberlandia.js) pro CNPJ desse cliente, e
- * grava o resultado em ultima_consulta_* (UPSERT — a linha pode ser
- * virtual ainda). Isso é o que faz o badge do alvará virar "Solicitação"
- * na listagem. Só funciona pra CNPJ de Uberlândia-MG hoje.
+ * Uberlândia-MG/Ciclo7, ver ciclo7Uberlandia.js) pro CNPJ desse cliente.
+ * Achado do Reysner, 17/09/2026: o botão "Imprimir" do portal gera uma
+ * certidão em PDF com a data de vencimento REAL — quando o ciclo7Uberlandia
+ * consegue extrair isso, GRAVA `data_vencimento` de verdade (não fica só no
+ * status "Solicitação"). Quando não consegue (layout mudou, timeout, ou o
+ * portal só devolveu o status do protocolo mesmo), cai pro comportamento
+ * antigo: grava só o status pra virar o badge "Solicitação" (UPSERT — a
+ * linha pode ser virtual ainda). Só funciona pra CNPJ de Uberlândia-MG hoje.
  */
 router.post('/legalizacao/alvaras/:clienteId/:tipo/consultar-prefeitura', async (req, res) => {
   try {
@@ -4776,6 +4780,8 @@ router.post('/legalizacao/alvaras/:clienteId/:tipo/consultar-prefeitura', async 
     let ultimaConsultaStatus = null, resumo = null, dataSolicitacao = null;
     if (resultado.nadaEncontrado || !bloco || !bloco.encontrado) {
       resumo = (resultado.erros && resultado.erros[0]) || 'Nada encontrado no portal da prefeitura nos últimos 5 anos.';
+    } else if (resultado.vencimentoEncontrado) {
+      resumo = `Vencimento encontrado na certidão da prefeitura: ${resultado.vencimentoEncontrado.split('-').reverse().join('/')}.`;
     } else {
       ultimaConsultaStatus = 'solicitacao_andamento';
       dataSolicitacao = bloco.solicitacao;
@@ -4783,15 +4789,34 @@ router.post('/legalizacao/alvaras/:clienteId/:tipo/consultar-prefeitura', async 
       resumo = `${bloco.servico || 'Solicitação'} (${bloco.solicitacao || '—'}, nº ${bloco.numeroPlanilha || '—'})${bloco.statusGeral ? ' — ' + bloco.statusGeral : ''}${pareceres ? ' — ' + pareceres : ''}`;
     }
 
-    await pool.query(
-      `INSERT INTO legalizacao_alvaras (cliente_id, tipo, ultima_consulta_status, ultima_consulta_resumo, ultima_consulta_data_solicitacao, ultima_consulta_em, criado_por)
-       VALUES ($1,$2,$3,$4,$5,NOW(),$6)
-       ON CONFLICT (cliente_id, tipo) DO UPDATE SET
-         ultima_consulta_status = $3, ultima_consulta_resumo = $4,
-         ultima_consulta_data_solicitacao = $5, ultima_consulta_em = NOW()`,
-      [clienteId, tipo, ultimaConsultaStatus, resumo, dataSolicitacao, req.user.name]
-    );
-    res.json({ ok: true, encontrado: !!ultimaConsultaStatus, resumo, dataSolicitacao, anoConsultado: resultado.ano, anosVarridos: resultado.anosVarridos });
+    if (resultado.vencimentoEncontrado) {
+      // Achou a data real — grava ela de verdade, igual um PUT manual
+      // (inclusive limpando a marca de notificado, pra caso a nova data
+      // caia dentro da janela de alerta de novo).
+      await pool.query(
+        `INSERT INTO legalizacao_alvaras (cliente_id, tipo, data_vencimento, ultima_consulta_status, ultima_consulta_resumo, ultima_consulta_data_solicitacao, ultima_consulta_em, criado_por)
+         VALUES ($1,$2,$3,NULL,$4,NULL,NOW(),$5)
+         ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+           data_vencimento = $3, ultima_consulta_status = NULL, ultima_consulta_resumo = $4,
+           ultima_consulta_data_solicitacao = NULL, ultima_consulta_em = NOW(), atualizado_em = NOW(),
+           notificado_vencimento_em = CASE WHEN $3 IS DISTINCT FROM legalizacao_alvaras.data_vencimento THEN NULL ELSE legalizacao_alvaras.notificado_vencimento_em END`,
+        [clienteId, tipo, resultado.vencimentoEncontrado, resumo, req.user.name]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO legalizacao_alvaras (cliente_id, tipo, ultima_consulta_status, ultima_consulta_resumo, ultima_consulta_data_solicitacao, ultima_consulta_em, criado_por)
+         VALUES ($1,$2,$3,$4,$5,NOW(),$6)
+         ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+           ultima_consulta_status = $3, ultima_consulta_resumo = $4,
+           ultima_consulta_data_solicitacao = $5, ultima_consulta_em = NOW()`,
+        [clienteId, tipo, ultimaConsultaStatus, resumo, dataSolicitacao, req.user.name]
+      );
+    }
+    res.json({
+      ok: true, encontrado: !!ultimaConsultaStatus || !!resultado.vencimentoEncontrado,
+      vencimentoEncontrado: resultado.vencimentoEncontrado || null,
+      resumo, dataSolicitacao, anoConsultado: resultado.ano, anosVarridos: resultado.anosVarridos,
+    });
   } catch (err) {
     console.error('[legalizacao] consultar-prefeitura falhou:', err);
     res.status(500).json({ error: err.message || 'Erro ao consultar a prefeitura.' });
