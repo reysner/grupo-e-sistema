@@ -5439,9 +5439,14 @@ const Legalizacao = (() => {
     sem_data:    { cor: '#718096', bg: '#f7fafc', label: '⚪ Sem data' },
   };
 
+  // O driver pg devolve coluna DATE como ISO datetime completo
+  // ("2027-01-15T00:00:00.000Z"), não só "AAAA-MM-DD" — pega só os 10
+  // primeiros caracteres antes de usar, tanto pra formatar exibição quanto
+  // pra preencher <input type="date"> (que só aceita "AAAA-MM-DD" exato).
+  function _soData(d) { return d ? String(d).slice(0, 10) : ''; }
   function _fmtData(d) {
     if (!d) return null;
-    return new Date(d + 'T00:00:00').toLocaleDateString('pt-BR');
+    return new Date(_soData(d) + 'T00:00:00').toLocaleDateString('pt-BR');
   }
 
   async function load() {
@@ -5544,7 +5549,7 @@ const Legalizacao = (() => {
           <option value="sanitario" ${a?.tipo === 'sanitario' ? 'selected' : ''}>Alvará Sanitário</option>
         </select>
       </div>
-      <div class="field"><label>Data de vencimento</label><input id="legal-alv-form-venc" class="input" type="date" value="${a?.data_vencimento || ''}" /></div>
+      <div class="field"><label>Data de vencimento</label><input id="legal-alv-form-venc" class="input" type="date" value="${_soData(a?.data_vencimento)}" /></div>
       <div class="field"><label>Link da Prefeitura (consulta/renovação)</label><input id="legal-alv-form-link" class="input" type="text" placeholder="https://..." value="${a?.link || ''}" /></div>
       <div class="field"><label>Órgão / Município</label><input id="legal-alv-form-orgao" class="input" type="text" placeholder="Ex.: Prefeitura de Uberlândia/MG" value="${a?.orgao || ''}" /></div>
       <div class="field"><label>Número do alvará</label><input id="legal-alv-form-numero" class="input" type="text" value="${a?.numero || ''}" /></div>
@@ -5661,7 +5666,7 @@ const Legalizacao = (() => {
       </div>
       <div class="field"><label>Titular (nome da empresa ou da pessoa) <span class="req">*</span></label><input id="legal-cert-form-titular" class="input" type="text" value="${c?.titular_nome || ''}" /></div>
       <div class="field"><label>CNPJ ou CPF</label><input id="legal-cert-form-doc" class="input" type="text" value="${c?.titular_documento || ''}" /></div>
-      <div class="field"><label>Data de vencimento</label><input id="legal-cert-form-venc" class="input" type="date" value="${c?.data_vencimento || ''}" /></div>
+      <div class="field"><label>Data de vencimento</label><input id="legal-cert-form-venc" class="input" type="date" value="${_soData(c?.data_vencimento)}" /></div>
       <div class="field"><label>Observações</label><textarea id="legal-cert-form-obs" class="input" rows="2">${c?.observacoes || ''}</textarea></div>
     </div>`, () => salvarCertificado(id));
   }
