@@ -172,7 +172,7 @@ initDB().then(async () => {
     // toda vez, vai "colhendo D-1" — todo dia rebusca só quem fechou nos
     // últimos dias e segue sem nota. Mais leve que o /backfill manual.
     const { atualizarNotasPendentes } = require('./cs/ingestao');
-    const { executarAutoPreencher } = require('./routes/data');
+    const { executarAutoPreencher, verificarNotificacoesLegalizacao } = require('./routes/data');
 
     // Data/hora "de verdade" no horário de Brasília, independente do TZ do
     // servidor (Render roda em UTC por padrão) — mesma lógica do tempoUtil.js.
@@ -222,16 +222,35 @@ initDB().then(async () => {
     // dia, então os 3 disparos do dia continuam independentes entre si).
     const HORAS_JOB_RANKING = [8, 11, 15];
     const execucoesHojePorHora = new Set(); // 'AAAA-MM-DD-HH' já disparados
+    // Notificações de vencimento da Legalização (pedido do Reysner,
+    // 17/09/2026: 60 dias alvará / 10 dias certificado) — só precisa rodar
+    // 1x por dia, não 3x como o ranking, então tem seu próprio controle de
+    // "já rodei hoje" (por DIA, não por hora).
+    const execucoesLegalizacaoPorDia = new Set(); // 'AAAA-MM-DD' já disparados
     const checarAgendaDiaria = async () => {
       const agora = agoraBrasilia();
-      if (!HORAS_JOB_RANKING.includes(agora.hora)) return;
-      const chave = `${agora.ano}-${agora.mes}-${agora.dia}-${agora.hora}`;
-      if (execucoesHojePorHora.has(chave)) return;
-      execucoesHojePorHora.add(chave);
-      await rodarAtualizacaoNotasCS();
+      if (HORAS_JOB_RANKING.includes(agora.hora)) {
+        const chave = `${agora.ano}-${agora.mes}-${agora.dia}-${agora.hora}`;
+        if (!execucoesHojePorHora.has(chave)) {
+          execucoesHojePorHora.add(chave);
+          await rodarAtualizacaoNotasCS();
+        }
+      }
+      if (agora.hora === 8) {
+        const chaveDia = `${agora.ano}-${agora.mes}-${agora.dia}`;
+        if (!execucoesLegalizacaoPorDia.has(chaveDia)) {
+          execucoesLegalizacaoPorDia.add(chaveDia);
+          try {
+            const resultado = await verificarNotificacoesLegalizacao();
+            console.log('[Legalização] Notificações de vencimento verificadas:', resultado);
+          } catch (e) {
+            console.error('[Legalização] Falha ao verificar notificações de vencimento:', e.message);
+          }
+        }
+      }
     };
     setInterval(checarAgendaDiaria, 5 * 60 * 1000); // checa a cada 5 min
-    checarAgendaDiaria(); // confere já ao subir, caso o boot caia dentro de uma das 3 janelas
+    checarAgendaDiaria(); // confere já ao subir, caso o boot caia dentro de uma das janelas
   }
 
   // Carteira — sincronização automática diária com o Sistema Acessórias

@@ -18,6 +18,11 @@
 
 const BASE_URL = 'https://api.acessorias.com';
 const ESPACAMENTO_MS = 700;
+// `fetch` puro não tem timeout — se a API aceitar a conexão e nunca responder,
+// fica pendurado pra sempre (visto na prática: job travou 12h sem erro nem
+// atividade de rede). `AbortSignal.timeout` faz o fetch rejeitar depois de
+// TIMEOUT_MS, virando um erro comum — que os retries já existentes tratam.
+const TIMEOUT_MS = 30000;
 
 /**
  * A API usa uma variedade maior de regimes do que as opções que o
@@ -116,7 +121,7 @@ async function buscarPagina(pagina, token) {
   // null (bug real, presente desde a 1ª sincronização — só ficou óbvio
   // quando um sync reportou 622 de 622 empresas "sem regime reconhecido").
   const url = `${BASE_URL}/companies/ListAll?ativa=S&Pagina=${pagina}&registrationData`;
-  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (resp.status === 429) {
     // Estourou o rate limit mesmo com o espaçamento — espera um pouco mais e tenta 1x.
     await new Promise(r => setTimeout(r, 5000));
@@ -151,7 +156,7 @@ async function listarEmpresasAtivas({ token, limitePaginas = 500 } = {}) {
  * pra achar baixas/saídas históricas no Acessórias (ver `listarEmpresasInativasDesde`). */
 async function buscarPaginaInativas(pagina, token) {
   const url = `${BASE_URL}/companies/ListAll?ativa=N&Pagina=${pagina}&registrationData`;
-  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (resp.status === 429) {
     await new Promise(r => setTimeout(r, 5000));
     return buscarPaginaInativas(pagina, token);
@@ -214,7 +219,7 @@ async function buscarEmpresaPorCnpj(cnpj, token) {
   if (!cnpj || !token) return null;
   try {
     const url = `${BASE_URL}/companies/${cnpj}`;
-    const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (!resp.ok) return null;
     const empresa = await resp.json();
     if (!empresa || !empresa.Status) return null;
@@ -245,6 +250,11 @@ function empresaParaCliente(empresa) {
     regime_tributario: normalizarRegimeComFallback(empresa.Regime, empresa.GrupoDeEmpresas, empresa.Razao),
     regime_tributario_bruto: empresa.Regime || null, // pra revisão de quem não mapeou
     data_entrada: normalizarData(empresa.ClienteDesde) || normalizarData(empresa.DataDoCadastro),
+    // UF (estado) — a API não traz cidade/município, só o estado. Adicionado
+    // 17/09/2026 pra tentativa de automação da Legalização (saber ao menos o
+    // estado do alvará/certificado); sem o município não dá pra apontar pra
+    // prefeitura certa sozinho (só funciona hoje pros clientes de Uberlândia-MG).
+    uf: empresa.UF || null,
   };
 }
 

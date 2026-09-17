@@ -367,6 +367,9 @@ async function sincronizarAcessorias({ userId = null } = {}) {
   if (!token) throw new Error('ACESSORIAS_API_TOKEN não configurado.');
 
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS acessorias_id TEXT`).catch(() => {});
+  // UF (estado) — pedido do Reysner, 17/09/2026, tentativa de automação da
+  // Legalização. Acessórias não traz cidade, só estado (ver acessoriasClient.js).
+  await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS uf TEXT`).catch(() => {});
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_acessorias_id ON clientes (acessorias_id) WHERE acessorias_id IS NOT NULL`).catch(() => {});
   // Usada tanto no loop principal (reseta ao ver o cliente ainda ativo)
   // quanto em detectarPossiveisChurns — precisa existir antes das duas.
@@ -430,9 +433,10 @@ async function sincronizarAcessorias({ userId = null } = {}) {
              regime_tributario = COALESCE($2, regime_tributario),
              codigo = COALESCE(codigo, $3),
              acessorias_id = $4,
+             uf = COALESCE($6, uf),
              alerta_baixa_notificado_em = NULL
            WHERE id = $5`,
-          [emp.nome_empresa, emp.regime_tributario, emp.codigo, emp.acessorias_id, existente.rows[0].id]
+          [emp.nome_empresa, emp.regime_tributario, emp.codigo, emp.acessorias_id, existente.rows[0].id, emp.uf]
         );
         atualizados++;
 
@@ -476,9 +480,9 @@ async function sincronizarAcessorias({ userId = null } = {}) {
       } else {
         const clienteId = uuidv4();
         await pool.query(
-          `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada, acessorias_id, codigo, status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ativo')`,
-          [clienteId, userIdEfetivo, emp.cnpj, emp.nome_empresa, emp.regime_tributario, emp.data_entrada, emp.acessorias_id, emp.codigo]
+          `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada, acessorias_id, codigo, uf, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ativo')`,
+          [clienteId, userIdEfetivo, emp.cnpj, emp.nome_empresa, emp.regime_tributario, emp.data_entrada, emp.acessorias_id, emp.codigo, emp.uf]
         );
         // Sem INSERT em `honorarios` de propósito — cliente fica com
         // honorário pendente (honorario_atual sai null nas telas que já
@@ -4539,23 +4543,27 @@ router.get('/churn', requireAdmin, async (req, res) => {
 // Módulo novo (pedido do Reysner, 17/09/2026): acompanha vencimento de
 // Alvarás (Funcionamento e Sanitário) e Certificados Digitais (PJ e PF).
 //
-// v1 é cadastro MANUAL de propósito: a API do Acessórias só traz dado
-// cadastral (CNPJ, razão social, regime — ver acessoriasClient.js), não tem
-// vencimento de alvará nem de certificado; e não há integração com a
-// CERTISEGURO ainda (sem documentação/credenciais). O campo `fonte` já vem
-// pronto ('manual' por enquanto) pra quando uma dessas integrações entrar,
-// sem precisar mudar a estrutura da tabela.
+// v2 (17/09/2026, mesmo dia): a lista de Alvará-Funcionamento e Certificado-
+// PJ NÃO parte de um cadastro manual — vem direto de `clientes` (Carteira),
+// uma linha por empresa ATIVA, sempre, com ou sem data ainda ("linha
+// virtual" até alguém preencher algo ou rodar "Consultar Prefeitura" —
+// nesse momento vira um registro de verdade via UPSERT). Sanitário e
+// Certificado PF continuam precisando de uma ação manual (nem toda empresa
+// tem Sanitário — não dá pra saber por CNAE, API do Acessórias não tem
+// esse campo; PF é pessoa avulsa, não é 1-pra-1 com a Carteira).
 //
-// Cada alvará é sempre de um cliente da Carteira (`cliente_id`). Certificado
-// pode ser de um cliente (PJ) OU de uma pessoa avulsa sem cadastro na
-// Carteira (PF, ex.: sócio) — por isso `cliente_id` é opcional ali e existe
-// `titular_nome`/`titular_documento` pra cobrir os dois casos.
+// Vencimento continua SEM fonte automática nenhuma (nem Acessórias, nem o
+// portal da prefeitura, nem CertiSeguro sem doc ainda) — isso é sempre
+// preenchido à mão. O campo `fonte` fica pronto ('manual' por padrão) pra
+// quando a CERTISEGURO mandar a doc da API.
 //
-// "Vencendo" = dentro dos próximos 30 dias (LEGAL_DIAS_ALERTA abaixo) —
-// ajustar aqui se o Reysner pedir outro prazo.
+// "Vencendo" = pedido do Reysner, 17/09/2026: 60 dias pra Alvará
+// (Funcionamento/Sanitário), 10 dias pra Certificado Digital — prazos
+// diferentes porque um certificado se renova rápido, um alvará não.
 // ═══════════════════════════════════════════════════════════════════════════
 
-const LEGAL_DIAS_ALERTA = 30;
+const LEGAL_DIAS_ALERTA_ALVARA = 60;
+const LEGAL_DIAS_ALERTA_CERTIFICADO = 10;
 
 // Diagnóstico rodado em 17/09/2026 (removido depois de confirmar): a API do
 // Acessórias (endpoint único e ListAll com registrationData) NÃO tem CNAE em
@@ -4597,6 +4605,17 @@ async function ensureLegalizacaoSchema() {
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS ultima_consulta_resumo TEXT`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS ultima_consulta_data_solicitacao TEXT`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS ultima_consulta_em TIMESTAMPTZ`).catch(()=>{});
+  // Um alvará por (cliente, tipo) — pedido do Reysner, 17/09/2026: a lista
+  // agora traz TODO cliente ativo automaticamente (Funcionamento é
+  // universal), então grava/edita por UPSERT em vez de escolher empresa
+  // toda vez num formulário. Ver PUT /legalizacao/alvaras/:clienteId/:tipo.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_alvaras_cliente_tipo ON legalizacao_alvaras (cliente_id, tipo)`).catch(()=>{});
+  // Pedido do Reysner, 17/09/2026: notificação (sininho) quando entra na
+  // janela de "vencendo" — 60 dias pra alvará. Guarda quando já notificou
+  // PRA ESSA data específica; muda a data (renovou) e o campo volta a NULL
+  // sozinho (ver PUT .../:clienteId/:tipo acima), pra poder notificar nessa
+  // próxima renovação também, sem spam repetido enquanto a data não muda.
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS notificado_vencimento_em TIMESTAMPTZ`).catch(()=>{});
 
   await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_certificados (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -4613,33 +4632,68 @@ async function ensureLegalizacaoSchema() {
   )`).catch(()=>{});
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_legal_cert_cliente ON legalizacao_certificados (cliente_id)`).catch(()=>{});
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_legal_cert_vencimento ON legalizacao_certificados (data_vencimento)`).catch(()=>{});
+  // Um certificado PJ por cliente (índice parcial — PF fica de fora de
+  // propósito: pode ter várias PF avulsas, ou nenhuma ligada a cliente
+  // nenhum). Mesmo raciocínio do índice de alvarás acima.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_cert_cliente_pj ON legalizacao_certificados (cliente_id) WHERE tipo = 'pj' AND cliente_id IS NOT NULL`).catch(()=>{});
+  // Mesmo esquema de notificação dos alvarás, mas 10 dias (ver LEGAL_DIAS_ALERTA_CERTIFICADO).
+  await pool.query(`ALTER TABLE legalizacao_certificados ADD COLUMN IF NOT EXISTS notificado_vencimento_em TIMESTAMPTZ`).catch(()=>{});
 }
 
 /** SQL de status compartilhado pelas listagens — mesmo critério em todo o módulo. */
 const LEGAL_STATUS_SQL = `CASE
   WHEN data_vencimento IS NULL THEN 'sem_data'
   WHEN data_vencimento < CURRENT_DATE THEN 'vencido'
-  WHEN data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA} days' THEN 'vencendo'
+  WHEN data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA_CERTIFICADO} days' THEN 'vencendo'
   ELSE 'ok'
 END`;
 
 // Mesma coisa, mas pra ALVARÁS — "solicitacao" (protocolo de renovação em
 // andamento na prefeitura, achado via consulta automática) tem prioridade
-// sobre vencido/vencendo/ok. Ver ALTER TABLE ultima_consulta_status acima.
+// sobre vencido/vencendo/ok. Prazo de "vencendo" mais longo que o de
+// certificado (60 x 10 dias) — pedido do Reysner: alvará demora bem mais
+// pra renovar.
 const LEGAL_STATUS_ALVARA_SQL = `CASE
-  WHEN a.ultima_consulta_status = 'solicitacao_andamento' THEN 'solicitacao'
-  WHEN a.data_vencimento IS NULL THEN 'sem_data'
-  WHEN a.data_vencimento < CURRENT_DATE THEN 'vencido'
-  WHEN a.data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA} days' THEN 'vencendo'
+  WHEN ultima_consulta_status = 'solicitacao_andamento' THEN 'solicitacao'
+  WHEN data_vencimento IS NULL THEN 'sem_data'
+  WHEN data_vencimento < CURRENT_DATE THEN 'vencido'
+  WHEN data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA_ALVARA} days' THEN 'vencendo'
   ELSE 'ok'
 END`;
+
+/**
+ * Base de TODOS os alvarás — pedido do Reysner, 17/09/2026: "tragam todos
+ * os clientes da base". Funcionamento é universal (toda empresa ativa
+ * aparece, com ou sem alvará já cadastrado — LEFT JOIN); Sanitário só
+ * aparece pra quem TEM um registro de verdade (nem toda empresa precisa,
+ * não dá pra saber sozinho por CNAE — ver nota mais abaixo). Uma linha
+ * "virtual" (sem alvara_id) vira registro de verdade só quando alguém
+ * grava uma data ou roda "Consultar Prefeitura" pela primeira vez (ver PUT
+ * e POST .../consultar-prefeitura abaixo — ambos fazem UPSERT).
+ */
+const LEGAL_ALVARAS_BASE_SQL = `
+  SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj, c.codigo,
+         a.id AS alvara_id, 'funcionamento' AS tipo, a.data_vencimento, a.numero, a.observacoes,
+         a.ultima_consulta_status, a.ultima_consulta_resumo, a.ultima_consulta_data_solicitacao, a.ultima_consulta_em
+    FROM clientes c
+    LEFT JOIN legalizacao_alvaras a ON a.cliente_id = c.id::text AND a.tipo = 'funcionamento'
+   WHERE c.status = 'ativo'
+  UNION ALL
+  SELECT c.id::text, c.nome_empresa, c.cnpj, c.codigo,
+         a.id, a.tipo, a.data_vencimento, a.numero, a.observacoes,
+         a.ultima_consulta_status, a.ultima_consulta_resumo, a.ultima_consulta_data_solicitacao, a.ultima_consulta_em
+    FROM legalizacao_alvaras a
+    JOIN clientes c ON c.id::text = a.cliente_id
+   WHERE a.tipo = 'sanitario'`;
 
 /** GET /api/data/legalizacao/resumo — contadores pro painel (cards). */
 router.get('/legalizacao/resumo', async (req, res) => {
   try {
     await ensureLegalizacaoSchema();
     const { rows: rowsAlvaras } = await pool.query(
-      `SELECT ${LEGAL_STATUS_ALVARA_SQL} AS status, COUNT(*) AS qtd FROM legalizacao_alvaras a GROUP BY 1`
+      `SELECT status, COUNT(*) AS qtd FROM (
+         SELECT *, ${LEGAL_STATUS_ALVARA_SQL} AS status FROM (${LEGAL_ALVARAS_BASE_SQL}) x
+       ) y GROUP BY 1`
     );
     const alvaras = { vencido: 0, vencendo: 0, ok: 0, sem_data: 0, solicitacao: 0 };
     rowsAlvaras.forEach(r => { alvaras[r.status] = parseInt(r.qtd); });
@@ -4648,57 +4702,80 @@ router.get('/legalizacao/resumo', async (req, res) => {
     );
     const certificados = { vencido: 0, vencendo: 0, ok: 0, sem_data: 0 };
     rowsCert.forEach(r => { certificados[r.status] = parseInt(r.qtd); });
-    res.json({ diasAlerta: LEGAL_DIAS_ALERTA, alvaras, certificados });
+    res.json({ diasAlertaAlvara: LEGAL_DIAS_ALERTA_ALVARA, diasAlertaCertificado: LEGAL_DIAS_ALERTA_CERTIFICADO, alvaras, certificados });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar resumo de legalização.' }); }
 });
 
-/** GET /api/data/legalizacao/alvaras?status=&tipo=&busca= */
+/**
+ * GET /api/data/legalizacao/alvaras — traz TODOS os clientes ativos (não só
+ * quem já tem alvará cadastrado). Sem paginação/filtro no servidor — a
+ * lista inteira volta de uma vez e o front pagina/filtra localmente (mesmo
+ * padrão de Carteira/Recuperação/Atendimento, App.Util.paginate).
+ */
 router.get('/legalizacao/alvaras', async (req, res) => {
   try {
     await ensureLegalizacaoSchema();
-    const { status, tipo, busca } = req.query;
-    const params = [];
-    let q = `SELECT a.*, ${LEGAL_STATUS_ALVARA_SQL} AS status, c.nome_empresa, c.cnpj, c.codigo
-      FROM legalizacao_alvaras a
-      LEFT JOIN clientes c ON c.id::text = a.cliente_id
-      WHERE 1=1`;
-    if (tipo && tipo !== 'todos') { params.push(tipo); q += ` AND a.tipo = $${params.length}`; }
-    if (busca) { params.push('%' + busca + '%'); q += ` AND (c.nome_empresa ILIKE $${params.length} OR c.cnpj ILIKE $${params.length})`; }
-    q += ` ORDER BY a.data_vencimento ASC NULLS LAST`;
-    const { rows } = await pool.query(q, params);
-    const filtradas = status && status !== 'todos' ? rows.filter(r => r.status === status) : rows;
-    res.json({ data: filtradas });
+    const { rows } = await pool.query(
+      `SELECT *, ${LEGAL_STATUS_ALVARA_SQL} AS status FROM (${LEGAL_ALVARAS_BASE_SQL}) x
+       ORDER BY nome_empresa ASC, tipo ASC`
+    );
+    res.json({ data: rows });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar alvarás.' }); }
 });
 
 /**
- * POST /api/data/legalizacao/alvaras/:id/consultar-prefeitura — roda a
- * consulta automática no portal da prefeitura (hoje só Uberlândia-MG/
- * Ciclo7, ver ciclo7Uberlandia.js) pro CNPJ do cliente dono do alvará, e
- * grava o resultado em ultima_consulta_* — isso é o que faz o badge do
- * alvará virar "Solicitação" na listagem (ver LEGAL_STATUS_ALVARA_SQL).
- * Só funciona pra CNPJ de Uberlândia-MG hoje; outras cidades voltam
- * "indisponível" (mantém o link manual como alternativa).
+ * PUT /api/data/legalizacao/alvaras/:clienteId/:tipo — cria OU atualiza
+ * (UPSERT) o alvará daquele cliente+tipo. Substitui o antigo POST/PATCH por
+ * id — a linha pode ainda nem existir de verdade (é "virtual" até alguém
+ * preencher algo), então edita sempre por cliente+tipo, nunca por id.
+ * Gravar uma data nova limpa a marca de "Solicitação em andamento" — já se
+ * sabe a data certa, não precisa mais do status da última consulta.
  */
-router.post('/legalizacao/alvaras/:id/consultar-prefeitura', async (req, res) => {
+router.put('/legalizacao/alvaras/:clienteId/:tipo', async (req, res) => {
   try {
     await ensureLegalizacaoSchema();
+    const { clienteId, tipo } = req.params;
+    if (!['funcionamento', 'sanitario'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
+    const { data_vencimento, numero, observacoes } = req.body;
     const { rows } = await pool.query(
-      `SELECT a.*, c.cnpj, c.nome_empresa FROM legalizacao_alvaras a
-       LEFT JOIN clientes c ON c.id::text = a.cliente_id WHERE a.id = $1`,
-      [req.params.id]
+      `INSERT INTO legalizacao_alvaras (cliente_id, tipo, data_vencimento, numero, observacoes, criado_por)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+         data_vencimento = $3, numero = $4, observacoes = $5, atualizado_em = NOW(),
+         ultima_consulta_status = CASE WHEN $3 IS NOT NULL THEN NULL ELSE legalizacao_alvaras.ultima_consulta_status END,
+         notificado_vencimento_em = CASE WHEN $3 IS DISTINCT FROM legalizacao_alvaras.data_vencimento THEN NULL ELSE legalizacao_alvaras.notificado_vencimento_em END
+       RETURNING id`,
+      [clienteId, tipo, data_vencimento || null, numero || null, observacoes || null, req.user.name]
     );
-    if (!rows.length) return res.status(404).json({ error: 'Alvará não encontrado.' });
-    const alvara = rows[0];
-    if (!alvara.cnpj) return res.status(400).json({ error: 'Cliente sem CNPJ cadastrado.' });
+    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', `Alvará (${tipo}) atualizado`, req);
+    res.json({ ok: true, id: rows[0].id });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao salvar alvará.' }); }
+});
+
+/**
+ * POST /api/data/legalizacao/alvaras/:clienteId/:tipo/consultar-prefeitura
+ * — roda a consulta automática no portal da prefeitura (hoje só
+ * Uberlândia-MG/Ciclo7, ver ciclo7Uberlandia.js) pro CNPJ desse cliente, e
+ * grava o resultado em ultima_consulta_* (UPSERT — a linha pode ser
+ * virtual ainda). Isso é o que faz o badge do alvará virar "Solicitação"
+ * na listagem. Só funciona pra CNPJ de Uberlândia-MG hoje.
+ */
+router.post('/legalizacao/alvaras/:clienteId/:tipo/consultar-prefeitura', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const { clienteId, tipo } = req.params;
+    if (!['funcionamento', 'sanitario'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
+    const { rows: clienteRows } = await pool.query(`SELECT cnpj FROM clientes WHERE id = $1`, [clienteId]);
+    if (!clienteRows.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    if (!clienteRows[0].cnpj) return res.status(400).json({ error: 'Cliente sem CNPJ cadastrado.' });
 
     const { consultarAlvaraUberlandia } = require('../legalizacao/ciclo7Uberlandia');
-    const resultado = await consultarAlvaraUberlandia(alvara.cnpj);
-    const bloco = alvara.tipo === 'funcionamento' ? resultado.funcionamento : resultado.sanitario;
+    const resultado = await consultarAlvaraUberlandia(clienteRows[0].cnpj);
+    const bloco = tipo === 'funcionamento' ? resultado.funcionamento : resultado.sanitario;
 
     let ultimaConsultaStatus = null, resumo = null, dataSolicitacao = null;
     if (resultado.nadaEncontrado || !bloco || !bloco.encontrado) {
-      resumo = (bloco && resultado.erros && resultado.erros[0]) || 'Nada encontrado no portal da prefeitura nos últimos 5 anos.';
+      resumo = (resultado.erros && resultado.erros[0]) || 'Nada encontrado no portal da prefeitura nos últimos 5 anos.';
     } else {
       ultimaConsultaStatus = 'solicitacao_andamento';
       dataSolicitacao = bloco.solicitacao;
@@ -4707,53 +4784,18 @@ router.post('/legalizacao/alvaras/:id/consultar-prefeitura', async (req, res) =>
     }
 
     await pool.query(
-      `UPDATE legalizacao_alvaras SET ultima_consulta_status = $2, ultima_consulta_resumo = $3,
-              ultima_consulta_data_solicitacao = $4, ultima_consulta_em = NOW()
-       WHERE id = $1`,
-      [req.params.id, ultimaConsultaStatus, resumo, dataSolicitacao]
+      `INSERT INTO legalizacao_alvaras (cliente_id, tipo, ultima_consulta_status, ultima_consulta_resumo, ultima_consulta_data_solicitacao, ultima_consulta_em, criado_por)
+       VALUES ($1,$2,$3,$4,$5,NOW(),$6)
+       ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+         ultima_consulta_status = $3, ultima_consulta_resumo = $4,
+         ultima_consulta_data_solicitacao = $5, ultima_consulta_em = NOW()`,
+      [clienteId, tipo, ultimaConsultaStatus, resumo, dataSolicitacao, req.user.name]
     );
     res.json({ ok: true, encontrado: !!ultimaConsultaStatus, resumo, dataSolicitacao, anoConsultado: resultado.ano, anosVarridos: resultado.anosVarridos });
   } catch (err) {
     console.error('[legalizacao] consultar-prefeitura falhou:', err);
     res.status(500).json({ error: err.message || 'Erro ao consultar a prefeitura.' });
   }
-});
-
-router.post('/legalizacao/alvaras', async (req, res) => {
-  try {
-    await ensureLegalizacaoSchema();
-    const { cliente_id, tipo, orgao, link, numero, data_vencimento, observacoes } = req.body;
-    if (!cliente_id || !tipo) return res.status(400).json({ error: 'Selecione o cliente e o tipo de alvará.' });
-    if (!['funcionamento', 'sanitario'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
-    const { rows } = await pool.query(
-      `INSERT INTO legalizacao_alvaras (cliente_id, tipo, orgao, link, numero, data_vencimento, observacoes, criado_por)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [cliente_id, tipo, orgao || null, link || null, numero || null, data_vencimento || null, observacoes || null, req.user.name]
-    );
-    await registrarLog(req.user.id, req.user.name, 'criar', 'legalizacao', `Alvará (${tipo}) cadastrado`, req);
-    res.status(201).json({ ok: true, id: rows[0].id });
-  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao cadastrar alvará.' }); }
-});
-
-router.patch('/legalizacao/alvaras/:id', requireAdmin, async (req, res) => {
-  try {
-    const { tipo, orgao, link, numero, data_vencimento, observacoes } = req.body;
-    if (tipo && !['funcionamento', 'sanitario'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
-    // Atualizar a data de vencimento à mão significa "já sei a data nova" —
-    // limpa a marca de "Solicitação em andamento" (ver consultar-prefeitura
-    // acima), senão o badge continuava preso no estado antigo.
-    const { rows } = await pool.query(
-      `UPDATE legalizacao_alvaras SET
-         tipo = COALESCE($2, tipo), orgao = $3, link = $4, numero = $5,
-         data_vencimento = $6, observacoes = $7, atualizado_em = NOW(),
-         ultima_consulta_status = CASE WHEN $6 IS NOT NULL THEN NULL ELSE ultima_consulta_status END
-       WHERE id = $1 RETURNING id`,
-      [req.params.id, tipo || null, orgao || null, link || null, numero || null, data_vencimento || null, observacoes || null]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'Alvará não encontrado.' });
-    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', 'Alvará atualizado', req);
-    res.json({ ok: true });
-  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao atualizar alvará.' }); }
 });
 
 router.delete('/legalizacao/alvaras/:id', requireAdmin, async (req, res) => {
@@ -4764,54 +4806,93 @@ router.delete('/legalizacao/alvaras/:id', requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro ao excluir alvará.' }); }
 });
 
-/** GET /api/data/legalizacao/certificados?status=&tipo=&busca= */
+/**
+ * Base de TODOS os certificados — mesma lógica dos alvarás: PJ é universal
+ * (toda empresa ativa precisa de um, aparece com ou sem certificado
+ * cadastrado — LEFT JOIN, titular já vem preenchido com nome/CNPJ do
+ * cliente); PF só aparece pra quem TEM um registro de verdade (sócio
+ * avulso, não é 1-pra-1 com a Carteira).
+ */
+const LEGAL_CERT_BASE_SQL = `
+  SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj AS cliente_cnpj, c.codigo,
+         ce.id AS cert_id, 'pj' AS tipo, c.nome_empresa AS titular_nome, c.cnpj AS titular_documento,
+         ce.data_vencimento, ce.observacoes
+    FROM clientes c
+    LEFT JOIN legalizacao_certificados ce ON ce.cliente_id = c.id::text AND ce.tipo = 'pj'
+   WHERE c.status = 'ativo'
+  UNION ALL
+  SELECT ce.cliente_id, c.nome_empresa, c.cnpj, c.codigo,
+         ce.id, ce.tipo, ce.titular_nome, ce.titular_documento,
+         ce.data_vencimento, ce.observacoes
+    FROM legalizacao_certificados ce
+    LEFT JOIN clientes c ON c.id::text = ce.cliente_id
+   WHERE ce.tipo = 'pf'`;
+
+/** GET /api/data/legalizacao/certificados — traz TODOS os clientes ativos (PJ) + certificados PF avulsos cadastrados. Sem paginação no servidor (App.Util.paginate no front). */
 router.get('/legalizacao/certificados', async (req, res) => {
   try {
     await ensureLegalizacaoSchema();
-    const { status, tipo, busca } = req.query;
-    const params = [];
-    let q = `SELECT ce.*, ${LEGAL_STATUS_SQL} AS status, c.nome_empresa, c.cnpj AS cliente_cnpj, c.codigo
-      FROM legalizacao_certificados ce
-      LEFT JOIN clientes c ON c.id::text = ce.cliente_id
-      WHERE 1=1`;
-    if (tipo && tipo !== 'todos') { params.push(tipo); q += ` AND ce.tipo = $${params.length}`; }
-    if (busca) {
-      params.push('%' + busca + '%');
-      q += ` AND (ce.titular_nome ILIKE $${params.length} OR ce.titular_documento ILIKE $${params.length} OR c.nome_empresa ILIKE $${params.length})`;
-    }
-    q += ` ORDER BY ce.data_vencimento ASC NULLS LAST`;
-    const { rows } = await pool.query(q, params);
-    const filtradas = status && status !== 'todos' ? rows.filter(r => r.status === status) : rows;
-    res.json({ data: filtradas });
+    const { rows } = await pool.query(
+      `SELECT *, ${LEGAL_STATUS_SQL} AS status FROM (${LEGAL_CERT_BASE_SQL}) x
+       ORDER BY titular_nome ASC`
+    );
+    res.json({ data: rows });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar certificados.' }); }
 });
 
+/**
+ * PUT /api/data/legalizacao/certificados/:clienteId — UPSERT do certificado
+ * PJ daquele cliente (titular = a própria empresa). Substitui o antigo
+ * "+ Novo Certificado" pro caso PJ — a linha já existe (virtual) pra toda
+ * empresa ativa, só falta preencher a data.
+ */
+router.put('/legalizacao/certificados/:clienteId', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const { clienteId } = req.params;
+    const { rows: clienteRows } = await pool.query(`SELECT nome_empresa, cnpj FROM clientes WHERE id = $1`, [clienteId]);
+    if (!clienteRows.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    const { data_vencimento, observacoes } = req.body;
+    const { rows } = await pool.query(
+      `INSERT INTO legalizacao_certificados (cliente_id, tipo, titular_nome, titular_documento, data_vencimento, observacoes, criado_por)
+       VALUES ($1,'pj',$2,$3,$4,$5,$6)
+       ON CONFLICT (cliente_id) WHERE tipo = 'pj' DO UPDATE SET
+         data_vencimento = $4, observacoes = $5, atualizado_em = NOW(),
+         notificado_vencimento_em = CASE WHEN $4 IS DISTINCT FROM legalizacao_certificados.data_vencimento THEN NULL ELSE legalizacao_certificados.notificado_vencimento_em END
+       RETURNING id`,
+      [clienteId, clienteRows[0].nome_empresa, clienteRows[0].cnpj, data_vencimento || null, observacoes || null, req.user.name]
+    );
+    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', 'Certificado PJ atualizado', req);
+    res.json({ ok: true, id: rows[0].id });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao salvar certificado.' }); }
+});
+
+/** POST /api/data/legalizacao/certificados — só pra PF avulso (sócio etc.), que não é 1-pra-1 com um cliente da Carteira. */
 router.post('/legalizacao/certificados', async (req, res) => {
   try {
     await ensureLegalizacaoSchema();
-    const { cliente_id, tipo, titular_nome, titular_documento, data_vencimento, observacoes } = req.body;
-    if (!tipo || !titular_nome) return res.status(400).json({ error: 'Informe o tipo e o titular do certificado.' });
-    if (!['pj', 'pf'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
+    const { titular_nome, titular_documento, data_vencimento, observacoes } = req.body;
+    if (!titular_nome) return res.status(400).json({ error: 'Informe o titular do certificado.' });
     const { rows } = await pool.query(
       `INSERT INTO legalizacao_certificados (cliente_id, tipo, titular_nome, titular_documento, data_vencimento, observacoes, criado_por)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [cliente_id || null, tipo, titular_nome, titular_documento || null, data_vencimento || null, observacoes || null, req.user.name]
+       VALUES (NULL,'pf',$1,$2,$3,$4,$5) RETURNING id`,
+      [titular_nome, titular_documento || null, data_vencimento || null, observacoes || null, req.user.name]
     );
-    await registrarLog(req.user.id, req.user.name, 'criar', 'legalizacao', `Certificado (${tipo.toUpperCase()}) cadastrado`, req);
+    await registrarLog(req.user.id, req.user.name, 'criar', 'legalizacao', 'Certificado PF cadastrado', req);
     res.status(201).json({ ok: true, id: rows[0].id });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao cadastrar certificado.' }); }
 });
 
 router.patch('/legalizacao/certificados/:id', requireAdmin, async (req, res) => {
   try {
-    const { tipo, titular_nome, titular_documento, data_vencimento, observacoes } = req.body;
-    if (tipo && !['pj', 'pf'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
+    const { titular_nome, titular_documento, data_vencimento, observacoes } = req.body;
     const { rows } = await pool.query(
       `UPDATE legalizacao_certificados SET
-         tipo = COALESCE($2, tipo), titular_nome = COALESCE($3, titular_nome), titular_documento = $4,
-         data_vencimento = $5, observacoes = $6, atualizado_em = NOW()
+         titular_nome = COALESCE($2, titular_nome), titular_documento = $3,
+         data_vencimento = $4, observacoes = $5, atualizado_em = NOW(),
+         notificado_vencimento_em = CASE WHEN $4 IS DISTINCT FROM data_vencimento THEN NULL ELSE notificado_vencimento_em END
        WHERE id = $1 RETURNING id`,
-      [req.params.id, tipo || null, titular_nome || null, titular_documento || null, data_vencimento || null, observacoes || null]
+      [req.params.id, titular_nome || null, titular_documento || null, data_vencimento || null, observacoes || null]
     );
     if (!rows.length) return res.status(404).json({ error: 'Certificado não encontrado.' });
     await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', 'Certificado atualizado', req);
@@ -4827,7 +4908,64 @@ router.delete('/legalizacao/certificados/:id', requireAdmin, async (req, res) =>
   } catch (err) { res.status(500).json({ error: 'Erro ao excluir certificado.' }); }
 });
 
+/**
+ * Cria notificações (sininho) pra todo alvará/certificado que ENTROU na
+ * janela de "vencendo" (ou já venceu) e ainda não foi notificado pra essa
+ * data específica — pedido do Reysner, 17/09/2026: 60 dias pra alvará, 10
+ * pra certificado. Pensada pra rodar 1x por dia (ver server/index.js).
+ * Nunca notifica 2x pra mesma data — só volta a notificar se a data mudar
+ * (ver notificado_vencimento_em, resetado nos PUT/PATCH acima).
+ */
+async function verificarNotificacoesLegalizacao() {
+  await ensureLegalizacaoSchema();
+  let criadas = 0;
+
+  const { rows: alvaras } = await pool.query(
+    `SELECT a.id, a.cliente_id, a.tipo, a.data_vencimento, c.nome_empresa
+       FROM legalizacao_alvaras a
+       JOIN clientes c ON c.id::text = a.cliente_id
+      WHERE a.data_vencimento IS NOT NULL
+        AND a.data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA_ALVARA} days'
+        AND a.notificado_vencimento_em IS NULL`
+  );
+  for (const a of alvaras) {
+    const tipoLabel = a.tipo === 'funcionamento' ? 'Alvará de Funcionamento' : 'Alvará Sanitário';
+    const venceu = new Date(a.data_vencimento) < new Date();
+    const dataFmt = new Date(a.data_vencimento).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+    await pool.query(
+      `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id)
+       VALUES ('legalizacao_vencimento', $1, $2, 'legalizacao', $3)`,
+      [`${tipoLabel} ${venceu ? 'vencido' : 'vencendo'}`,
+       `${a.nome_empresa} — ${tipoLabel} ${venceu ? 'venceu em' : 'vence em'} ${dataFmt}.`, a.cliente_id]
+    );
+    await pool.query(`UPDATE legalizacao_alvaras SET notificado_vencimento_em = NOW() WHERE id = $1`, [a.id]);
+    criadas++;
+  }
+
+  const { rows: certs } = await pool.query(
+    `SELECT id, titular_nome, data_vencimento FROM legalizacao_certificados
+      WHERE data_vencimento IS NOT NULL
+        AND data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA_CERTIFICADO} days'
+        AND notificado_vencimento_em IS NULL`
+  );
+  for (const c of certs) {
+    const venceu = new Date(c.data_vencimento) < new Date();
+    const dataFmt = new Date(c.data_vencimento).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+    await pool.query(
+      `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo)
+       VALUES ('legalizacao_vencimento', $1, $2, 'legalizacao')`,
+      [`Certificado Digital ${venceu ? 'vencido' : 'vencendo'}`,
+       `${c.titular_nome} — certificado digital ${venceu ? 'venceu em' : 'vence em'} ${dataFmt}.`]
+    );
+    await pool.query(`UPDATE legalizacao_certificados SET notificado_vencimento_em = NOW() WHERE id = $1`, [c.id]);
+    criadas++;
+  }
+
+  return { criadas };
+}
+
 module.exports = router;
+module.exports.verificarNotificacoesLegalizacao = verificarNotificacoesLegalizacao;
 
 
 module.exports.publicRouter = publicRouter;
