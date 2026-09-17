@@ -37,13 +37,22 @@ function partesCnpj(cnpjBruto) {
   };
 }
 
-/** GET inicial só pra ganhar um JSESSIONID válido (o POST sozinho não funciona sem sessão). */
+/**
+ * GET inicial só pra ganhar um JSESSIONID válido (o POST sozinho não
+ * funciona sem sessão). `headers.get('set-cookie')` do fetch nativo do
+ * Node (undici) sempre devolve null — Set-Cookie é tratado à parte pelo
+ * spec do Fetch; o jeito certo é `headers.getSetCookie()` (array, Node
+ * >=18.14). Mantém o `.get()` como fallback pra runtime mais antigo.
+ */
 async function abrirSessao() {
   const resp = await fetch(`${BASE_URL}/consultaalvaracon.do?evento=x`, {
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
-  const setCookie = resp.headers.get('set-cookie') || '';
-  const match = setCookie.match(/JSESSIONID=[^;]+/);
+  const cookies = typeof resp.headers.getSetCookie === 'function'
+    ? resp.headers.getSetCookie()
+    : (resp.headers.get('set-cookie') ? [resp.headers.get('set-cookie')] : []);
+  const bruto = cookies.join('; ');
+  const match = bruto.match(/JSESSIONID=[^;]+/);
   if (!match) throw new Error('Não consegui abrir sessão no portal da Prefeitura (JSESSIONID não veio).');
   return match[0];
 }
