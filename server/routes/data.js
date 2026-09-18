@@ -4913,25 +4913,30 @@ router.delete('/legalizacao/alvaras/:id', requireAdmin, async (req, res) => {
  * Base de TODOS os certificados — mesma lógica dos alvarás: PJ é universal
  * (toda empresa ativa precisa de um, aparece com ou sem certificado
  * cadastrado — LEFT JOIN, titular já vem preenchido com nome/CNPJ do
- * cliente); PF só aparece pra quem TEM um registro de verdade (sócio
- * avulso, não é 1-pra-1 com a Carteira).
+ * cliente). A 2ª metade cobre TUDO que a 1ª não pegou — pedido do Reysner,
+ * 18/09/2026: "todo e qualquer certificado cadastrado no CertiSeguro
+ * precisa constar na lista", inclusive PF avulso e CNPJ que a sincronização
+ * da CertiSeguro trouxe mas que não é (ou não é mais) cliente ativo no
+ * Acessórias — sem_cadastro_acessorias=true nesses casos, pro front avisar.
  */
 const LEGAL_CERT_BASE_SQL = `
   SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj AS cliente_cnpj, c.codigo,
          ce.id AS cert_id, 'pj' AS tipo, c.nome_empresa AS titular_nome, c.cnpj AS titular_documento,
-         ce.data_vencimento, ce.observacoes
+         ce.data_vencimento, ce.observacoes, false AS sem_cadastro_acessorias
     FROM clientes c
     LEFT JOIN legalizacao_certificados ce ON ce.cliente_id = c.id::text AND ce.tipo = 'pj'
    WHERE c.status = 'ativo'
   UNION ALL
-  SELECT ce.cliente_id, c.nome_empresa, c.cnpj, c.codigo,
+  SELECT ce.cliente_id, COALESCE(c.nome_empresa, ce.titular_nome), COALESCE(c.cnpj, ce.titular_documento), c.codigo,
          ce.id, ce.tipo, ce.titular_nome, ce.titular_documento,
-         ce.data_vencimento, ce.observacoes
+         ce.data_vencimento, ce.observacoes, true AS sem_cadastro_acessorias
     FROM legalizacao_certificados ce
     LEFT JOIN clientes c ON c.id::text = ce.cliente_id
-   WHERE ce.tipo = 'pf'`;
+   WHERE NOT (ce.tipo = 'pj' AND EXISTS (
+         SELECT 1 FROM clientes c2 WHERE c2.id::text = ce.cliente_id AND c2.status = 'ativo'
+       ))`;
 
-/** GET /api/data/legalizacao/certificados — traz TODOS os clientes ativos (PJ) + certificados PF avulsos cadastrados. Sem paginação no servidor (App.Util.paginate no front). */
+/** GET /api/data/legalizacao/certificados — traz TODOS os clientes ativos (PJ) + todo certificado cadastrado na CertiSeguro, mesmo sem cliente ativo correspondente no Acessórias. Sem paginação no servidor (App.Util.paginate no front). */
 router.get('/legalizacao/certificados', async (req, res) => {
   try {
     await ensureLegalizacaoSchema();

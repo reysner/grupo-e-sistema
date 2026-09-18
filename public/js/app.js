@@ -5752,8 +5752,10 @@ const Legalizacao = (() => {
       let detalhe = c.data_vencimento ? '<b>Vencimento:</b> ' + _fmtData(c.data_vencimento) : 'Nenhuma data cadastrada ainda.';
       if (c.observacoes) detalhe += `<br><i>${c.observacoes}</i>`;
       const editarAttr = c.tipo === 'pj' ? `Legalizacao.abrirFormCertificadoPJ('${c.cliente_id}')` : `Legalizacao.abrirFormCertificadoPF('${c.cert_id}')`;
+      const semCadastro = c.sem_cadastro_acessorias
+        ? '<br><span style="font-size:11px;color:var(--gray-500)">⚠️ Não há cadastro no Acessórias</span>' : '';
       return `<tr>` +
-        `<td><b>${c.titular_nome}</b></td>` +
+        `<td><b>${c.titular_nome}</b>${semCadastro}</td>` +
         `<td>${c.tipo.toUpperCase()}</td>` +
         `<td style="font-size:12px;color:var(--gray-500)">${c.titular_documento || '—'}</td>` +
         `<td>${_badge(c.status, detalhe, rowId)}</td>` +
@@ -5840,10 +5842,11 @@ const Legalizacao = (() => {
     const lista = _certificadosFiltrados();
     if (!lista.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
     const statusLabel = { vencido: 'Vencido', vencendo: 'Vencendo', ok: 'Em dia', sem_data: 'Sem data' };
-    const header = ['Titular', 'Tipo', 'Documento', 'Status', 'Vencimento', 'Observações'].join(';');
+    const header = ['Titular', 'Tipo', 'Documento', 'Status', 'Vencimento', 'Cadastro Acessórias', 'Observações'].join(';');
     const rows = lista.map(c => [
       c.titular_nome || '', c.tipo.toUpperCase(), c.titular_documento || '', statusLabel[c.status] || c.status,
-      c.data_vencimento ? _fmtData(c.data_vencimento) : '', c.observacoes || ''
+      c.data_vencimento ? _fmtData(c.data_vencimento) : '',
+      c.sem_cadastro_acessorias ? 'Não há cadastro' : 'Sim', c.observacoes || ''
     ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
     const csv = [header, ...rows].join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -5859,8 +5862,9 @@ const Legalizacao = (() => {
     if (!lista.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
     const statusLabel = { vencido: '🔴 Vencido', vencendo: '🟡 Vencendo', ok: '🟢 Em dia', sem_data: '⚪ Sem data' };
     const rows = lista.map(c => `<tr><td>${c.titular_nome}</td><td>${c.tipo.toUpperCase()}</td><td>${c.titular_documento || '—'}</td>` +
-      `<td>${statusLabel[c.status] || c.status}</td><td>${c.data_vencimento ? _fmtData(c.data_vencimento) : '—'}</td></tr>`).join('');
-    _abrirJanelaPDF('Legalização — Certificados Digitais', ['Titular', 'Tipo', 'Documento', 'Status', 'Vencimento'], rows, lista.length);
+      `<td>${statusLabel[c.status] || c.status}</td><td>${c.data_vencimento ? _fmtData(c.data_vencimento) : '—'}</td>` +
+      `<td>${c.sem_cadastro_acessorias ? '⚠️ Não há cadastro' : 'Sim'}</td></tr>`).join('');
+    _abrirJanelaPDF('Legalização — Certificados Digitais', ['Titular', 'Tipo', 'Documento', 'Status', 'Vencimento', 'Cadastro Acessórias'], rows, lista.length);
   }
 
   function _abrirJanelaPDF(titulo, colunas, linhasHtml, total) {
