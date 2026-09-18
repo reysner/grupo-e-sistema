@@ -4815,6 +4815,8 @@ async function ensureLegalizacaoSchema() {
     decisao_observacao TEXT
   )`).catch(()=>{});
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_legal_solic_inativ_status ON legalizacao_solicitacoes_inativacao (status)`).catch(()=>{});
+  // Motivo (lista de Motivos de Churn) separado da observação livre — pedido do Reysner, 18/09/2026.
+  await pool.query(`ALTER TABLE legalizacao_solicitacoes_inativacao ADD COLUMN IF NOT EXISTS motivo TEXT`).catch(()=>{});
 
   // Procuração ECAC e Procuração FGTS Digital — pedido do Reysner, 18/09/2026: novas colunas na mesma
   // lista de clientes (uma linha por empresa). Por ora só preenchimento manual da data; ele vai indicar
@@ -5254,6 +5256,14 @@ async function verificarNotificacoesLegalizacao() {
   return { criadas };
 }
 
+/** GET /api/data/legalizacao/motivos-inativacao — motivos de saída (a mesma lista de Motivos de Churn que o admin gerencia). */
+router.get('/legalizacao/motivos-inativacao', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT nome FROM motivos_churn WHERE ativo = TRUE ORDER BY nome ASC`);
+    res.json({ data: rows.map(r => r.nome) });
+  } catch (err) { res.json({ data: [] }); }
+});
+
 /**
  * POST /api/data/legalizacao/solicitar-inativacao — usado pela página
  * pública de Legalização (colaborador com acesso_legalizacao). NÃO desativa
@@ -5264,9 +5274,10 @@ async function verificarNotificacoesLegalizacao() {
 router.post('/legalizacao/solicitar-inativacao', async (req, res) => {
   try {
     await ensureLegalizacaoSchema();
-    const { clienteId, observacao } = req.body;
+    const { clienteId, motivo, observacao } = req.body;
     if (!clienteId) return res.status(400).json({ error: 'Informe o cliente.' });
-    if (!observacao || !observacao.trim()) return res.status(400).json({ error: 'Informe a observação/justificativa.' });
+    if (!motivo || !motivo.trim()) return res.status(400).json({ error: 'Escolha o motivo da inativação.' });
+    if (!observacao || !observacao.trim()) return res.status(400).json({ error: 'Escreva uma observação explicando o porquê.' });
 
     const { rows: cli } = await pool.query(`SELECT nome_empresa FROM clientes WHERE id = $1`, [clienteId]);
     if (!cli.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
@@ -5277,15 +5288,15 @@ router.post('/legalizacao/solicitar-inativacao', async (req, res) => {
     if (pendente.length) return res.status(409).json({ error: 'Já existe uma solicitação pendente pra esse cliente.' });
 
     const { rows } = await pool.query(
-      `INSERT INTO legalizacao_solicitacoes_inativacao (cliente_id, nome_empresa, observacao, solicitado_por)
-       VALUES ($1,$2,$3,$4) RETURNING id`,
-      [clienteId, cli[0].nome_empresa, observacao.trim(), req.user.name]
+      `INSERT INTO legalizacao_solicitacoes_inativacao (cliente_id, nome_empresa, motivo, observacao, solicitado_por)
+       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+      [clienteId, cli[0].nome_empresa, motivo.trim(), observacao.trim(), req.user.name]
     );
     await pool.query(
       `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id)
        VALUES ('legalizacao_inativacao_solicitada', $1, $2, 'legalizacao', $3)`,
       ['Solicitação de inativação de cliente',
-       `${req.user.name} solicitou inativar ${cli[0].nome_empresa}: "${observacao.trim()}"`, clienteId]
+       `${req.user.name} solicitou inativar ${cli[0].nome_empresa} — motivo: ${motivo.trim()}. "${observacao.trim()}"`, clienteId]
     );
     res.status(201).json({ ok: true, id: rows[0].id });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao registrar solicitação.' }); }
@@ -5320,7 +5331,8 @@ router.patch('/legalizacao/solicitacoes-inativacao/:id/aprovar', requireAdmin, a
     if (!rows.length) return res.status(404).json({ error: 'Solicitação não encontrada ou já decidida.' });
     const solicitacao = rows[0];
     const hoje = new Date().toISOString().slice(0, 10);
-    const motivo = `Inativação solicitada por ${solicitacao.solicitado_por}: ${solicitacao.observacao}`;
+    const motivo = solicitacao.motivo || 'Inativação solicitada';
+    const descricao = `${motivo} — ${solicitacao.observacao} (solicitado por ${solicitacao.solicitado_por})`;
 
     await pool.query(
       `UPDATE clientes SET status='encerrado', data_saida=$1, motivo_saida=$2 WHERE id=$3`,
@@ -5328,7 +5340,7 @@ router.patch('/legalizacao/solicitacoes-inativacao/:id/aprovar', requireAdmin, a
     );
     await pool.query(
       `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, data_evento) VALUES ($1,'saida',$2,$3)`,
-      [solicitacao.cliente_id, motivo, hoje]
+      [solicitacao.cliente_id, descricao, hoje]
     );
     await pool.query(
       `UPDATE legalizacao_solicitacoes_inativacao SET status='aprovada', decidido_por=$1, decidido_em=NOW() WHERE id=$2`,

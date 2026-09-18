@@ -5484,6 +5484,7 @@ const Legalizacao = (() => {
     tbody.innerHTML = data.map(s => `<tr>
       <td><b>${_esc(s.nome_empresa) || '—'}</b></td>
       <td>${_esc(s.solicitado_por) || '—'}</td>
+      <td><b>${_esc(s.motivo) || '—'}</b></td>
       <td style="max-width:320px">${_esc(s.observacao)}</td>
       <td style="font-size:12px;color:var(--gray-500);white-space:nowrap">${_fmtData(s.solicitado_em) || '—'}</td>
       <td style="white-space:nowrap">

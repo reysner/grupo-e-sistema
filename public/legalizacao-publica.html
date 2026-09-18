@@ -61,6 +61,8 @@
     .pagination button.ativo{background:var(--green);color:#fff;border-color:var(--green)}
     .pagination .total{font-size:12px;color:var(--gray-400);align-self:center;margin-right:6px}
     .btn-icon{background:none;border:none;cursor:pointer;font-size:14px}
+    .btn-inativar{white-space:nowrap;padding:6px 12px;border-radius:999px;border:1.5px solid #e5484d;background:#fff5f5;color:#b42318;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s}
+    .btn-inativar:hover{background:#e5484d;color:#fff}
     /* MODAL */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:500;padding:20px}
     .modal-box{background:var(--white);border-radius:16px;box-shadow:0 8px 40px rgba(0,0,0,.2);width:100%;max-width:460px;max-height:90vh;overflow-y:auto}
@@ -164,7 +166,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Empresa</th><th>Alvarás (Funcionamento e Sanitário)</th><th>Certificado Digital (PF e PJ)</th><th>Procuração E-CAC</th><th>Procuração FGTS Digital</th><th></th></tr></thead>
+          <thead><tr><th>Empresa</th><th>Alvarás (Funcionamento e Sanitário)</th><th>Certificado Digital (PF e PJ)</th><th>Procuração E-CAC</th><th>Procuração FGTS Digital</th><th>Ação</th></tr></thead>
           <tbody id="tbody"><tr><td colspan="6" class="loading">Carregando...</td></tr></tbody>
         </table>
       </div>
@@ -184,8 +186,11 @@
         Isso <b>não desativa o cliente imediatamente</b> — envia um pedido para o administrador revisar e confirmar.
       </p>
       <div class="field"><label>Empresa</label><input id="inat-empresa" type="text" disabled /></div>
-      <div class="field"><label>Motivo / Observação <span style="color:var(--red)">*</span></label>
-        <textarea id="inat-obs" rows="4" placeholder="Explique por que esse cliente deve ser inativado..."></textarea>
+      <div class="field"><label>Motivo da inativação <span style="color:var(--red)">*</span></label>
+        <select id="inat-motivo"><option value="">Carregando motivos...</option></select>
+      </div>
+      <div class="field"><label>Observação — explique o porquê <span style="color:var(--red)">*</span></label>
+        <textarea id="inat-obs" rows="4" placeholder="Ex.: cliente encerrou a atividade em 08/2026, CNPJ baixado; sem contato há 3 meses..."></textarea>
       </div>
       <p class="login-err" id="inat-err"></p>
       <button class="btn-danger" onclick="confirmarInativacao()">Enviar solicitação</button>
@@ -413,7 +418,7 @@ function goPage(p) {
     const semCadastro = l.sem_cadastro_acessorias ? '<div style="font-size:11px;color:var(--gray-500)">⚠️ Não há cadastro no Acessórias</div>' : '';
     const alvaras = l.func ? celula('Func.', l.func) + (l.sanit ? celula('Sanit.', l.sanit) : '') : '<span style="color:var(--gray-400)">—</span>';
     const inativar = l.cliente_id
-      ? '<button class="btn-icon" title="Solicitar inativação deste cliente" data-id="' + l.cliente_id + '" data-nome="' + esc(l.nome_empresa) + '" onclick="abrirModalInativar(this.dataset.id,this.dataset.nome)">🚫</button>' : '';
+      ? '<button class="btn-inativar" title="Solicitar a inativação deste cliente (com motivo e observação)" data-id="' + l.cliente_id + '" data-nome="' + esc(l.nome_empresa) + '" onclick="abrirModalInativar(this.dataset.id,this.dataset.nome)">🚫 Inativar</button>' : '';
     return '<tr>' +
       '<td><b>' + esc(l.nome_empresa || '—') + '</b><div style="font-size:11px;color:var(--gray-400)">' + esc(l.cnpj) + '</div>' + semCadastro + '</td>' +
       '<td>' + alvaras + '</td>' +
@@ -476,24 +481,38 @@ function abrirJanelaPDF(titulo, colunas, linhasHtml, total) {
 }
 
 // ── SOLICITAR INATIVAÇÃO ─────────────────────────────────────────────
+let _motivos = null;
+async function carregarMotivos() {
+  const sel = document.getElementById('inat-motivo');
+  if (!_motivos) {
+    const res = await api('/api/data/legalizacao/motivos-inativacao');
+    const d = res.ok ? await res.json().catch(() => ({})) : {};
+    _motivos = (d.data && d.data.length) ? d.data : ['Encerramento de atividade / baixa do CNPJ', 'Inadimplência', 'Outro'];
+  }
+  sel.innerHTML = '<option value="">Selecione o motivo...</option>' + _motivos.map(m => '<option>' + esc(m) + '</option>').join('');
+}
+
 function abrirModalInativar(clienteId, nomeEmpresa) {
   _inatClienteId = clienteId;
   document.getElementById('inat-empresa').value = nomeEmpresa;
   document.getElementById('inat-obs').value = '';
+  carregarMotivos();
   document.getElementById('inat-err').style.display = 'none';
   document.getElementById('modal-inativar').style.display = 'flex';
 }
 function fecharModalInativar() { document.getElementById('modal-inativar').style.display = 'none'; }
 
 async function confirmarInativacao() {
+  const motivo = document.getElementById('inat-motivo').value;
   const observacao = document.getElementById('inat-obs').value.trim();
   const err = document.getElementById('inat-err');
   err.style.display = 'none';
-  if (!observacao) { err.textContent = 'Informe o motivo da inativação.'; err.style.display = 'block'; return; }
+  if (!motivo) { err.textContent = 'Escolha o motivo da inativação.'; err.style.display = 'block'; return; }
+  if (!observacao) { err.textContent = 'Escreva uma observação explicando o porquê.'; err.style.display = 'block'; return; }
   const res = await api('/api/data/legalizacao/solicitar-inativacao', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ clienteId: _inatClienteId, observacao })
+    body: JSON.stringify({ clienteId: _inatClienteId, motivo, observacao })
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) { err.textContent = data.error || 'Erro ao enviar solicitação.'; err.style.display = 'block'; return; }
