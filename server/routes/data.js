@@ -4817,6 +4817,9 @@ async function ensureLegalizacaoSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_legal_solic_inativ_status ON legalizacao_solicitacoes_inativacao (status)`).catch(()=>{});
   // Motivo (lista de Motivos de Churn) separado da observação livre — pedido do Reysner, 18/09/2026.
   await pool.query(`ALTER TABLE legalizacao_solicitacoes_inativacao ADD COLUMN IF NOT EXISTS motivo TEXT`).catch(()=>{});
+  // Sininho da página pública: o "lida" de notificacoes é global (vale pro admin também), então cada
+  // usuário guarda só a hora em que viu o sininho pela última vez.
+  await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_notif_visto (user_id TEXT PRIMARY KEY, visto_em TIMESTAMPTZ NOT NULL DEFAULT NOW())`).catch(()=>{});
 
   // Procuração ECAC e Procuração FGTS Digital — pedido do Reysner, 18/09/2026: novas colunas na mesma
   // lista de clientes (uma linha por empresa). Por ora só preenchimento manual da data; ele vai indicar
@@ -5255,6 +5258,37 @@ async function verificarNotificacoesLegalizacao() {
 
   return { criadas };
 }
+
+/**
+ * GET /api/data/legalizacao/notificacoes — sininho da página pública de Legalização
+ * (pedido do Reysner, 18/09/2026): avisos de vencimento de alvará/certificado, com
+ * "não lida" POR USUÁRIO (desde a última vez que ele abriu/limpou o sininho).
+ */
+router.get('/legalizacao/notificacoes', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const { rows: v } = await pool.query(`SELECT visto_em FROM legalizacao_notif_visto WHERE user_id = $1`, [req.user.id]);
+    // 1º acesso: só conta como nova o que veio nos últimos 7 dias (senão o sino abre com centenas)
+    const visto = v[0] ? v[0].visto_em : new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    const { rows } = await pool.query(
+      `SELECT id, titulo, mensagem, created_at, (created_at > $1) AS nova
+         FROM notificacoes WHERE tipo = 'legalizacao_vencimento' ORDER BY created_at DESC LIMIT 60`, [visto]);
+    const { rows: c } = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM notificacoes WHERE tipo = 'legalizacao_vencimento' AND created_at > $1`, [visto]);
+    res.json({ data: rows, naoLidas: c[0].n });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar notificações.' }); }
+});
+
+/** POST /api/data/legalizacao/notificacoes/lidas — "marcar todas como lidas" (só pra esse usuário). */
+router.post('/legalizacao/notificacoes/lidas', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    await pool.query(
+      `INSERT INTO legalizacao_notif_visto (user_id, visto_em) VALUES ($1, NOW())
+       ON CONFLICT (user_id) DO UPDATE SET visto_em = NOW()`, [req.user.id]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao marcar como lidas.' }); }
+});
 
 /** GET /api/data/legalizacao/motivos-inativacao — motivos de saída (a mesma lista de Motivos de Churn que o admin gerencia). */
 router.get('/legalizacao/motivos-inativacao', async (req, res) => {
