@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Grupo-E · Sincronizar procurações (e-CAC + FGTS Digital)
 // @namespace    https://grupo-e-sistema-uc2w.onrender.com/
-// @version      1.2.0
+// @version      1.2.1
 // @description  Ao abrir as procurações recebidas no e-CAC ou no SPE (FGTS Digital), lê a lista completa e envia pro sistema Grupo-E (módulo Legalização).
 // @match        https://servicos.receitafederal.gov.br/servico/autorizacoes/*
 // @match        https://spe.sistema.gov.br/*
@@ -187,7 +187,7 @@
       const r = await enviar(dados);
       GM_setValue(chaveUltimo, Date.now());
       aviso('procurações ' + rotulo + ' em dia: ' + r.atualizados + ' atualizada(s)' + (r.limpos ? ', ' + r.limpos + ' zerada(s)' : '') + '.', 'ok');
-      if (ehEcac) abrirFgtsEmSegundoPlano();
+      if (ehEcac) abrirFgtsEmSegundoPlano(forcar);
       else if (recente('spe_auto')) setTimeout(() => window.close(), 3500); // aba aberta pela automação: fecha sozinha
     } catch (e) {
       aviso('não sincronizou (' + e.message + ')', 'erro');
@@ -197,9 +197,11 @@
   }
 
   // ── e-CAC acabou de sincronizar → puxa o FGTS Digital numa aba em segundo plano ──
-  function abrirFgtsEmSegundoPlano() {
-    if (!vencido('ultimo_fgts')) return; // o FGTS já foi sincronizado há pouco
+  // "Sincronizar agora" no e-CAC (forcar) leva o FGTS junto, mesmo dentro das 6h.
+  function abrirFgtsEmSegundoPlano(forcar) {
+    if (!forcar && !vencido('ultimo_fgts')) return; // o FGTS já foi sincronizado há pouco
     GM_setValue('auto_fgts', Date.now());
+    if (forcar) GM_setValue('forcar_fgts', Date.now());
     GM_openInTab('https://fgtsdigital.sistema.gov.br/portal/login', { active: false, insert: true });
   }
 
@@ -243,6 +245,6 @@
   } else {
     // só na tela de procurações recebidas (não em toda página do portal)
     const naTela = ehEcac ? location.pathname.includes('/minhas-autorizacoes') : location.pathname.startsWith('/procuracao');
-    if (naTela) window.addEventListener('load', () => setTimeout(() => sincronizar(false), 3000));
+    if (naTela) window.addEventListener('load', () => setTimeout(() => sincronizar(!ehEcac && recente('forcar_fgts')), 3000));
   }
 })();
