@@ -88,22 +88,24 @@ router.post('/legalizacao/certificados/importar-certiseguro', async (req, res) =
 });
 
 /**
- * POST /api/data/legalizacao/procuracoes/importar-ecac — recebe as procurações
- * RECEBIDAS lidas no portal da Receita (Autorizações de Acesso → Recebidas)
- * com o e-CAC logado pelo certificado do escritório — pedido do Reysner,
- * 18/09/2026. Chamada máquina-a-máquina (token compartilhado, igual ao
+ * POST /api/data/legalizacao/procuracoes/importar — recebe as procurações
+ * RECEBIDAS lidas no e-CAC (Autorizações de Acesso → Recebidas, tipo 'ecac') ou
+ * no SPE do FGTS Digital (tipo 'fgts'), com o login pelo certificado do
+ * escritório — pedido do Reysner, 18/09/2026. Chamada máquina-a-máquina (token compartilhado, igual ao
  * importar-certiseguro), por isso fica antes do requireAuth. Regras:
  *   - só Ativa (vencimento = Validade) e Expirada (vira "Vencido" pela data);
  *   - Cancelada / Rejeitada / Em Análise = "Sem dados" (ignoradas, não gravam);
  *   - só clientes ATIVOS da Carteira (casa pelo CPF/CNPJ, só dígitos);
  *   - vários registros pro mesmo CNPJ: vale a Ativa de maior validade.
  */
-router.post('/legalizacao/procuracoes/importar-ecac', async (req, res) => {
+router.post('/legalizacao/procuracoes/importar', async (req, res) => {
   try {
     const tokenEsperado = process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC_TOKEN;
     if (!tokenEsperado) return res.status(503).json({ error: 'Sincronização não configurada (falta LEGALIZACAO_SYNC_TOKEN/CERTISEGURO_SYNC_TOKEN no servidor).' });
     if (req.get('X-Sync-Token') !== tokenEsperado) return res.status(401).json({ error: 'Token de sincronização inválido.' });
 
+    const tipo = req.body.tipo;
+    if (!['ecac', 'fgts'].includes(tipo)) return res.status(400).json({ error: "Informe tipo: 'ecac' ou 'fgts'." });
     await ensureLegalizacaoSchema();
     const lista = Array.isArray(req.body.procuracoes) ? req.body.procuracoes : [];
     const melhor = new Map(); // documento -> { venc, rank }
@@ -128,15 +130,15 @@ router.post('/legalizacao/procuracoes/importar-ecac', async (req, res) => {
       if (!clienteId) { semCliente++; continue; }
       await pool.query(
         `INSERT INTO legalizacao_procuracoes (cliente_id, tipo, data_vencimento, fonte, criado_por)
-         VALUES ($1,'ecac',$2,'ecac','e-CAC (importação)')
-         ON CONFLICT (cliente_id, tipo) DO UPDATE SET data_vencimento = $2, fonte = 'ecac', atualizado_em = NOW()`,
-        [clienteId, venc]
+         VALUES ($1,$3,$2,$3,'Importação Receita/FGTS')
+         ON CONFLICT (cliente_id, tipo) DO UPDATE SET data_vencimento = $2, fonte = $3, atualizado_em = NOW()`,
+        [clienteId, venc, tipo]
       );
       atualizados++;
     }
-    await registrarLog('sync', 'e-CAC (importação)', 'importar', 'legalizacao',
-      `Procurações e-CAC: ${atualizados} gravada(s), ${semCliente} sem cliente ativo na Carteira, de ${lista.length} lida(s).`, req);
-    res.json({ ok: true, recebidas: lista.length, consideradas: melhor.size, atualizados, semCliente });
+    await registrarLog('sync', 'Procurações (importação)', 'importar', 'legalizacao',
+      `Procurações ${tipo === 'ecac' ? 'e-CAC' : 'FGTS Digital'}: ${atualizados} gravada(s), ${semCliente} sem cliente ativo na Carteira, de ${lista.length} lida(s).`, req);
+    res.json({ ok: true, tipo, recebidas: lista.length, consideradas: melhor.size, atualizados, semCliente });
   } catch (err) {
     console.error('[legalizacao] importar-ecac falhou:', err);
     res.status(500).json({ error: err.message || 'Erro ao importar procurações.' });
