@@ -1006,7 +1006,7 @@
               <div id="legal-qtd-vencido" style="font-size:26px;font-weight:800;color:var(--g700)">—</div>
             </div>
             <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:18px" id="legal-card-vencendo">
-              <div style="font-size:11px;font-weight:700;color:#c9a227;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🟡 Vencendo (60d alvará / 10d certificado)</div>
+              <div style="font-size:11px;font-weight:700;color:#c9a227;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🟡 Vencendo (alvará 60d · certificado 10d · procuração 30d)</div>
               <div id="legal-qtd-vencendo" style="font-size:26px;font-weight:800;color:var(--g700)">—</div>
             </div>
             <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:18px" id="legal-card-solicitacao">
@@ -1031,30 +1031,35 @@
             </div>
           </div>
 
-          <!-- ALVARÁS -->
-          <div class="form-card" style="margin-bottom:20px">
+          <!-- LISTA ÚNICA DE CLIENTES — uma coluna por situação (pedido do Reysner, 18/09/2026) -->
+          <div class="form-card">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-              <h2 class="form-title" style="margin:0">Alvarás (Funcionamento e Sanitário)</h2>
+              <h2 class="form-title" style="margin:0">Situação legal dos clientes</h2>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button class="btn btn-ghost btn-sm" onclick="Legalizacao.exportAlvarasCSV()">⬇ CSV</button>
-                <button class="btn btn-ghost btn-sm" onclick="Legalizacao.exportAlvarasPDF()">🖨 PDF</button>
-                <button class="btn btn-ghost btn-sm" onclick="Legalizacao.consultarTodosPrefeitura()" title="Consulta em lote no portal da Prefeitura (hoje só Uberlândia-MG) — não roda sozinho, só quando clicado">🔍 Consultar Todos</button>
+                <button class="btn btn-ghost btn-sm" onclick="Legalizacao.exportCSV()">⬇ CSV</button>
+                <button class="btn btn-ghost btn-sm" onclick="Legalizacao.exportPDF()">🖨 PDF</button>
+                <button class="btn btn-ghost btn-sm" onclick="Legalizacao.consultarTodosPrefeitura()" title="Consulta em lote no portal da Prefeitura (hoje só Uberlândia-MG). A rotina noturna já faz isso sozinha às 02:00 — use só se precisar na hora.">🔍 Consultar Alvarás</button>
                 <button class="btn btn-success btn-sm" onclick="Legalizacao.abrirAdicionarSanitario()" style="font-weight:600">+ Adicionar Sanitário</button>
+                <button class="btn btn-success btn-sm" onclick="Legalizacao.abrirAdicionarCertificadoPF()" style="font-weight:600">+ Adicionar Certificado PF</button>
               </div>
             </div>
-            <p style="font-size:12px;color:var(--gray-400);margin:0 0 10px">Funcionamento aparece automaticamente pra toda empresa ativa da Carteira — só preencha a data quando descobrir.</p>
+            <p style="font-size:12px;color:var(--gray-400);margin:0 0 10px">Todo cliente ativo da Carteira aparece automaticamente. Alvarás vêm da consulta noturna à Prefeitura, certificados da CertiSeguro — o resto é só preencher a data quando descobrir.</p>
             <div class="form-accent"></div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0">
-              <input id="legal-alv-busca" type="text" placeholder="🔍 Buscar empresa ou CNPJ..." oninput="Legalizacao.filtrarAlvaras()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;min-width:220px;flex:1;max-width:300px" />
-              <select id="legal-alv-tipo" onchange="Legalizacao.filtrarAlvaras()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer">
-                <option value="todos">Todos os tipos</option>
-                <option value="funcionamento">Funcionamento</option>
-                <option value="sanitario">Sanitário</option>
+              <input id="legal-busca" type="text" placeholder="🔍 Buscar empresa, titular ou CNPJ/CPF..." oninput="Legalizacao.filtrar()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;min-width:220px;flex:1;max-width:320px" />
+              <select id="legal-situacao" onchange="Legalizacao.filtrar()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer">
+                <option value="todas">Todas as situações</option>
+                <option value="func">Alvarás de Funcionamento</option>
+                <option value="sanit">Alvarás Sanitários</option>
+                <option value="cert_pf">Certificado digital PF</option>
+                <option value="cert_pj">Certificado digital PJ</option>
+                <option value="ecac">Procurações E-CAC</option>
+                <option value="fgts">Procurações FGTS Digital</option>
               </select>
-              <select id="legal-alv-status" onchange="Legalizacao.filtrarAlvaras()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer">
+              <select id="legal-status" onchange="Legalizacao.filtrar()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer">
                 <option value="todos">Todos os status</option>
                 <option value="vencido">🔴 Vencido</option>
-                <option value="vencendo">🟡 Vencendo (60 dias)</option>
+                <option value="vencendo">🟡 Vencendo</option>
                 <option value="solicitacao">🔵 Solicitação em andamento</option>
                 <option value="ok">🟢 Em dia</option>
                 <option value="sem_data">⚪ Sem data cadastrada</option>
@@ -1062,46 +1067,10 @@
             </div>
             <div class="table-wrap">
               <table class="data-table">
-                <thead><tr><th>Empresa</th><th>Tipo</th><th>Status</th><th></th></tr></thead>
-                <tbody id="legal-alv-tbody"><tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
+                <thead><tr><th>Empresa</th><th>Alvarás (Funcionamento e Sanitário)</th><th>Certificado Digital (PF e PJ)</th><th>Procuração E-CAC</th><th>Procuração FGTS Digital</th></tr></thead>
+                <tbody id="legal-tbody"><tr><td colspan="5" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
               </table>
-              <div id="legal-alv-pagination"></div>
-            </div>
-          </div>
-
-          <!-- CERTIFICADOS DIGITAIS -->
-          <div class="form-card">
-            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-              <h2 class="form-title" style="margin:0">Certificados Digitais (PJ e PF)</h2>
-              <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button class="btn btn-ghost btn-sm" onclick="Legalizacao.exportCertificadosCSV()">⬇ CSV</button>
-                <button class="btn btn-ghost btn-sm" onclick="Legalizacao.exportCertificadosPDF()">🖨 PDF</button>
-                <button class="btn btn-success btn-sm" onclick="Legalizacao.abrirAdicionarCertificadoPF()" style="font-weight:600">+ Adicionar Certificado PF</button>
-              </div>
-            </div>
-            <p style="font-size:12px;color:var(--gray-400);margin:0 0 10px">Certificado PJ aparece automaticamente pra toda empresa ativa da Carteira — só preencha a data quando descobrir.</p>
-            <div class="form-accent"></div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0">
-              <input id="legal-cert-busca" type="text" placeholder="🔍 Buscar empresa, titular ou documento..." oninput="Legalizacao.filtrarCertificados()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;min-width:220px;flex:1;max-width:300px" />
-              <select id="legal-cert-tipo" onchange="Legalizacao.filtrarCertificados()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer">
-                <option value="todos">PJ e PF</option>
-                <option value="pj">PJ</option>
-                <option value="pf">PF</option>
-              </select>
-              <select id="legal-cert-status" onchange="Legalizacao.filtrarCertificados()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;cursor:pointer">
-                <option value="todos">Todos os status</option>
-                <option value="vencido">🔴 Vencido</option>
-                <option value="vencendo">🟡 Vencendo (10 dias)</option>
-                <option value="ok">🟢 Em dia</option>
-                <option value="sem_data">⚪ Sem data cadastrada</option>
-              </select>
-            </div>
-            <div class="table-wrap">
-              <table class="data-table">
-                <thead><tr><th>Titular</th><th>Tipo</th><th>Documento</th><th>Status</th><th></th></tr></thead>
-                <tbody id="legal-cert-tbody"><tr><td colspan="5" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
-              </table>
-              <div id="legal-cert-pagination"></div>
+              <div id="legal-pagination"></div>
             </div>
           </div>
 

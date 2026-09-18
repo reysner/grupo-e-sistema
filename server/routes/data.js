@@ -4736,89 +4736,145 @@ async function ensureLegalizacaoSchema() {
     decisao_observacao TEXT
   )`).catch(()=>{});
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_legal_solic_inativ_status ON legalizacao_solicitacoes_inativacao (status)`).catch(()=>{});
+
+  // Procuração ECAC e Procuração FGTS Digital — pedido do Reysner, 18/09/2026: novas colunas na mesma
+  // lista de clientes (uma linha por empresa). Por ora só preenchimento manual da data; ele vai indicar
+  // onde achar o vencimento pra automatizar depois (por isso `fonte`).
+  await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_procuracoes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cliente_id TEXT NOT NULL,
+    tipo TEXT NOT NULL CHECK (tipo IN ('ecac','fgts')),
+    data_vencimento DATE,
+    observacoes TEXT,
+    fonte TEXT NOT NULL DEFAULT 'manual',
+    criado_por TEXT,
+    criado_em TIMESTAMPTZ DEFAULT NOW(),
+    atualizado_em TIMESTAMPTZ DEFAULT NOW()
+  )`).catch(()=>{});
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_proc_cliente_tipo ON legalizacao_procuracoes (cliente_id, tipo)`).catch(()=>{});
 }
 
-/** SQL de status compartilhado pelas listagens — mesmo critério em todo o módulo. */
-const LEGAL_STATUS_SQL = `CASE
-  WHEN data_vencimento IS NULL THEN 'sem_data'
-  WHEN data_vencimento < CURRENT_DATE THEN 'vencido'
-  WHEN data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA_CERTIFICADO} days' THEN 'vencendo'
-  ELSE 'ok'
-END`;
+const LEGAL_DIAS_ALERTA_PROCURACAO = 30;
 
-// Mesma coisa, mas pra ALVARÁS — "solicitacao" (protocolo de renovação em
-// andamento na prefeitura, achado via consulta automática) tem prioridade
-// sobre vencido/vencendo/ok. Prazo de "vencendo" mais longo que o de
-// certificado (60 x 10 dias) — pedido do Reysner: alvará demora bem mais
-// pra renovar.
-const LEGAL_STATUS_ALVARA_SQL = `CASE
-  WHEN ultima_consulta_status = 'solicitacao_andamento' THEN 'solicitacao'
-  WHEN data_vencimento IS NULL THEN 'sem_data'
-  WHEN data_vencimento < CURRENT_DATE THEN 'vencido'
-  WHEN data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA_ALVARA} days' THEN 'vencendo'
+/**
+ * CASE de status por coluna de data — mesmo critério em todo o módulo.
+ * `prioridade` é um WHEN extra que vence sobre a data (ex.: alvará com
+ * solicitação de renovação em andamento na prefeitura). Alvará tem prazo de
+ * "vencendo" mais longo que certificado (60 x 10 dias — pedido do Reysner:
+ * alvará demora bem mais pra renovar).
+ */
+const _legalStatusSql = (col, dias, prioridade = '') => `CASE ${prioridade}
+  WHEN ${col} IS NULL THEN 'sem_data'
+  WHEN ${col} < CURRENT_DATE THEN 'vencido'
+  WHEN ${col} <= CURRENT_DATE + INTERVAL '${dias} days' THEN 'vencendo'
   ELSE 'ok'
 END`;
 
 /**
- * Base de TODOS os alvarás — pedido do Reysner, 17/09/2026: "tragam todos
- * os clientes da base". Funcionamento é universal (toda empresa ativa
- * aparece, com ou sem alvará já cadastrado — LEFT JOIN); Sanitário só
- * aparece pra quem TEM um registro de verdade (nem toda empresa precisa,
- * não dá pra saber sozinho por CNAE — ver nota mais abaixo). Uma linha
- * "virtual" (sem alvara_id) vira registro de verdade só quando alguém
- * grava uma data ou roda "Consultar Prefeitura" pela primeira vez (ver PUT
- * e POST .../consultar-prefeitura abaixo — ambos fazem UPSERT).
+ * Painel ÚNICO de Legalização — pedido do Reysner, 18/09/2026: uma lista de
+ * clientes só, com uma coluna por situação (Alvarás Funcionamento+Sanitário,
+ * Certificado Digital, Procuração ECAC, Procuração FGTS Digital), em vez de
+ * uma lista de empresas por assunto. A 1ª metade traz TODO cliente ativo
+ * (LEFT JOIN — linha "virtual" até alguém preencher/consultar algo); a 2ª
+ * traz o que não é cliente ativo mas está na CertiSeguro (PF avulso + CNPJ
+ * que nunca existiu no Acessórias — sem_cadastro_acessorias=true). Cliente
+ * INATIVO no Acessórias não entra. Sanitário só aparece pra quem tem
+ * registro (nem toda empresa precisa).
  */
-const LEGAL_ALVARAS_BASE_SQL = `
-  SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj, c.codigo,
-         a.id AS alvara_id, 'funcionamento' AS tipo, a.data_vencimento, a.numero, a.observacoes,
-         a.ultima_consulta_status, a.ultima_consulta_resumo, a.ultima_consulta_data_solicitacao, a.ultima_consulta_em
+const LEGAL_PAINEL_SQL = `
+SELECT x.cliente_id, x.nome_empresa, x.cnpj, x.codigo, x.sem_cadastro_acessorias,
+  x.func_id, x.func_venc::text AS func_venc, x.func_numero, x.func_obs, x.func_cr, x.func_cd,
+  ${_legalStatusSql('x.func_venc', LEGAL_DIAS_ALERTA_ALVARA, "WHEN x.func_cs = 'solicitacao_andamento' THEN 'solicitacao'")} AS func_status,
+  x.sanit_id, x.sanit_venc::text AS sanit_venc, x.sanit_numero, x.sanit_obs, x.sanit_cr, x.sanit_cd,
+  ${_legalStatusSql('x.sanit_venc', LEGAL_DIAS_ALERTA_ALVARA, "WHEN x.sanit_cs = 'solicitacao_andamento' THEN 'solicitacao'")} AS sanit_status,
+  x.cert_id, x.cert_tipo, x.cert_venc::text AS cert_venc, x.cert_obs,
+  ${_legalStatusSql('x.cert_venc', LEGAL_DIAS_ALERTA_CERTIFICADO)} AS cert_status,
+  x.ecac_id, x.ecac_venc::text AS ecac_venc, x.ecac_obs,
+  ${_legalStatusSql('x.ecac_venc', LEGAL_DIAS_ALERTA_PROCURACAO)} AS ecac_status,
+  x.fgts_id, x.fgts_venc::text AS fgts_venc, x.fgts_obs,
+  ${_legalStatusSql('x.fgts_venc', LEGAL_DIAS_ALERTA_PROCURACAO)} AS fgts_status
+FROM (
+  SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj, c.codigo, false AS sem_cadastro_acessorias,
+         fa.id AS func_id, fa.data_vencimento AS func_venc, fa.numero AS func_numero, fa.observacoes AS func_obs,
+         fa.ultima_consulta_status AS func_cs, fa.ultima_consulta_resumo AS func_cr, fa.ultima_consulta_data_solicitacao AS func_cd,
+         sa.id AS sanit_id, sa.data_vencimento AS sanit_venc, sa.numero AS sanit_numero, sa.observacoes AS sanit_obs,
+         sa.ultima_consulta_status AS sanit_cs, sa.ultima_consulta_resumo AS sanit_cr, sa.ultima_consulta_data_solicitacao AS sanit_cd,
+         ce.id AS cert_id, ce.tipo AS cert_tipo, ce.data_vencimento AS cert_venc, ce.observacoes AS cert_obs,
+         pe.id AS ecac_id, pe.data_vencimento AS ecac_venc, pe.observacoes AS ecac_obs,
+         pg.id AS fgts_id, pg.data_vencimento AS fgts_venc, pg.observacoes AS fgts_obs
     FROM clientes c
-    LEFT JOIN legalizacao_alvaras a ON a.cliente_id = c.id::text AND a.tipo = 'funcionamento'
+    LEFT JOIN legalizacao_alvaras fa ON fa.cliente_id = c.id::text AND fa.tipo = 'funcionamento'
+    LEFT JOIN legalizacao_alvaras sa ON sa.cliente_id = c.id::text AND sa.tipo = 'sanitario'
+    LEFT JOIN legalizacao_certificados ce ON ce.cliente_id = c.id::text AND ce.tipo = 'pj'
+    LEFT JOIN legalizacao_procuracoes pe ON pe.cliente_id = c.id::text AND pe.tipo = 'ecac'
+    LEFT JOIN legalizacao_procuracoes pg ON pg.cliente_id = c.id::text AND pg.tipo = 'fgts'
    WHERE c.status = 'ativo'
   UNION ALL
-  SELECT c.id::text, c.nome_empresa, c.cnpj, c.codigo,
-         a.id, a.tipo, a.data_vencimento, a.numero, a.observacoes,
-         a.ultima_consulta_status, a.ultima_consulta_resumo, a.ultima_consulta_data_solicitacao, a.ultima_consulta_em
-    FROM legalizacao_alvaras a
-    JOIN clientes c ON c.id::text = a.cliente_id
-   WHERE a.tipo = 'sanitario'`;
+  SELECT ce.cliente_id, ce.titular_nome, ce.titular_documento, NULL, true,
+         NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+         NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+         ce.id, ce.tipo, ce.data_vencimento, ce.observacoes,
+         NULL, NULL, NULL,
+         NULL, NULL, NULL
+    FROM legalizacao_certificados ce
+   WHERE ce.tipo = 'pf'
+      OR (ce.tipo = 'pj' AND NOT EXISTS (SELECT 1 FROM clientes c2 WHERE c2.id::text = ce.cliente_id))
+) x
+ORDER BY x.nome_empresa ASC`;
 
-/** GET /api/data/legalizacao/resumo — contadores pro painel (cards). */
-router.get('/legalizacao/resumo', async (req, res) => {
-  try {
-    await ensureLegalizacaoSchema();
-    const { rows: rowsAlvaras } = await pool.query(
-      `SELECT status, COUNT(*) AS qtd FROM (
-         SELECT *, ${LEGAL_STATUS_ALVARA_SQL} AS status FROM (${LEGAL_ALVARAS_BASE_SQL}) x
-       ) y GROUP BY 1`
-    );
-    const alvaras = { vencido: 0, vencendo: 0, ok: 0, sem_data: 0, solicitacao: 0 };
-    rowsAlvaras.forEach(r => { alvaras[r.status] = parseInt(r.qtd); });
-    const { rows: rowsCert } = await pool.query(
-      `SELECT ${LEGAL_STATUS_SQL} AS status, COUNT(*) AS qtd FROM legalizacao_certificados GROUP BY 1`
-    );
-    const certificados = { vencido: 0, vencendo: 0, ok: 0, sem_data: 0 };
-    rowsCert.forEach(r => { certificados[r.status] = parseInt(r.qtd); });
-    res.json({ diasAlertaAlvara: LEGAL_DIAS_ALERTA_ALVARA, diasAlertaCertificado: LEGAL_DIAS_ALERTA_CERTIFICADO, alvaras, certificados });
-  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar resumo de legalização.' }); }
-});
+function legalPainelLinha(r) {
+  const orfao = !!r.sem_cadastro_acessorias;
+  const alvara = (p) => ({
+    id: r[p + '_id'], vencimento: r[p + '_venc'], numero: r[p + '_numero'], observacoes: r[p + '_obs'],
+    consulta_resumo: r[p + '_cr'], consulta_data_solicitacao: r[p + '_cd'], status: r[p + '_status'],
+  });
+  const procuracao = (p) => ({ id: r[p + '_id'], vencimento: r[p + '_venc'], observacoes: r[p + '_obs'], status: r[p + '_status'] });
+  return {
+    cliente_id: orfao ? null : r.cliente_id,
+    nome_empresa: r.nome_empresa, cnpj: r.cnpj, codigo: r.codigo, sem_cadastro_acessorias: orfao,
+    func: orfao ? null : alvara('func'),
+    sanit: r.sanit_id ? alvara('sanit') : null,
+    cert: { id: r.cert_id, tipo: r.cert_tipo || 'pj', vencimento: r.cert_venc, observacoes: r.cert_obs, status: r.cert_status },
+    ecac: orfao ? null : procuracao('ecac'),
+    fgts: orfao ? null : procuracao('fgts'),
+  };
+}
 
 /**
- * GET /api/data/legalizacao/alvaras — traz TODOS os clientes ativos (não só
- * quem já tem alvará cadastrado). Sem paginação/filtro no servidor — a
- * lista inteira volta de uma vez e o front pagina/filtra localmente (mesmo
- * padrão de Carteira/Recuperação/Atendimento, App.Util.paginate).
+ * GET /api/data/legalizacao/painel — a lista inteira volta de uma vez e o
+ * front pagina/filtra localmente (mesmo padrão de Carteira/Recuperação/
+ * Atendimento, App.Util.paginate). Também alimenta os cards de resumo.
  */
-router.get('/legalizacao/alvaras', async (req, res) => {
+router.get('/legalizacao/painel', async (req, res) => {
   try {
     await ensureLegalizacaoSchema();
-    const { rows } = await pool.query(
-      `SELECT *, ${LEGAL_STATUS_ALVARA_SQL} AS status FROM (${LEGAL_ALVARAS_BASE_SQL}) x
-       ORDER BY nome_empresa ASC, tipo ASC`
+    const { rows } = await pool.query(LEGAL_PAINEL_SQL);
+    res.json({
+      data: rows.map(legalPainelLinha),
+      diasAlerta: { alvara: LEGAL_DIAS_ALERTA_ALVARA, certificado: LEGAL_DIAS_ALERTA_CERTIFICADO, procuracao: LEGAL_DIAS_ALERTA_PROCURACAO },
+    });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar legalização.' }); }
+});
+
+/** PUT /api/data/legalizacao/procuracoes/:clienteId/:tipo (ecac|fgts) — só admin; UPSERT da data de vencimento. */
+router.put('/legalizacao/procuracoes/:clienteId/:tipo', requireAdmin, async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const { clienteId, tipo } = req.params;
+    if (!['ecac', 'fgts'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
+    const { rows: cli } = await pool.query(`SELECT nome_empresa FROM clientes WHERE id = $1`, [clienteId]);
+    if (!cli.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    const { data_vencimento, observacoes } = req.body;
+    await pool.query(
+      `INSERT INTO legalizacao_procuracoes (cliente_id, tipo, data_vencimento, observacoes, criado_por)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (cliente_id, tipo) DO UPDATE SET data_vencimento = $3, observacoes = $4, atualizado_em = NOW()`,
+      [clienteId, tipo, data_vencimento || null, observacoes || null, req.user.name]
     );
-    res.json({ data: rows });
-  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar alvarás.' }); }
+    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao',
+      `Procuração ${tipo === 'ecac' ? 'ECAC' : 'FGTS Digital'} atualizada: ${cli[0].nome_empresa}`, req);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao salvar procuração.' }); }
 });
 
 /**
@@ -4991,48 +5047,6 @@ router.delete('/legalizacao/alvaras/:id', requireAdmin, async (req, res) => {
     await registrarLog(req.user.id, req.user.name, 'excluir', 'legalizacao', 'Alvará excluído', req);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao excluir alvará.' }); }
-});
-
-/**
- * Base de TODOS os certificados — mesma lógica dos alvarás: PJ é universal
- * (toda empresa ativa precisa de um, aparece com ou sem certificado
- * cadastrado — LEFT JOIN, titular já vem preenchido com nome/CNPJ do
- * cliente). A 2ª metade cobre PF avulso + CNPJ que a sincronização da
- * CertiSeguro trouxe mas que NUNCA foi cliente no Acessórias (órfão de
- * verdade) — pedido do Reysner, 18/09/2026: "todo e qualquer certificado
- * cadastrado no CertiSeguro precisa constar na lista", com
- * sem_cadastro_acessorias=true pro front avisar. Cliente INATIVO no
- * Acessórias não entra (mesma correção do mesmo dia: "Cliente inativa no
- * Acessórias não precisa aparecer") — só o que nunca existiu lá.
- */
-const LEGAL_CERT_BASE_SQL = `
-  SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj AS cliente_cnpj, c.codigo,
-         ce.id AS cert_id, 'pj' AS tipo, c.nome_empresa AS titular_nome, c.cnpj AS titular_documento,
-         ce.data_vencimento, ce.observacoes, false AS sem_cadastro_acessorias
-    FROM clientes c
-    LEFT JOIN legalizacao_certificados ce ON ce.cliente_id = c.id::text AND ce.tipo = 'pj'
-   WHERE c.status = 'ativo'
-  UNION ALL
-  SELECT ce.cliente_id, COALESCE(c.nome_empresa, ce.titular_nome), COALESCE(c.cnpj, ce.titular_documento), c.codigo,
-         ce.id, ce.tipo, ce.titular_nome, ce.titular_documento,
-         ce.data_vencimento, ce.observacoes, true AS sem_cadastro_acessorias
-    FROM legalizacao_certificados ce
-    LEFT JOIN clientes c ON c.id::text = ce.cliente_id
-   WHERE ce.tipo = 'pf'
-      OR (ce.tipo = 'pj' AND NOT EXISTS (
-            SELECT 1 FROM clientes c2 WHERE c2.id::text = ce.cliente_id
-          ))`;
-
-/** GET /api/data/legalizacao/certificados — traz TODOS os clientes ativos (PJ) + todo certificado cadastrado na CertiSeguro, mesmo sem cliente ativo correspondente no Acessórias. Sem paginação no servidor (App.Util.paginate no front). */
-router.get('/legalizacao/certificados', async (req, res) => {
-  try {
-    await ensureLegalizacaoSchema();
-    const { rows } = await pool.query(
-      `SELECT *, ${LEGAL_STATUS_SQL} AS status FROM (${LEGAL_CERT_BASE_SQL}) x
-       ORDER BY titular_nome ASC`
-    );
-    res.json({ data: rows });
-  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar certificados.' }); }
 });
 
 /**

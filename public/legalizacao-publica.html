@@ -102,19 +102,23 @@
     </div>
 
     <div class="card">
-      <div class="card-title">Alvarás (Funcionamento e Sanitário)</div>
+      <div class="card-title">Situação legal dos clientes</div>
       <div class="toolbar">
-        <button class="btn" onclick="exportAlvarasCSV()">⬇ CSV</button>
-        <button class="btn" onclick="exportAlvarasPDF()">🖨 PDF</button>
+        <button class="btn" onclick="exportCSV()">⬇ CSV</button>
+        <button class="btn" onclick="exportPDF()">🖨 PDF</button>
       </div>
       <div class="filtros">
-        <input id="alv-busca" type="text" placeholder="🔍 Buscar empresa ou CNPJ..." oninput="filtrarAlvaras()" />
-        <select id="alv-tipo" onchange="filtrarAlvaras()">
-          <option value="todos">Todos os tipos</option>
-          <option value="funcionamento">Funcionamento</option>
-          <option value="sanitario">Sanitário</option>
+        <input id="busca" type="text" placeholder="🔍 Buscar empresa, titular ou CNPJ/CPF..." oninput="filtrar()" />
+        <select id="situacao" onchange="filtrar()">
+          <option value="todas">Todas as situações</option>
+          <option value="func">Alvarás de Funcionamento</option>
+          <option value="sanit">Alvarás Sanitários</option>
+          <option value="cert_pf">Certificado digital PF</option>
+          <option value="cert_pj">Certificado digital PJ</option>
+          <option value="ecac">Procurações E-CAC</option>
+          <option value="fgts">Procurações FGTS Digital</option>
         </select>
-        <select id="alv-status" onchange="filtrarAlvaras()">
+        <select id="status" onchange="filtrar()">
           <option value="todos">Todos os status</option>
           <option value="vencido">🔴 Vencido</option>
           <option value="vencendo">🟡 Vencendo</option>
@@ -125,41 +129,11 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Empresa</th><th>CNPJ</th><th>Tipo</th><th>Status</th><th></th></tr></thead>
-          <tbody id="alv-tbody"><tr><td colspan="5" class="loading">Carregando...</td></tr></tbody>
+          <thead><tr><th>Empresa</th><th>Alvarás (Funcionamento e Sanitário)</th><th>Certificado Digital (PF e PJ)</th><th>Procuração E-CAC</th><th>Procuração FGTS Digital</th><th></th></tr></thead>
+          <tbody id="tbody"><tr><td colspan="6" class="loading">Carregando...</td></tr></tbody>
         </table>
       </div>
-      <div class="pagination" id="alv-pagination"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Certificados Digitais (PJ e PF)</div>
-      <div class="toolbar">
-        <button class="btn" onclick="exportCertCSV()">⬇ CSV</button>
-        <button class="btn" onclick="exportCertPDF()">🖨 PDF</button>
-      </div>
-      <div class="filtros">
-        <input id="cert-busca" type="text" placeholder="🔍 Buscar empresa, titular ou documento..." oninput="filtrarCert()" />
-        <select id="cert-tipo" onchange="filtrarCert()">
-          <option value="todos">PJ e PF</option>
-          <option value="pj">PJ</option>
-          <option value="pf">PF</option>
-        </select>
-        <select id="cert-status" onchange="filtrarCert()">
-          <option value="todos">Todos os status</option>
-          <option value="vencido">🔴 Vencido</option>
-          <option value="vencendo">🟡 Vencendo</option>
-          <option value="ok">🟢 Em dia</option>
-          <option value="sem_data">⚪ Sem data cadastrada</option>
-        </select>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Titular</th><th>Tipo</th><th>Documento</th><th>Status</th></tr></thead>
-          <tbody id="cert-tbody"><tr><td colspan="4" class="loading">Carregando...</td></tr></tbody>
-        </table>
-      </div>
-      <div class="pagination" id="cert-pagination"></div>
+      <div class="pagination" id="pagination"></div>
     </div>
   </div>
 </div>
@@ -186,13 +160,14 @@
 
 <script>
 let _token = null, _user = null;
-let _alvaras = [], _certificados = [];
-let _alvPage = 1, _certPage = 1, _inatClienteId = null;
+let _linhas = [], _page = 1, _inatClienteId = null;
 const PAGE_SIZE = 25;
+const SITUACOES = ['func', 'sanit', 'cert_pj', 'cert_pf', 'ecac', 'fgts'];
 
 function api(path, opts) {
   return fetch(path, Object.assign({}, opts, { headers: Object.assign({ Authorization: 'Bearer ' + _token }, (opts && opts.headers) || {}) }));
 }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 async function login() {
   const email = document.getElementById('l-email').value.trim();
@@ -229,11 +204,10 @@ function mostrarApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-screen').style.display = 'block';
   document.getElementById('app-nome').textContent = _user.name;
-  carregarTudo();
+  carregar();
 }
 
-function _soData(d) { return d ? String(d).slice(0, 10) : ''; }
-function _fmtData(d) { return d ? new Date(_soData(d) + 'T00:00:00').toLocaleDateString('pt-BR') : '—'; }
+function fmtData(d) { return d ? new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString('pt-BR') : ''; }
 
 const STATUS_INFO = {
   vencido:     { cor: '#c0362c', bg: '#fff5f5', label: '🔴 Vencido' },
@@ -242,47 +216,49 @@ const STATUS_INFO = {
   ok:          { cor: '#38a169', bg: '#f0fff4', label: '🟢 Em dia' },
   sem_data:    { cor: '#718096', bg: '#f7fafc', label: '⚪ Sem data' },
 };
-function badge(status) {
-  const m = STATUS_INFO[status] || STATUS_INFO.sem_data;
-  return `<span style="font-weight:700;color:${m.cor};background:${m.bg};padding:3px 10px;border-radius:12px;font-size:12px;white-space:nowrap">${m.label}</span>`;
-}
 
-async function carregarTudo() {
-  await Promise.all([carregarResumo(), carregarAlvaras(), carregarCertificados()]);
-}
-
-async function carregarResumo() {
-  const res = await api('/api/data/legalizacao/resumo');
+async function carregar() {
+  const res = await api('/api/data/legalizacao/painel');
   if (res.status === 401 || res.status === 403) { sair(); return; }
-  if (!res.ok) return;
-  const { alvaras, certificados } = await res.json();
-  document.getElementById('qtd-vencido').textContent = (alvaras.vencido || 0) + (certificados.vencido || 0);
-  document.getElementById('qtd-vencendo').textContent = (alvaras.vencendo || 0) + (certificados.vencendo || 0);
-  document.getElementById('qtd-solicitacao').textContent = alvaras.solicitacao || 0;
-  document.getElementById('qtd-ok').textContent = (alvaras.ok || 0) + (certificados.ok || 0);
-}
-
-// ── ALVARÁS ──────────────────────────────────────────────────────────
-async function carregarAlvaras() {
-  const res = await api('/api/data/legalizacao/alvaras');
-  if (!res.ok) return;
+  if (!res.ok) { document.getElementById('tbody').innerHTML = '<tr><td colspan="6" class="empty-msg">Erro ao carregar.</td></tr>'; return; }
   const { data } = await res.json();
-  _alvaras = data || [];
-  filtrarAlvaras();
+  _linhas = data || [];
+  renderResumo();
+  filtrar();
 }
 
-function alvarasFiltrados() {
-  const busca = (document.getElementById('alv-busca').value || '').toLowerCase().trim();
-  const tipo = document.getElementById('alv-tipo').value;
-  const status = document.getElementById('alv-status').value;
-  let lista = _alvaras;
-  if (tipo !== 'todos') lista = lista.filter(a => a.tipo === tipo);
-  if (status !== 'todos') lista = lista.filter(a => a.status === status);
-  if (busca) lista = lista.filter(a => (a.nome_empresa || '').toLowerCase().includes(busca) || (a.cnpj || '').includes(busca));
+/** O item (Func., Sanit., Cert. PJ/PF, ECAC, FGTS) de uma linha — null se aquela linha não tem. */
+function item(l, sit) {
+  if (sit === 'cert_pj') return l.cert.tipo === 'pj' ? l.cert : null;
+  if (sit === 'cert_pf') return l.cert.tipo === 'pf' ? l.cert : null;
+  return l[sit] || null;
+}
+function statusDe(l, sit) { const i = item(l, sit); return i ? [i.status] : []; }
+
+function renderResumo() {
+  const cont = { vencido: 0, vencendo: 0, solicitacao: 0, ok: 0 };
+  _linhas.forEach(l => SITUACOES.forEach(s => statusDe(l, s).forEach(st => { if (st in cont) cont[st]++; })));
+  document.getElementById('qtd-vencido').textContent = cont.vencido;
+  document.getElementById('qtd-vencendo').textContent = cont.vencendo;
+  document.getElementById('qtd-solicitacao').textContent = cont.solicitacao;
+  document.getElementById('qtd-ok').textContent = cont.ok;
+}
+
+function linhasFiltradas() {
+  const busca = (document.getElementById('busca').value || '').toLowerCase().trim();
+  const sit = document.getElementById('situacao').value;
+  const status = document.getElementById('status').value;
+  let lista = _linhas;
+  if (busca) lista = lista.filter(l => (l.nome_empresa || '').toLowerCase().includes(busca) || (l.cnpj || '').includes(busca));
+  if (sit !== 'todas') lista = lista.filter(l => item(l, sit));
+  if (status !== 'todos') {
+    const alvo = sit === 'todas' ? SITUACOES : [sit];
+    lista = lista.filter(l => alvo.some(s => statusDe(l, s).includes(status)));
+  }
   return lista;
 }
 
-function filtrarAlvaras() { _alvPage = 1; goPageAlvaras(1); }
+function filtrar() { _page = 1; goPage(1); }
 
 function paginar(lista, page) {
   const pages = Math.max(1, Math.ceil(lista.length / PAGE_SIZE));
@@ -290,146 +266,102 @@ function paginar(lista, page) {
   return { items: lista.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE), page: p, pages, total: lista.length };
 }
 
-function renderPaginacao(containerId, pg, fnName) {
-  const el = document.getElementById(containerId);
+function renderPaginacao(pg) {
+  const el = document.getElementById('pagination');
   if (pg.total <= PAGE_SIZE) { el.innerHTML = ''; return; }
-  let html = `<span class="total">Total: ${pg.total}</span>`;
+  let html = '<span class="total">Total: ' + pg.total + '</span>';
   for (let i = 1; i <= pg.pages; i++) {
     if (pg.pages > 9 && Math.abs(i - pg.page) > 2 && i !== 1 && i !== pg.pages) {
       if (i === 2 || i === pg.pages - 1) html += '<span style="align-self:center">…</span>';
       continue;
     }
-    html += `<button class="${i === pg.page ? 'ativo' : ''}" onclick="${fnName}(${i})">${i}</button>`;
+    html += '<button class="' + (i === pg.page ? 'ativo' : '') + '" onclick="goPage(' + i + ')">' + i + '</button>';
   }
   el.innerHTML = html;
 }
 
-function goPageAlvaras(p) {
-  const tbody = document.getElementById('alv-tbody');
-  const lista = alvarasFiltrados();
+/** Selo de status + vencimento (só leitura). */
+function celula(rotulo, i) {
+  if (!i) return '<span style="color:var(--gray-400)">—</span>';
+  const m = STATUS_INFO[i.status] || STATUS_INFO.sem_data;
+  const dica = i.status === 'solicitacao' && i.consulta_resumo ? ' title="' + esc(i.consulta_resumo) + '"' : '';
+  return '<div style="margin-bottom:6px">' +
+    (rotulo ? '<span style="font-size:11px;color:var(--gray-400);margin-right:4px">' + rotulo + '</span>' : '') +
+    '<span' + dica + ' style="font-weight:700;color:' + m.cor + ';background:' + m.bg + ';padding:3px 10px;border-radius:12px;font-size:12px;white-space:nowrap">' + m.label + '</span>' +
+    (i.vencimento ? ' <span style="font-size:11px;color:var(--gray-500)">' + fmtData(i.vencimento) + '</span>' : '') + '</div>';
+}
+
+function goPage(p) {
+  const tbody = document.getElementById('tbody');
+  const lista = linhasFiltradas();
   if (!lista.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty-msg">Nenhum alvará encontrado.</td></tr>';
-    document.getElementById('alv-pagination').innerHTML = '';
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-msg">Nenhum cliente encontrado.</td></tr>';
+    document.getElementById('pagination').innerHTML = '';
     return;
   }
   const pg = paginar(lista, p);
-  _alvPage = pg.page;
-  const tipoLabel = { funcionamento: 'Funcionamento', sanitario: 'Sanitário' };
-  tbody.innerHTML = pg.items.map(a => `<tr>
-    <td><b>${a.nome_empresa || '—'}</b></td>
-    <td style="font-size:12px;color:var(--gray-500)">${a.cnpj || '—'}</td>
-    <td>${tipoLabel[a.tipo] || a.tipo}</td>
-    <td>${badge(a.status)}</td>
-    <td>${a.cliente_id ? `<button class="btn-icon" title="Solicitar inativação deste cliente" onclick="abrirModalInativar('${a.cliente_id}','${(a.nome_empresa||'').replace(/'/g,"\\'")}')">🚫</button>` : ''}</td>
-  </tr>`).join('');
-  renderPaginacao('alv-pagination', pg, 'goPageAlvaras');
-}
-
-function exportAlvarasCSV() {
-  const lista = alvarasFiltrados();
-  if (!lista.length) { alert('Nenhum dado para exportar.'); return; }
-  const statusLabel = { vencido: 'Vencido', vencendo: 'Vencendo', solicitacao: 'Solicitação em andamento', ok: 'Em dia', sem_data: 'Sem data' };
-  const tipoLabel = { funcionamento: 'Funcionamento', sanitario: 'Sanitário' };
-  const header = ['Empresa', 'CNPJ', 'Tipo', 'Status'].join(';');
-  const rows = lista.map(a => [a.nome_empresa || '', a.cnpj || '', tipoLabel[a.tipo] || a.tipo, statusLabel[a.status] || a.status]
-    .map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
-  baixarCSV([header, ...rows].join('\n'), 'legalizacao_alvaras');
-}
-
-function exportAlvarasPDF() {
-  const lista = alvarasFiltrados();
-  if (!lista.length) { alert('Nenhum dado para exportar.'); return; }
-  const statusLabel = { vencido: '🔴 Vencido', vencendo: '🟡 Vencendo', solicitacao: '🔵 Solicitação', ok: '🟢 Em dia', sem_data: '⚪ Sem data' };
-  const tipoLabel = { funcionamento: 'Funcionamento', sanitario: 'Sanitário' };
-  const rows = lista.map(a => `<tr><td>${a.nome_empresa || '—'}</td><td>${a.cnpj || '—'}</td><td>${tipoLabel[a.tipo] || a.tipo}</td><td>${statusLabel[a.status] || a.status}</td></tr>`).join('');
-  abrirJanelaPDF('Legalização — Alvarás', ['Empresa', 'CNPJ', 'Tipo', 'Status'], rows, lista.length);
-}
-
-// ── CERTIFICADOS ─────────────────────────────────────────────────────
-async function carregarCertificados() {
-  const res = await api('/api/data/legalizacao/certificados');
-  if (!res.ok) return;
-  const { data } = await res.json();
-  _certificados = data || [];
-  filtrarCert();
-}
-
-function certFiltrados() {
-  const busca = (document.getElementById('cert-busca').value || '').toLowerCase().trim();
-  const tipo = document.getElementById('cert-tipo').value;
-  const status = document.getElementById('cert-status').value;
-  let lista = _certificados;
-  if (tipo !== 'todos') lista = lista.filter(c => c.tipo === tipo);
-  if (status !== 'todos') lista = lista.filter(c => c.status === status);
-  if (busca) lista = lista.filter(c => (c.titular_nome || '').toLowerCase().includes(busca) || (c.titular_documento || '').includes(busca));
-  return lista;
-}
-
-function filtrarCert() { _certPage = 1; goPageCert(1); }
-
-function goPageCert(p) {
-  const tbody = document.getElementById('cert-tbody');
-  const lista = certFiltrados();
-  if (!lista.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty-msg">Nenhum certificado encontrado.</td></tr>';
-    document.getElementById('cert-pagination').innerHTML = '';
-    return;
-  }
-  const pg = paginar(lista, p);
-  _certPage = pg.page;
-  tbody.innerHTML = pg.items.map(c => {
-    const semCadastro = c.sem_cadastro_acessorias
-      ? '<br><span style="font-size:11px;color:var(--gray-500)">⚠️ Não há cadastro no Acessórias</span>' : '';
-    return `<tr>
-      <td><b>${c.titular_nome}</b>${semCadastro}</td>
-      <td>${c.tipo.toUpperCase()}</td>
-      <td style="font-size:12px;color:var(--gray-500)">${c.titular_documento || '—'}</td>
-      <td>${badge(c.status)}</td>
-    </tr>`;
+  _page = pg.page;
+  tbody.innerHTML = pg.items.map(l => {
+    const semCadastro = l.sem_cadastro_acessorias ? '<div style="font-size:11px;color:var(--gray-500)">⚠️ Não há cadastro no Acessórias</div>' : '';
+    const alvaras = l.func ? celula('Func.', l.func) + (l.sanit ? celula('Sanit.', l.sanit) : '') : '<span style="color:var(--gray-400)">—</span>';
+    const inativar = l.cliente_id
+      ? '<button class="btn-icon" title="Solicitar inativação deste cliente" data-id="' + l.cliente_id + '" data-nome="' + esc(l.nome_empresa) + '" onclick="abrirModalInativar(this.dataset.id,this.dataset.nome)">🚫</button>' : '';
+    return '<tr>' +
+      '<td><b>' + esc(l.nome_empresa || '—') + '</b><div style="font-size:11px;color:var(--gray-400)">' + esc(l.cnpj) + '</div>' + semCadastro + '</td>' +
+      '<td>' + alvaras + '</td>' +
+      '<td>' + celula(l.cert.tipo.toUpperCase(), l.cert) + '</td>' +
+      '<td>' + celula('', l.ecac) + '</td>' +
+      '<td>' + celula('', l.fgts) + '</td>' +
+      '<td>' + inativar + '</td></tr>';
   }).join('');
-  renderPaginacao('cert-pagination', pg, 'goPageCert');
+  renderPaginacao(pg);
 }
 
-function exportCertCSV() {
-  const lista = certFiltrados();
+// ── EXPORT ───────────────────────────────────────────────────────────
+const STATUS_TXT = { vencido: 'Vencido', vencendo: 'Vencendo', solicitacao: 'Solicitação em andamento', ok: 'Em dia', sem_data: 'Sem data' };
+const STATUS_TXT_PDF = { vencido: '🔴 Vencido', vencendo: '🟡 Vencendo', solicitacao: '🔵 Solicitação', ok: '🟢 Em dia', sem_data: '⚪ Sem data' };
+const COLS_EXPORT = ['Alvará Funcionamento', 'Venc. Funcionamento', 'Alvará Sanitário', 'Venc. Sanitário',
+  'Certificado Digital', 'Venc. Certificado', 'Procuração ECAC', 'Venc. ECAC', 'Procuração FGTS Digital', 'Venc. FGTS'];
+
+function colunasExport(l, labels) {
+  const par = i => i ? [labels[i.status] || i.status, i.vencimento ? fmtData(i.vencimento) : ''] : ['', ''];
+  return [par(l.func), par(l.sanit), par(l.cert), par(l.ecac), par(l.fgts)].flat();
+}
+
+function exportCSV() {
+  const lista = linhasFiltradas();
   if (!lista.length) { alert('Nenhum dado para exportar.'); return; }
-  const statusLabel = { vencido: 'Vencido', vencendo: 'Vencendo', ok: 'Em dia', sem_data: 'Sem data' };
-  const header = ['Titular', 'Tipo', 'Documento', 'Status', 'Cadastro Acessórias'].join(';');
-  const rows = lista.map(c => [c.titular_nome || '', c.tipo.toUpperCase(), c.titular_documento || '', statusLabel[c.status] || c.status, c.sem_cadastro_acessorias ? 'Não há cadastro' : 'Sim']
-    .map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
-  baixarCSV([header, ...rows].join('\n'), 'legalizacao_certificados');
-}
-
-function exportCertPDF() {
-  const lista = certFiltrados();
-  if (!lista.length) { alert('Nenhum dado para exportar.'); return; }
-  const statusLabel = { vencido: '🔴 Vencido', vencendo: '🟡 Vencendo', ok: '🟢 Em dia', sem_data: '⚪ Sem data' };
-  const rows = lista.map(c => `<tr><td>${c.titular_nome}</td><td>${c.tipo.toUpperCase()}</td><td>${c.titular_documento || '—'}</td>` +
-    `<td>${statusLabel[c.status] || c.status}</td><td>${c.sem_cadastro_acessorias ? '⚠️ Não há cadastro' : 'Sim'}</td></tr>`).join('');
-  abrirJanelaPDF('Legalização — Certificados Digitais', ['Titular', 'Tipo', 'Documento', 'Status', 'Cadastro Acessórias'], rows, lista.length);
-}
-
-// ── EXPORT HELPERS ───────────────────────────────────────────────────
-function baixarCSV(csv, nomeArq) {
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const header = ['Empresa', 'CNPJ/CPF', 'Cadastro Acessórias', 'Tipo Certificado'].concat(COLS_EXPORT).join(';');
+  const rows = lista.map(l => [l.nome_empresa || '', l.cnpj || '', l.sem_cadastro_acessorias ? 'Não há cadastro' : 'Sim', l.cert.tipo.toUpperCase()]
+    .concat(colunasExport(l, STATUS_TXT)).map(v => '"' + String(v).replace(/"/g, '""') + '"').join(';'));
+  const blob = new Blob(['﻿' + [header].concat(rows).join('\n')], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  link.href = url; link.download = `${nomeArq}_${new Date().toISOString().slice(0, 10)}.csv`;
+  link.href = url; link.download = 'legalizacao_' + new Date().toISOString().slice(0, 10) + '.csv';
   link.click(); URL.revokeObjectURL(url);
 }
 
+function exportPDF() {
+  const lista = linhasFiltradas();
+  if (!lista.length) { alert('Nenhum dado para exportar.'); return; }
+  const rows = lista.map(l => {
+    const c = colunasExport(l, STATUS_TXT_PDF);
+    const cel = i => (c[i] || c[i + 1]) ? (c[i] || '—') + '<br><span style="color:#666">' + (c[i + 1] || '') + '</span>' : '—';
+    return '<tr><td><b>' + esc(l.nome_empresa) + '</b><br><span style="color:#666">' + esc(l.cnpj) + (l.sem_cadastro_acessorias ? ' · ⚠️ sem cadastro no Acessórias' : '') + '</span></td>' +
+      '<td>' + cel(0) + '</td><td>' + cel(2) + '</td><td>' + cel(4) + '</td><td>' + cel(6) + '</td><td>' + cel(8) + '</td></tr>';
+  }).join('');
+  abrirJanelaPDF('Legalização', ['Empresa', 'Alvará Funcionamento', 'Alvará Sanitário', 'Certificado Digital', 'Procuração ECAC', 'Procuração FGTS Digital'], rows, lista.length);
+}
+
 function abrirJanelaPDF(titulo, colunas, linhasHtml, total) {
-  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
-  <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
-  h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
-  table{width:100%;border-collapse:collapse;font-size:10px}
-  th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
-  td{padding:5px 8px;border-bottom:1px solid #eee}tr:nth-child(even) td{background:#f8f8f8}
-  @media print{body{margin:10px}}</style></head><body>
-  <h1>${titulo}</h1>
-  <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${total} registro${total !== 1 ? 's' : ''}</p>
-  <table><thead><tr>${colunas.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${linhasHtml}</tbody></table>
-  <script>window.onload=()=>{window.print();}<\/script></body></html>`;
+  const html = '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>' + titulo + '</title>' +
+  '<style>@page{size:landscape}body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}h1{font-size:15px;color:#1a4233;margin-bottom:4px}' +
+  'p.sub{color:#666;font-size:11px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:10px}' +
+  'th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}td{padding:5px 8px;border-bottom:1px solid #eee;vertical-align:top}' +
+  'tr:nth-child(even) td{background:#f8f8f8}@media print{body{margin:10px}}</style></head><body>' +
+  '<h1>' + titulo + '</h1><p class="sub">Gerado em: ' + new Date().toLocaleString('pt-BR') + ' | Total: ' + total + ' registro' + (total !== 1 ? 's' : '') + '</p>' +
+  '<table><thead><tr>' + colunas.map(c => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>' + linhasHtml + '</tbody></table>' +
+  '<scr' + 'ipt>window.onload=function(){window.print();}</scr' + 'ipt></body></html>';
   const win = window.open('', '_blank');
   if (!win) { alert('Permita popups para exportar PDF.'); return; }
   win.document.write(html); win.document.close();

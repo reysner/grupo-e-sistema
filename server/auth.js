@@ -90,7 +90,10 @@ function requireAuth(req, res, next) {
     // admin pode chamar (excluir, editar direto, aprovar/rejeitar
     // solicitação) continuam atrás de requireAdmin normalmente — isso aqui
     // só libera o colaborador a CHEGAR nas rotas /legalizacao.
-    const isLegalizacaoRoute = req.path && req.path.includes('/legalizacao');
+    // Só LEITURA + enviar solicitação de inativação: quem tem a flag mas não é
+    // admin nunca edita datas/certificados pela API (PUT/POST/PATCH/DELETE).
+    const isLegalizacaoRoute = req.path && req.path.includes('/legalizacao')
+      && (req.method === 'GET' || req.path.includes('/solicitar-inativacao'));
 
     // Usuário contábil só pode acessar rotas de tickets (+ Minha Nota/Legalização, se as flags estiverem ligadas) — bloqueia o resto.
     if (payload.role === 'contabil') {
