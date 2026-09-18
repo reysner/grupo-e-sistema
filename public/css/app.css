@@ -608,3 +608,35 @@ body.dark-mode .dark-toggle-switch::after      { transform:translateX(15px); }
  
 .radar-ok { color: #2e7d32; font-weight: 600; padding: 12px 0; }
 .radar-erro { color: #c62828; font-weight: 600; padding: 12px 0; }
+
+/* ── Legalização: KPIs coloridos + dashboards por situação (rosca) ── */
+.lg-caption { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #2a6e4a; margin: 0 0 10px; }
+.lg-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 22px; }
+.lg-kpi { position: relative; overflow: hidden; border-radius: 18px; padding: 20px 22px; color: #fff; box-shadow: 0 10px 24px rgba(16, 24, 40, .16); }
+.lg-kpi-ico { position: absolute; right: 14px; top: 6px; font-size: 54px; opacity: .2; line-height: 1; }
+.lg-kpi-label { font-size: 12px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; opacity: .95; }
+.lg-kpi-num { font-size: 46px; font-weight: 800; line-height: 1.05; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.lg-kpi-sub { font-size: 12px; opacity: .88; margin-top: 4px; }
+.lg-kpi.venc  { background: linear-gradient(135deg, #f0555b 0%, #b42318 100%); }
+.lg-kpi.avenc { background: linear-gradient(135deg, #f7b500 0%, #d27f00 100%); }
+.lg-kpi.soli  { background: linear-gradient(135deg, #4c8dff 0%, #1d4ed8 100%); }
+.lg-kpi.ok    { background: linear-gradient(135deg, #34c07a 0%, #12704a 100%); }
+
+.lg-dash { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.lg-card { display: flex; gap: 18px; align-items: center; background: var(--white, #fff); border: 2px solid transparent; border-radius: 20px; padding: 18px 20px; cursor: pointer; box-shadow: 0 4px 16px rgba(16, 24, 40, .08); transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+.lg-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px rgba(16, 24, 40, .15); }
+.lg-card.ativo { border-color: #2a6e4a; box-shadow: 0 0 0 4px rgba(42, 110, 74, .16), 0 14px 28px rgba(16, 24, 40, .14); }
+.lg-donut { flex: 0 0 108px; height: 108px; border-radius: 50%; display: grid; place-items: center; }
+.lg-donut-in { width: 76px; height: 76px; border-radius: 50%; background: var(--white, #fff); display: grid; place-items: center; text-align: center; box-shadow: inset 0 0 0 1px rgba(16, 24, 40, .05); }
+.lg-donut-num { font-size: 24px; font-weight: 800; color: var(--g700, #1f5040); line-height: 1; font-variant-numeric: tabular-nums; }
+.lg-donut-sub { font-size: 10px; color: var(--gray-400, #94a3b8); text-transform: uppercase; letter-spacing: .06em; margin-top: 2px; }
+.lg-body { flex: 1; min-width: 0; }
+.lg-titulo { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; color: var(--g700, #1f5040); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 10px; }
+.lg-ico { font-size: 20px; }
+.lg-leg { display: grid; grid-template-columns: auto 1fr auto; column-gap: 8px; row-gap: 4px; align-items: center; font-size: 12.5px; color: var(--gray-500, #68748a); }
+.lg-dot { width: 10px; height: 10px; border-radius: 50%; }
+.lg-leg b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.lg-prox { margin-top: 10px; font-size: 11.5px; line-height: 1.35; color: var(--gray-500, #68748a); background: var(--gray-100, #eef0f3); padding: 6px 10px; border-radius: 8px; }
+.lg-vazio { font-size: 12.5px; line-height: 1.4; color: var(--gray-400, #94a3b8); }
+@media (max-width: 1000px) { .lg-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .lg-kpi-num { font-size: 36px; } .lg-card { flex-direction: column; text-align: center; } .lg-leg { text-align: left; } }

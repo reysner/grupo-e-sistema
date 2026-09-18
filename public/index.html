@@ -1000,28 +1000,16 @@
         <section id="page-legalizacao" class="page admin-only" hidden>
 
           <!-- RESUMO (segue a situação escolhida no filtro) -->
-          <div id="legal-resumo-caption" style="font-size:12px;color:var(--gray-400);margin:0 0 8px">Resumo geral — todas as situações</div>
-          <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:20px">
-            <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:18px" id="legal-card-vencido">
-              <div style="font-size:11px;font-weight:700;color:#c0362c;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🔴 Vencidos</div>
-              <div id="legal-qtd-vencido" style="font-size:26px;font-weight:800;color:var(--g700)">—</div>
-            </div>
-            <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:18px" id="legal-card-vencendo">
-              <div style="font-size:11px;font-weight:700;color:#c9a227;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🟡 Vencendo (alvará 60d · certificado 10d · procuração 30d)</div>
-              <div id="legal-qtd-vencendo" style="font-size:26px;font-weight:800;color:var(--g700)">—</div>
-            </div>
-            <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:18px" id="legal-card-solicitacao">
-              <div style="font-size:11px;font-weight:700;color:#3182ce;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🔵 Solicitação em andamento</div>
-              <div id="legal-qtd-solicitacao" style="font-size:26px;font-weight:800;color:var(--g700)">—</div>
-            </div>
-            <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:18px" id="legal-card-ok">
-              <div style="font-size:11px;font-weight:700;color:#38a169;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🟢 Em dia</div>
-              <div id="legal-qtd-ok" style="font-size:26px;font-weight:800;color:var(--g700)">—</div>
-            </div>
+          <div id="legal-resumo-caption" class="lg-caption">Resumo geral — todas as situações</div>
+          <div class="lg-kpis">
+            <div class="lg-kpi venc"><div class="lg-kpi-ico">⛔</div><div class="lg-kpi-label">Vencidos</div><div class="lg-kpi-num" id="legal-qtd-vencido">—</div><div class="lg-kpi-sub">precisam de ação agora</div></div>
+            <div class="lg-kpi avenc"><div class="lg-kpi-ico">⏳</div><div class="lg-kpi-label">Vencendo</div><div class="lg-kpi-num" id="legal-qtd-vencendo">—</div><div class="lg-kpi-sub">alvará 60d · certificado 10d · procuração 30d</div></div>
+            <div class="lg-kpi soli"><div class="lg-kpi-ico">📨</div><div class="lg-kpi-label">Solicitação em andamento</div><div class="lg-kpi-num" id="legal-qtd-solicitacao">—</div><div class="lg-kpi-sub">renovação em curso na Prefeitura</div></div>
+            <div class="lg-kpi ok"><div class="lg-kpi-ico">✅</div><div class="lg-kpi-label">Em dia</div><div class="lg-kpi-num" id="legal-qtd-ok">—</div><div class="lg-kpi-sub">tudo certo</div></div>
           </div>
 
           <!-- DASHBOARD POR SITUAÇÃO — um card clicável por filtro -->
-          <div id="legal-dash" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:20px"></div>
+          <div id="legal-dash" class="lg-dash"></div>
 
           <!-- SOLICITAÇÕES DE INATIVAÇÃO (vindas da página pública, colaborador) -->
           <div class="form-card" id="legal-solic-card" style="margin-bottom:20px;display:none">
@@ -1043,11 +1031,9 @@
                 <button class="btn btn-ghost btn-sm" onclick="Legalizacao.exportCSV()">⬇ CSV</button>
                 <button class="btn btn-ghost btn-sm" onclick="Legalizacao.exportPDF()">🖨 PDF</button>
                 <button class="btn btn-ghost btn-sm" onclick="Legalizacao.consultarTodosPrefeitura()" title="Consulta em lote no portal da Prefeitura (hoje só Uberlândia-MG). A rotina noturna já faz isso sozinha às 02:00 — use só se precisar na hora.">🔍 Consultar Alvarás</button>
-                <button class="btn btn-success btn-sm" onclick="Legalizacao.abrirAdicionarSanitario()" style="font-weight:600">+ Adicionar Sanitário</button>
-                <button class="btn btn-success btn-sm" onclick="Legalizacao.abrirAdicionarCertificadoPF()" style="font-weight:600">+ Adicionar Certificado PF</button>
               </div>
             </div>
-            <p style="font-size:12px;color:var(--gray-400);margin:0 0 10px">Todo cliente ativo da Carteira aparece automaticamente. Alvarás vêm da consulta noturna à Prefeitura, certificados da CertiSeguro — o resto é só preencher a data quando descobrir.</p>
+            <p style="font-size:12px;color:var(--gray-400);margin:0 0 10px">Todo cliente ativo da Carteira aparece automaticamente. Tudo sincronizado: alvarás pela consulta noturna à Prefeitura, certificados pela CertiSeguro e procurações pelo e-CAC e FGTS Digital.</p>
             <div class="form-accent"></div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0">
               <input id="legal-busca" type="text" placeholder="🔍 Buscar empresa, titular ou CNPJ/CPF..." oninput="Legalizacao.filtrar()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;min-width:220px;flex:1;max-width:320px" />

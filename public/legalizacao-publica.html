@@ -70,7 +70,38 @@
     .btn-primary{background:var(--green);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:700;cursor:pointer}
     .btn-primary:hover{background:var(--green-light)}
     .btn-danger{background:var(--red);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:700;cursor:pointer}
-  </style>
+    /* ── Legalização: KPIs coloridos + dashboards por situação (rosca) ── */
+    .lg-caption { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #2a6e4a; margin: 0 0 10px; }
+    .lg-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 22px; }
+    .lg-kpi { position: relative; overflow: hidden; border-radius: 18px; padding: 20px 22px; color: #fff; box-shadow: 0 10px 24px rgba(16, 24, 40, .16); }
+    .lg-kpi-ico { position: absolute; right: 14px; top: 6px; font-size: 54px; opacity: .2; line-height: 1; }
+    .lg-kpi-label { font-size: 12px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; opacity: .95; }
+    .lg-kpi-num { font-size: 46px; font-weight: 800; line-height: 1.05; margin-top: 8px; font-variant-numeric: tabular-nums; }
+    .lg-kpi-sub { font-size: 12px; opacity: .88; margin-top: 4px; }
+    .lg-kpi.venc  { background: linear-gradient(135deg, #f0555b 0%, #b42318 100%); }
+    .lg-kpi.avenc { background: linear-gradient(135deg, #f7b500 0%, #d27f00 100%); }
+    .lg-kpi.soli  { background: linear-gradient(135deg, #4c8dff 0%, #1d4ed8 100%); }
+    .lg-kpi.ok    { background: linear-gradient(135deg, #34c07a 0%, #12704a 100%); }
+    
+    .lg-dash { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .lg-card { display: flex; gap: 18px; align-items: center; background: var(--white, #fff); border: 2px solid transparent; border-radius: 20px; padding: 18px 20px; cursor: pointer; box-shadow: 0 4px 16px rgba(16, 24, 40, .08); transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+    .lg-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px rgba(16, 24, 40, .15); }
+    .lg-card.ativo { border-color: #2a6e4a; box-shadow: 0 0 0 4px rgba(42, 110, 74, .16), 0 14px 28px rgba(16, 24, 40, .14); }
+    .lg-donut { flex: 0 0 108px; height: 108px; border-radius: 50%; display: grid; place-items: center; }
+    .lg-donut-in { width: 76px; height: 76px; border-radius: 50%; background: var(--white, #fff); display: grid; place-items: center; text-align: center; box-shadow: inset 0 0 0 1px rgba(16, 24, 40, .05); }
+    .lg-donut-num { font-size: 24px; font-weight: 800; color: var(--g700, #1f5040); line-height: 1; font-variant-numeric: tabular-nums; }
+    .lg-donut-sub { font-size: 10px; color: var(--gray-400, #94a3b8); text-transform: uppercase; letter-spacing: .06em; margin-top: 2px; }
+    .lg-body { flex: 1; min-width: 0; }
+    .lg-titulo { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; color: var(--g700, #1f5040); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 10px; }
+    .lg-ico { font-size: 20px; }
+    .lg-leg { display: grid; grid-template-columns: auto 1fr auto; column-gap: 8px; row-gap: 4px; align-items: center; font-size: 12.5px; color: var(--gray-500, #68748a); }
+    .lg-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .lg-leg b { font-size: 14px; font-variant-numeric: tabular-nums; }
+    .lg-prox { margin-top: 10px; font-size: 11.5px; line-height: 1.35; color: var(--gray-500, #68748a); background: var(--gray-100, #eef0f3); padding: 6px 10px; border-radius: 8px; }
+    .lg-vazio { font-size: 12.5px; line-height: 1.4; color: var(--gray-400, #94a3b8); }
+    @media (max-width: 1000px) { .lg-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 560px) { .lg-kpi-num { font-size: 36px; } .lg-card { flex-direction: column; text-align: center; } .lg-leg { text-align: left; } }
+      </style>
 </head>
 <body>
 
@@ -94,15 +125,15 @@
     </div>
   </div>
   <div class="container">
-    <div id="resumo-caption" style="font-size:12px;color:var(--gray-400);margin-bottom:8px">Resumo geral — todas as situações</div>
-    <div class="cards-row">
-      <div class="stat-card"><div class="stat-label">🔴 Vencidos</div><div class="stat-val" id="qtd-vencido">—</div></div>
-      <div class="stat-card"><div class="stat-label">🟡 Vencendo</div><div class="stat-val" id="qtd-vencendo">—</div></div>
-      <div class="stat-card"><div class="stat-label">🔵 Solicitação</div><div class="stat-val" id="qtd-solicitacao">—</div></div>
-      <div class="stat-card"><div class="stat-label">🟢 Em dia</div><div class="stat-val" id="qtd-ok">—</div></div>
+    <div id="resumo-caption" class="lg-caption">Resumo geral — todas as situações</div>
+    <div class="lg-kpis">
+      <div class="lg-kpi venc"><div class="lg-kpi-ico">⛔</div><div class="lg-kpi-label">Vencidos</div><div class="lg-kpi-num" id="qtd-vencido">—</div><div class="lg-kpi-sub">precisam de ação agora</div></div>
+      <div class="lg-kpi avenc"><div class="lg-kpi-ico">⏳</div><div class="lg-kpi-label">Vencendo</div><div class="lg-kpi-num" id="qtd-vencendo">—</div><div class="lg-kpi-sub">alvará 60d · certificado 10d · procuração 30d</div></div>
+      <div class="lg-kpi soli"><div class="lg-kpi-ico">📨</div><div class="lg-kpi-label">Solicitação em andamento</div><div class="lg-kpi-num" id="qtd-solicitacao">—</div><div class="lg-kpi-sub">renovação em curso na Prefeitura</div></div>
+      <div class="lg-kpi ok"><div class="lg-kpi-ico">✅</div><div class="lg-kpi-label">Em dia</div><div class="lg-kpi-num" id="qtd-ok">—</div><div class="lg-kpi-sub">tudo certo</div></div>
     </div>
 
-    <div id="dash" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;margin-bottom:20px"></div>
+    <div id="dash" class="lg-dash"></div>
 
     <div class="card" id="card-lista">
       <div class="card-title">Situação legal dos clientes</div>
@@ -165,7 +196,7 @@
 let _token = null, _user = null;
 let _linhas = [], _page = 1, _inatClienteId = null;
 const PAGE_SIZE = 25;
-const SITUACOES = ['func', 'sanit', 'cert_pj', 'cert_pf', 'ecac', 'fgts'];
+const SITUACOES = ['func', 'sanit', 'cert_pf', 'cert_pj', 'ecac', 'fgts'];
 const SIT_LABEL = {
   func: 'Alvarás de Funcionamento', sanit: 'Alvarás Sanitários', cert_pf: 'Certificado digital PF',
   cert_pj: 'Certificado digital PJ', ecac: 'Procurações E-CAC', fgts: 'Procurações FGTS Digital',
@@ -274,7 +305,9 @@ function filtrar() { _page = 1; renderResumo(); destacarDash(); goPage(1); }
 
 // ── DASHBOARD POR SITUAÇÃO ───────────────────────────────────────────
 const ORDEM_STATUS = ['vencido', 'vencendo', 'solicitacao', 'ok', 'sem_data'];
-const STATUS_CURTO = { vencido: 'vencido', vencendo: 'vencendo', solicitacao: 'solicitação', ok: 'em dia', sem_data: 'sem data' };
+const STATUS_CURTO = { vencido: 'Vencido', vencendo: 'Vencendo', solicitacao: 'Solicitação', ok: 'Em dia', sem_data: 'Sem data' };
+const COR = { vencido: '#e5484d', vencendo: '#f5b400', solicitacao: '#3b82f6', ok: '#2fb36d', sem_data: '#b6bfcc' };
+const SIT_ICO = { func: '🏢', sanit: '🩺', cert_pf: '👤', cert_pj: '🏛️', ecac: '📜', fgts: '🧾' };
 
 function statsSit(sit) {
   const c = { vencido: 0, vencendo: 0, solicitacao: 0, ok: 0, sem_data: 0 };
@@ -288,29 +321,41 @@ function statsSit(sit) {
   return { c, total: ORDEM_STATUS.reduce((a, k) => a + c[k], 0), proximo };
 }
 
+/** Rosca (conic-gradient): uma fatia por status, na ordem de gravidade. */
+function rosca(c, total) {
+  if (!total) return '#e5e7eb';
+  let acc = 0;
+  const partes = [];
+  ORDEM_STATUS.forEach(k => {
+    if (!c[k]) return;
+    const de = (acc / total) * 100;
+    acc += c[k];
+    partes.push(COR[k] + ' ' + de.toFixed(2) + '% ' + ((acc / total) * 100).toFixed(2) + '%');
+  });
+  return 'conic-gradient(' + partes.join(', ') + ')';
+}
+
 function renderDash() {
   document.getElementById('dash').innerHTML = SITUACOES.map(sit => {
     const { c, total, proximo } = statsSit(sit);
-    const barra = ORDEM_STATUS.filter(k => c[k]).map(k =>
-      '<div title="' + STATUS_INFO[k].label + ': ' + c[k] + '" style="width:' + (c[k] / total * 100).toFixed(2) + '%;background:' + STATUS_INFO[k].cor + ';opacity:' + (k === 'sem_data' ? 0.35 : 1) + '"></div>').join('');
-    const chips = ORDEM_STATUS.filter(k => c[k] || k !== 'solicitacao').map(k =>
-      '<span style="font-size:12px;color:var(--gray-500);white-space:nowrap"><b style="color:' + STATUS_INFO[k].cor + ';font-size:14px">' + c[k] + '</b> ' + STATUS_CURTO[k] + '</span>').join('');
-    return '<div class="stat-card" id="dash-' + sit + '" data-sit="' + sit + '" onclick="filtrarPorSituacao(this.dataset.sit)" title="Clique pra filtrar a lista" style="cursor:pointer;border:2px solid transparent">' +
-      '<div class="stat-label">' + SIT_LABEL[sit] + '</div>' +
+    const linhas = ORDEM_STATUS.filter(k => c[k] || k !== 'solicitacao').map(k =>
+      '<span class="lg-dot" style="background:' + COR[k] + '"></span><span>' + STATUS_CURTO[k] + '</span><b style="color:' + (k === 'sem_data' ? '#8a94a6' : COR[k]) + '">' + c[k] + '</b>').join('');
+    const vazio = sit === 'sanit' ? 'Ainda sem registros — o Sanitário entra sozinho quando a consulta noturna à Prefeitura encontrar.' : 'Nenhum registro ainda.';
+    return '<div id="dash-' + sit + '" class="lg-card" data-sit="' + sit + '" onclick="filtrarPorSituacao(this.dataset.sit)" title="Clique pra filtrar a lista">' +
+      '<div class="lg-donut" style="background:' + rosca(c, total) + '"><div class="lg-donut-in"><div><div class="lg-donut-num">' + total + '</div><div class="lg-donut-sub">cliente' + (total !== 1 ? 's' : '') + '</div></div></div></div>' +
+      '<div class="lg-body"><div class="lg-titulo"><span class="lg-ico">' + SIT_ICO[sit] + '</span>' + SIT_LABEL[sit] + '</div>' +
       (total
-        ? '<div style="display:flex;align-items:baseline;gap:6px;margin:6px 0 10px"><span style="font-size:28px;font-weight:800">' + total + '</span><span style="font-size:12px;color:var(--gray-400)">cliente' + (total !== 1 ? 's' : '') + '</span></div>' +
-          '<div style="display:flex;height:8px;border-radius:6px;overflow:hidden;background:var(--gray-100);margin-bottom:10px">' + barra + '</div>' +
-          '<div style="display:flex;flex-wrap:wrap;gap:4px 12px">' + chips + '</div>' +
-          (proximo ? '<div style="font-size:11px;color:var(--gray-400);margin-top:10px;line-height:1.4">Próximo a vencer: <b>' + esc(proximo.nome) + '</b> · ' + fmtData(proximo.venc) + '</div>' : '')
-        : '<div style="font-size:13px;color:var(--gray-400);margin-top:12px">Nenhum registro ainda.</div>') +
-      '</div>';
+        ? '<div class="lg-leg">' + linhas + '</div>' +
+          (proximo ? '<div class="lg-prox">⏳ Próximo a vencer: <b>' + esc(proximo.nome) + '</b> · ' + fmtData(proximo.venc) + '</div>' : '')
+        : '<div class="lg-vazio">' + vazio + '</div>') +
+      '</div></div>';
   }).join('');
   destacarDash();
 }
 
 function destacarDash() {
   const sel = document.getElementById('situacao').value;
-  SITUACOES.forEach(s => { const el = document.getElementById('dash-' + s); if (el) el.style.borderColor = s === sel ? '#2a6e4a' : 'transparent'; });
+  SITUACOES.forEach(s => { const el = document.getElementById('dash-' + s); if (el) el.classList.toggle('ativo', s === sel); });
 }
 
 /** Clique num dashboard = filtra a lista por aquela situação (clicar de novo volta pra "Todas"). */

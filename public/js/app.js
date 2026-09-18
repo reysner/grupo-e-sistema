@@ -5442,11 +5442,10 @@ window.CAC = CAC;
 // certificado da CertiSeguro; procurações por ora são preenchidas à mão.
 const Legalizacao = (() => {
   const _tk = () => localStorage.getItem('ge_token') || '';
-  let _clientes = [];
   let _linhas = [];
   let _page = 1;
   const PAGE_SIZE = 50;
-  const SITUACOES = ['func', 'sanit', 'cert_pj', 'cert_pf', 'ecac', 'fgts'];
+  const SITUACOES = ['func', 'sanit', 'cert_pf', 'cert_pj', 'ecac', 'fgts'];
   const SIT_LABEL = {
     func: 'Alvarás de Funcionamento', sanit: 'Alvarás Sanitários', cert_pf: 'Certificado digital PF',
     cert_pj: 'Certificado digital PJ', ecac: 'Procurações E-CAC', fgts: 'Procurações FGTS Digital',
@@ -5469,7 +5468,6 @@ const Legalizacao = (() => {
   }
 
   async function load() {
-    await _carregarClientes();
     await Promise.all([_carregarPainel(), _carregarSolicitacoesInativacao()]);
   }
 
@@ -5516,20 +5514,6 @@ const Legalizacao = (() => {
     if (!res.ok) { App.Toast.err('Erro ao rejeitar.'); return; }
     App.Toast.ok('Solicitação rejeitada.');
     await load();
-  }
-
-  async function _carregarClientes() {
-    if (_clientes.length) return;
-    const res = await fetch('/api/data/clientes?status=ativo', { headers: { Authorization: 'Bearer ' + _tk() } });
-    if (!res || !res.ok) return;
-    const { data } = await res.json();
-    _clientes = (data || []).sort((a, b) => (a.nome_empresa || '').localeCompare(b.nome_empresa || '', 'pt-BR'));
-  }
-
-  function _optionsClientes(excluirIds) {
-    const excl = new Set(excluirIds || []);
-    return '<option value="">Selecione a empresa...</option>' +
-      _clientes.filter(c => !excl.has(c.id)).map(c => `<option value="${c.id}">${_esc(c.nome_empresa)} — ${c.cnpj}</option>`).join('');
   }
 
   // ── PAINEL ──────────────────────────────────────────────────────────────
@@ -5585,7 +5569,9 @@ const Legalizacao = (() => {
 
   // ── DASHBOARD POR SITUAÇÃO (pedido do Reysner, 18/09/2026) ──────────────
   const _ORDEM_STATUS = ['vencido', 'vencendo', 'solicitacao', 'ok', 'sem_data'];
-  const _STATUS_CURTO = { vencido: 'vencido', vencendo: 'vencendo', solicitacao: 'solicitação', ok: 'em dia', sem_data: 'sem data' };
+  const _STATUS_CURTO = { vencido: 'Vencido', vencendo: 'Vencendo', solicitacao: 'Solicitação', ok: 'Em dia', sem_data: 'Sem data' };
+  const _COR = { vencido: '#e5484d', vencendo: '#f5b400', solicitacao: '#3b82f6', ok: '#2fb36d', sem_data: '#b6bfcc' };
+  const SIT_ICO = { func: '🏢', sanit: '🩺', cert_pf: '👤', cert_pj: '🏛️', ecac: '📜', fgts: '🧾' };
 
   function _statsSit(sit) {
     const c = { vencido: 0, vencendo: 0, solicitacao: 0, ok: 0, sem_data: 0 };
@@ -5601,34 +5587,45 @@ const Legalizacao = (() => {
     return { c, total: _ORDEM_STATUS.reduce((a, k) => a + c[k], 0), proximo };
   }
 
+  /** Rosca (conic-gradient): uma fatia por status, na ordem de gravidade. */
+  function _rosca(c, total) {
+    if (!total) return '#e5e7eb';
+    let acc = 0;
+    const partes = [];
+    _ORDEM_STATUS.forEach(k => {
+      if (!c[k]) return;
+      const de = (acc / total) * 100;
+      acc += c[k];
+      partes.push(`${_COR[k]} ${de.toFixed(2)}% ${((acc / total) * 100).toFixed(2)}%`);
+    });
+    return `conic-gradient(${partes.join(', ')})`;
+  }
+
   function _renderDashboards() {
     const el = document.getElementById('legal-dash');
     if (!el) return;
     el.innerHTML = SITUACOES.map(sit => {
       const { c, total, proximo } = _statsSit(sit);
-      const barra = _ORDEM_STATUS.filter(k => c[k]).map(k =>
-        `<div title="${STATUS_INFO[k].label}: ${c[k]}" style="width:${(c[k] / total * 100).toFixed(2)}%;background:${STATUS_INFO[k].cor};opacity:${k === 'sem_data' ? 0.35 : 1}"></div>`).join('');
-      const chips = _ORDEM_STATUS.filter(k => c[k] || (k !== 'solicitacao')).map(k =>
-        `<span style="font-size:12px;color:var(--gray-500);white-space:nowrap"><b style="color:${STATUS_INFO[k].cor};font-size:14px">${c[k]}</b> ${_STATUS_CURTO[k]}</span>`).join('');
-      return `<div id="legal-dash-${sit}" onclick="Legalizacao.filtrarPorSituacao('${sit}')" title="Clique pra filtrar a lista" style="cursor:pointer;background:#fff;border:2px solid var(--gray-100);border-radius:12px;padding:16px">` +
-        `<div style="font-size:11px;font-weight:800;color:var(--g700);text-transform:uppercase;letter-spacing:.5px">${SIT_LABEL[sit]}</div>` +
+      const linhas = _ORDEM_STATUS.filter(k => c[k] || k !== 'solicitacao').map(k =>
+        `<span class="lg-dot" style="background:${_COR[k]}"></span><span>${_STATUS_CURTO[k]}</span><b style="color:${k === 'sem_data' ? '#8a94a6' : _COR[k]}">${c[k]}</b>`).join('');
+      const vazio = sit === 'sanit'
+        ? 'Ainda sem registros — o Sanitário entra sozinho quando a consulta noturna à Prefeitura encontrar.'
+        : 'Nenhum registro ainda.';
+      return `<div id="legal-dash-${sit}" class="lg-card" data-sit="${sit}" onclick="Legalizacao.filtrarPorSituacao(this.dataset.sit)" title="Clique pra filtrar a lista">` +
+        `<div class="lg-donut" style="background:${_rosca(c, total)}"><div class="lg-donut-in"><div><div class="lg-donut-num">${total}</div><div class="lg-donut-sub">cliente${total !== 1 ? 's' : ''}</div></div></div></div>` +
+        `<div class="lg-body"><div class="lg-titulo"><span class="lg-ico">${SIT_ICO[sit]}</span>${SIT_LABEL[sit]}</div>` +
         (total
-          ? `<div style="display:flex;align-items:baseline;gap:6px;margin:6px 0 10px"><span style="font-size:28px;font-weight:800;color:var(--g700)">${total}</span><span style="font-size:12px;color:var(--gray-400)">cliente${total !== 1 ? 's' : ''}</span></div>` +
-            `<div style="display:flex;height:8px;border-radius:6px;overflow:hidden;background:var(--gray-100);margin-bottom:10px">${barra}</div>` +
-            `<div style="display:flex;flex-wrap:wrap;gap:4px 12px">${chips}</div>` +
-            (proximo ? `<div style="font-size:11px;color:var(--gray-400);margin-top:10px;line-height:1.4">Próximo a vencer: <b>${_esc(proximo.nome)}</b> · ${_fmtData(proximo.venc)}</div>` : '')
-          : '<div style="font-size:13px;color:var(--gray-400);margin-top:12px">Nenhum registro ainda.</div>') +
-        '</div>';
+          ? `<div class="lg-leg">${linhas}</div>` +
+            (proximo ? `<div class="lg-prox">⏳ Próximo a vencer: <b>${_esc(proximo.nome)}</b> · ${_fmtData(proximo.venc)}</div>` : '')
+          : `<div class="lg-vazio">${vazio}</div>`) +
+        '</div></div>';
     }).join('');
     _destacarDash();
   }
 
   function _destacarDash() {
     const sel = document.getElementById('legal-situacao')?.value || 'todas';
-    SITUACOES.forEach(s => {
-      const el = document.getElementById('legal-dash-' + s);
-      if (el) el.style.borderColor = s === sel ? '#2a6e4a' : '';
-    });
+    SITUACOES.forEach(s => document.getElementById('legal-dash-' + s)?.classList.toggle('ativo', s === sel));
   }
 
   /** Clique num dashboard = filtra a lista por aquela situação (clicar de novo volta pra "Todas"). */
@@ -5727,27 +5724,6 @@ const Legalizacao = (() => {
   }
 
   // ── ALVARÁS ─────────────────────────────────────────────────────────────
-  /** Só pra Sanitário (Funcionamento já aparece pra todo mundo sozinho) — escolhe a empresa que precisa. */
-  function abrirAdicionarSanitario() {
-    const comSanitario = new Set(_linhas.filter(l => l.sanit).map(l => l.cliente_id));
-    App.Modal.open('Adicionar Alvará Sanitário', `<div style="display:grid;gap:12px">
-      <div class="field"><label>Empresa <span class="req">*</span></label>
-        <select id="legal-san-cliente" class="input">${_optionsClientes([...comSanitario])}</select>
-      </div>
-      <div class="field"><label>Data de vencimento</label><input id="legal-san-venc" class="input" type="date" /></div>
-    </div>`, async () => {
-      const clienteId = document.getElementById('legal-san-cliente')?.value;
-      if (!clienteId) { App.Toast.err('Selecione a empresa.'); return; }
-      const venc = document.getElementById('legal-san-venc')?.value || null;
-      const res = await fetch(`/api/data/legalizacao/alvaras/${clienteId}/sanitario`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
-        body: JSON.stringify({ data_vencimento: venc })
-      });
-      if (res && res.ok) { App.Modal.close(); App.Toast.ok('Alvará Sanitário adicionado.'); await _carregarPainel(); }
-      else App.Toast.err('Erro ao adicionar.');
-    });
-  }
-
   /** Editar (ou preencher pela 1ª vez) a data de vencimento de um alvará — sempre por cliente+tipo, nunca por id (a linha pode ainda ser virtual). */
   function abrirFormAlvara(clienteId, tipo) {
     const l = _linhas.find(x => x.cliente_id === clienteId);
@@ -5868,16 +5844,6 @@ const Legalizacao = (() => {
     });
     if (res && res.ok) { App.Modal.close(); App.Toast.ok('Certificado atualizado.'); await _carregarPainel(); }
     else App.Toast.err('Erro ao salvar certificado.');
-  }
-
-  /** "+ Adicionar Certificado PF" — pessoa avulsa (sócio etc.), não é 1-pra-1 com a Carteira. */
-  function abrirAdicionarCertificadoPF() {
-    App.Modal.open('Adicionar Certificado PF', `<div style="display:grid;gap:12px">
-      <div class="field"><label>Nome da pessoa <span class="req">*</span></label><input id="legal-cert-form-titular" class="input" type="text" /></div>
-      <div class="field"><label>CPF</label><input id="legal-cert-form-doc" class="input" type="text" /></div>
-      <div class="field"><label>Data de vencimento</label><input id="legal-cert-form-venc-pf" class="input" type="date" /></div>
-      <div class="field"><label>Observações</label><textarea id="legal-cert-form-obs-pf" class="input" rows="2"></textarea></div>
-    </div>`, salvarCertificadoPF);
   }
 
   function abrirFormCertificadoPF(id) {
@@ -6005,9 +5971,9 @@ const Legalizacao = (() => {
 
   return {
     load, filtrar, filtrarPorSituacao, goPage, _toggleDetalhe,
-    abrirAdicionarSanitario, abrirFormAlvara, salvarAlvara, excluirAlvara,
+    abrirFormAlvara, salvarAlvara, excluirAlvara,
     consultarPrefeitura, consultarTodosPrefeitura, exportCSV, exportPDF,
-    abrirFormCertificadoPJ, salvarCertificadoPJ, abrirAdicionarCertificadoPF, abrirFormCertificadoPF,
+    abrirFormCertificadoPJ, salvarCertificadoPJ, abrirFormCertificadoPF,
     salvarCertificadoPF, excluirCertificado, abrirFormProcuracao, salvarProcuracao,
     aprovarSolicitacaoInativacao, rejeitarSolicitacaoInativacao,
   };

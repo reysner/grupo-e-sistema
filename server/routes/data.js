@@ -4976,6 +4976,43 @@ router.put('/legalizacao/alvaras/:clienteId/:tipo', async (req, res) => {
  * antigo: grava só o status pra virar o badge "Solicitação" (UPSERT — a
  * linha pode ser virtual ainda). Só funciona pra CNPJ de Uberlândia-MG hoje.
  */
+async function gravarAlvaraConsultado(clienteId, tipo, resultado, bloco, vencimento, autor) {
+  let ultimaConsultaStatus = null, resumo = null, dataSolicitacao = null;
+  if (!bloco || !bloco.encontrado) {
+    resumo = (resultado.erros && resultado.erros[0]) || 'Nada encontrado no portal da prefeitura nos últimos 5 anos.';
+  } else if (vencimento) {
+    resumo = `Vencimento encontrado na certidão da prefeitura: ${vencimento.split('-').reverse().join('/')}.`;
+  } else {
+    ultimaConsultaStatus = 'solicitacao_andamento';
+    dataSolicitacao = bloco.solicitacao;
+    const pareceres = (bloco.pareceres || []).map(p => `${p.secretaria}: ${p.parecer}`).join(' · ');
+    resumo = `${bloco.servico || 'Solicitação'} (${bloco.solicitacao || '—'}, nº ${bloco.numeroPlanilha || '—'})${bloco.statusGeral ? ' — ' + bloco.statusGeral : ''}${pareceres ? ' — ' + pareceres : ''}`;
+  }
+  if (vencimento) {
+    // Achou a data real — grava ela de verdade, igual um PUT manual (inclusive
+    // limpando a marca de notificado, pra caso a nova data caia na janela de alerta).
+    await pool.query(
+      `INSERT INTO legalizacao_alvaras (cliente_id, tipo, data_vencimento, ultima_consulta_status, ultima_consulta_resumo, ultima_consulta_data_solicitacao, ultima_consulta_em, criado_por)
+       VALUES ($1,$2,$3,NULL,$4,NULL,NOW(),$5)
+       ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+         data_vencimento = $3, ultima_consulta_status = NULL, ultima_consulta_resumo = $4,
+         ultima_consulta_data_solicitacao = NULL, ultima_consulta_em = NOW(), atualizado_em = NOW(),
+         notificado_vencimento_em = CASE WHEN $3 IS DISTINCT FROM legalizacao_alvaras.data_vencimento THEN NULL ELSE legalizacao_alvaras.notificado_vencimento_em END`,
+      [clienteId, tipo, vencimento, resumo, autor]
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO legalizacao_alvaras (cliente_id, tipo, ultima_consulta_status, ultima_consulta_resumo, ultima_consulta_data_solicitacao, ultima_consulta_em, criado_por)
+       VALUES ($1,$2,$3,$4,$5,NOW(),$6)
+       ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+         ultima_consulta_status = $3, ultima_consulta_resumo = $4,
+         ultima_consulta_data_solicitacao = $5, ultima_consulta_em = NOW()`,
+      [clienteId, tipo, ultimaConsultaStatus, resumo, dataSolicitacao, autor]
+    );
+  }
+  return { ultimaConsultaStatus, resumo, dataSolicitacao };
+}
+
 async function consultarAlvaraPrefeitura(clienteId, tipo, autor) {
     await ensureLegalizacaoSchema();
     const erroHttp = (status, msg) => Object.assign(new Error(msg), { statusHttp: status });
@@ -4986,47 +5023,28 @@ async function consultarAlvaraPrefeitura(clienteId, tipo, autor) {
 
     const { consultarAlvaraUberlandia } = require('../legalizacao/ciclo7Uberlandia');
     const resultado = await consultarAlvaraUberlandia(clienteRows[0].cnpj);
-    const bloco = tipo === 'funcionamento' ? resultado.funcionamento : resultado.sanitario;
-
-    let ultimaConsultaStatus = null, resumo = null, dataSolicitacao = null;
-    if (resultado.nadaEncontrado || !bloco || !bloco.encontrado) {
-      resumo = (resultado.erros && resultado.erros[0]) || 'Nada encontrado no portal da prefeitura nos últimos 5 anos.';
-    } else if (resultado.vencimentoEncontrado) {
-      resumo = `Vencimento encontrado na certidão da prefeitura: ${resultado.vencimentoEncontrado.split('-').reverse().join('/')}.`;
-    } else {
-      ultimaConsultaStatus = 'solicitacao_andamento';
-      dataSolicitacao = bloco.solicitacao;
-      const pareceres = (bloco.pareceres || []).map(p => `${p.secretaria}: ${p.parecer}`).join(' · ');
-      resumo = `${bloco.servico || 'Solicitação'} (${bloco.solicitacao || '—'}, nº ${bloco.numeroPlanilha || '—'})${bloco.statusGeral ? ' — ' + bloco.statusGeral : ''}${pareceres ? ' — ' + pareceres : ''}`;
+    // O portal devolve Funcionamento e Sanitário na MESMA busca. Grava cada um
+    // que foi achado (o Sanitário entra sozinho — sem cadastro manual) e SEMPRE
+    // o tipo pedido (pra marcar a data da última consulta mesmo sem resultado).
+    // A data de vencimento só vale pro tipo que foi de fato achado: o scraper
+    // só extrai data quando UM tipo só aparece, então nunca vai pro tipo errado.
+    const achouFunc = !!resultado.funcionamento?.encontrado, achouSanit = !!resultado.sanitario?.encontrado;
+    const venc = {
+      funcionamento: achouFunc && !achouSanit ? resultado.vencimentoEncontrado : null,
+      sanitario: achouSanit && !achouFunc ? resultado.vencimentoEncontrado : null,
+    };
+    const gravados = {};
+    for (const t of ['funcionamento', 'sanitario']) {
+      const bloco = resultado[t];
+      if (t !== tipo && !bloco?.encontrado) continue;
+      gravados[t] = await gravarAlvaraConsultado(clienteId, t, resultado, bloco, venc[t], autor);
     }
-
-    if (resultado.vencimentoEncontrado) {
-      // Achou a data real — grava ela de verdade, igual um PUT manual
-      // (inclusive limpando a marca de notificado, pra caso a nova data
-      // caia dentro da janela de alerta de novo).
-      await pool.query(
-        `INSERT INTO legalizacao_alvaras (cliente_id, tipo, data_vencimento, ultima_consulta_status, ultima_consulta_resumo, ultima_consulta_data_solicitacao, ultima_consulta_em, criado_por)
-         VALUES ($1,$2,$3,NULL,$4,NULL,NOW(),$5)
-         ON CONFLICT (cliente_id, tipo) DO UPDATE SET
-           data_vencimento = $3, ultima_consulta_status = NULL, ultima_consulta_resumo = $4,
-           ultima_consulta_data_solicitacao = NULL, ultima_consulta_em = NOW(), atualizado_em = NOW(),
-           notificado_vencimento_em = CASE WHEN $3 IS DISTINCT FROM legalizacao_alvaras.data_vencimento THEN NULL ELSE legalizacao_alvaras.notificado_vencimento_em END`,
-        [clienteId, tipo, resultado.vencimentoEncontrado, resumo, autor]
-      );
-    } else {
-      await pool.query(
-        `INSERT INTO legalizacao_alvaras (cliente_id, tipo, ultima_consulta_status, ultima_consulta_resumo, ultima_consulta_data_solicitacao, ultima_consulta_em, criado_por)
-         VALUES ($1,$2,$3,$4,$5,NOW(),$6)
-         ON CONFLICT (cliente_id, tipo) DO UPDATE SET
-           ultima_consulta_status = $3, ultima_consulta_resumo = $4,
-           ultima_consulta_data_solicitacao = $5, ultima_consulta_em = NOW()`,
-        [clienteId, tipo, ultimaConsultaStatus, resumo, dataSolicitacao, autor]
-      );
-    }
+    const g = gravados[tipo];
     return {
-      ok: true, encontrado: !!ultimaConsultaStatus || !!resultado.vencimentoEncontrado,
-      vencimentoEncontrado: resultado.vencimentoEncontrado || null,
-      resumo, dataSolicitacao, anoConsultado: resultado.ano, anosVarridos: resultado.anosVarridos,
+      ok: true, encontrado: !!g.ultimaConsultaStatus || !!venc[tipo],
+      vencimentoEncontrado: venc[tipo] || null,
+      resumo: g.resumo, dataSolicitacao: g.dataSolicitacao, anoConsultado: resultado.ano, anosVarridos: resultado.anosVarridos,
+      sanitarioEncontrado: achouSanit,
     };
 }
 
@@ -5132,22 +5150,6 @@ router.put('/legalizacao/certificados/:clienteId', async (req, res) => {
     await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', 'Certificado PJ atualizado', req);
     res.json({ ok: true, id: rows[0].id });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao salvar certificado.' }); }
-});
-
-/** POST /api/data/legalizacao/certificados — só pra PF avulso (sócio etc.), que não é 1-pra-1 com um cliente da Carteira. */
-router.post('/legalizacao/certificados', async (req, res) => {
-  try {
-    await ensureLegalizacaoSchema();
-    const { titular_nome, titular_documento, data_vencimento, observacoes } = req.body;
-    if (!titular_nome) return res.status(400).json({ error: 'Informe o titular do certificado.' });
-    const { rows } = await pool.query(
-      `INSERT INTO legalizacao_certificados (cliente_id, tipo, titular_nome, titular_documento, data_vencimento, observacoes, criado_por)
-       VALUES (NULL,'pf',$1,$2,$3,$4,$5) RETURNING id`,
-      [titular_nome, titular_documento || null, data_vencimento || null, observacoes || null, req.user.name]
-    );
-    await registrarLog(req.user.id, req.user.name, 'criar', 'legalizacao', 'Certificado PF cadastrado', req);
-    res.status(201).json({ ok: true, id: rows[0].id });
-  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao cadastrar certificado.' }); }
 });
 
 router.patch('/legalizacao/certificados/:id', requireAdmin, async (req, res) => {
