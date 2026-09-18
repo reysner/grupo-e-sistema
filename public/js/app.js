@@ -5706,7 +5706,7 @@ const Legalizacao = (() => {
   async function consultarTodosPrefeitura() {
     const alvos = _alvarasFiltradas().filter(a => a.tipo === 'funcionamento' && a.cnpj);
     if (!alvos.length) { App.Toast.err('Nenhum alvará de Funcionamento pra consultar nesse filtro.'); return; }
-    if (!confirm(`Isso vai consultar ${alvos.length} empresa(s) no portal da Prefeitura, uma de cada vez (só funciona pras de Uberlândia-MG — as outras voltam "nada encontrado"). Pode levar vários minutos. Continuar?`)) return;
+    if (!confirm(`Isso vai consultar ${alvos.length} empresa(s) no portal da Prefeitura, uma de cada vez (só funciona pras de Uberlândia-MG — as outras voltam "nada encontrado"). Com 4s entre cada uma, pode levar mais de 40 minutos (mantenha a janela aberta) — a rotina noturna já faz isso sozinha todo dia às 02:00. Continuar?`)) return;
 
     const win = window.open('', '_blank');
     const setStatus = (msg) => {
@@ -5728,7 +5728,7 @@ const Legalizacao = (() => {
         const data = await res?.json().catch(() => ({}));
         if (res && res.ok && data.encontrado) achados++;
       } catch (e) { /* segue pro próximo mesmo se um falhar */ }
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 4000));
     }
     setStatus(`Concluído! ${achados} solicitação(ões) em andamento encontrada(s) de ${alvos.length} consultadas.`);
     await _carregarAlvaras();

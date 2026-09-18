@@ -4862,14 +4862,13 @@ router.put('/legalizacao/alvaras/:clienteId/:tipo', async (req, res) => {
  * antigo: grava só o status pra virar o badge "Solicitação" (UPSERT — a
  * linha pode ser virtual ainda). Só funciona pra CNPJ de Uberlândia-MG hoje.
  */
-router.post('/legalizacao/alvaras/:clienteId/:tipo/consultar-prefeitura', async (req, res) => {
-  try {
+async function consultarAlvaraPrefeitura(clienteId, tipo, autor) {
     await ensureLegalizacaoSchema();
-    const { clienteId, tipo } = req.params;
-    if (!['funcionamento', 'sanitario'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
+    const erroHttp = (status, msg) => Object.assign(new Error(msg), { statusHttp: status });
+    if (!['funcionamento', 'sanitario'].includes(tipo)) throw erroHttp(400, 'Tipo inválido.');
     const { rows: clienteRows } = await pool.query(`SELECT cnpj FROM clientes WHERE id = $1`, [clienteId]);
-    if (!clienteRows.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
-    if (!clienteRows[0].cnpj) return res.status(400).json({ error: 'Cliente sem CNPJ cadastrado.' });
+    if (!clienteRows.length) throw erroHttp(404, 'Cliente não encontrado.');
+    if (!clienteRows[0].cnpj) throw erroHttp(400, 'Cliente sem CNPJ cadastrado.');
 
     const { consultarAlvaraUberlandia } = require('../legalizacao/ciclo7Uberlandia');
     const resultado = await consultarAlvaraUberlandia(clienteRows[0].cnpj);
@@ -4898,7 +4897,7 @@ router.post('/legalizacao/alvaras/:clienteId/:tipo/consultar-prefeitura', async 
            data_vencimento = $3, ultima_consulta_status = NULL, ultima_consulta_resumo = $4,
            ultima_consulta_data_solicitacao = NULL, ultima_consulta_em = NOW(), atualizado_em = NOW(),
            notificado_vencimento_em = CASE WHEN $3 IS DISTINCT FROM legalizacao_alvaras.data_vencimento THEN NULL ELSE legalizacao_alvaras.notificado_vencimento_em END`,
-        [clienteId, tipo, resultado.vencimentoEncontrado, resumo, req.user.name]
+        [clienteId, tipo, resultado.vencimentoEncontrado, resumo, autor]
       );
     } else {
       await pool.query(
@@ -4907,19 +4906,84 @@ router.post('/legalizacao/alvaras/:clienteId/:tipo/consultar-prefeitura', async 
          ON CONFLICT (cliente_id, tipo) DO UPDATE SET
            ultima_consulta_status = $3, ultima_consulta_resumo = $4,
            ultima_consulta_data_solicitacao = $5, ultima_consulta_em = NOW()`,
-        [clienteId, tipo, ultimaConsultaStatus, resumo, dataSolicitacao, req.user.name]
+        [clienteId, tipo, ultimaConsultaStatus, resumo, dataSolicitacao, autor]
       );
     }
-    res.json({
+    return {
       ok: true, encontrado: !!ultimaConsultaStatus || !!resultado.vencimentoEncontrado,
       vencimentoEncontrado: resultado.vencimentoEncontrado || null,
       resumo, dataSolicitacao, anoConsultado: resultado.ano, anosVarridos: resultado.anosVarridos,
-    });
+    };
+}
+
+router.post('/legalizacao/alvaras/:clienteId/:tipo/consultar-prefeitura', async (req, res) => {
+  try {
+    res.json(await consultarAlvaraPrefeitura(req.params.clienteId, req.params.tipo, req.user.name));
   } catch (err) {
     console.error('[legalizacao] consultar-prefeitura falhou:', err);
-    res.status(500).json({ error: err.message || 'Erro ao consultar a prefeitura.' });
+    res.status(err.statusHttp || 500).json({ error: err.message || 'Erro ao consultar a prefeitura.' });
   }
 });
+
+/**
+ * Rotina NOTURNA de consulta de alvarás (Funcionamento) na prefeitura —
+ * pedido do Reysner, 18/09/2026: achou uma data de vencimento válida, não
+ * pesquisa mais essa empresa até o dia do vencimento; venceu (ou ainda
+ * não tem data), continua pesquisando toda madrugada até achar uma data
+ * não vencida. Escolhas pra não repetir o bloqueio do Akamai da prefeitura
+ * (consulta em lote a 400ms/req derrubou o acesso em 18/09/2026):
+ *   - intervalo de 4s entre consultas;
+ *   - no máximo LEGAL_CONSULTA_MAX_POR_NOITE empresas por noite (a 1ª carga
+ *     de ~640 se espalha em algumas noites);
+ *   - "nada encontrado" (não é de Uberlândia / sem alvará) só é
+ *     reconsultado a cada 7 dias, não toda noite — senão essas empresas
+ *     martelariam o portal pra sempre;
+ *   - aborta a noite se 5 consultas seguidas falharem (sinal de bloqueio).
+ */
+const LEGAL_CONSULTA_MAX_POR_NOITE = 300;
+const LEGAL_CONSULTA_INTERVALO_MS = 4000;
+let consultaNoturnaRodando = false;
+
+async function rodarConsultaNoturnaAlvaras() {
+  if (consultaNoturnaRodando) return { pulou: true };
+  consultaNoturnaRodando = true;
+  try {
+    await ensureLegalizacaoSchema();
+    const { rows: alvos } = await pool.query(
+      `SELECT c.id::text AS cliente_id, c.nome_empresa
+         FROM clientes c
+         LEFT JOIN legalizacao_alvaras a ON a.cliente_id = c.id::text AND a.tipo = 'funcionamento'
+        WHERE c.status = 'ativo'
+          AND length(regexp_replace(COALESCE(c.cnpj, ''), '\\D', '', 'g')) = 14
+          AND (a.data_vencimento IS NULL OR a.data_vencimento <= CURRENT_DATE)
+          AND (
+                a.ultima_consulta_em IS NULL
+             OR ((a.data_vencimento IS NOT NULL OR a.ultima_consulta_status = 'solicitacao_andamento')
+                 AND a.ultima_consulta_em < NOW() - INTERVAL '20 hours')
+             OR a.ultima_consulta_em < NOW() - INTERVAL '7 days'
+          )
+        ORDER BY a.ultima_consulta_em ASC NULLS FIRST
+        LIMIT $1`,
+      [LEGAL_CONSULTA_MAX_POR_NOITE]
+    );
+    let consultadas = 0, comData = 0, comSolicitacao = 0, falhasSeguidas = 0, abortou = false;
+    for (const alvo of alvos) {
+      try {
+        const r = await consultarAlvaraPrefeitura(alvo.cliente_id, 'funcionamento', 'Rotina noturna');
+        consultadas++; falhasSeguidas = 0;
+        if (r.vencimentoEncontrado) comData++; else if (r.encontrado) comSolicitacao++;
+      } catch (e) {
+        falhasSeguidas++;
+        console.error(`[Legalização] Consulta noturna falhou (${alvo.nome_empresa}):`, e.message);
+        if (falhasSeguidas >= 5) { abortou = true; break; }
+      }
+      await new Promise(r => setTimeout(r, LEGAL_CONSULTA_INTERVALO_MS));
+    }
+    return { elegiveis: alvos.length, consultadas, comData, comSolicitacao, abortou };
+  } finally {
+    consultaNoturnaRodando = false;
+  }
+}
 
 router.delete('/legalizacao/alvaras/:id', requireAdmin, async (req, res) => {
   try {
@@ -5198,6 +5262,7 @@ router.patch('/legalizacao/solicitacoes-inativacao/:id/rejeitar', requireAdmin, 
 
 module.exports = router;
 module.exports.verificarNotificacoesLegalizacao = verificarNotificacoesLegalizacao;
+module.exports.rodarConsultaNoturnaAlvaras = rodarConsultaNoturnaAlvaras;
 
 
 module.exports.publicRouter = publicRouter;

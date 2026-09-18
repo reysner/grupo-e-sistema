@@ -180,7 +180,7 @@ initDB().then(async () => {
     // toda vez, vai "colhendo D-1" — todo dia rebusca só quem fechou nos
     // últimos dias e segue sem nota. Mais leve que o /backfill manual.
     const { atualizarNotasPendentes } = require('./cs/ingestao');
-    const { executarAutoPreencher, verificarNotificacoesLegalizacao } = require('./routes/data');
+    const { executarAutoPreencher, verificarNotificacoesLegalizacao, rodarConsultaNoturnaAlvaras } = require('./routes/data');
 
     // Data/hora "de verdade" no horário de Brasília, independente do TZ do
     // servidor (Render roda em UTC por padrão) — mesma lógica do tempoUtil.js.
@@ -257,6 +257,23 @@ initDB().then(async () => {
         }
       }
     };
+    // Consulta noturna de alvarás na prefeitura (02:00 de Brasília) — ver
+    // rodarConsultaNoturnaAlvaras em routes/data.js pras regras.
+    const consultasAlvaraPorDia = new Set();
+    const checarConsultaNoturnaAlvaras = async () => {
+      const agora = agoraBrasilia();
+      if (agora.hora !== 2) return;
+      const chaveDia = `${agora.ano}-${agora.mes}-${agora.dia}`;
+      if (consultasAlvaraPorDia.has(chaveDia)) return;
+      consultasAlvaraPorDia.add(chaveDia);
+      try {
+        const resultado = await rodarConsultaNoturnaAlvaras();
+        console.log('[Legalização] Consulta noturna de alvarás:', resultado);
+      } catch (e) {
+        console.error('[Legalização] Falha na consulta noturna de alvarás:', e.message);
+      }
+    };
+    setInterval(checarConsultaNoturnaAlvaras, 5 * 60 * 1000);
     setInterval(checarAgendaDiaria, 5 * 60 * 1000); // checa a cada 5 min
     checarAgendaDiaria(); // confere já ao subir, caso o boot caia dentro de uma das janelas
   }
