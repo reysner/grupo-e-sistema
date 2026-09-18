@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Grupo-E · Sincronizar procurações (e-CAC + FGTS Digital)
 // @namespace    https://grupo-e-sistema-uc2w.onrender.com/
-// @version      1.0.0
+// @version      1.1.0
 // @description  Ao abrir as procurações recebidas no e-CAC ou no SPE (FGTS Digital), lê a lista completa e envia pro sistema Grupo-E (módulo Legalização).
 // @match        https://servicos.receitafederal.gov.br/servico/autorizacoes/*
 // @match        https://spe.sistema.gov.br/*
@@ -23,7 +23,7 @@
  *   - e-CAC → Autorizações de Acesso → Minhas Autorizações de Acesso
  *   - FGTS Digital → Procurações (SPE)
  * No máximo 1x a cada 6 horas por portal (ou pelo menu do Tampermonkey: "Sincronizar agora").
- * O token de sincronização fica só neste navegador (pedido na 1ª vez), nunca dentro deste arquivo.
+ * O token de sincronização fica só neste navegador (pedido na 1ª vez, num campo na própria página), nunca dentro deste arquivo.
  */
 (function () {
   'use strict';
@@ -117,16 +117,37 @@
   }
 
   // ── envio pro sistema Grupo-E ─────────────────────────────────────────
+  // Campo dentro da própria página (o prompt() do navegador é descartado quando a aba está em segundo plano).
   function pedirToken() {
-    const t = (prompt('Grupo-E — cole o token de sincronização (só pede uma vez neste navegador):') || '').trim();
-    if (t) GM_setValue('token', t);
-    return t;
+    return new Promise((resolve) => {
+      const montar = () => {
+        const caixa = document.createElement('div');
+        caixa.style.cssText = 'position:fixed;right:16px;bottom:80px;z-index:2147483647;width:340px;padding:16px;border-radius:14px;background:#fff;' +
+          'color:#1a4233;font:600 13px/1.4 system-ui,sans-serif;box-shadow:0 10px 32px rgba(0,0,0,.3);border:2px solid #2a6e4a';
+        caixa.innerHTML = '<div style="margin-bottom:8px">Grupo-E · cole o token de sincronização<br><span style="font-weight:400;color:#64748b">(só pede uma vez neste navegador)</span></div>' +
+          '<input type="password" placeholder="token" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;margin-bottom:10px">' +
+          '<button style="width:100%;padding:10px;border:0;border-radius:8px;background:#1a4233;color:#fff;font-weight:700;font-size:13px;cursor:pointer">Salvar e sincronizar</button>';
+        document.body.appendChild(caixa);
+        const campo = caixa.querySelector('input');
+        const salvar = () => {
+          const v = campo.value.trim();
+          if (!v) return;
+          GM_setValue('token', v);
+          caixa.remove();
+          resolve(v);
+        };
+        caixa.querySelector('button').addEventListener('click', salvar);
+        campo.addEventListener('keydown', (e) => { if (e.key === 'Enter') salvar(); });
+        campo.focus();
+      };
+      if (document.body) montar(); else document.addEventListener('DOMContentLoaded', montar, { once: true });
+    });
   }
 
-  function enviar(dados) {
+  async function enviar(dados) {
+    const token = GM_getValue('token', '') || (aviso('aguardando o token de sincronização…'), await pedirToken());
     return new Promise((resolve, reject) => {
-      const token = GM_getValue('token', '') || pedirToken();
-      if (!token) return reject(new Error('sem token de sincronização.'));
+      aviso('enviando pro sistema Grupo-E…');
       GM_xmlhttpRequest({
         method: 'POST',
         url: SISTEMA + '/api/data/legalizacao/procuracoes/importar',
@@ -165,7 +186,7 @@
   }
 
   GM_registerMenuCommand('Sincronizar procurações agora', () => sincronizar(true));
-  GM_registerMenuCommand('Trocar o token do Grupo-E', () => { GM_deleteValue('token'); pedirToken(); });
+  GM_registerMenuCommand('Trocar o token do Grupo-E', () => { GM_deleteValue('token'); sincronizar(true); });
 
   // só na tela de procurações recebidas (não em toda página do portal)
   const naTela = ehEcac ? location.pathname.includes('/minhas-autorizacoes') : location.pathname.startsWith('/procuracao');
