@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Grupo-E · Sincronizar procurações (e-CAC + FGTS Digital)
 // @namespace    https://grupo-e-sistema-uc2w.onrender.com/
-// @version      1.2.1
+// @version      1.2.2
 // @description  Ao abrir as procurações recebidas no e-CAC ou no SPE (FGTS Digital), lê a lista completa e envia pro sistema Grupo-E (módulo Legalização).
 // @match        https://servicos.receitafederal.gov.br/servico/autorizacoes/*
 // @match        https://spe.sistema.gov.br/*
@@ -227,6 +227,9 @@
           if (recente('fgts_clicou')) return; // evita repetir se a tela recarregar
           GM_setValue('fgts_clicou', Date.now());
           GM_setValue('spe_auto', Date.now());
+          // O card só faz window.open() do SPE, e o Chrome bloqueia isso quando o clique vem de um script.
+          // Desvia pra abrir o SPE nesta mesma aba (o endereço é o que a própria página monta).
+          unsafeWindow.open = function (url) { location.href = url; return null; };
         }
         feito[passo] = true;
         el.click();
