@@ -124,23 +124,44 @@ router.post('/legalizacao/procuracoes/importar', async (req, res) => {
       `SELECT id::text AS id, regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g') AS doc FROM clientes WHERE status = 'ativo'`
     );
     const porDoc = new Map(clientes.map(c => [c.doc, c.id]));
-    let atualizados = 0, semCliente = 0;
+    const ids = [], vencs = [];
+    let semCliente = 0;
     for (const [doc, { venc }] of melhor) {
       const clienteId = porDoc.get(doc);
       if (!clienteId) { semCliente++; continue; }
-      await pool.query(
+      ids.push(clienteId); vencs.push(venc);
+    }
+    // Em lote (1 query) e só toca no que MUDOU — o script do Chrome reenvia a lista
+    // inteira toda vez que o portal é aberto.
+    let atualizados = 0, limpos = 0;
+    if (ids.length) {
+      const r = await pool.query(
         `INSERT INTO legalizacao_procuracoes (cliente_id, tipo, data_vencimento, fonte, criado_por)
-         VALUES ($1,$3,$2,$3,'Importação Receita/FGTS')
-         ON CONFLICT (cliente_id, tipo) DO UPDATE SET data_vencimento = $2, fonte = $3, atualizado_em = NOW()`,
-        [clienteId, venc, tipo]
+         SELECT u.cid, $3::text, u.venc, $3::text, 'Importação Receita/FGTS'
+           FROM unnest($1::text[], $2::date[]) AS u(cid, venc)
+         ON CONFLICT (cliente_id, tipo) DO UPDATE SET data_vencimento = EXCLUDED.data_vencimento, fonte = EXCLUDED.fonte, atualizado_em = NOW()
+         WHERE legalizacao_procuracoes.data_vencimento IS DISTINCT FROM EXCLUDED.data_vencimento
+         RETURNING 1`,
+        [ids, vencs, tipo]
       );
-      atualizados++;
+      atualizados = r.rowCount;
+      // Lista COMPLETA do portal: quem tinha data importada mas não tem mais procuração
+      // Ativa/Expirada (cancelada, revogada...) volta pra "sem dados". Nunca mexe no que
+      // foi preenchido à mão (fonte diferente do tipo).
+      if (req.body.completo === true) {
+        const z = await pool.query(
+          `UPDATE legalizacao_procuracoes SET data_vencimento = NULL, atualizado_em = NOW()
+            WHERE tipo = $1 AND fonte = $1 AND data_vencimento IS NOT NULL AND cliente_id <> ALL($2::text[])`,
+          [tipo, ids]
+        );
+        limpos = z.rowCount;
+      }
     }
     await registrarLog('sync', 'Procurações (importação)', 'importar', 'legalizacao',
-      `Procurações ${tipo === 'ecac' ? 'e-CAC' : 'FGTS Digital'}: ${atualizados} gravada(s), ${semCliente} sem cliente ativo na Carteira, de ${lista.length} lida(s).`, req);
-    res.json({ ok: true, tipo, recebidas: lista.length, consideradas: melhor.size, atualizados, semCliente });
+      `Procurações ${tipo === 'ecac' ? 'e-CAC' : 'FGTS Digital'}: ${atualizados} atualizada(s), ${limpos} zerada(s), ${semCliente} sem cliente ativo na Carteira, de ${lista.length} lida(s).`, req);
+    res.json({ ok: true, tipo, recebidas: lista.length, consideradas: melhor.size, atualizados, limpos, semCliente });
   } catch (err) {
-    console.error('[legalizacao] importar-ecac falhou:', err);
+    console.error('[legalizacao] importar procurações falhou:', err);
     res.status(500).json({ error: err.message || 'Erro ao importar procurações.' });
   }
 });
