@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Grupo-E · Sincronizar procurações (e-CAC + FGTS Digital)
 // @namespace    https://grupo-e-sistema-uc2w.onrender.com/
-// @version      1.1.0
+// @version      1.2.0
 // @description  Ao abrir as procurações recebidas no e-CAC ou no SPE (FGTS Digital), lê a lista completa e envia pro sistema Grupo-E (módulo Legalização).
 // @match        https://servicos.receitafederal.gov.br/servico/autorizacoes/*
 // @match        https://spe.sistema.gov.br/*
+// @match        https://fgtsdigital.sistema.gov.br/*
 // @run-at       document-start
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
@@ -12,6 +13,7 @@
 // @grant        GM_deleteValue
 // @grant        GM_registerMenuCommand
 // @grant        unsafeWindow
+// @grant        GM_openInTab
 // @connect      grupo-e-sistema-uc2w.onrender.com
 // @updateURL    https://grupo-e-sistema-uc2w.onrender.com/tools/sincronizar-procuracoes.user.js
 // @downloadURL  https://grupo-e-sistema-uc2w.onrender.com/tools/sincronizar-procuracoes.user.js
@@ -23,6 +25,9 @@
  *   - e-CAC → Autorizações de Acesso → Minhas Autorizações de Acesso
  *   - FGTS Digital → Procurações (SPE)
  * No máximo 1x a cada 6 horas por portal (ou pelo menu do Tampermonkey: "Sincronizar agora").
+ * FGTS Digital também atualiza sozinho: (a) logo depois do e-CAC sincronizar, numa aba em segundo plano
+ * (usa o login gov.br já feito); (b) quando você mesmo abre o FGTS Digital e chega na tela inicial.
+ * Nesses dois casos o script só clica em "Entrar com GOV.BR", "Definir" (perfil) e no card "Procurações".
  * O token de sincronização fica só neste navegador (pedido na 1ª vez, num campo na própria página), nunca dentro deste arquivo.
  */
 (function () {
@@ -167,10 +172,14 @@
     });
   }
 
+  const RECENTE_MS = 5 * 60 * 1000;
+  const recente = (chave) => Date.now() - GM_getValue(chave, 0) < RECENTE_MS;
+  const vencido = (chave) => Date.now() - GM_getValue(chave, 0) >= INTERVALO_MS;
+
   let rodando = false;
   async function sincronizar(forcar) {
     if (rodando) return;
-    if (!forcar && Date.now() - GM_getValue(chaveUltimo, 0) < INTERVALO_MS) return;
+    if (!forcar && !vencido(chaveUltimo)) return;
     rodando = true;
     try {
       aviso('sincronizando procurações ' + rotulo + '…');
@@ -178,6 +187,8 @@
       const r = await enviar(dados);
       GM_setValue(chaveUltimo, Date.now());
       aviso('procurações ' + rotulo + ' em dia: ' + r.atualizados + ' atualizada(s)' + (r.limpos ? ', ' + r.limpos + ' zerada(s)' : '') + '.', 'ok');
+      if (ehEcac) abrirFgtsEmSegundoPlano();
+      else if (recente('spe_auto')) setTimeout(() => window.close(), 3500); // aba aberta pela automação: fecha sozinha
     } catch (e) {
       aviso('não sincronizou (' + e.message + ')', 'erro');
     } finally {
@@ -185,10 +196,53 @@
     }
   }
 
+  // ── e-CAC acabou de sincronizar → puxa o FGTS Digital numa aba em segundo plano ──
+  function abrirFgtsEmSegundoPlano() {
+    if (!vencido('ultimo_fgts')) return; // o FGTS já foi sincronizado há pouco
+    GM_setValue('auto_fgts', Date.now());
+    GM_openInTab('https://fgtsdigital.sistema.gov.br/portal/login', { active: false, insert: true });
+  }
+
+  // ── FGTS Digital: leva até a tela de Procurações (SPE), onde a sincronização acontece ──
+  const achar = (seletor, re) => Array.prototype.slice.call(document.querySelectorAll(seletor)).find((e) => re.test((e.textContent || '').trim()));
+
+  async function cadeiaFgts() {
+    const auto = recente('auto_fgts'); // aberta pela automação do e-CAC (login e perfil também são clicados)
+    if (!auto && !vencido('ultimo_fgts')) return;
+    const feito = {};
+    for (let i = 0; i < 180; i++) {
+      const p = location.pathname;
+      let passo = null, el = null;
+      if (auto && p.startsWith('/portal/login')) { passo = 'login'; el = achar('button', /entrar com gov\.?br/i); }
+      else if (auto && p.startsWith('/portal/escolhaPerfil')) { passo = 'perfil'; el = achar('button', /^definir$/i); }
+      else if (p.startsWith('/portal/servicos')) {
+        passo = 'proc';
+        el = Array.prototype.slice.call(document.querySelectorAll('h1,h2,h3,h4,h5,h6,span,div,p'))
+          .find((e) => e.children.length === 0 && /^procurações$/i.test((e.textContent || '').trim()));
+      }
+      if (el && !feito[passo]) {
+        if (passo === 'proc') {
+          if (recente('fgts_clicou')) return; // evita repetir se a tela recarregar
+          GM_setValue('fgts_clicou', Date.now());
+          GM_setValue('spe_auto', Date.now());
+        }
+        feito[passo] = true;
+        el.click();
+        if (passo === 'proc') return;
+      }
+      await esperar(700);
+    }
+  }
+
   GM_registerMenuCommand('Sincronizar procurações agora', () => sincronizar(true));
   GM_registerMenuCommand('Trocar o token do Grupo-E', () => { GM_deleteValue('token'); sincronizar(true); });
 
-  // só na tela de procurações recebidas (não em toda página do portal)
-  const naTela = ehEcac ? location.pathname.includes('/minhas-autorizacoes') : location.pathname.startsWith('/procuracao');
-  if (naTela) window.addEventListener('load', () => setTimeout(() => sincronizar(false), 3000));
+  const ehFgtsPortal = location.hostname === 'fgtsdigital.sistema.gov.br';
+  if (ehFgtsPortal) {
+    window.addEventListener('load', () => setTimeout(cadeiaFgts, 1500));
+  } else {
+    // só na tela de procurações recebidas (não em toda página do portal)
+    const naTela = ehEcac ? location.pathname.includes('/minhas-autorizacoes') : location.pathname.startsWith('/procuracao');
+    if (naTela) window.addEventListener('load', () => setTimeout(() => sincronizar(false), 3000));
+  }
 })();
