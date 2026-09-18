@@ -5447,6 +5447,10 @@ const Legalizacao = (() => {
   let _page = 1;
   const PAGE_SIZE = 50;
   const SITUACOES = ['func', 'sanit', 'cert_pj', 'cert_pf', 'ecac', 'fgts'];
+  const SIT_LABEL = {
+    func: 'Alvarás de Funcionamento', sanit: 'Alvarás Sanitários', cert_pf: 'Certificado digital PF',
+    cert_pj: 'Certificado digital PJ', ecac: 'Procurações E-CAC', fgts: 'Procurações FGTS Digital',
+  };
 
   const STATUS_INFO = {
     vencido:     { cor: '#c0362c', bg: '#fff5f5', label: '🔴 Vencido' },
@@ -5535,6 +5539,7 @@ const Legalizacao = (() => {
     const { data } = await res.json();
     _linhas = data || [];
     _renderResumo();
+    _renderDashboards();
     filtrar();
   }
 
@@ -5546,9 +5551,14 @@ const Legalizacao = (() => {
   }
   function _statusDe(l, sit) { const i = _item(l, sit); return i ? [i.status] : []; }
 
+  /** Cards do topo: seguem a situação escolhida no filtro ("Todas" = geral). */
   function _renderResumo() {
+    const sit = document.getElementById('legal-situacao')?.value || 'todas';
+    const alvo = sit === 'todas' ? SITUACOES : [sit];
     const cont = { vencido: 0, vencendo: 0, solicitacao: 0, ok: 0 };
-    _linhas.forEach(l => SITUACOES.forEach(s => _statusDe(l, s).forEach(st => { if (st in cont) cont[st]++; })));
+    _linhas.forEach(l => alvo.forEach(s => _statusDe(l, s).forEach(st => { if (st in cont) cont[st]++; })));
+    const cap = document.getElementById('legal-resumo-caption');
+    if (cap) cap.textContent = sit === 'todas' ? 'Resumo geral — todas as situações' : 'Resumo — ' + SIT_LABEL[sit];
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     set('legal-qtd-vencido', cont.vencido);
     set('legal-qtd-vencendo', cont.vencendo);
@@ -5571,7 +5581,65 @@ const Legalizacao = (() => {
     return lista;
   }
 
-  function filtrar() { _page = 1; goPage(1); }
+  function filtrar() { _page = 1; _renderResumo(); _destacarDash(); goPage(1); }
+
+  // ── DASHBOARD POR SITUAÇÃO (pedido do Reysner, 18/09/2026) ──────────────
+  const _ORDEM_STATUS = ['vencido', 'vencendo', 'solicitacao', 'ok', 'sem_data'];
+  const _STATUS_CURTO = { vencido: 'vencido', vencendo: 'vencendo', solicitacao: 'solicitação', ok: 'em dia', sem_data: 'sem data' };
+
+  function _statsSit(sit) {
+    const c = { vencido: 0, vencendo: 0, solicitacao: 0, ok: 0, sem_data: 0 };
+    let proximo = null;
+    _linhas.forEach(l => {
+      const i = _item(l, sit);
+      if (!i) return;
+      c[i.status]++;
+      if ((i.status === 'vencendo' || i.status === 'ok') && i.vencimento && (!proximo || i.vencimento < proximo.venc)) {
+        proximo = { venc: i.vencimento, nome: l.nome_empresa };
+      }
+    });
+    return { c, total: _ORDEM_STATUS.reduce((a, k) => a + c[k], 0), proximo };
+  }
+
+  function _renderDashboards() {
+    const el = document.getElementById('legal-dash');
+    if (!el) return;
+    el.innerHTML = SITUACOES.map(sit => {
+      const { c, total, proximo } = _statsSit(sit);
+      const barra = _ORDEM_STATUS.filter(k => c[k]).map(k =>
+        `<div title="${STATUS_INFO[k].label}: ${c[k]}" style="width:${(c[k] / total * 100).toFixed(2)}%;background:${STATUS_INFO[k].cor};opacity:${k === 'sem_data' ? 0.35 : 1}"></div>`).join('');
+      const chips = _ORDEM_STATUS.filter(k => c[k] || (k !== 'solicitacao')).map(k =>
+        `<span style="font-size:12px;color:var(--gray-500);white-space:nowrap"><b style="color:${STATUS_INFO[k].cor};font-size:14px">${c[k]}</b> ${_STATUS_CURTO[k]}</span>`).join('');
+      return `<div id="legal-dash-${sit}" onclick="Legalizacao.filtrarPorSituacao('${sit}')" title="Clique pra filtrar a lista" style="cursor:pointer;background:#fff;border:2px solid var(--gray-100);border-radius:12px;padding:16px">` +
+        `<div style="font-size:11px;font-weight:800;color:var(--g700);text-transform:uppercase;letter-spacing:.5px">${SIT_LABEL[sit]}</div>` +
+        (total
+          ? `<div style="display:flex;align-items:baseline;gap:6px;margin:6px 0 10px"><span style="font-size:28px;font-weight:800;color:var(--g700)">${total}</span><span style="font-size:12px;color:var(--gray-400)">cliente${total !== 1 ? 's' : ''}</span></div>` +
+            `<div style="display:flex;height:8px;border-radius:6px;overflow:hidden;background:var(--gray-100);margin-bottom:10px">${barra}</div>` +
+            `<div style="display:flex;flex-wrap:wrap;gap:4px 12px">${chips}</div>` +
+            (proximo ? `<div style="font-size:11px;color:var(--gray-400);margin-top:10px;line-height:1.4">Próximo a vencer: <b>${_esc(proximo.nome)}</b> · ${_fmtData(proximo.venc)}</div>` : '')
+          : '<div style="font-size:13px;color:var(--gray-400);margin-top:12px">Nenhum registro ainda.</div>') +
+        '</div>';
+    }).join('');
+    _destacarDash();
+  }
+
+  function _destacarDash() {
+    const sel = document.getElementById('legal-situacao')?.value || 'todas';
+    SITUACOES.forEach(s => {
+      const el = document.getElementById('legal-dash-' + s);
+      if (el) el.style.borderColor = s === sel ? '#2a6e4a' : '';
+    });
+  }
+
+  /** Clique num dashboard = filtra a lista por aquela situação (clicar de novo volta pra "Todas"). */
+  function filtrarPorSituacao(sit) {
+    const sel = document.getElementById('legal-situacao');
+    if (!sel) return;
+    const ligar = sel.value !== sit;
+    sel.value = ligar ? sit : 'todas';
+    filtrar();
+    if (ligar) document.getElementById('legal-tbody')?.closest('.form-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   function _badgeSpan(status, rowId) {
     const m = STATUS_INFO[status] || STATUS_INFO.sem_data;
@@ -5936,7 +6004,7 @@ const Legalizacao = (() => {
   }
 
   return {
-    load, filtrar, goPage, _toggleDetalhe,
+    load, filtrar, filtrarPorSituacao, goPage, _toggleDetalhe,
     abrirAdicionarSanitario, abrirFormAlvara, salvarAlvara, excluirAlvara,
     consultarPrefeitura, consultarTodosPrefeitura, exportCSV, exportPDF,
     abrirFormCertificadoPJ, salvarCertificadoPJ, abrirAdicionarCertificadoPF, abrirFormCertificadoPF,

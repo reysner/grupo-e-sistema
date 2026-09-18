@@ -999,7 +999,8 @@
         <!-- LEGALIZAÇÃO -->
         <section id="page-legalizacao" class="page admin-only" hidden>
 
-          <!-- RESUMO -->
+          <!-- RESUMO (segue a situação escolhida no filtro) -->
+          <div id="legal-resumo-caption" style="font-size:12px;color:var(--gray-400);margin:0 0 8px">Resumo geral — todas as situações</div>
           <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:20px">
             <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:18px" id="legal-card-vencido">
               <div style="font-size:11px;font-weight:700;color:#c0362c;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🔴 Vencidos</div>
@@ -1018,6 +1019,9 @@
               <div id="legal-qtd-ok" style="font-size:26px;font-weight:800;color:var(--g700)">—</div>
             </div>
           </div>
+
+          <!-- DASHBOARD POR SITUAÇÃO — um card clicável por filtro -->
+          <div id="legal-dash" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:20px"></div>
 
           <!-- SOLICITAÇÕES DE INATIVAÇÃO (vindas da página pública, colaborador) -->
           <div class="form-card" id="legal-solic-card" style="margin-bottom:20px;display:none">

@@ -94,6 +94,7 @@
     </div>
   </div>
   <div class="container">
+    <div id="resumo-caption" style="font-size:12px;color:var(--gray-400);margin-bottom:8px">Resumo geral — todas as situações</div>
     <div class="cards-row">
       <div class="stat-card"><div class="stat-label">🔴 Vencidos</div><div class="stat-val" id="qtd-vencido">—</div></div>
       <div class="stat-card"><div class="stat-label">🟡 Vencendo</div><div class="stat-val" id="qtd-vencendo">—</div></div>
@@ -101,7 +102,9 @@
       <div class="stat-card"><div class="stat-label">🟢 Em dia</div><div class="stat-val" id="qtd-ok">—</div></div>
     </div>
 
-    <div class="card">
+    <div id="dash" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;margin-bottom:20px"></div>
+
+    <div class="card" id="card-lista">
       <div class="card-title">Situação legal dos clientes</div>
       <div class="toolbar">
         <button class="btn" onclick="exportCSV()">⬇ CSV</button>
@@ -163,6 +166,10 @@ let _token = null, _user = null;
 let _linhas = [], _page = 1, _inatClienteId = null;
 const PAGE_SIZE = 25;
 const SITUACOES = ['func', 'sanit', 'cert_pj', 'cert_pf', 'ecac', 'fgts'];
+const SIT_LABEL = {
+  func: 'Alvarás de Funcionamento', sanit: 'Alvarás Sanitários', cert_pf: 'Certificado digital PF',
+  cert_pj: 'Certificado digital PJ', ecac: 'Procurações E-CAC', fgts: 'Procurações FGTS Digital',
+};
 
 function api(path, opts) {
   return fetch(path, Object.assign({}, opts, { headers: Object.assign({ Authorization: 'Bearer ' + _token }, (opts && opts.headers) || {}) }));
@@ -224,6 +231,7 @@ async function carregar() {
   const { data } = await res.json();
   _linhas = data || [];
   renderResumo();
+  renderDash();
   filtrar();
 }
 
@@ -235,9 +243,13 @@ function item(l, sit) {
 }
 function statusDe(l, sit) { const i = item(l, sit); return i ? [i.status] : []; }
 
+/** Cards do topo: seguem a situação escolhida no filtro ("Todas" = geral). */
 function renderResumo() {
+  const sit = document.getElementById('situacao').value;
+  const alvo = sit === 'todas' ? SITUACOES : [sit];
   const cont = { vencido: 0, vencendo: 0, solicitacao: 0, ok: 0 };
-  _linhas.forEach(l => SITUACOES.forEach(s => statusDe(l, s).forEach(st => { if (st in cont) cont[st]++; })));
+  _linhas.forEach(l => alvo.forEach(s => statusDe(l, s).forEach(st => { if (st in cont) cont[st]++; })));
+  document.getElementById('resumo-caption').textContent = sit === 'todas' ? 'Resumo geral — todas as situações' : 'Resumo — ' + SIT_LABEL[sit];
   document.getElementById('qtd-vencido').textContent = cont.vencido;
   document.getElementById('qtd-vencendo').textContent = cont.vencendo;
   document.getElementById('qtd-solicitacao').textContent = cont.solicitacao;
@@ -258,7 +270,57 @@ function linhasFiltradas() {
   return lista;
 }
 
-function filtrar() { _page = 1; goPage(1); }
+function filtrar() { _page = 1; renderResumo(); destacarDash(); goPage(1); }
+
+// ── DASHBOARD POR SITUAÇÃO ───────────────────────────────────────────
+const ORDEM_STATUS = ['vencido', 'vencendo', 'solicitacao', 'ok', 'sem_data'];
+const STATUS_CURTO = { vencido: 'vencido', vencendo: 'vencendo', solicitacao: 'solicitação', ok: 'em dia', sem_data: 'sem data' };
+
+function statsSit(sit) {
+  const c = { vencido: 0, vencendo: 0, solicitacao: 0, ok: 0, sem_data: 0 };
+  let proximo = null;
+  _linhas.forEach(l => {
+    const i = item(l, sit);
+    if (!i) return;
+    c[i.status]++;
+    if ((i.status === 'vencendo' || i.status === 'ok') && i.vencimento && (!proximo || i.vencimento < proximo.venc)) proximo = { venc: i.vencimento, nome: l.nome_empresa };
+  });
+  return { c, total: ORDEM_STATUS.reduce((a, k) => a + c[k], 0), proximo };
+}
+
+function renderDash() {
+  document.getElementById('dash').innerHTML = SITUACOES.map(sit => {
+    const { c, total, proximo } = statsSit(sit);
+    const barra = ORDEM_STATUS.filter(k => c[k]).map(k =>
+      '<div title="' + STATUS_INFO[k].label + ': ' + c[k] + '" style="width:' + (c[k] / total * 100).toFixed(2) + '%;background:' + STATUS_INFO[k].cor + ';opacity:' + (k === 'sem_data' ? 0.35 : 1) + '"></div>').join('');
+    const chips = ORDEM_STATUS.filter(k => c[k] || k !== 'solicitacao').map(k =>
+      '<span style="font-size:12px;color:var(--gray-500);white-space:nowrap"><b style="color:' + STATUS_INFO[k].cor + ';font-size:14px">' + c[k] + '</b> ' + STATUS_CURTO[k] + '</span>').join('');
+    return '<div class="stat-card" id="dash-' + sit + '" data-sit="' + sit + '" onclick="filtrarPorSituacao(this.dataset.sit)" title="Clique pra filtrar a lista" style="cursor:pointer;border:2px solid transparent">' +
+      '<div class="stat-label">' + SIT_LABEL[sit] + '</div>' +
+      (total
+        ? '<div style="display:flex;align-items:baseline;gap:6px;margin:6px 0 10px"><span style="font-size:28px;font-weight:800">' + total + '</span><span style="font-size:12px;color:var(--gray-400)">cliente' + (total !== 1 ? 's' : '') + '</span></div>' +
+          '<div style="display:flex;height:8px;border-radius:6px;overflow:hidden;background:var(--gray-100);margin-bottom:10px">' + barra + '</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:4px 12px">' + chips + '</div>' +
+          (proximo ? '<div style="font-size:11px;color:var(--gray-400);margin-top:10px;line-height:1.4">Próximo a vencer: <b>' + esc(proximo.nome) + '</b> · ' + fmtData(proximo.venc) + '</div>' : '')
+        : '<div style="font-size:13px;color:var(--gray-400);margin-top:12px">Nenhum registro ainda.</div>') +
+      '</div>';
+  }).join('');
+  destacarDash();
+}
+
+function destacarDash() {
+  const sel = document.getElementById('situacao').value;
+  SITUACOES.forEach(s => { const el = document.getElementById('dash-' + s); if (el) el.style.borderColor = s === sel ? '#2a6e4a' : 'transparent'; });
+}
+
+/** Clique num dashboard = filtra a lista por aquela situação (clicar de novo volta pra "Todas"). */
+function filtrarPorSituacao(sit) {
+  const sel = document.getElementById('situacao');
+  const ligar = sel.value !== sit;
+  sel.value = ligar ? sit : 'todas';
+  filtrar();
+  if (ligar) document.getElementById('card-lista').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 function paginar(lista, page) {
   const pages = Math.max(1, Math.ceil(lista.length / PAGE_SIZE));
