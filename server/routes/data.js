@@ -87,6 +87,62 @@ router.post('/legalizacao/certificados/importar-certiseguro', async (req, res) =
   }
 });
 
+/**
+ * POST /api/data/legalizacao/procuracoes/importar-ecac — recebe as procurações
+ * RECEBIDAS lidas no portal da Receita (Autorizações de Acesso → Recebidas)
+ * com o e-CAC logado pelo certificado do escritório — pedido do Reysner,
+ * 18/09/2026. Chamada máquina-a-máquina (token compartilhado, igual ao
+ * importar-certiseguro), por isso fica antes do requireAuth. Regras:
+ *   - só Ativa (vencimento = Validade) e Expirada (vira "Vencido" pela data);
+ *   - Cancelada / Rejeitada / Em Análise = "Sem dados" (ignoradas, não gravam);
+ *   - só clientes ATIVOS da Carteira (casa pelo CPF/CNPJ, só dígitos);
+ *   - vários registros pro mesmo CNPJ: vale a Ativa de maior validade.
+ */
+router.post('/legalizacao/procuracoes/importar-ecac', async (req, res) => {
+  try {
+    const tokenEsperado = process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC_TOKEN;
+    if (!tokenEsperado) return res.status(503).json({ error: 'Sincronização não configurada (falta LEGALIZACAO_SYNC_TOKEN/CERTISEGURO_SYNC_TOKEN no servidor).' });
+    if (req.get('X-Sync-Token') !== tokenEsperado) return res.status(401).json({ error: 'Token de sincronização inválido.' });
+
+    await ensureLegalizacaoSchema();
+    const lista = Array.isArray(req.body.procuracoes) ? req.body.procuracoes : [];
+    const melhor = new Map(); // documento -> { venc, rank }
+    for (const p of lista) {
+      const doc = String(p.cnpj || '').replace(/\D/g, '');
+      const situacao = String(p.situacao || '').trim().toLowerCase();
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(p.validade || '').trim());
+      if (!doc || !m || !['ativa', 'expirada'].includes(situacao)) continue;
+      const venc = `${m[3]}-${m[2]}-${m[1]}`;
+      const rank = situacao === 'ativa' ? 1 : 0;
+      const atual = melhor.get(doc);
+      if (!atual || rank > atual.rank || (rank === atual.rank && venc > atual.venc)) melhor.set(doc, { venc, rank });
+    }
+
+    const { rows: clientes } = await pool.query(
+      `SELECT id::text AS id, regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g') AS doc FROM clientes WHERE status = 'ativo'`
+    );
+    const porDoc = new Map(clientes.map(c => [c.doc, c.id]));
+    let atualizados = 0, semCliente = 0;
+    for (const [doc, { venc }] of melhor) {
+      const clienteId = porDoc.get(doc);
+      if (!clienteId) { semCliente++; continue; }
+      await pool.query(
+        `INSERT INTO legalizacao_procuracoes (cliente_id, tipo, data_vencimento, fonte, criado_por)
+         VALUES ($1,'ecac',$2,'ecac','e-CAC (importação)')
+         ON CONFLICT (cliente_id, tipo) DO UPDATE SET data_vencimento = $2, fonte = 'ecac', atualizado_em = NOW()`,
+        [clienteId, venc]
+      );
+      atualizados++;
+    }
+    await registrarLog('sync', 'e-CAC (importação)', 'importar', 'legalizacao',
+      `Procurações e-CAC: ${atualizados} gravada(s), ${semCliente} sem cliente ativo na Carteira, de ${lista.length} lida(s).`, req);
+    res.json({ ok: true, recebidas: lista.length, consideradas: melhor.size, atualizados, semCliente });
+  } catch (err) {
+    console.error('[legalizacao] importar-ecac falhou:', err);
+    res.status(500).json({ error: err.message || 'Erro ao importar procurações.' });
+  }
+});
+
 router.use(requireAuth);
 
 async function registrarLog(userId, userName, acao, modulo, descricao, req) {
