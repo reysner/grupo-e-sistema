@@ -1362,10 +1362,10 @@ const App = (() => {
         return `<tr style="${!ativo?'opacity:.55':''}">
           <td style="font-weight:600">${u.name}</td>
           <td style="font-size:12px;color:var(--gray-500)">${u.email}</td>
-          <td><span class="role-pill ${u.role==='administrador'?'admin':'user'}">${ROLE_LABEL[u.role] || u.role}</span>${u.acesso_minha_nota ? ' <span title="Também acessa Minha Nota" style="font-size:12px">🏆</span>' : ''}</td>
+          <td><span class="role-pill ${u.role==='administrador'?'admin':'user'}">${ROLE_LABEL[u.role] || u.role}</span>${u.acesso_minha_nota ? ' <span title="Também acessa Minha Nota" style="font-size:12px">🏆</span>' : ''}${u.acesso_legalizacao ? ' <span title="Também acessa Legalização" style="font-size:12px">📋</span>' : ''}</td>
           <td><span style="background:${ativo?'#f0fff4':'#fff5f5'};color:${ativo?'#38a169':'#e53e3e'};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${ativo?'Ativo':'Inativo'}</span></td>
           <td style="white-space:nowrap;display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditProfile('${u.id}','${u.name}','${u.email}','${u.role}',${!!u.acesso_minha_nota})">✏️ Editar</button>
+            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditProfile('${u.id}','${u.name}','${u.email}','${u.role}',${!!u.acesso_minha_nota},${!!u.acesso_legalizacao})">✏️ Editar</button>
             <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditPass('${u.id}')">🔑 Senha</button>
             <button class="btn btn-sm" style="background:${ativo?'#fff5f5':'#f0fff4'};color:${ativo?'#e53e3e':'#38a169'};border:1px solid ${ativo?'#fed7d7':'#c6f6d5'}" onclick="App.Admin.toggleAtivo('${u.id}','${u.name}',${ativo})">${ativo?'⏸ Desativar':'▶ Ativar'}</button>
             <button class="btn btn-danger btn-sm" onclick="App.Admin.deleteUser('${u.id}','${u.name}')">🗑 Excluir</button>
@@ -1454,6 +1454,10 @@ const App = (() => {
         <div class="field" style="margin-top:12px;display:flex;align-items:center;gap:8px">
           <input id="m-minha-nota" type="checkbox" style="width:auto" />
           <label for="m-minha-nota" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso a Minha Nota (Gamificação) — combina com qualquer perfil acima, ou marque sozinho (sem escolher perfil) pra acesso só à Minha Nota</label>
+        </div>
+        <div class="field" style="margin-top:8px;display:flex;align-items:center;gap:8px">
+          <input id="m-legalizacao" type="checkbox" style="width:auto" />
+          <label for="m-legalizacao" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso à página pública de Legalização (Alvarás/Certificados + solicitar inativação de cliente)</label>
         </div>`, Admin._confirmAdd);
     },
 
@@ -1461,18 +1465,19 @@ const App = (() => {
       const name=Util.val('m-name'), email=Util.val('m-email'), password=Util.val('m-pass');
       let role = document.getElementById('m-role')?.value;
       const acesso_minha_nota = document.getElementById('m-minha-nota')?.checked || false;
+      const acesso_legalizacao = document.getElementById('m-legalizacao')?.checked || false;
       if (!name||!email||!password) { Toast.err('Preencha todos os campos.'); return; }
       if (!role) {
-        if (!acesso_minha_nota) { Toast.err('Escolha um perfil, ou marque "acesso a Minha Nota".'); return; }
-        role = 'colaborador'; // sem perfil + Minha Nota marcada = acesso só à própria nota
+        if (!acesso_minha_nota && !acesso_legalizacao) { Toast.err('Escolha um perfil, ou marque um dos acessos abaixo.'); return; }
+        role = 'colaborador'; // sem perfil + algum acesso marcado = acesso só àquela(s) tela(s)
       }
-      const res  = await API.post('/api/users', { name, email, password, role, acesso_minha_nota });
+      const res  = await API.post('/api/users', { name, email, password, role, acesso_minha_nota, acesso_legalizacao });
       const data = await res.json();
       if (!res.ok) { Toast.err(data.error); return; }
       Modal.close(); Toast.ok('Usuário criado!'); Admin.load();
     },
 
-    openEditProfile(id, name, email, role, acessoMinhaNota) {
+    openEditProfile(id, name, email, role, acessoMinhaNota, acessoLegalizacao) {
       // 'colaborador' é representado no dropdown como "Escolha o perfil" (vazio)
       // + checkbox marcada — não é mais uma opção própria na lista.
       const roleParaExibir = role === 'colaborador' ? '' : role;
@@ -1490,6 +1495,10 @@ const App = (() => {
           '<input id="eu-minha-nota" type="checkbox" style="width:auto"' + (minhaNotaMarcada ? ' checked' : '') + ' />' +
           '<label for="eu-minha-nota" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso a Minha Nota (Gamificação) — ou marque sozinho (sem escolher perfil) pra acesso só à Minha Nota</label>' +
         '</div>' +
+        '<div class="field" style="display:flex;align-items:center;gap:8px">' +
+          '<input id="eu-legalizacao" type="checkbox" style="width:auto"' + (acessoLegalizacao ? ' checked' : '') + ' />' +
+          '<label for="eu-legalizacao" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso à página pública de Legalização — ou marque sozinho pra acesso só a ela</label>' +
+        '</div>' +
         '<button class="btn btn-primary" data-id="' + id + '" onclick="App.Admin.saveEdit(this.dataset.id)">Salvar</button>' +
       '</div>', null, { noFooter: true });
     },
@@ -1499,12 +1508,13 @@ const App = (() => {
       const email = document.getElementById('eu-email')?.value?.trim();
       let role    = document.getElementById('eu-role')?.value;
       const acesso_minha_nota = document.getElementById('eu-minha-nota')?.checked || false;
+      const acesso_legalizacao = document.getElementById('eu-legalizacao')?.checked || false;
       if (!name) { App.Toast.err('Nome obrigatório.'); return; }
       if (!role) {
-        if (!acesso_minha_nota) { App.Toast.err('Escolha um perfil, ou marque "acesso a Minha Nota".'); return; }
+        if (!acesso_minha_nota && !acesso_legalizacao) { App.Toast.err('Escolha um perfil, ou marque um dos acessos abaixo.'); return; }
         role = 'colaborador';
       }
-      const res = await API.patch('/api/users/' + id + '/profile', { name, email, role, acesso_minha_nota });
+      const res = await API.patch('/api/users/' + id + '/profile', { name, email, role, acesso_minha_nota, acesso_legalizacao });
       if (res && res.ok) { App.Modal.close(); App.Toast.ok('Usuário atualizado!'); Admin.load(); }
       else App.Toast.err('Erro ao atualizar.');
     },
@@ -5458,7 +5468,52 @@ const Legalizacao = (() => {
 
   async function load() {
     await _carregarClientes();
-    await Promise.all([_carregarResumo(), _carregarAlvaras(), _carregarCertificados()]);
+    await Promise.all([_carregarResumo(), _carregarAlvaras(), _carregarCertificados(), _carregarSolicitacoesInativacao()]);
+  }
+
+  // ── SOLICITAÇÕES DE INATIVAÇÃO (vindas da página pública, colaborador) ──
+  async function _carregarSolicitacoesInativacao() {
+    const res = await fetch('/api/data/legalizacao/solicitacoes-inativacao', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) return;
+    const { data } = await res.json();
+    const card = document.getElementById('legal-solic-card');
+    const tbody = document.getElementById('legal-solic-tbody');
+    if (!card || !tbody) return;
+    if (!data || !data.length) { card.style.display = 'none'; return; }
+    card.style.display = '';
+    tbody.innerHTML = data.map(s => `<tr>
+      <td><b>${s.nome_empresa || '—'}</b></td>
+      <td>${s.solicitado_por || '—'}</td>
+      <td style="max-width:320px">${s.observacao || ''}</td>
+      <td style="font-size:12px;color:var(--gray-500);white-space:nowrap">${_fmtData(s.solicitado_em) || '—'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-success btn-sm" onclick="Legalizacao.aprovarSolicitacaoInativacao('${s.id}','${(s.nome_empresa||'').replace(/'/g,"\\'")}')">✅ Validar e desativar</button>
+        <button class="btn btn-ghost btn-sm" onclick="Legalizacao.rejeitarSolicitacaoInativacao('${s.id}')">❌ Rejeitar</button>
+      </td>
+    </tr>`).join('');
+  }
+
+  async function aprovarSolicitacaoInativacao(id, nomeEmpresa) {
+    if (!confirm(`Confirma a inativação de "${nomeEmpresa}"? O cliente sai da Carteira (status encerrado).`)) return;
+    const res = await fetch(`/api/data/legalizacao/solicitacoes-inativacao/${id}/aprovar`, {
+      method: 'PATCH', headers: { Authorization: 'Bearer ' + _tk() }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { App.Toast.err(data.error || 'Erro ao aprovar.'); return; }
+    App.Toast.ok('Cliente inativado.');
+    await load();
+  }
+
+  async function rejeitarSolicitacaoInativacao(id) {
+    const decisaoObservacao = prompt('Motivo da rejeição (opcional):') || '';
+    const res = await fetch(`/api/data/legalizacao/solicitacoes-inativacao/${id}/rejeitar`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ decisaoObservacao })
+    });
+    if (!res.ok) { App.Toast.err('Erro ao rejeitar.'); return; }
+    App.Toast.ok('Solicitação rejeitada.');
+    await load();
   }
 
   async function _carregarClientes() {
@@ -5891,6 +5946,7 @@ const Legalizacao = (() => {
     consultarPrefeitura, consultarTodosPrefeitura, exportAlvarasCSV, exportAlvarasPDF,
     abrirFormCertificadoPJ, salvarCertificadoPJ, abrirAdicionarCertificadoPF, abrirFormCertificadoPF,
     salvarCertificadoPF, excluirCertificado, exportCertificadosCSV, exportCertificadosPDF,
+    aprovarSolicitacaoInativacao, rejeitarSolicitacaoInativacao,
   };
 })();
 

@@ -32,7 +32,7 @@ const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function signAccess(user) {
   return jwt.sign(
-    { sub: user.id, name: user.name, role: user.role, acesso_minha_nota: !!user.acesso_minha_nota },
+    { sub: user.id, name: user.name, role: user.role, acesso_minha_nota: !!user.acesso_minha_nota, acesso_legalizacao: !!user.acesso_legalizacao },
     ACCESS_SECRET,
     { expiresIn: ACCESS_TTL, issuer: 'grupo-e' }
   );
@@ -72,7 +72,7 @@ function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Não autenticado.' });
   try {
     const payload = jwt.verify(token, ACCESS_SECRET, { issuer: 'grupo-e' });
-    req.user = { id: payload.sub, name: payload.name, role: payload.role, acessoMinhaNota: !!payload.acesso_minha_nota };
+    req.user = { id: payload.sub, name: payload.name, role: payload.role, acessoMinhaNota: !!payload.acesso_minha_nota, acessoLegalizacao: !!payload.acesso_legalizacao };
     const isAuthOuPerfil = req.path && (req.path.includes('/auth') || req.path.includes('/perfil'));
     // Minha Nota (28/08/2026, self-service da Gamificação): rotas
     // /gam/minha-* e /gam/meus-* — a nota/tickets da PRÓPRIA pessoa,
@@ -83,19 +83,29 @@ function requireAuth(req, res, next) {
     // sem precisar de dois logins (pedido do Reysner: "tem como escolher
     // só minha nota e contábil pro mesmo usuário?").
     const isMinhaNotaRoute = req.path && (req.path.includes('/gam/minha-') || req.path.includes('/gam/meus-'));
+    // Página pública de Legalização (18/09/2026, colaborador vê
+    // Alvarás/Certificados e solicita inativação de cliente) — mesmo
+    // esquema combinável de acesso_minha_nota, mas com acesso_legalizacao
+    // (checkbox própria em Administração de Usuários). Endpoints que só o
+    // admin pode chamar (excluir, editar direto, aprovar/rejeitar
+    // solicitação) continuam atrás de requireAdmin normalmente — isso aqui
+    // só libera o colaborador a CHEGAR nas rotas /legalizacao.
+    const isLegalizacaoRoute = req.path && req.path.includes('/legalizacao');
 
-    // Usuário contábil só pode acessar rotas de tickets (+ Minha Nota, se
-    // acesso_minha_nota estiver ligado) — bloqueia o resto.
+    // Usuário contábil só pode acessar rotas de tickets (+ Minha Nota/Legalização, se as flags estiverem ligadas) — bloqueia o resto.
     if (payload.role === 'contabil') {
       const isTicketRoute = req.path && req.path.includes('/tickets');
-      const permitido = isTicketRoute || isAuthOuPerfil || (payload.acesso_minha_nota && isMinhaNotaRoute);
+      const permitido = isTicketRoute || isAuthOuPerfil
+        || (payload.acesso_minha_nota && isMinhaNotaRoute)
+        || (payload.acesso_legalizacao && isLegalizacaoRoute);
       if (!permitido) return res.status(403).json({ error: 'Acesso restrito ao portal contábil.' });
     }
-    // Colaborador: só pode ver a própria nota — nunca dados de tickets,
+    // Colaborador: só pode ver a própria nota (ou Legalização, se
+    // acesso_legalizacao estiver ligado) — nunca dados de tickets,
     // clientes, outros colaboradores etc. Papel "puro", pra quem não deve
-    // ter NENHUM outro acesso (diferente do checkbox acima, que ADICIONA
-    // Minha Nota a um perfil que já tem outra coisa).
-    if (payload.role === 'colaborador' && !(isMinhaNotaRoute || isAuthOuPerfil)) {
+    // ter NENHUM outro acesso (diferente dos checkboxes acima, que
+    // ADICIONAM uma tela a um perfil que já tem outra coisa).
+    if (payload.role === 'colaborador' && !(isMinhaNotaRoute || isAuthOuPerfil || (payload.acesso_legalizacao && isLegalizacaoRoute))) {
       return res.status(403).json({ error: 'Acesso restrito à sua nota da Gamificação.' });
     }
     next();

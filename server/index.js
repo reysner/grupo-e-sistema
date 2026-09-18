@@ -95,6 +95,14 @@ app.get('/minha-nota', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'minha-nota.html'));
 });
 
+// ── Legalização pública — colaborador com acesso_legalizacao (login próprio),
+// pedido do Reysner 18/09/2026: acesso a Alvarás/Certificados + solicitar
+// inativação de cliente. Mesmo espírito de Minha Nota (login próprio, não
+// é a mesma tela do módulo interno de admin). ──
+app.get('/legalizacao', (req, res) => {
+  res.sendFile(path.join(PUBLIC, 'legalizacao-publica.html'));
+});
+
 // ── Arquivos estáticos com MIME correto ───────────────────────────────────────
 app.get('/js/:file', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');

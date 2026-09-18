@@ -121,6 +121,11 @@ async function init() {
   // (usuario/contabil/administrador) sem precisar de um segundo login —
   // ver server/auth.js requireAuth.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS acesso_minha_nota BOOLEAN NOT NULL DEFAULT false`).catch(()=>{});
+  // Mesmo padrão de acesso_minha_nota, pra página pública de Legalização
+  // (colaborador vê Alvarás/Certificados e solicita inativação de cliente —
+  // pedido do Reysner, 18/09/2026). Ver server/auth.js requireAuth e
+  // public/legalizacao-publica.html.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS acesso_legalizacao BOOLEAN NOT NULL DEFAULT false`).catch(()=>{});
 }
 
 async function query(text, params) {

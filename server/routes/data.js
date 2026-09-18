@@ -4716,6 +4716,26 @@ async function ensureLegalizacaoSchema() {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_cert_cliente_pj ON legalizacao_certificados (cliente_id) WHERE tipo = 'pj' AND cliente_id IS NOT NULL`).catch(()=>{});
   // Mesmo esquema de notificação dos alvarás, mas 10 dias (ver LEGAL_DIAS_ALERTA_CERTIFICADO).
   await pool.query(`ALTER TABLE legalizacao_certificados ADD COLUMN IF NOT EXISTS notificado_vencimento_em TIMESTAMPTZ`).catch(()=>{});
+
+  // Solicitação de inativação de cliente, feita pelo colaborador na página
+  // pública de Legalização (pedido do Reysner, 18/09/2026): "ele poderá
+  // inativar porém colocando a observação e aqui no módulo se realmente
+  // estiver certo eu valido e excluo/desativo". Nunca desativa o cliente
+  // sozinha — só registra o pedido com status 'pendente'; aprovar de
+  // verdade encerra o cliente (mesma lógica de PATCH /clientes/:id/encerrar).
+  await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_solicitacoes_inativacao (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cliente_id TEXT NOT NULL,
+    nome_empresa TEXT,
+    observacao TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente','aprovada','rejeitada')),
+    solicitado_por TEXT,
+    solicitado_em TIMESTAMPTZ DEFAULT NOW(),
+    decidido_por TEXT,
+    decidido_em TIMESTAMPTZ,
+    decisao_observacao TEXT
+  )`).catch(()=>{});
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_legal_solic_inativ_status ON legalizacao_solicitacoes_inativacao (status)`).catch(()=>{});
 }
 
 /** SQL de status compartilhado pelas listagens — mesmo critério em todo o módulo. */
@@ -5074,6 +5094,107 @@ async function verificarNotificacoesLegalizacao() {
 
   return { criadas };
 }
+
+/**
+ * POST /api/data/legalizacao/solicitar-inativacao — usado pela página
+ * pública de Legalização (colaborador com acesso_legalizacao). NÃO desativa
+ * ninguém sozinho — só registra o pedido pendente + notifica o admin.
+ * Pedido do Reysner, 18/09/2026: "ele poderá inativar porém colocando a
+ * observação e aqui no módulo se realmente estiver certo eu valido".
+ */
+router.post('/legalizacao/solicitar-inativacao', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const { clienteId, observacao } = req.body;
+    if (!clienteId) return res.status(400).json({ error: 'Informe o cliente.' });
+    if (!observacao || !observacao.trim()) return res.status(400).json({ error: 'Informe a observação/justificativa.' });
+
+    const { rows: cli } = await pool.query(`SELECT nome_empresa FROM clientes WHERE id = $1`, [clienteId]);
+    if (!cli.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
+
+    const { rows: pendente } = await pool.query(
+      `SELECT id FROM legalizacao_solicitacoes_inativacao WHERE cliente_id = $1 AND status = 'pendente'`, [clienteId]
+    );
+    if (pendente.length) return res.status(409).json({ error: 'Já existe uma solicitação pendente pra esse cliente.' });
+
+    const { rows } = await pool.query(
+      `INSERT INTO legalizacao_solicitacoes_inativacao (cliente_id, nome_empresa, observacao, solicitado_por)
+       VALUES ($1,$2,$3,$4) RETURNING id`,
+      [clienteId, cli[0].nome_empresa, observacao.trim(), req.user.name]
+    );
+    await pool.query(
+      `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id)
+       VALUES ('legalizacao_inativacao_solicitada', $1, $2, 'legalizacao', $3)`,
+      ['Solicitação de inativação de cliente',
+       `${req.user.name} solicitou inativar ${cli[0].nome_empresa}: "${observacao.trim()}"`, clienteId]
+    );
+    res.status(201).json({ ok: true, id: rows[0].id });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao registrar solicitação.' }); }
+});
+
+/** GET /api/data/legalizacao/solicitacoes-inativacao — lista pro admin revisar (padrão: só pendentes). */
+router.get('/legalizacao/solicitacoes-inativacao', requireAdmin, async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const status = req.query.status || 'pendente';
+    const { rows } = await pool.query(
+      status === 'todas'
+        ? `SELECT * FROM legalizacao_solicitacoes_inativacao ORDER BY solicitado_em DESC`
+        : `SELECT * FROM legalizacao_solicitacoes_inativacao WHERE status = $1 ORDER BY solicitado_em DESC`,
+      status === 'todas' ? [] : [status]
+    );
+    res.json({ data: rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar solicitações.' }); }
+});
+
+/**
+ * PATCH /api/data/legalizacao/solicitacoes-inativacao/:id/aprovar — só o
+ * admin. Encerra o cliente de verdade (mesma lógica de
+ * PATCH /clientes/:id/encerrar) usando a observação do colaborador como
+ * motivo_saida, e marca a solicitação como aprovada.
+ */
+router.patch('/legalizacao/solicitacoes-inativacao/:id/aprovar', requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM legalizacao_solicitacoes_inativacao WHERE id = $1 AND status = 'pendente'`, [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Solicitação não encontrada ou já decidida.' });
+    const solicitacao = rows[0];
+    const hoje = new Date().toISOString().slice(0, 10);
+    const motivo = `Inativação solicitada por ${solicitacao.solicitado_por}: ${solicitacao.observacao}`;
+
+    await pool.query(
+      `UPDATE clientes SET status='encerrado', data_saida=$1, motivo_saida=$2 WHERE id=$3`,
+      [hoje, motivo, solicitacao.cliente_id]
+    );
+    await pool.query(
+      `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, data_evento) VALUES ($1,'saida',$2,$3)`,
+      [solicitacao.cliente_id, motivo, hoje]
+    );
+    await pool.query(
+      `UPDATE legalizacao_solicitacoes_inativacao SET status='aprovada', decidido_por=$1, decidido_em=NOW() WHERE id=$2`,
+      [req.user.name, req.params.id]
+    );
+    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao',
+      `Aprovou inativação de ${solicitacao.nome_empresa} (solicitado por ${solicitacao.solicitado_por})`, req);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao aprovar solicitação.' }); }
+});
+
+/** PATCH /api/data/legalizacao/solicitacoes-inativacao/:id/rejeitar — só o admin, não mexe no cliente. */
+router.patch('/legalizacao/solicitacoes-inativacao/:id/rejeitar', requireAdmin, async (req, res) => {
+  try {
+    const { decisaoObservacao } = req.body;
+    const { rows } = await pool.query(
+      `UPDATE legalizacao_solicitacoes_inativacao
+         SET status='rejeitada', decidido_por=$1, decidido_em=NOW(), decisao_observacao=$2
+       WHERE id=$3 AND status='pendente' RETURNING id`,
+      [req.user.name, decisaoObservacao || null, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Solicitação não encontrada ou já decidida.' });
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao rejeitar solicitação.' }); }
+});
 
 module.exports = router;
 module.exports.verificarNotificacoesLegalizacao = verificarNotificacoesLegalizacao;

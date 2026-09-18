@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Legalização — Grupo-E</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    :root{
+      --green:#1a4233;--green-light:#2a6e4a;--green-pale:#e8f4ef;
+      --gold:#f5c518;--gray-50:#f8fafc;--gray-100:#f1f5f9;
+      --gray-200:#e2e8f0;--gray-400:#94a3b8;--gray-500:#64748b;
+      --gray-600:#475569;--gray-700:#334155;--gray-800:#1e293b;
+      --white:#fff;--radius:12px;--shadow:0 4px 16px rgba(0,0,0,.08);
+      --red:#c0362c;--red-pale:#fff5f5;--green-ok:#38a169;
+    }
+    body{font-family:'Inter',sans-serif;background:var(--gray-50);color:var(--gray-800);min-height:100vh}
+    /* LOGIN */
+    #login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+    .login-card{background:var(--white);border-radius:16px;box-shadow:0 8px 40px rgba(0,0,0,.12);padding:40px;width:100%;max-width:400px}
+    .login-title{font-size:20px;font-weight:800;color:var(--green);text-align:center;margin-bottom:6px}
+    .login-sub{font-size:13px;color:var(--gray-400);text-align:center;margin-bottom:24px}
+    .field label{display:block;font-size:12px;font-weight:700;color:var(--gray-500);margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+    .field input,.field select,.field textarea{width:100%;padding:10px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:14px;outline:none;transition:border .15s;font-family:inherit}
+    .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--green)}
+    .field{margin-bottom:14px}
+    .btn-login{width:100%;padding:12px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px}
+    .btn-login:hover{background:var(--green-light)}
+    .login-err{color:var(--red);font-size:13px;text-align:center;margin-top:10px;display:none}
+    /* APP */
+    #app-screen{display:none}
+    .topbar{background:var(--green);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+    .topbar-title{color:#fff;font-weight:800;font-size:16px}
+    .topbar-right{display:flex;align-items:center;gap:12px}
+    .topbar-user{color:rgba(255,255,255,.85);font-size:13px}
+    .btn-sair{background:rgba(255,255,255,.15);color:#fff;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:12.5px}
+    .btn-sair:hover{background:rgba(255,255,255,.25)}
+    .container{max-width:1080px;margin:0 auto;padding:28px 20px 60px}
+    .cards-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:20px}
+    .stat-card{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px}
+    .stat-label{font-size:11px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.05em}
+    .stat-val{font-size:26px;font-weight:800;margin-top:6px}
+    .card{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px 24px;margin-bottom:18px}
+    .card-title{font-size:16px;font-weight:800;color:var(--green);margin-bottom:14px}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+    .btn{padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;border:1px solid var(--gray-200);background:var(--white);color:var(--gray-700)}
+    .btn:hover{background:var(--gray-50)}
+    .filtros{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+    .filtros input,.filtros select{padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px}
+    .filtros input{flex:1;min-width:200px}
+    .table-wrap{overflow-x:auto}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--gray-500);padding:8px 10px;border-bottom:2px solid var(--gray-100);white-space:nowrap}
+    td{padding:9px 10px;border-bottom:1px solid var(--gray-100)}
+    .empty-msg{text-align:center;color:var(--gray-400);padding:30px 10px;font-size:14px}
+    .loading{text-align:center;color:var(--gray-400);padding:30px}
+    .pagination{display:flex;gap:6px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+    .pagination button{padding:6px 11px;border:1px solid var(--gray-200);background:var(--white);border-radius:6px;font-size:12.5px;cursor:pointer}
+    .pagination button.ativo{background:var(--green);color:#fff;border-color:var(--green)}
+    .pagination .total{font-size:12px;color:var(--gray-400);align-self:center;margin-right:6px}
+    .btn-icon{background:none;border:none;cursor:pointer;font-size:14px}
+    /* MODAL */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:500;padding:20px}
+    .modal-box{background:var(--white);border-radius:16px;box-shadow:0 8px 40px rgba(0,0,0,.2);width:100%;max-width:460px;max-height:90vh;overflow-y:auto}
+    .modal-header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--gray-100)}
+    .modal-header h2{font-size:16px;color:var(--green)}
+    .modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--gray-400);line-height:1}
+    .modal-body{padding:20px 22px}
+    .btn-primary{background:var(--green);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:700;cursor:pointer}
+    .btn-primary:hover{background:var(--green-light)}
+    .btn-danger{background:var(--red);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:700;cursor:pointer}
+  </style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-title">📋 Legalização</div>
+    <div class="login-sub">Grupo-E</div>
+    <div class="field"><label>E-mail</label><input id="l-email" type="email" placeholder="seu@email.com" /></div>
+    <div class="field"><label>Senha</label><input id="l-senha" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter') login()" /></div>
+    <button class="btn-login" onclick="login()">Entrar</button>
+    <div class="login-err" id="l-err"></div>
+  </div>
+</div>
+
+<div id="app-screen">
+  <div class="topbar">
+    <div class="topbar-title">📋 Legalização</div>
+    <div class="topbar-right">
+      <span class="topbar-user" id="app-nome"></span>
+      <button class="btn-sair" onclick="sair()">Sair</button>
+    </div>
+  </div>
+  <div class="container">
+    <div class="cards-row">
+      <div class="stat-card"><div class="stat-label">🔴 Vencidos</div><div class="stat-val" id="qtd-vencido">—</div></div>
+      <div class="stat-card"><div class="stat-label">🟡 Vencendo</div><div class="stat-val" id="qtd-vencendo">—</div></div>
+      <div class="stat-card"><div class="stat-label">🔵 Solicitação</div><div class="stat-val" id="qtd-solicitacao">—</div></div>
+      <div class="stat-card"><div class="stat-label">🟢 Em dia</div><div class="stat-val" id="qtd-ok">—</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Alvarás (Funcionamento e Sanitário)</div>
+      <div class="toolbar">
+        <button class="btn" onclick="exportAlvarasCSV()">⬇ CSV</button>
+        <button class="btn" onclick="exportAlvarasPDF()">🖨 PDF</button>
+      </div>
+      <div class="filtros">
+        <input id="alv-busca" type="text" placeholder="🔍 Buscar empresa ou CNPJ..." oninput="filtrarAlvaras()" />
+        <select id="alv-tipo" onchange="filtrarAlvaras()">
+          <option value="todos">Todos os tipos</option>
+          <option value="funcionamento">Funcionamento</option>
+          <option value="sanitario">Sanitário</option>
+        </select>
+        <select id="alv-status" onchange="filtrarAlvaras()">
+          <option value="todos">Todos os status</option>
+          <option value="vencido">🔴 Vencido</option>
+          <option value="vencendo">🟡 Vencendo</option>
+          <option value="solicitacao">🔵 Solicitação em andamento</option>
+          <option value="ok">🟢 Em dia</option>
+          <option value="sem_data">⚪ Sem data cadastrada</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Empresa</th><th>CNPJ</th><th>Tipo</th><th>Status</th><th></th></tr></thead>
+          <tbody id="alv-tbody"><tr><td colspan="5" class="loading">Carregando...</td></tr></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="alv-pagination"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Certificados Digitais (PJ e PF)</div>
+      <div class="toolbar">
+        <button class="btn" onclick="exportCertCSV()">⬇ CSV</button>
+        <button class="btn" onclick="exportCertPDF()">🖨 PDF</button>
+      </div>
+      <div class="filtros">
+        <input id="cert-busca" type="text" placeholder="🔍 Buscar empresa, titular ou documento..." oninput="filtrarCert()" />
+        <select id="cert-tipo" onchange="filtrarCert()">
+          <option value="todos">PJ e PF</option>
+          <option value="pj">PJ</option>
+          <option value="pf">PF</option>
+        </select>
+        <select id="cert-status" onchange="filtrarCert()">
+          <option value="todos">Todos os status</option>
+          <option value="vencido">🔴 Vencido</option>
+          <option value="vencendo">🟡 Vencendo</option>
+          <option value="ok">🟢 Em dia</option>
+          <option value="sem_data">⚪ Sem data cadastrada</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Titular</th><th>Tipo</th><th>Documento</th><th>Status</th></tr></thead>
+          <tbody id="cert-tbody"><tr><td colspan="4" class="loading">Carregando...</td></tr></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="cert-pagination"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-inativar" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2>Solicitar inativação de cliente</h2>
+      <button class="modal-close" onclick="fecharModalInativar()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--gray-500);margin-bottom:14px">
+        Isso <b>não desativa o cliente imediatamente</b> — envia um pedido para o administrador revisar e confirmar.
+      </p>
+      <div class="field"><label>Empresa</label><input id="inat-empresa" type="text" disabled /></div>
+      <div class="field"><label>Motivo / Observação <span style="color:var(--red)">*</span></label>
+        <textarea id="inat-obs" rows="4" placeholder="Explique por que esse cliente deve ser inativado..."></textarea>
+      </div>
+      <p class="login-err" id="inat-err"></p>
+      <button class="btn-danger" onclick="confirmarInativacao()">Enviar solicitação</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let _token = null, _user = null;
+let _alvaras = [], _certificados = [];
+let _alvPage = 1, _certPage = 1, _inatClienteId = null;
+const PAGE_SIZE = 25;
+
+function api(path, opts) {
+  return fetch(path, Object.assign({}, opts, { headers: Object.assign({ Authorization: 'Bearer ' + _token }, (opts && opts.headers) || {}) }));
+}
+
+async function login() {
+  const email = document.getElementById('l-email').value.trim();
+  const senha = document.getElementById('l-senha').value;
+  const err = document.getElementById('l-err');
+  err.style.display = 'none';
+  if (!email || !senha) { err.textContent = 'Preencha e-mail e senha.'; err.style.display = 'block'; return; }
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: senha })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { err.textContent = data.error || 'Credenciais inválidas.'; err.style.display = 'block'; return; }
+  if (data.user.role !== 'administrador' && !data.user.acesso_legalizacao) {
+    err.textContent = 'Esse login não tem acesso a Legalização. Fale com a liderança.'; err.style.display = 'block'; return;
+  }
+  _token = data.token;
+  _user = data.user;
+  localStorage.setItem('lg_token', _token);
+  localStorage.setItem('lg_user', JSON.stringify(_user));
+  mostrarApp();
+}
+
+function sair() {
+  _token = null; _user = null;
+  localStorage.removeItem('lg_token');
+  localStorage.removeItem('lg_user');
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app-screen').style.display = 'none';
+}
+
+function mostrarApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display = 'block';
+  document.getElementById('app-nome').textContent = _user.name;
+  carregarTudo();
+}
+
+function _soData(d) { return d ? String(d).slice(0, 10) : ''; }
+function _fmtData(d) { return d ? new Date(_soData(d) + 'T00:00:00').toLocaleDateString('pt-BR') : '—'; }
+
+const STATUS_INFO = {
+  vencido:     { cor: '#c0362c', bg: '#fff5f5', label: '🔴 Vencido' },
+  vencendo:    { cor: '#b7791f', bg: '#fffbeb', label: '🟡 Vencendo' },
+  solicitacao: { cor: '#2b6cb0', bg: '#ebf8ff', label: '🔵 Solicitação' },
+  ok:          { cor: '#38a169', bg: '#f0fff4', label: '🟢 Em dia' },
+  sem_data:    { cor: '#718096', bg: '#f7fafc', label: '⚪ Sem data' },
+};
+function badge(status) {
+  const m = STATUS_INFO[status] || STATUS_INFO.sem_data;
+  return `<span style="font-weight:700;color:${m.cor};background:${m.bg};padding:3px 10px;border-radius:12px;font-size:12px;white-space:nowrap">${m.label}</span>`;
+}
+
+async function carregarTudo() {
+  await Promise.all([carregarResumo(), carregarAlvaras(), carregarCertificados()]);
+}
+
+async function carregarResumo() {
+  const res = await api('/api/data/legalizacao/resumo');
+  if (res.status === 401 || res.status === 403) { sair(); return; }
+  if (!res.ok) return;
+  const { alvaras, certificados } = await res.json();
+  document.getElementById('qtd-vencido').textContent = (alvaras.vencido || 0) + (certificados.vencido || 0);
+  document.getElementById('qtd-vencendo').textContent = (alvaras.vencendo || 0) + (certificados.vencendo || 0);
+  document.getElementById('qtd-solicitacao').textContent = alvaras.solicitacao || 0;
+  document.getElementById('qtd-ok').textContent = (alvaras.ok || 0) + (certificados.ok || 0);
+}
+
+// ── ALVARÁS ──────────────────────────────────────────────────────────
+async function carregarAlvaras() {
+  const res = await api('/api/data/legalizacao/alvaras');
+  if (!res.ok) return;
+  const { data } = await res.json();
+  _alvaras = data || [];
+  filtrarAlvaras();
+}
+
+function alvarasFiltrados() {
+  const busca = (document.getElementById('alv-busca').value || '').toLowerCase().trim();
+  const tipo = document.getElementById('alv-tipo').value;
+  const status = document.getElementById('alv-status').value;
+  let lista = _alvaras;
+  if (tipo !== 'todos') lista = lista.filter(a => a.tipo === tipo);
+  if (status !== 'todos') lista = lista.filter(a => a.status === status);
+  if (busca) lista = lista.filter(a => (a.nome_empresa || '').toLowerCase().includes(busca) || (a.cnpj || '').includes(busca));
+  return lista;
+}
+
+function filtrarAlvaras() { _alvPage = 1; goPageAlvaras(1); }
+
+function paginar(lista, page) {
+  const pages = Math.max(1, Math.ceil(lista.length / PAGE_SIZE));
+  const p = Math.min(Math.max(1, page), pages);
+  return { items: lista.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE), page: p, pages, total: lista.length };
+}
+
+function renderPaginacao(containerId, pg, fnName) {
+  const el = document.getElementById(containerId);
+  if (pg.total <= PAGE_SIZE) { el.innerHTML = ''; return; }
+  let html = `<span class="total">Total: ${pg.total}</span>`;
+  for (let i = 1; i <= pg.pages; i++) {
+    if (pg.pages > 9 && Math.abs(i - pg.page) > 2 && i !== 1 && i !== pg.pages) {
+      if (i === 2 || i === pg.pages - 1) html += '<span style="align-self:center">…</span>';
+      continue;
+    }
+    html += `<button class="${i === pg.page ? 'ativo' : ''}" onclick="${fnName}(${i})">${i}</button>`;
+  }
+  el.innerHTML = html;
+}
+
+function goPageAlvaras(p) {
+  const tbody = document.getElementById('alv-tbody');
+  const lista = alvarasFiltrados();
+  if (!lista.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-msg">Nenhum alvará encontrado.</td></tr>';
+    document.getElementById('alv-pagination').innerHTML = '';
+    return;
+  }
+  const pg = paginar(lista, p);
+  _alvPage = pg.page;
+  const tipoLabel = { funcionamento: 'Funcionamento', sanitario: 'Sanitário' };
+  tbody.innerHTML = pg.items.map(a => `<tr>
+    <td><b>${a.nome_empresa || '—'}</b></td>
+    <td style="font-size:12px;color:var(--gray-500)">${a.cnpj || '—'}</td>
+    <td>${tipoLabel[a.tipo] || a.tipo}</td>
+    <td>${badge(a.status)}</td>
+    <td>${a.cliente_id ? `<button class="btn-icon" title="Solicitar inativação deste cliente" onclick="abrirModalInativar('${a.cliente_id}','${(a.nome_empresa||'').replace(/'/g,"\\'")}')">🚫</button>` : ''}</td>
+  </tr>`).join('');
+  renderPaginacao('alv-pagination', pg, 'goPageAlvaras');
+}
+
+function exportAlvarasCSV() {
+  const lista = alvarasFiltrados();
+  if (!lista.length) { alert('Nenhum dado para exportar.'); return; }
+  const statusLabel = { vencido: 'Vencido', vencendo: 'Vencendo', solicitacao: 'Solicitação em andamento', ok: 'Em dia', sem_data: 'Sem data' };
+  const tipoLabel = { funcionamento: 'Funcionamento', sanitario: 'Sanitário' };
+  const header = ['Empresa', 'CNPJ', 'Tipo', 'Status'].join(';');
+  const rows = lista.map(a => [a.nome_empresa || '', a.cnpj || '', tipoLabel[a.tipo] || a.tipo, statusLabel[a.status] || a.status]
+    .map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
+  baixarCSV([header, ...rows].join('\n'), 'legalizacao_alvaras');
+}
+
+function exportAlvarasPDF() {
+  const lista = alvarasFiltrados();
+  if (!lista.length) { alert('Nenhum dado para exportar.'); return; }
+  const statusLabel = { vencido: '🔴 Vencido', vencendo: '🟡 Vencendo', solicitacao: '🔵 Solicitação', ok: '🟢 Em dia', sem_data: '⚪ Sem data' };
+  const tipoLabel = { funcionamento: 'Funcionamento', sanitario: 'Sanitário' };
+  const rows = lista.map(a => `<tr><td>${a.nome_empresa || '—'}</td><td>${a.cnpj || '—'}</td><td>${tipoLabel[a.tipo] || a.tipo}</td><td>${statusLabel[a.status] || a.status}</td></tr>`).join('');
+  abrirJanelaPDF('Legalização — Alvarás', ['Empresa', 'CNPJ', 'Tipo', 'Status'], rows, lista.length);
+}
+
+// ── CERTIFICADOS ─────────────────────────────────────────────────────
+async function carregarCertificados() {
+  const res = await api('/api/data/legalizacao/certificados');
+  if (!res.ok) return;
+  const { data } = await res.json();
+  _certificados = data || [];
+  filtrarCert();
+}
+
+function certFiltrados() {
+  const busca = (document.getElementById('cert-busca').value || '').toLowerCase().trim();
+  const tipo = document.getElementById('cert-tipo').value;
+  const status = document.getElementById('cert-status').value;
+  let lista = _certificados;
+  if (tipo !== 'todos') lista = lista.filter(c => c.tipo === tipo);
+  if (status !== 'todos') lista = lista.filter(c => c.status === status);
+  if (busca) lista = lista.filter(c => (c.titular_nome || '').toLowerCase().includes(busca) || (c.titular_documento || '').includes(busca));
+  return lista;
+}
+
+function filtrarCert() { _certPage = 1; goPageCert(1); }
+
+function goPageCert(p) {
+  const tbody = document.getElementById('cert-tbody');
+  const lista = certFiltrados();
+  if (!lista.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-msg">Nenhum certificado encontrado.</td></tr>';
+    document.getElementById('cert-pagination').innerHTML = '';
+    return;
+  }
+  const pg = paginar(lista, p);
+  _certPage = pg.page;
+  tbody.innerHTML = pg.items.map(c => {
+    const semCadastro = c.sem_cadastro_acessorias
+      ? '<br><span style="font-size:11px;color:var(--gray-500)">⚠️ Não há cadastro no Acessórias</span>' : '';
+    return `<tr>
+      <td><b>${c.titular_nome}</b>${semCadastro}</td>
+      <td>${c.tipo.toUpperCase()}</td>
+      <td style="font-size:12px;color:var(--gray-500)">${c.titular_documento || '—'}</td>
+      <td>${badge(c.status)}</td>
+    </tr>`;
+  }).join('');
+  renderPaginacao('cert-pagination', pg, 'goPageCert');
+}
+
+function exportCertCSV() {
+  const lista = certFiltrados();
+  if (!lista.length) { alert('Nenhum dado para exportar.'); return; }
+  const statusLabel = { vencido: 'Vencido', vencendo: 'Vencendo', ok: 'Em dia', sem_data: 'Sem data' };
+  const header = ['Titular', 'Tipo', 'Documento', 'Status', 'Cadastro Acessórias'].join(';');
+  const rows = lista.map(c => [c.titular_nome || '', c.tipo.toUpperCase(), c.titular_documento || '', statusLabel[c.status] || c.status, c.sem_cadastro_acessorias ? 'Não há cadastro' : 'Sim']
+    .map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
+  baixarCSV([header, ...rows].join('\n'), 'legalizacao_certificados');
+}
+
+function exportCertPDF() {
+  const lista = certFiltrados();
+  if (!lista.length) { alert('Nenhum dado para exportar.'); return; }
+  const statusLabel = { vencido: '🔴 Vencido', vencendo: '🟡 Vencendo', ok: '🟢 Em dia', sem_data: '⚪ Sem data' };
+  const rows = lista.map(c => `<tr><td>${c.titular_nome}</td><td>${c.tipo.toUpperCase()}</td><td>${c.titular_documento || '—'}</td>` +
+    `<td>${statusLabel[c.status] || c.status}</td><td>${c.sem_cadastro_acessorias ? '⚠️ Não há cadastro' : 'Sim'}</td></tr>`).join('');
+  abrirJanelaPDF('Legalização — Certificados Digitais', ['Titular', 'Tipo', 'Documento', 'Status', 'Cadastro Acessórias'], rows, lista.length);
+}
+
+// ── EXPORT HELPERS ───────────────────────────────────────────────────
+function baixarCSV(csv, nomeArq) {
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url; link.download = `${nomeArq}_${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click(); URL.revokeObjectURL(url);
+}
+
+function abrirJanelaPDF(titulo, colunas, linhasHtml, total) {
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
+  <style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#222}
+  h1{font-size:15px;color:#1a4233;margin-bottom:4px}p.sub{color:#666;font-size:11px;margin-bottom:12px}
+  table{width:100%;border-collapse:collapse;font-size:10px}
+  th{background:#1a4233;color:#fff;padding:6px 8px;text-align:left}
+  td{padding:5px 8px;border-bottom:1px solid #eee}tr:nth-child(even) td{background:#f8f8f8}
+  @media print{body{margin:10px}}</style></head><body>
+  <h1>${titulo}</h1>
+  <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')} | Total: ${total} registro${total !== 1 ? 's' : ''}</p>
+  <table><thead><tr>${colunas.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${linhasHtml}</tbody></table>
+  <script>window.onload=()=>{window.print();}<\/script></body></html>`;
+  const win = window.open('', '_blank');
+  if (!win) { alert('Permita popups para exportar PDF.'); return; }
+  win.document.write(html); win.document.close();
+}
+
+// ── SOLICITAR INATIVAÇÃO ─────────────────────────────────────────────
+function abrirModalInativar(clienteId, nomeEmpresa) {
+  _inatClienteId = clienteId;
+  document.getElementById('inat-empresa').value = nomeEmpresa;
+  document.getElementById('inat-obs').value = '';
+  document.getElementById('inat-err').style.display = 'none';
+  document.getElementById('modal-inativar').style.display = 'flex';
+}
+function fecharModalInativar() { document.getElementById('modal-inativar').style.display = 'none'; }
+
+async function confirmarInativacao() {
+  const observacao = document.getElementById('inat-obs').value.trim();
+  const err = document.getElementById('inat-err');
+  err.style.display = 'none';
+  if (!observacao) { err.textContent = 'Informe o motivo da inativação.'; err.style.display = 'block'; return; }
+  const res = await api('/api/data/legalizacao/solicitar-inativacao', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clienteId: _inatClienteId, observacao })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { err.textContent = data.error || 'Erro ao enviar solicitação.'; err.style.display = 'block'; return; }
+  fecharModalInativar();
+  alert('Solicitação enviada! O administrador vai revisar e confirmar a inativação.');
+}
+
+window.addEventListener('load', () => {
+  const t = localStorage.getItem('lg_token');
+  const u = localStorage.getItem('lg_user');
+  if (t && u) {
+    try { _token = t; _user = JSON.parse(u); mostrarApp(); } catch (e) { sair(); }
+  }
+});
+</script>
+</body>
+</html>
