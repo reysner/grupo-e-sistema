@@ -4913,11 +4913,13 @@ router.delete('/legalizacao/alvaras/:id', requireAdmin, async (req, res) => {
  * Base de TODOS os certificados — mesma lógica dos alvarás: PJ é universal
  * (toda empresa ativa precisa de um, aparece com ou sem certificado
  * cadastrado — LEFT JOIN, titular já vem preenchido com nome/CNPJ do
- * cliente). A 2ª metade cobre TUDO que a 1ª não pegou — pedido do Reysner,
- * 18/09/2026: "todo e qualquer certificado cadastrado no CertiSeguro
- * precisa constar na lista", inclusive PF avulso e CNPJ que a sincronização
- * da CertiSeguro trouxe mas que não é (ou não é mais) cliente ativo no
- * Acessórias — sem_cadastro_acessorias=true nesses casos, pro front avisar.
+ * cliente). A 2ª metade cobre PF avulso + CNPJ que a sincronização da
+ * CertiSeguro trouxe mas que NUNCA foi cliente no Acessórias (órfão de
+ * verdade) — pedido do Reysner, 18/09/2026: "todo e qualquer certificado
+ * cadastrado no CertiSeguro precisa constar na lista", com
+ * sem_cadastro_acessorias=true pro front avisar. Cliente INATIVO no
+ * Acessórias não entra (mesma correção do mesmo dia: "Cliente inativa no
+ * Acessórias não precisa aparecer") — só o que nunca existiu lá.
  */
 const LEGAL_CERT_BASE_SQL = `
   SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj AS cliente_cnpj, c.codigo,
@@ -4932,9 +4934,10 @@ const LEGAL_CERT_BASE_SQL = `
          ce.data_vencimento, ce.observacoes, true AS sem_cadastro_acessorias
     FROM legalizacao_certificados ce
     LEFT JOIN clientes c ON c.id::text = ce.cliente_id
-   WHERE NOT (ce.tipo = 'pj' AND EXISTS (
-         SELECT 1 FROM clientes c2 WHERE c2.id::text = ce.cliente_id AND c2.status = 'ativo'
-       ))`;
+   WHERE ce.tipo = 'pf'
+      OR (ce.tipo = 'pj' AND NOT EXISTS (
+            SELECT 1 FROM clientes c2 WHERE c2.id::text = ce.cliente_id
+          ))`;
 
 /** GET /api/data/legalizacao/certificados — traz TODOS os clientes ativos (PJ) + todo certificado cadastrado na CertiSeguro, mesmo sem cliente ativo correspondente no Acessórias. Sem paginação no servidor (App.Util.paginate no front). */
 router.get('/legalizacao/certificados', async (req, res) => {
