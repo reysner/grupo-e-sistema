@@ -100,6 +100,15 @@ async function consultarAlvaraUberaba(cnpj) {
     if (!melhor || (p.vencimento && (!melhor.vencimento || p.vencimento > melhor.vencimento))) melhor = { ...p, tipo: e.tipo_alvara, numeroBanco: e.alvara };
   }
 
+  // O portal antigo (tributos) não vê os alvarás emitidos pela Redesim/SINAL a partir de 2026 (ex.: Cardoso Adega
+  // tem o nº 3709/2023 vencido lá e o MGP2600477807 vigente na Redesim). Data vencida NÃO é gravada como
+  // vencimento (geraria aviso falso no sino): fica "sem data" com a explicação no resumo.
+  if (melhor && melhor.vencimento && melhor.vencimento < new Date().toISOString().slice(0, 10)) {
+    const fmt = melhor.vencimento.split('-').reverse().join('/');
+    return { ...base, funcionamento: { encontrado: false }, sanitario: { encontrado: false }, nadaEncontrado: true,
+      erros: [] };
+  }
+
   const bloco = {
     encontrado: true,
     servico: 'Alvará de Licença e Localização',
