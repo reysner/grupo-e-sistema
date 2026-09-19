@@ -139,7 +139,7 @@ router.post('/legalizacao/procuracoes/importar', async (req, res) => {
         `INSERT INTO legalizacao_procuracoes (cliente_id, tipo, data_vencimento, fonte, criado_por)
          SELECT u.cid, $3::text, u.venc, $3::text, 'Importação Receita/FGTS'
            FROM unnest($1::text[], $2::date[]) AS u(cid, venc)
-         ON CONFLICT (cliente_id, tipo) DO UPDATE SET data_vencimento = EXCLUDED.data_vencimento, fonte = EXCLUDED.fonte, atualizado_em = NOW()
+         ON CONFLICT (cliente_id, tipo) DO UPDATE SET data_vencimento = EXCLUDED.data_vencimento, fonte = EXCLUDED.fonte, atualizado_em = NOW(), notificado_vencimento_em = NULL
          WHERE legalizacao_procuracoes.data_vencimento IS DISTINCT FROM EXCLUDED.data_vencimento
          RETURNING 1`,
         [ids, vencs, tipo]
@@ -150,7 +150,7 @@ router.post('/legalizacao/procuracoes/importar', async (req, res) => {
       // foi preenchido à mão (fonte diferente do tipo).
       if (req.body.completo === true) {
         const z = await pool.query(
-          `UPDATE legalizacao_procuracoes SET data_vencimento = NULL, atualizado_em = NOW()
+          `UPDATE legalizacao_procuracoes SET data_vencimento = NULL, atualizado_em = NOW(), notificado_vencimento_em = NULL
             WHERE tipo = $1 AND fonte = $1 AND data_vencimento IS NOT NULL AND cliente_id <> ALL($2::text[])`,
           [tipo, ids]
         );
@@ -4836,9 +4836,10 @@ async function ensureLegalizacaoSchema() {
     atualizado_em TIMESTAMPTZ DEFAULT NOW()
   )`).catch(()=>{});
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_proc_cliente_tipo ON legalizacao_procuracoes (cliente_id, tipo)`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_procuracoes ADD COLUMN IF NOT EXISTS notificado_vencimento_em TIMESTAMPTZ`).catch(()=>{});
 }
 
-const LEGAL_DIAS_ALERTA_PROCURACAO = 30;
+const LEGAL_DIAS_ALERTA_PROCURACAO = 5;
 
 /**
  * CASE de status por coluna de data — mesmo critério em todo o módulo.
@@ -4952,7 +4953,9 @@ router.put('/legalizacao/procuracoes/:clienteId/:tipo', requireAdmin, async (req
     await pool.query(
       `INSERT INTO legalizacao_procuracoes (cliente_id, tipo, data_vencimento, observacoes, criado_por)
        VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (cliente_id, tipo) DO UPDATE SET data_vencimento = $3, observacoes = $4, atualizado_em = NOW()`,
+       ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+         notificado_vencimento_em = CASE WHEN legalizacao_procuracoes.data_vencimento IS DISTINCT FROM $3::date THEN NULL ELSE legalizacao_procuracoes.notificado_vencimento_em END,
+         data_vencimento = $3, observacoes = $4, atualizado_em = NOW()`,
       [clienteId, tipo, data_vencimento || null, observacoes || null, req.user.name]
     );
     await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao',
@@ -5253,6 +5256,30 @@ async function verificarNotificacoesLegalizacao() {
        `${c.titular_nome} — certificado digital ${venceu ? 'venceu em' : 'vence em'} ${dataFmt}.`]
     );
     await pool.query(`UPDATE legalizacao_certificados SET notificado_vencimento_em = NOW() WHERE id = $1`, [c.id]);
+    criadas++;
+  }
+
+  // Procurações E-CAC / FGTS Digital: só empresas ativas do Acessórias.
+  const { rows: procs } = await pool.query(
+    `SELECT p.id, p.tipo, p.cliente_id, p.data_vencimento, c.nome_empresa
+       FROM legalizacao_procuracoes p
+       JOIN clientes c ON c.id::text = p.cliente_id
+      WHERE p.data_vencimento IS NOT NULL
+        AND p.data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA_PROCURACAO} days'
+        AND p.notificado_vencimento_em IS NULL
+        AND c.status = 'ativo'`
+  );
+  for (const p of procs) {
+    const venceu = new Date(p.data_vencimento) < new Date();
+    const dataFmt = new Date(p.data_vencimento).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+    const nome = p.tipo === 'ecac' ? 'E-CAC' : 'FGTS Digital';
+    await pool.query(
+      `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id)
+       VALUES ('legalizacao_vencimento', $1, $2, 'legalizacao', $3)`,
+      [`Procuração ${nome} ${venceu ? 'vencida' : 'vencendo'}`,
+       `${p.nome_empresa} — procuração ${nome} ${venceu ? 'venceu em' : 'vence em'} ${dataFmt}.`, p.cliente_id]
+    );
+    await pool.query(`UPDATE legalizacao_procuracoes SET notificado_vencimento_em = NOW() WHERE id = $1`, [p.id]);
     criadas++;
   }
 
