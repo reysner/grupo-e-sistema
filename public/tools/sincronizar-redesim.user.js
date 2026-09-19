@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Grupo-E · Licenças da Redesim MG (alvará sanitário + funcionamento)
 // @namespace    https://grupo-e-sistema-uc2w.onrender.com/
-// @version      1.0.0
+// @version      1.1.0
 // @description  No Portal de Serviços da JUCEMG (logado no gov.br), consulta o licenciamento de cada empresa mineira do Grupo-E — 1 a cada 20 s — e envia a validade do alvará sanitário e o nº do alvará de funcionamento pro módulo Legalização.
 // @match        https://portalservicos.jucemg.mg.gov.br/*
 // @run-at       document-idle
@@ -275,8 +275,29 @@
   }
 
   // ── roteamento por página ───────────────────────────────────────────
+  // Botão fixo na página (canto inferior esquerdo): iniciar / parar, sem depender do menu do Tampermonkey.
+  function controle(ativo) {
+    if (!document.body) return;
+    let b = document.getElementById('ge-redesim-ctrl');
+    if (!b) {
+      b = document.createElement('button');
+      b.id = 'ge-redesim-ctrl';
+      b.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:2147483647;padding:11px 16px;border:0;border-radius:12px;cursor:pointer;' +
+        'font:700 13px system-ui,sans-serif;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.25)';
+      document.body.appendChild(b);
+    }
+    b.style.background = ativo ? '#b42318' : '#12704a';
+    b.textContent = ativo ? '■ Parar consulta (Grupo-E)' : '▶ Consultar licenças (Grupo-E)';
+    b.onclick = () => {
+      if (ativo) { parar('consulta interrompida.', 'atencao'); controle(false); return; }
+      salvar({ fila: [], atual: null, feitos: 0, sanitarios: 0, ultimoInicio: 0 });
+      location.href = CONSULTA_URL;
+    };
+  }
+
   async function rodar() {
     const e = estado();
+    controle(!!e);
     if (!e) return;
     if (Date.now() - (e.atividade || 0) > ZUMBI_MS) return parar('consulta antiga demais — recomece pelo menu.', 'atencao');
     try {
