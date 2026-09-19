@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Grupo-E · Licenças da Redesim MG (alvará sanitário + funcionamento)
 // @namespace    https://grupo-e-sistema-uc2w.onrender.com/
-// @version      1.1.0
+// @version      1.1.1
 // @description  No Portal de Serviços da JUCEMG (logado no gov.br), consulta o licenciamento de cada empresa mineira do Grupo-E — 1 a cada 20 s — e envia a validade do alvará sanitário e o nº do alvará de funcionamento pro módulo Legalização.
 // @match        https://portalservicos.jucemg.mg.gov.br/*
 // @run-at       document-idle
@@ -163,6 +163,7 @@
       if (!estado()) return; // usuário mandou parar
     }
 
+    aviso('pesquisando ' + (a.nome_empresa || a.cnpj) + '…'); // apaga o aviso laranja do verificador, se houve
     // o portal limpa o campo ao validar; preenche por último
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
     setter.call(campo, fmtCnpj(a.cnpj.replace(/\D/g, '')));
