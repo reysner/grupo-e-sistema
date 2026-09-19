@@ -467,7 +467,7 @@ function goPage(p) {
     const inativar = l.cliente_id
       ? '<button class="btn-inativar" title="Solicitar a inativação deste cliente (com motivo e observação)" data-id="' + l.cliente_id + '" data-nome="' + esc(l.nome_empresa) + '" onclick="abrirModalInativar(this.dataset.id,this.dataset.nome)">🚫 Inativar</button>' : '';
     return '<tr>' +
-      '<td><b>' + esc(l.nome_empresa || '—') + '</b><div style="font-size:11px;color:var(--gray-400)">' + esc(l.cnpj) + '</div>' + (l.municipio ? '<div style="font-size:11px;color:var(--gray-500)">📍 ' + esc(l.municipio) + (l.uf ? '/' + esc(l.uf) : '') + (l.prefeitura_integrada === false ? ' · <b>consulta manual</b> na prefeitura' : '') + '</div>' : '') + semCadastro + '</td>' +
+      '<td><b>' + esc(l.nome_empresa || '—') + '</b><div style="font-size:11px;color:var(--gray-400)">' + esc(l.cnpj) + '</div>' + (l.municipio ? '<div style="font-size:11px;color:var(--gray-500)">📍 ' + esc(l.municipio) + (l.uf ? '/' + esc(l.uf) : '') + (l.prefeitura_integrada === false ? ' · <b>consulta manual</b>' + (l.prefeitura_url ? ' · <a href="' + esc(l.prefeitura_url) + '" target="_blank" rel="noopener">' + (l.prefeitura_url_oficial ? 'portal' : 'buscar') + '</a>' : '') + (l.prefeitura_url_sanitario ? ' · <a href="' + esc(l.prefeitura_url_sanitario) + '" target="_blank" rel="noopener">sanitário</a>' : '') : '') + '</div>' : '') + semCadastro + '</td>' +
       '<td>' + alvaras + '</td>' +
       '<td>' + celula(l.cert.tipo.toUpperCase(), l.cert) + '</td>' +
       '<td>' + celula('', l.ecac) + '</td>' +

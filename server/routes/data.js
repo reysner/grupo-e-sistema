@@ -575,6 +575,7 @@ router.post('/gestao/importar', requireAdmin, async (req, res) => {
  * sozinho depois de cada sincronização com o Acessórias (cliente novo entra com município) e
  * completa quem ainda não tem, devagar (1 CNPJ a cada 3s) pra não estourar o limite das fontes.
  */
+const { portalDaPrefeitura } = require('../legalizacao/portaisPrefeituras');
 const IBGE_UBERLANDIA = '3170206';
 let municipiosRodando = false;
 async function garantirColunasMunicipio() {
@@ -5053,6 +5054,10 @@ router.get('/legalizacao/painel', async (req, res) => {
         l.uf = m && m.uf ? m.uf : null;
         // null = ainda não conferido; false = cidade sem consulta automática (buscar na prefeitura de lá)
         l.prefeitura_integrada = m && m.municipio_ibge ? m.municipio_ibge === IBGE_UBERLANDIA : null;
+        if (l.prefeitura_integrada === false) { // atalho pro portal da cidade (consulta manual)
+          const p = portalDaPrefeitura(m.municipio, m.uf);
+          l.prefeitura_url = p.url; l.prefeitura_url_oficial = p.oficial; l.prefeitura_url_sanitario = p.url_sanitario;
+        }
         return l;
       }),
       diasAlerta: { alvara: LEGAL_DIAS_ALERTA_ALVARA, certificado: LEGAL_DIAS_ALERTA_CERTIFICADO, procuracao: LEGAL_DIAS_ALERTA_PROCURACAO },
