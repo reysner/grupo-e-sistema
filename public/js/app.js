@@ -5671,7 +5671,6 @@ const Legalizacao = (() => {
     }
     if (a.observacoes) detalhe += `<br><i>${_esc(a.observacoes)}</i>`;
     const botoes =
-      _btn('🔍', `Legalizacao.consultarPrefeitura('${l.cliente_id}','${tipo}')`, 'Consulta automática no portal da Prefeitura (hoje só Uberlândia-MG)', '#3182ce') +
       (tipo === 'sanitario' && a.id ? _btn('🗑', `Legalizacao.excluirAlvara('${a.id}')`, 'Remover', '#e53e3e') : '');
     return _celula(rotulo, a.status, `leg-${tipo}-${l.cliente_id}`, detalhe, botoes);
   }
