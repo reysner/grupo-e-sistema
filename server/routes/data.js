@@ -18,6 +18,56 @@ const router = express.Router();
  * autenticada por token compartilhado — por isso fica ANTES do
  * `router.use(requireAuth)` abaixo, que exigiria sessão de usuário logado.
  */
+/**
+ * A Prefeitura de Uberlândia bloqueia o IP do Render (a sessão nem abre). Então a consulta
+ * roda numa estação do escritório (server/legalizacao/consultarAlvarasLocal.js), 1 empresa a
+ * cada 20s, e o resultado é gravado aqui — mesmo token máquina-a-máquina das procurações.
+ *   GET  /legalizacao/alvaras-a-consultar   → empresas que a rotina noturna consultaria
+ *   POST /legalizacao/alvaras-consulta-local → { cliente_id, resultado } (saída do scraper)
+ */
+function tokenSyncOk(req, res) {
+  const esperado = process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC_TOKEN;
+  if (!esperado) { res.status(503).json({ error: 'Sincronização não configurada no servidor.' }); return false; }
+  if (req.get('X-Sync-Token') !== esperado) { res.status(401).json({ error: 'Token de sincronização inválido.' }); return false; }
+  return true;
+}
+
+router.get('/legalizacao/alvaras-a-consultar', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    await ensureLegalizacaoSchema();
+    const { rows } = await pool.query(
+      `SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj
+         FROM clientes c
+         LEFT JOIN legalizacao_alvaras a ON a.cliente_id = c.id::text AND a.tipo = 'funcionamento'
+        WHERE c.status = 'ativo'
+          AND length(regexp_replace(COALESCE(c.cnpj, ''), '\\D', '', 'g')) = 14
+          AND (a.data_vencimento IS NULL OR a.data_vencimento <= CURRENT_DATE)
+          AND (
+                a.ultima_consulta_em IS NULL
+             OR ((a.data_vencimento IS NOT NULL OR a.ultima_consulta_status = 'solicitacao_andamento')
+                 AND a.ultima_consulta_em < NOW() - INTERVAL '20 hours')
+             OR a.ultima_consulta_em < NOW() - INTERVAL '7 days'
+          )
+        ORDER BY a.ultima_consulta_em ASC NULLS FIRST, c.nome_empresa`
+    );
+    res.json({ data: rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar empresas.' }); }
+});
+
+router.post('/legalizacao/alvaras-consulta-local', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    const { cliente_id, resultado } = req.body || {};
+    if (!cliente_id || !resultado || typeof resultado !== 'object') return res.status(400).json({ error: 'cliente_id e resultado são obrigatórios.' });
+    await ensureLegalizacaoSchema();
+    const { rows } = await pool.query(`SELECT 1 FROM clientes WHERE id::text = $1`, [String(cliente_id)]);
+    if (!rows.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    const r = await gravarResultadoConsultaAlvara(String(cliente_id), 'funcionamento', resultado, 'Consulta local (escritório)');
+    res.json(r);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao gravar a consulta.' }); }
+});
+
 router.post('/legalizacao/certificados/importar-certiseguro', async (req, res) => {
   try {
     const tokenEsperado = process.env.CERTISEGURO_SYNC_TOKEN;
@@ -5052,6 +5102,10 @@ async function consultarAlvaraPrefeitura(clienteId, tipo, autor) {
 
     const { consultarAlvaraUberlandia } = require('../legalizacao/ciclo7Uberlandia');
     const resultado = await consultarAlvaraUberlandia(clienteRows[0].cnpj);
+    return gravarResultadoConsultaAlvara(clienteId, tipo, resultado, autor);
+}
+
+async function gravarResultadoConsultaAlvara(clienteId, tipo, resultado, autor) {
     // O portal devolve Funcionamento e Sanitário na MESMA busca. Grava cada um
     // que foi achado (o Sanitário entra sozinho — sem cadastro manual) e SEMPRE
     // o tipo pedido (pra marcar a data da última consulta mesmo sem resultado).
