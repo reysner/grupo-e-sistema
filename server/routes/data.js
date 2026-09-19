@@ -4823,6 +4823,7 @@ async function ensureLegalizacaoSchema() {
   // sozinho (ver PUT .../:clienteId/:tipo acima), pra poder notificar nessa
   // próxima renovação também, sem spam repetido enquanto a data não muda.
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS notificado_vencimento_em TIMESTAMPTZ`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS desativado_em TIMESTAMPTZ`).catch(()=>{});
 
   await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_certificados (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -4845,6 +4846,7 @@ async function ensureLegalizacaoSchema() {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_cert_cliente_pj ON legalizacao_certificados (cliente_id) WHERE tipo = 'pj' AND cliente_id IS NOT NULL`).catch(()=>{});
   // Mesmo esquema de notificação dos alvarás, mas 10 dias (ver LEGAL_DIAS_ALERTA_CERTIFICADO).
   await pool.query(`ALTER TABLE legalizacao_certificados ADD COLUMN IF NOT EXISTS notificado_vencimento_em TIMESTAMPTZ`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_certificados ADD COLUMN IF NOT EXISTS desativado_em TIMESTAMPTZ`).catch(()=>{});
 
   // Solicitação de inativação de cliente, feita pelo colaborador na página
   // pública de Legalização (pedido do Reysner, 18/09/2026): "ele poderá
@@ -4939,7 +4941,7 @@ FROM (
          pg.id AS fgts_id, pg.data_vencimento AS fgts_venc, pg.observacoes AS fgts_obs
     FROM clientes c
     LEFT JOIN legalizacao_alvaras fa ON fa.cliente_id = c.id::text AND fa.tipo = 'funcionamento'
-    LEFT JOIN legalizacao_alvaras sa ON sa.cliente_id = c.id::text AND sa.tipo = 'sanitario'
+    LEFT JOIN legalizacao_alvaras sa ON sa.cliente_id = c.id::text AND sa.tipo = 'sanitario' AND sa.desativado_em IS NULL
     LEFT JOIN legalizacao_certificados ce ON ce.cliente_id = c.id::text AND ce.tipo = 'pj'
     LEFT JOIN legalizacao_procuracoes pe ON pe.cliente_id = c.id::text AND pe.tipo = 'ecac'
     LEFT JOIN legalizacao_procuracoes pg ON pg.cliente_id = c.id::text AND pg.tipo = 'fgts'
@@ -4952,8 +4954,9 @@ FROM (
          NULL, NULL, NULL,
          NULL, NULL, NULL
     FROM legalizacao_certificados ce
-   WHERE ce.tipo = 'pf'
-      OR (ce.tipo = 'pj' AND NOT EXISTS (SELECT 1 FROM clientes c2 WHERE c2.id::text = ce.cliente_id))
+   WHERE (ce.tipo = 'pf'
+      OR (ce.tipo = 'pj' AND NOT EXISTS (SELECT 1 FROM clientes c2 WHERE c2.id::text = ce.cliente_id)))
+     AND ce.desativado_em IS NULL
 ) x
 ORDER BY x.nome_empresa ASC`;
 
@@ -5200,6 +5203,28 @@ async function rodarConsultaNoturnaAlvaras() {
   }
 }
 
+/**
+ * PATCH /legalizacao/alvaras/:id/desativar e /certificados/:id/desativar — tira o item da lista,
+ * dos KPIs, da página pública e do sino sem apagar (a consulta automática não o reativa).
+ */
+router.patch('/legalizacao/alvaras/:id/desativar', requireAdmin, async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    await pool.query(`UPDATE legalizacao_alvaras SET desativado_em = NOW() WHERE id = $1`, [req.params.id]);
+    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', 'Alvará desativado', req);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao desativar alvará.' }); }
+});
+
+router.patch('/legalizacao/certificados/:id/desativar', requireAdmin, async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    await pool.query(`UPDATE legalizacao_certificados SET desativado_em = NOW() WHERE id = $1`, [req.params.id]);
+    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', 'Certificado desativado', req);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao desativar certificado.' }); }
+});
+
 router.delete('/legalizacao/alvaras/:id', requireAdmin, async (req, res) => {
   try {
     await pool.query(`DELETE FROM legalizacao_alvaras WHERE id = $1`, [req.params.id]);
@@ -5278,7 +5303,8 @@ async function verificarNotificacoesLegalizacao() {
        JOIN clientes c ON c.id::text = a.cliente_id
       WHERE a.data_vencimento IS NOT NULL
         AND a.data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA_ALVARA} days'
-        AND a.notificado_vencimento_em IS NULL`
+        AND a.notificado_vencimento_em IS NULL
+        AND a.desativado_em IS NULL`
   );
   for (const a of alvaras) {
     const tipoLabel = a.tipo === 'funcionamento' ? 'Alvará de Funcionamento' : 'Alvará Sanitário';
@@ -5298,7 +5324,8 @@ async function verificarNotificacoesLegalizacao() {
     `SELECT id, titular_nome, data_vencimento FROM legalizacao_certificados
       WHERE data_vencimento IS NOT NULL
         AND data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA_CERTIFICADO} days'
-        AND notificado_vencimento_em IS NULL`
+        AND notificado_vencimento_em IS NULL
+        AND desativado_em IS NULL`
   );
   for (const c of certs) {
     const venceu = new Date(c.data_vencimento) < new Date();

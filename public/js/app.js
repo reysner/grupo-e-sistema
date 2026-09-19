@@ -5671,7 +5671,7 @@ const Legalizacao = (() => {
     }
     if (a.observacoes) detalhe += `<br><i>${_esc(a.observacoes)}</i>`;
     const botoes =
-      (tipo === 'sanitario' && a.id ? _btn('🗑', `Legalizacao.excluirAlvara('${a.id}')`, 'Remover', '#e53e3e') : '');
+      (tipo === 'sanitario' && a.id ? _btn('🚫', `Legalizacao.desativarAlvara('${a.id}')`, 'Desativar (deixa de aparecer e de ser cobrado na página pública)', '#e53e3e') : '');
     return _celula(rotulo, a.status, `leg-${tipo}-${l.cliente_id}`, detalhe, botoes);
   }
 
@@ -5680,7 +5680,7 @@ const Legalizacao = (() => {
     let detalhe = c.vencimento ? '<b>Vencimento:</b> ' + _fmtData(c.vencimento) : 'Nenhuma data cadastrada ainda.';
     if (c.observacoes) detalhe += `<br><i>${_esc(c.observacoes)}</i>`;
     const botoes =
-      (c.tipo === 'pf' && c.id ? _btn('🗑', `Legalizacao.excluirCertificado('${c.id}')`, 'Remover', '#e53e3e') : '');
+      (c.tipo === 'pf' && c.id ? _btn('🚫', `Legalizacao.desativarCertificado('${c.id}')`, 'Desativar (deixa de aparecer e de ser cobrado na página pública)', '#e53e3e') : '');
     return _celula(c.tipo.toUpperCase(), c.status, `leg-cert-${l.cliente_id || c.id}`, detalhe, botoes);
   }
 
@@ -5752,6 +5752,15 @@ const Legalizacao = (() => {
       App.Toast.err(err?.error || 'Erro ao salvar alvará.');
     }
   }
+
+  async function _desativar(rota, id, rotulo) {
+    if (!confirm('Desativar ' + rotulo + '? Ele some da lista, dos indicadores, do sino e da página pública.')) return;
+    const res = await fetch('/api/data/legalizacao/' + rota + '/' + id + '/desativar', { method: 'PATCH', headers: { Authorization: 'Bearer ' + _tk() } });
+    if (res && res.ok) { App.Toast.ok('Desativado.'); await _carregarPainel(); }
+    else App.Toast.err('Erro ao desativar.');
+  }
+  const desativarAlvara = (id) => _desativar('alvaras', id, 'este Alvará Sanitário');
+  const desativarCertificado = (id) => _desativar('certificados', id, 'este certificado');
 
   async function excluirAlvara(id) {
     if (!confirm('Remover este Alvará Sanitário? Essa ação não pode ser desfeita.')) return;
@@ -5967,7 +5976,7 @@ const Legalizacao = (() => {
 
   return {
     load, filtrar, filtrarPorSituacao, goPage, _toggleDetalhe,
-    abrirFormAlvara, salvarAlvara, excluirAlvara,
+    abrirFormAlvara, salvarAlvara, excluirAlvara, desativarAlvara, desativarCertificado,
     consultarPrefeitura, consultarTodosPrefeitura, exportCSV, exportPDF,
     abrirFormCertificadoPJ, salvarCertificadoPJ, abrirFormCertificadoPF,
     salvarCertificadoPF, excluirCertificado, abrirFormProcuracao, salvarProcuracao,
