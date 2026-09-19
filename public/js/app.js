@@ -5717,7 +5717,7 @@ const Legalizacao = (() => {
         ? _celulaAlvara('Func.', l.func, 'funcionamento', l) + (l.sanit ? _celulaAlvara('Sanit.', l.sanit, 'sanitario', l) : '')
         : _VAZIO;
       return `<tr>` +
-        `<td><b>${_esc(l.nome_empresa) || '—'}</b><div style="font-size:11px;color:var(--gray-400)">${_esc(l.cnpj)}</div>${semCadastro}</td>` +
+        `<td><b>${_esc(l.nome_empresa) || '—'}</b><div style="font-size:11px;color:var(--gray-400)">${_esc(l.cnpj)}</div>${(l.municipio ? `<div style="font-size:11px;color:var(--gray-500)">📍 ${_esc(l.municipio)}${l.uf ? '/' + _esc(l.uf) : ''}${l.prefeitura_integrada === false ? ' · <b>consulta manual</b> na prefeitura' : ''}</div>` : '') || ''}${semCadastro}</td>` +
         `<td>${alvaras}</td>` +
         `<td>${_celulaCert(l)}</td>` +
         `<td>${_celulaProc(l, 'ecac')}</td>` +

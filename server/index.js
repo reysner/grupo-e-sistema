@@ -294,6 +294,9 @@ initDB().then(async () => {
     };
     setInterval(rodarSyncAcessorias, 24 * 60 * 60 * 1000); // 1x por dia
     rodarSyncAcessorias(); // já roda uma vez ao subir
+    // Confere o município de quem ainda não tem (a sincronização já dispara isso; aqui garante o resto do backlog).
+    const { completarMunicipiosClientes } = require('./routes/data');
+    setInterval(() => completarMunicipiosClientes({ limite: 700 }).catch(e => console.error('[Município]', e.message)), 6 * 60 * 60 * 1000);
   }
 
   app.listen(PORT, () => console.log(`🚀 Grupo-E rodando na porta ${PORT}`));

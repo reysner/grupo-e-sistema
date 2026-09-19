@@ -41,6 +41,7 @@ router.get('/legalizacao/alvaras-a-consultar', async (req, res) => {
          FROM clientes c
          LEFT JOIN legalizacao_alvaras a ON a.cliente_id = c.id::text AND a.tipo = 'funcionamento'
         WHERE c.status = 'ativo'
+          AND c.municipio_ibge = '${IBGE_UBERLANDIA}'
           AND length(regexp_replace(COALESCE(c.cnpj, ''), '\\D', '', 'g')) = 14
           AND (a.data_vencimento IS NULL OR a.data_vencimento <= CURRENT_DATE)
           AND (
@@ -569,6 +570,52 @@ router.post('/gestao/importar', requireAdmin, async (req, res) => {
  * manual), preenchendo SÓ os campos que são de Gestão de Clientes mesmo —
  * não inventa honorário nem nada que pertença só à Carteira.
  */
+/**
+ * Município do cliente (pela Receita, via CNPJ) — decide em qual prefeitura buscar alvará. Roda
+ * sozinho depois de cada sincronização com o Acessórias (cliente novo entra com município) e
+ * completa quem ainda não tem, devagar (1 CNPJ a cada 3s) pra não estourar o limite das fontes.
+ */
+const IBGE_UBERLANDIA = '3170206';
+let municipiosRodando = false;
+async function garantirColunasMunicipio() {
+  await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS municipio TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS municipio_ibge TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS municipio_verificado_em TIMESTAMPTZ`).catch(() => {});
+}
+async function completarMunicipiosClientes({ limite = 300, intervaloMs = 3000 } = {}) {
+  if (municipiosRodando) return { pulou: true };
+  municipiosRodando = true;
+  try {
+    await garantirColunasMunicipio();
+    const { consultarMunicipioCnpj } = require('../legalizacao/municipioCnpj');
+    const { rows } = await pool.query(
+      `SELECT id, cnpj, nome_empresa FROM clientes
+        WHERE status = 'ativo' AND municipio IS NULL
+          AND length(regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g')) = 14
+        ORDER BY nome_empresa LIMIT $1`, [limite]
+    );
+    let ok = 0, falhas = 0, seguidas = 0;
+    for (const c of rows) {
+      try {
+        const m = await consultarMunicipioCnpj(c.cnpj);
+        await pool.query(
+          `UPDATE clientes SET municipio = $1, uf = COALESCE($2, uf), municipio_ibge = $3, municipio_verificado_em = NOW() WHERE id = $4`,
+          [m.municipio, m.uf, m.ibge, c.id]
+        );
+        ok++; seguidas = 0;
+      } catch (e) {
+        falhas++; seguidas++;
+        console.error(`[Município] Falhou (${c.nome_empresa}):`, e.message);
+        if (seguidas >= 5) break; // fonte fora do ar ou limitando — tenta de novo na próxima rodada
+      }
+      await new Promise(r => setTimeout(r, intervaloMs));
+    }
+    return { pendentes: rows.length, ok, falhas };
+  } finally {
+    municipiosRodando = false;
+  }
+}
+
 async function sincronizarAcessorias({ userId = null } = {}) {
   const token = process.env.ACESSORIAS_API_TOKEN;
   if (!token) throw new Error('ACESSORIAS_API_TOKEN não configurado.');
@@ -577,6 +624,7 @@ async function sincronizarAcessorias({ userId = null } = {}) {
   // UF (estado) — pedido do Reysner, 17/09/2026, tentativa de automação da
   // Legalização. Acessórias não traz cidade, só estado (ver acessoriasClient.js).
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS uf TEXT`).catch(() => {});
+  await garantirColunasMunicipio();
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_acessorias_id ON clientes (acessorias_id) WHERE acessorias_id IS NOT NULL`).catch(() => {});
   // Usada tanto no loop principal (reseta ao ver o cliente ainda ativo)
   // quanto em detectarPossiveisChurns — precisa existir antes das duas.
@@ -725,6 +773,9 @@ async function sincronizarAcessorias({ userId = null } = {}) {
   }
 
   const possiveisChurns = await detectarPossiveisChurns(empresas);
+
+  // Cliente novo (ou ainda sem município): descobre a cidade em segundo plano, sem atrasar a resposta.
+  completarMunicipiosClientes().then(r => console.log('[Município] Conferência após sincronização:', r)).catch(e => console.error('[Município] Falha:', e.message));
 
   return { totalNaAcessorias: empresas.length, criados, atualizados, gestaoCompletados, semRegimeReconhecido, semGestaoRegistrada, possiveisChurns, erros };
 }
@@ -4783,6 +4834,7 @@ const LEGAL_DIAS_ALERTA_CERTIFICADO = 10;
 // de serviço sem contato com alimento/saúde). O CRUD já resolve isso sozinho.
 
 async function ensureLegalizacaoSchema() {
+  await garantirColunasMunicipio(); // painel e consulta de alvarás leem clientes.municipio*
   await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_alvaras (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     cliente_id TEXT NOT NULL,
@@ -4989,10 +5041,20 @@ router.get('/legalizacao/painel', async (req, res) => {
   try {
     await ensureLegalizacaoSchema();
     const { rows: todas } = await pool.query(LEGAL_PAINEL_SQL);
+    const { rows: muns } = await pool.query(`SELECT id::text AS id, municipio, uf, municipio_ibge FROM clientes`);
+    const munPorId = new Map(muns.map(m => [m.id, m]));
     const verDesativados = req.query.desativados === '1' && req.user.role === 'administrador';
     const rows = verDesativados ? todas : todas.filter(r => !(r.sem_cadastro_acessorias && r.cert_desat)).map(r => (r.sanit_desat ? { ...r, sanit_id: null } : r));
     res.json({
-      data: rows.map(legalPainelLinha),
+      data: rows.map(r => {
+        const l = legalPainelLinha(r);
+        const m = munPorId.get(r.cliente_id);
+        l.municipio = m && m.municipio ? m.municipio : null;
+        l.uf = m && m.uf ? m.uf : null;
+        // null = ainda não conferido; false = cidade sem consulta automática (buscar na prefeitura de lá)
+        l.prefeitura_integrada = m && m.municipio_ibge ? m.municipio_ibge === IBGE_UBERLANDIA : null;
+        return l;
+      }),
       diasAlerta: { alvara: LEGAL_DIAS_ALERTA_ALVARA, certificado: LEGAL_DIAS_ALERTA_CERTIFICADO, procuracao: LEGAL_DIAS_ALERTA_PROCURACAO },
     });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar legalização.' }); }
@@ -5176,6 +5238,7 @@ async function rodarConsultaNoturnaAlvaras() {
          FROM clientes c
          LEFT JOIN legalizacao_alvaras a ON a.cliente_id = c.id::text AND a.tipo = 'funcionamento'
         WHERE c.status = 'ativo'
+          AND c.municipio_ibge = '${IBGE_UBERLANDIA}'
           AND length(regexp_replace(COALESCE(c.cnpj, ''), '\\D', '', 'g')) = 14
           AND (a.data_vencimento IS NULL OR a.data_vencimento <= CURRENT_DATE)
           AND (
@@ -5537,4 +5600,5 @@ module.exports.rodarConsultaNoturnaAlvaras = rodarConsultaNoturnaAlvaras;
 module.exports.publicRouter = publicRouter;
 module.exports.registrarLog = registrarLog;
 module.exports.sincronizarAcessorias = sincronizarAcessorias;
+module.exports.completarMunicipiosClientes = completarMunicipiosClientes;
 module.exports.executarAutoPreencher = executarAutoPreencher;
