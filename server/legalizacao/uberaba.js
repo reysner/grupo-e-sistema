@@ -106,7 +106,7 @@ async function consultarAlvaraUberaba(cnpj) {
   if (melhor && melhor.vencimento && melhor.vencimento < new Date().toISOString().slice(0, 10)) {
     const fmt = melhor.vencimento.split('-').reverse().join('/');
     return { ...base, funcionamento: { encontrado: false }, sanitario: { encontrado: false }, nadaEncontrado: true,
-      erros: [] };
+      erros: [`Portal antigo de Uberaba mostra alvará ${melhor.numero || ''} vencido em ${fmt}; conferir se há alvará novo pela Redesim (JUCEMG/SINAL).`] };
   }
 
   const bloco = {
