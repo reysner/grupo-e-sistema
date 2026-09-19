@@ -72,6 +72,89 @@ router.post('/legalizacao/alvaras-consulta-local', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao gravar a consulta.' }); }
 });
 
+/**
+ * Licenciamento pela REDESIM MG (Portal de Serviços da JUCEMG) — o script do Tampermonkey
+ * (public/tools/sincronizar-redesim.user.js) roda no Chrome do escritório, logado no gov.br, e por
+ * CNPJ lê os órgãos que licenciam a empresa (Vigilância Sanitária municipal = alvará SANITÁRIO, com
+ * "Validade"; Prefeitura = número do alvará de FUNCIONAMENTO emitido pela Redesim/SINAL).
+ *   GET  /legalizacao/redesim-a-consultar  → empresas mineiras ativas ainda não conferidas (últimos 7 dias)
+ *   POST /legalizacao/redesim-resultado    → { cliente_id, cnpj, orgaos: [...], sem_licenciamento, nao_encontrado }
+ */
+router.get('/legalizacao/redesim-a-consultar', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    await ensureLegalizacaoSchema();
+    const limite = Math.min(parseInt(req.query.limite, 10) || 40, 200);
+    const { rows } = await pool.query(
+      `SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj
+         FROM clientes c
+         LEFT JOIN legalizacao_redesim r ON r.cliente_id = c.id::text
+        WHERE c.status = 'ativo'
+          AND (c.municipio_ibge LIKE '31%' OR upper(COALESCE(c.uf, '')) = 'MG')
+          AND length(regexp_replace(COALESCE(c.cnpj, ''), '\\D', '', 'g')) = 14
+          AND (r.consultado_em IS NULL OR r.consultado_em < NOW() - INTERVAL '7 days')
+        ORDER BY r.consultado_em ASC NULLS FIRST, c.nome_empresa
+        LIMIT $1`, [limite]
+    );
+    res.json({ data: rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar empresas.' }); }
+});
+
+router.post('/legalizacao/redesim-resultado', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    await ensureLegalizacaoSchema();
+    const { cliente_id, orgaos, sem_licenciamento, nao_encontrado } = req.body || {};
+    if (!cliente_id) return res.status(400).json({ error: 'cliente_id é obrigatório.' });
+    const { rows: cli } = await pool.query(`SELECT 1 FROM clientes WHERE id::text = $1`, [String(cliente_id)]);
+    if (!cli.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    const lista = Array.isArray(orgaos) ? orgaos.slice(0, 20) : [];
+    const brParaIso = (d) => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(d || '').trim()); return m ? `${m[3]}-${m[2]}-${m[1]}` : null; };
+    let sanitario = null, funcionamento = null;
+
+    for (const o of lista) {
+      const nome = String(o.orgao || '').toUpperCase();
+      const concluido = /CONCLU/i.test(String(o.situacao || ''));
+      if (/SA[UÚ]DE|VIGIL/.test(nome) && concluido && brParaIso(o.validade)) {
+        const iso = brParaIso(o.validade);
+        const resumo = `Redesim/JUCEMG — ${o.documento || 'Licenciamento sanitário'} (validade ${o.validade})${o.risco ? ' · ' + o.risco : ''}.`;
+        await pool.query(
+          `INSERT INTO legalizacao_alvaras (cliente_id, tipo, data_vencimento, ultima_consulta_status, ultima_consulta_resumo, ultima_consulta_em, criado_por)
+           VALUES ($1,'sanitario',$2::date,NULL,$3,NOW(),'Redesim/JUCEMG')
+           ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+             data_vencimento = $2::date, ultima_consulta_status = NULL, ultima_consulta_resumo = $3,
+             ultima_consulta_em = NOW(), atualizado_em = NOW(),
+             notificado_vencimento_em = CASE WHEN $2::date IS DISTINCT FROM legalizacao_alvaras.data_vencimento THEN NULL ELSE legalizacao_alvaras.notificado_vencimento_em END
+           WHERE legalizacao_alvaras.desativado_em IS NULL`,
+          [String(cliente_id), iso, resumo]
+        );
+        sanitario = iso;
+      } else if (/PREFEITURA/.test(nome) && concluido && o.alvara) {
+        // Só o NÚMERO do alvará novo (a validade fica no documento do SINAL): não mexe em data já preenchida.
+        const resumo = `Redesim/JUCEMG — alvará de funcionamento ${o.alvara} emitido (validade a confirmar no documento do SINAL).`;
+        await pool.query(
+          `INSERT INTO legalizacao_alvaras (cliente_id, tipo, numero, ultima_consulta_resumo, ultima_consulta_em, criado_por)
+           VALUES ($1,'funcionamento',$2,$3,NOW(),'Redesim/JUCEMG')
+           ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+             numero = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL THEN $2 ELSE legalizacao_alvaras.numero END,
+             ultima_consulta_resumo = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL THEN $3 ELSE legalizacao_alvaras.ultima_consulta_resumo END,
+             ultima_consulta_em = NOW()`,
+          [String(cliente_id), String(o.alvara).slice(0, 60), resumo]
+        );
+        funcionamento = o.alvara;
+      }
+    }
+
+    await pool.query(
+      `INSERT INTO legalizacao_redesim (cliente_id, consultado_em, dados, sem_licenciamento, nao_encontrado)
+       VALUES ($1, NOW(), $2::jsonb, $3, $4)
+       ON CONFLICT (cliente_id) DO UPDATE SET consultado_em = NOW(), dados = $2::jsonb, sem_licenciamento = $3, nao_encontrado = $4`,
+      [String(cliente_id), JSON.stringify(lista), !!sem_licenciamento, !!nao_encontrado]
+    );
+    res.json({ ok: true, sanitario, funcionamento });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao gravar a consulta da Redesim.' }); }
+});
+
 router.post('/legalizacao/certificados/importar-certiseguro', async (req, res) => {
   try {
     const tokenEsperado = process.env.CERTISEGURO_SYNC_TOKEN;
@@ -4881,6 +4964,13 @@ async function ensureLegalizacaoSchema() {
   // próxima renovação também, sem spam repetido enquanto a data não muda.
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS notificado_vencimento_em TIMESTAMPTZ`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS desativado_em TIMESTAMPTZ`).catch(()=>{});
+  await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_redesim (
+    cliente_id TEXT PRIMARY KEY,
+    consultado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    dados JSONB,
+    sem_licenciamento BOOLEAN NOT NULL DEFAULT false,
+    nao_encontrado BOOLEAN NOT NULL DEFAULT false
+  )`).catch(()=>{});
 
   await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_certificados (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
