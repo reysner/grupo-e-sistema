@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Consulta os alvarás (Funcionamento/Sanitário) na Prefeitura de Uberlândia a partir de uma
+ * Consulta os alvarás (Funcionamento/Sanitário) nas prefeituras integradas (Uberlândia, Uberaba — ver municipiosIntegrados.js) a partir de uma
  * ESTAÇÃO DO ESCRITÓRIO e grava o resultado no Grupo-E. Existe porque a Prefeitura bloqueia o
  * IP do Render (a sessão do portal nem abre) — mesmo motivo do certiseguroSync.js rodar aqui.
  *
@@ -15,7 +15,7 @@
 
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
-const { consultarAlvaraUberlandia } = require('./ciclo7Uberlandia');
+const { MUNICIPIOS_INTEGRADOS } = require('./municipiosIntegrados');
 
 const INTERVALO_MS = 20 * 1000;
 const MAX_FALHAS_SEGUIDAS = 4;
@@ -46,7 +46,9 @@ async function main() {
   for (let i = 0; i < alvos.length; i++) {
     const a = alvos[i];
     try {
-      const resultado = await consultarAlvaraUberlandia(a.cnpj);
+      const cidade = MUNICIPIOS_INTEGRADOS[a.municipio_ibge];
+      if (!cidade) throw new Error('município sem consulta automática (' + a.municipio_ibge + ')');
+      const resultado = await cidade.consultar(a.cnpj);
       const g = await api('POST', 'alvaras-consulta-local', { cliente_id: a.cliente_id, resultado });
       seguidas = 0;
       const achou = (resultado.funcionamento && resultado.funcionamento.encontrado) || (resultado.sanitario && resultado.sanitario.encontrado);

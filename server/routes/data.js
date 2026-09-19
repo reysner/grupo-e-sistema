@@ -37,11 +37,11 @@ router.get('/legalizacao/alvaras-a-consultar', async (req, res) => {
     if (!tokenSyncOk(req, res)) return;
     await ensureLegalizacaoSchema();
     const { rows } = await pool.query(
-      `SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj
+      `SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj, c.municipio_ibge
          FROM clientes c
          LEFT JOIN legalizacao_alvaras a ON a.cliente_id = c.id::text AND a.tipo = 'funcionamento'
         WHERE c.status = 'ativo'
-          AND c.municipio_ibge = '${IBGE_UBERLANDIA}'
+          AND c.municipio_ibge = ANY($1::text[])
           AND length(regexp_replace(COALESCE(c.cnpj, ''), '\\D', '', 'g')) = 14
           AND (a.data_vencimento IS NULL OR a.data_vencimento <= CURRENT_DATE)
           AND (
@@ -50,7 +50,7 @@ router.get('/legalizacao/alvaras-a-consultar', async (req, res) => {
                  AND a.ultima_consulta_em < NOW() - INTERVAL '20 hours')
              OR a.ultima_consulta_em < NOW() - INTERVAL '7 days'
           )
-        ORDER BY a.ultima_consulta_em ASC NULLS FIRST, c.nome_empresa`
+        ORDER BY a.ultima_consulta_em ASC NULLS FIRST, c.nome_empresa`, [IBGES_INTEGRADOS]
     );
     res.json({ data: rows });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar empresas.' }); }
@@ -577,6 +577,7 @@ router.post('/gestao/importar', requireAdmin, async (req, res) => {
  */
 const { portalDaPrefeitura } = require('../legalizacao/portaisPrefeituras');
 const IBGE_UBERLANDIA = '3170206';
+const { IBGES_INTEGRADOS } = require('../legalizacao/municipiosIntegrados');
 let municipiosRodando = false;
 async function garantirColunasMunicipio() {
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS municipio TEXT`).catch(() => {});
@@ -5053,7 +5054,7 @@ router.get('/legalizacao/painel', async (req, res) => {
         l.municipio = m && m.municipio ? m.municipio : null;
         l.uf = m && m.uf ? m.uf : null;
         // null = ainda não conferido; false = cidade sem consulta automática (buscar na prefeitura de lá)
-        l.prefeitura_integrada = m && m.municipio_ibge ? m.municipio_ibge === IBGE_UBERLANDIA : null;
+        l.prefeitura_integrada = m && m.municipio_ibge ? IBGES_INTEGRADOS.includes(m.municipio_ibge) : null;
         if (l.prefeitura_integrada === false) { // atalho pro portal da cidade (consulta manual)
           const p = portalDaPrefeitura(m.municipio, m.uf);
           l.prefeitura_url = p.url; l.prefeitura_url_oficial = p.oficial; l.prefeitura_url_sanitario = p.url_sanitario;
