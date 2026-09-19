@@ -39,7 +39,7 @@ async function api(metodo, rota, corpo) {
 async function main() {
   if (!APP_URL || !TOKEN) { console.error('Faltam APP_URL e/ou CERTISEGURO_SYNC_TOKEN em server/legalizacao/.env'); process.exit(1); }
   const args = process.argv.slice(2);
-  const limite = parseInt(args.find(a => /^d+$/.test(a)), 10) || Infinity;
+  const limite = parseInt(args.find(a => /^\d+$/.test(a)), 10) || Infinity;
   const ibge = (args.find(a => a.startsWith('--ibge=')) || '').slice(7);
   const forcar = args.includes('--forcar');
   const { data } = await api('GET', 'alvaras-a-consultar' + '?' + new URLSearchParams({ ...(ibge ? { ibge } : {}), ...(forcar ? { forcar: '1' } : {}) }));
