@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         Grupo-E · Sincronizar procurações (e-CAC + FGTS Digital)
 // @namespace    https://grupo-e-sistema-uc2w.onrender.com/
-// @version      1.2.2
+// @version      1.2.3
 // @description  Ao abrir as procurações recebidas no e-CAC ou no SPE (FGTS Digital), lê a lista completa e envia pro sistema Grupo-E (módulo Legalização).
 // @match        https://servicos.receitafederal.gov.br/servico/autorizacoes/*
 // @match        https://spe.sistema.gov.br/*
 // @match        https://fgtsdigital.sistema.gov.br/*
+// @match        https://sso.acesso.gov.br/*
 // @run-at       document-start
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
@@ -14,6 +15,7 @@
 // @grant        GM_registerMenuCommand
 // @grant        unsafeWindow
 // @grant        GM_openInTab
+// @grant        GM_notification
 // @connect      grupo-e-sistema-uc2w.onrender.com
 // @updateURL    https://grupo-e-sistema-uc2w.onrender.com/tools/sincronizar-procuracoes.user.js
 // @downloadURL  https://grupo-e-sistema-uc2w.onrender.com/tools/sincronizar-procuracoes.user.js
@@ -172,8 +174,8 @@
     });
   }
 
-  const RECENTE_MS = 5 * 60 * 1000;
-  const recente = (chave) => Date.now() - GM_getValue(chave, 0) < RECENTE_MS;
+  const RECENTE_MS = 15 * 60 * 1000; // a cadeia do FGTS pode esperar você confirmar o certificado
+  const recente = (chave, ms) => Date.now() - GM_getValue(chave, 0) < (ms || RECENTE_MS);
   const vencido = (chave) => Date.now() - GM_getValue(chave, 0) >= INTERVALO_MS;
 
   let rodando = false;
@@ -224,7 +226,7 @@
       }
       if (el && !feito[passo]) {
         if (passo === 'proc') {
-          if (recente('fgts_clicou')) return; // evita repetir se a tela recarregar
+          if (recente('fgts_clicou', 2 * 60 * 1000)) return; // evita repetir se a tela recarregar
           GM_setValue('fgts_clicou', Date.now());
           GM_setValue('spe_auto', Date.now());
           // O card só faz window.open() do SPE, e o Chrome bloqueia isso quando o clique vem de um script.
@@ -232,6 +234,7 @@
           unsafeWindow.open = function (url) { location.href = url; return null; };
         }
         feito[passo] = true;
+        if (auto) GM_setValue('auto_fgts', Date.now());
         el.click();
         if (passo === 'proc') return;
       }
@@ -239,11 +242,30 @@
     }
   }
 
+  // ── gov.br pedindo identificação (sessão expirada) durante a cadeia do FGTS ──
+  async function passoSso() {
+    if (!recente('auto_fgts') || location.search.indexOf('por-p-fgtsd') < 0) return;
+    for (let i = 0; i < 40; i++) {
+      const b = achar('button', /^seu certificado digital$/i);
+      if (b) {
+        if (recente('sso_clicou', 2 * 60 * 1000)) return;
+        GM_setValue('sso_clicou', Date.now());
+        GM_setValue('auto_fgts', Date.now());
+        GM_notification({ title: 'Grupo-E · FGTS Digital', text: 'Confirme o certificado do escritório na janela do Chrome (só um OK).', timeout: 20000 });
+        b.click();
+        return;
+      }
+      await esperar(500);
+    }
+  }
+
   GM_registerMenuCommand('Sincronizar procurações agora', () => sincronizar(true));
   GM_registerMenuCommand('Trocar o token do Grupo-E', () => { GM_deleteValue('token'); sincronizar(true); });
 
   const ehFgtsPortal = location.hostname === 'fgtsdigital.sistema.gov.br';
-  if (ehFgtsPortal) {
+  if (location.hostname === 'sso.acesso.gov.br') {
+    window.addEventListener('load', () => setTimeout(passoSso, 1000));
+  } else if (ehFgtsPortal) {
     window.addEventListener('load', () => setTimeout(cadeiaFgts, 1500));
   } else {
     // só na tela de procurações recebidas (não em toda página do portal)
