@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Grupo-E · Licenças da Redesim MG (alvará sanitário + funcionamento)
 // @namespace    https://grupo-e-sistema-uc2w.onrender.com/
-// @version      1.1.1
+// @version      1.1.2
 // @description  No Portal de Serviços da JUCEMG (logado no gov.br), consulta o licenciamento de cada empresa mineira do Grupo-E — 1 a cada 20 s — e envia a validade do alvará sanitário e o nº do alvará de funcionamento pro módulo Legalização.
 // @match        https://portalservicos.jucemg.mg.gov.br/*
 // @run-at       document-idle
@@ -73,7 +73,21 @@
     });
   }
 
+  // Servidor fora do ar por instantes (deploy no Render devolve 502/503/504): tenta de novo, sem perder a empresa.
   async function api(metodo, rota, corpo) {
+    let ultimo;
+    for (let i = 0; i < 8; i++) {
+      try { return await apiUma(metodo, rota, corpo); } catch (e) {
+        ultimo = e;
+        if (!e.temporario) throw e;
+        aviso('servidor Grupo-E indisponível — tentando de novo em 20s (' + (i + 1) + '/8)…', 'atencao');
+        await esperar(20000);
+      }
+    }
+    throw ultimo;
+  }
+
+  async function apiUma(metodo, rota, corpo) {
     const token = GM_getValue('token', '') || (aviso('aguardando o token de sincronização…', 'atencao'), await pedirToken());
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
@@ -87,10 +101,10 @@
           try { j = JSON.parse(r.responseText); } catch (e) { /* não-JSON */ }
           if (r.status === 401) { GM_deleteValue('token'); return reject(new Error('token recusado — comece de novo e cole o token certo.')); }
           if (r.status >= 200 && r.status < 300) resolve(j);
-          else reject(new Error(j.error || 'o sistema respondeu ' + r.status));
+          else reject(Object.assign(new Error(j.error || 'o sistema respondeu ' + r.status), { temporario: r.status >= 500 }));
         },
-        onerror: () => reject(new Error('sem conexão com o sistema Grupo-E.')),
-        ontimeout: () => reject(new Error('o sistema demorou demais pra responder.')),
+        onerror: () => reject(Object.assign(new Error('sem conexão com o sistema Grupo-E.'), { temporario: true })),
+        ontimeout: () => reject(Object.assign(new Error('o sistema demorou demais pra responder.'), { temporario: true })),
       });
     });
   }
