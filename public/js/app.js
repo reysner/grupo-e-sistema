@@ -5672,7 +5672,6 @@ const Legalizacao = (() => {
     if (a.observacoes) detalhe += `<br><i>${_esc(a.observacoes)}</i>`;
     const botoes =
       _btn('🔍', `Legalizacao.consultarPrefeitura('${l.cliente_id}','${tipo}')`, 'Consulta automática no portal da Prefeitura (hoje só Uberlândia-MG)', '#3182ce') +
-      _btn('✏️', `Legalizacao.abrirFormAlvara('${l.cliente_id}','${tipo}')`, 'Preencher vencimento') +
       (tipo === 'sanitario' && a.id ? _btn('🗑', `Legalizacao.excluirAlvara('${a.id}')`, 'Remover', '#e53e3e') : '');
     return _celula(rotulo, a.status, `leg-${tipo}-${l.cliente_id}`, detalhe, botoes);
   }
@@ -5681,9 +5680,7 @@ const Legalizacao = (() => {
     const c = l.cert;
     let detalhe = c.vencimento ? '<b>Vencimento:</b> ' + _fmtData(c.vencimento) : 'Nenhuma data cadastrada ainda.';
     if (c.observacoes) detalhe += `<br><i>${_esc(c.observacoes)}</i>`;
-    const pj = !l.sem_cadastro_acessorias && c.tipo === 'pj';
     const botoes =
-      _btn('✏️', pj ? `Legalizacao.abrirFormCertificadoPJ('${l.cliente_id}')` : `Legalizacao.abrirFormCertificadoPF('${c.id}')`, 'Preencher vencimento') +
       (c.tipo === 'pf' && c.id ? _btn('🗑', `Legalizacao.excluirCertificado('${c.id}')`, 'Remover', '#e53e3e') : '');
     return _celula(c.tipo.toUpperCase(), c.status, `leg-cert-${l.cliente_id || c.id}`, detalhe, botoes);
   }
@@ -5693,8 +5690,7 @@ const Legalizacao = (() => {
     if (!p) return _VAZIO;
     let detalhe = p.vencimento ? '<b>Vencimento:</b> ' + _fmtData(p.vencimento) : 'Nenhuma data cadastrada ainda.';
     if (p.observacoes) detalhe += `<br><i>${_esc(p.observacoes)}</i>`;
-    return _celula('', p.status, `leg-${tipo}-${l.cliente_id}`, detalhe,
-      _btn('✏️', `Legalizacao.abrirFormProcuracao('${l.cliente_id}','${tipo}')`, 'Preencher vencimento'));
+    return _celula('', p.status, `leg-${tipo}-${l.cliente_id}`, detalhe, '');
   }
 
   function goPage(p) {
