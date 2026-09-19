@@ -36,6 +36,14 @@ router.get('/legalizacao/alvaras-a-consultar', async (req, res) => {
   try {
     if (!tokenSyncOk(req, res)) return;
     await ensureLegalizacaoSchema();
+    // ?ibge=<código> limita a uma cidade; ?forcar=1 ignora "consultado há pouco" (ex.: cidade que acabou de ganhar consulta própria).
+    const ibges = req.query.ibge ? IBGES_INTEGRADOS.filter(i => i === String(req.query.ibge)) : IBGES_INTEGRADOS;
+    const recencia = req.query.forcar === '1' ? 'TRUE' : `(
+                a.ultima_consulta_em IS NULL
+             OR ((a.data_vencimento IS NOT NULL OR a.ultima_consulta_status = 'solicitacao_andamento')
+                 AND a.ultima_consulta_em < NOW() - INTERVAL '20 hours')
+             OR a.ultima_consulta_em < NOW() - INTERVAL '7 days'
+          )`;
     const { rows } = await pool.query(
       `SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj, c.municipio_ibge
          FROM clientes c
@@ -44,13 +52,8 @@ router.get('/legalizacao/alvaras-a-consultar', async (req, res) => {
           AND c.municipio_ibge = ANY($1::text[])
           AND length(regexp_replace(COALESCE(c.cnpj, ''), '\\D', '', 'g')) = 14
           AND (a.data_vencimento IS NULL OR a.data_vencimento <= CURRENT_DATE)
-          AND (
-                a.ultima_consulta_em IS NULL
-             OR ((a.data_vencimento IS NOT NULL OR a.ultima_consulta_status = 'solicitacao_andamento')
-                 AND a.ultima_consulta_em < NOW() - INTERVAL '20 hours')
-             OR a.ultima_consulta_em < NOW() - INTERVAL '7 days'
-          )
-        ORDER BY a.ultima_consulta_em ASC NULLS FIRST, c.nome_empresa`, [IBGES_INTEGRADOS]
+          AND ${recencia}
+        ORDER BY a.ultima_consulta_em ASC NULLS FIRST, c.nome_empresa`, [ibges]
     );
     res.json({ data: rows });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar empresas.' }); }
