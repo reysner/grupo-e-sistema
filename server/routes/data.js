@@ -4928,7 +4928,7 @@ SELECT x.cliente_id, x.nome_empresa, x.cnpj, x.codigo, x.sem_cadastro_acessorias
   ${_legalStatusSql('x.cert_venc', LEGAL_DIAS_ALERTA_CERTIFICADO)} AS cert_status,
   x.ecac_id, x.ecac_venc::text AS ecac_venc, x.ecac_obs,
   ${_legalStatusSql('x.ecac_venc', LEGAL_DIAS_ALERTA_PROCURACAO)} AS ecac_status,
-  x.fgts_id, x.fgts_venc::text AS fgts_venc, x.fgts_obs,
+  x.fgts_id, x.fgts_venc::text AS fgts_venc, x.fgts_obs, x.sanit_desat, x.cert_desat,
   ${_legalStatusSql('x.fgts_venc', LEGAL_DIAS_ALERTA_PROCURACAO)} AS fgts_status
 FROM (
   SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj, c.codigo, false AS sem_cadastro_acessorias,
@@ -4938,10 +4938,11 @@ FROM (
          sa.ultima_consulta_status AS sanit_cs, sa.ultima_consulta_resumo AS sanit_cr, sa.ultima_consulta_data_solicitacao AS sanit_cd,
          ce.id AS cert_id, ce.tipo AS cert_tipo, ce.data_vencimento AS cert_venc, ce.observacoes AS cert_obs,
          pe.id AS ecac_id, pe.data_vencimento AS ecac_venc, pe.observacoes AS ecac_obs,
-         pg.id AS fgts_id, pg.data_vencimento AS fgts_venc, pg.observacoes AS fgts_obs
+         pg.id AS fgts_id, pg.data_vencimento AS fgts_venc, pg.observacoes AS fgts_obs,
+         (sa.desativado_em IS NOT NULL) AS sanit_desat, (ce.desativado_em IS NOT NULL) AS cert_desat
     FROM clientes c
     LEFT JOIN legalizacao_alvaras fa ON fa.cliente_id = c.id::text AND fa.tipo = 'funcionamento'
-    LEFT JOIN legalizacao_alvaras sa ON sa.cliente_id = c.id::text AND sa.tipo = 'sanitario' AND sa.desativado_em IS NULL
+    LEFT JOIN legalizacao_alvaras sa ON sa.cliente_id = c.id::text AND sa.tipo = 'sanitario'
     LEFT JOIN legalizacao_certificados ce ON ce.cliente_id = c.id::text AND ce.tipo = 'pj'
     LEFT JOIN legalizacao_procuracoes pe ON pe.cliente_id = c.id::text AND pe.tipo = 'ecac'
     LEFT JOIN legalizacao_procuracoes pg ON pg.cliente_id = c.id::text AND pg.tipo = 'fgts'
@@ -4952,11 +4953,11 @@ FROM (
          NULL, NULL, NULL, NULL, NULL, NULL, NULL,
          ce.id, ce.tipo, ce.data_vencimento, ce.observacoes,
          NULL, NULL, NULL,
-         NULL, NULL, NULL
+         NULL, NULL, NULL,
+         false, (ce.desativado_em IS NOT NULL)
     FROM legalizacao_certificados ce
-   WHERE (ce.tipo = 'pf'
-      OR (ce.tipo = 'pj' AND NOT EXISTS (SELECT 1 FROM clientes c2 WHERE c2.id::text = ce.cliente_id)))
-     AND ce.desativado_em IS NULL
+   WHERE ce.tipo = 'pf'
+      OR (ce.tipo = 'pj' AND NOT EXISTS (SELECT 1 FROM clientes c2 WHERE c2.id::text = ce.cliente_id))
 ) x
 ORDER BY x.nome_empresa ASC`;
 
@@ -4964,7 +4965,8 @@ function legalPainelLinha(r) {
   const orfao = !!r.sem_cadastro_acessorias;
   const alvara = (p) => ({
     id: r[p + '_id'], vencimento: r[p + '_venc'], numero: r[p + '_numero'], observacoes: r[p + '_obs'],
-    consulta_resumo: r[p + '_cr'], consulta_data_solicitacao: r[p + '_cd'], status: r[p + '_status'],
+    consulta_resumo: r[p + '_cr'], consulta_data_solicitacao: r[p + '_cd'],
+    desativado: !!r[p + '_desat'], status: r[p + '_desat'] ? 'desativado' : r[p + '_status'],
   });
   const procuracao = (p) => ({ id: r[p + '_id'], vencimento: r[p + '_venc'], observacoes: r[p + '_obs'], status: r[p + '_status'] });
   return {
@@ -4972,7 +4974,7 @@ function legalPainelLinha(r) {
     nome_empresa: r.nome_empresa, cnpj: r.cnpj, codigo: r.codigo, sem_cadastro_acessorias: orfao,
     func: orfao ? null : alvara('func'),
     sanit: r.sanit_id ? alvara('sanit') : null,
-    cert: { id: r.cert_id, tipo: r.cert_tipo || 'pj', vencimento: r.cert_venc, observacoes: r.cert_obs, status: r.cert_status },
+    cert: { id: r.cert_id, tipo: r.cert_tipo || 'pj', vencimento: r.cert_venc, observacoes: r.cert_obs, desativado: !!r.cert_desat, status: r.cert_desat ? 'desativado' : r.cert_status },
     ecac: orfao ? null : procuracao('ecac'),
     fgts: orfao ? null : procuracao('fgts'),
   };
@@ -4986,7 +4988,9 @@ function legalPainelLinha(r) {
 router.get('/legalizacao/painel', async (req, res) => {
   try {
     await ensureLegalizacaoSchema();
-    const { rows } = await pool.query(LEGAL_PAINEL_SQL);
+    const { rows: todas } = await pool.query(LEGAL_PAINEL_SQL);
+    const verDesativados = req.query.desativados === '1' && req.user.role === 'administrador';
+    const rows = verDesativados ? todas : todas.filter(r => !(r.sem_cadastro_acessorias && r.cert_desat)).map(r => (r.sanit_desat ? { ...r, sanit_id: null } : r));
     res.json({
       data: rows.map(legalPainelLinha),
       diasAlerta: { alvara: LEGAL_DIAS_ALERTA_ALVARA, certificado: LEGAL_DIAS_ALERTA_CERTIFICADO, procuracao: LEGAL_DIAS_ALERTA_PROCURACAO },
@@ -5223,6 +5227,22 @@ router.patch('/legalizacao/certificados/:id/desativar', requireAdmin, async (req
     await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', 'Certificado desativado', req);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao desativar certificado.' }); }
+});
+
+router.patch('/legalizacao/alvaras/:id/reativar', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`UPDATE legalizacao_alvaras SET desativado_em = NULL WHERE id = $1`, [req.params.id]);
+    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', 'Alvará reativado', req);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao reativar alvará.' }); }
+});
+
+router.patch('/legalizacao/certificados/:id/reativar', requireAdmin, async (req, res) => {
+  try {
+    await pool.query(`UPDATE legalizacao_certificados SET desativado_em = NULL WHERE id = $1`, [req.params.id]);
+    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', 'Certificado reativado', req);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Erro ao reativar certificado.' }); }
 });
 
 router.delete('/legalizacao/alvaras/:id', requireAdmin, async (req, res) => {

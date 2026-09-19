@@ -5457,6 +5457,7 @@ const Legalizacao = (() => {
     solicitacao: { cor: '#3182ce', bg: '#ebf8ff', label: '🔵 Solicitação' },
     ok:          { cor: '#38a169', bg: '#f0fff4', label: '🟢 Em dia' },
     sem_data:    { cor: '#718096', bg: '#f7fafc', label: '⚪ Sem data' },
+    desativado:  { cor: '#a0aec0', bg: '#edf2f7', label: '⏸ Desativado' },
   };
 
   function _esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -5519,7 +5520,7 @@ const Legalizacao = (() => {
 
   // ── PAINEL ──────────────────────────────────────────────────────────────
   async function _carregarPainel() {
-    const res = await fetch('/api/data/legalizacao/painel', { headers: { Authorization: 'Bearer ' + _tk() } });
+    const res = await fetch('/api/data/legalizacao/painel?desativados=1', { headers: { Authorization: 'Bearer ' + _tk() } });
     if (!res || !res.ok) return;
     const { data } = await res.json();
     _linhas = data || [];
@@ -5530,9 +5531,11 @@ const Legalizacao = (() => {
 
   /** O item (Func., Sanit., Cert. PJ/PF, ECAC, FGTS) de uma linha — null se aquela linha não tem. */
   function _item(l, sit) {
-    if (sit === 'cert_pj') return l.cert.tipo === 'pj' ? l.cert : null;
-    if (sit === 'cert_pf') return l.cert.tipo === 'pf' ? l.cert : null;
-    return l[sit] || null;
+    let i;
+    if (sit === 'cert_pj') i = l.cert.tipo === 'pj' ? l.cert : null;
+    else if (sit === 'cert_pf') i = l.cert.tipo === 'pf' ? l.cert : null;
+    else i = l[sit] || null;
+    return i && i.desativado ? null : i; // desativado não conta nem entra nos filtros
   }
   function _statusDe(l, sit) { const i = _item(l, sit); return i ? [i.status] : []; }
 
@@ -5660,6 +5663,8 @@ const Legalizacao = (() => {
   const _VAZIO = '<span style="color:var(--gray-300)">—</span>';
 
   function _celulaAlvara(rotulo, a, tipo, l) {
+    if (a.desativado) return _celula(rotulo, 'desativado', `leg-${tipo}-${l.cliente_id}`, 'Desativado — não aparece na página pública nem gera aviso.',
+      _btn('↩️', `Legalizacao.reativarAlvara('${a.id}')`, 'Reativar', '#38a169'));
     let detalhe;
     if (a.status === 'solicitacao') {
       detalhe = _esc(a.consulta_resumo || 'Solicitação em andamento.') +
@@ -5677,6 +5682,8 @@ const Legalizacao = (() => {
 
   function _celulaCert(l) {
     const c = l.cert;
+    if (c.desativado) return _celula(c.tipo.toUpperCase(), 'desativado', `leg-cert-${l.cliente_id || c.id}`, 'Desativado — não aparece na página pública nem gera aviso.',
+      _btn('↩️', `Legalizacao.reativarCertificado('${c.id}')`, 'Reativar', '#38a169'));
     let detalhe = c.vencimento ? '<b>Vencimento:</b> ' + _fmtData(c.vencimento) : 'Nenhuma data cadastrada ainda.';
     if (c.observacoes) detalhe += `<br><i>${_esc(c.observacoes)}</i>`;
     const botoes =
@@ -5761,6 +5768,13 @@ const Legalizacao = (() => {
   }
   const desativarAlvara = (id) => _desativar('alvaras', id, 'este Alvará Sanitário');
   const desativarCertificado = (id) => _desativar('certificados', id, 'este certificado');
+  async function _reativar(rota, id) {
+    const res = await fetch('/api/data/legalizacao/' + rota + '/' + id + '/reativar', { method: 'PATCH', headers: { Authorization: 'Bearer ' + _tk() } });
+    if (res && res.ok) { App.Toast.ok('Reativado.'); await _carregarPainel(); }
+    else App.Toast.err('Erro ao reativar.');
+  }
+  const reativarAlvara = (id) => _reativar('alvaras', id);
+  const reativarCertificado = (id) => _reativar('certificados', id);
 
   async function excluirAlvara(id) {
     if (!confirm('Remover este Alvará Sanitário? Essa ação não pode ser desfeita.')) return;
@@ -5922,7 +5936,7 @@ const Legalizacao = (() => {
 
   /** [status, vencimento] de cada uma das 5 colunas de dados (Func., Sanit., Cert., ECAC, FGTS). */
   function _colunasExport(l, labels) {
-    const par = (i) => i ? [labels[i.status] || i.status, i.vencimento ? _fmtData(i.vencimento) : ''] : ['', ''];
+    const par = (i) => i && !i.desativado ? [labels[i.status] || i.status, i.vencimento ? _fmtData(i.vencimento) : ''] : ['', ''];
     return [par(l.func), par(l.sanit), par(l.cert), par(l.ecac), par(l.fgts)].flat();
   }
   const _COLS_EXPORT = ['Alvará Funcionamento', 'Venc. Funcionamento', 'Alvará Sanitário', 'Venc. Sanitário',
@@ -5976,7 +5990,7 @@ const Legalizacao = (() => {
 
   return {
     load, filtrar, filtrarPorSituacao, goPage, _toggleDetalhe,
-    abrirFormAlvara, salvarAlvara, excluirAlvara, desativarAlvara, desativarCertificado,
+    abrirFormAlvara, salvarAlvara, excluirAlvara, desativarAlvara, desativarCertificado, reativarAlvara, reativarCertificado,
     consultarPrefeitura, consultarTodosPrefeitura, exportCSV, exportPDF,
     abrirFormCertificadoPJ, salvarCertificadoPJ, abrirFormCertificadoPF,
     salvarCertificadoPF, excluirCertificado, abrirFormProcuracao, salvarProcuracao,
