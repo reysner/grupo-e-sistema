@@ -167,6 +167,13 @@ router.post('/legalizacao/alvaras-arquivo', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao gravar o alvará lido da pasta.' }); }
 });
 
+/** POST /legalizacao/cnaes-completar — dispara em segundo plano o preenchimento de município/CNAEs que faltam (e reavalia o sanitário no fim). */
+router.post('/legalizacao/cnaes-completar', async (req, res) => {
+  if (!tokenSyncOk(req, res)) return;
+  completarMunicipiosClientes({ limite: 700 }).then((r) => console.log('[Município/CNAE] Rodada manual:', r)).catch((e) => console.error('[Município/CNAE] Falha:', e.message));
+  res.json({ ok: true, iniciado: true });
+});
+
 router.post('/legalizacao/sanitario-avaliar', async (req, res) => {
   try {
     if (!tokenSyncOk(req, res)) return;
