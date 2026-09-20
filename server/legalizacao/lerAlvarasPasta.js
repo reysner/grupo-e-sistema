@@ -97,6 +97,8 @@ const PADROES_VENC = [
   // Alvará de funcionamento de Uberlândia: "Emissão:22/12/2023 07/11/2026" — a 2ª data (logo após a emissão) é o vencimento.
   new RegExp('Emiss[ãa]o:?\\s*\\d{2}[\\/.-]\\d{2}[\\/.-]\\d{4}\\s+' + DATA_RE, 'i'),
   new RegExp('venc\\.?\\s*' + DATA_RE, 'i'),
+  // Alvará de Contagem/MG (Redesim-JUCEMG): a folha começa com "Renovação 131346 09/08/2029 <inscrição> <CNPJ>..." (tipo, nº, validade)
+  new RegExp('^\\s*(?:Inicial|Renova[çc][ãa]o|Altera[çc][ãa]o|2[ªa]\\s*via)\\s+\\d+\\s+' + DATA_RE, 'i'),
 ];
 function acharVencimento(texto, nomeArquivo) {
   for (const fonte of [texto.replace(/\s+/g, ' '), nomeArquivo]) {
