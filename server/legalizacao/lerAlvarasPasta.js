@@ -5,7 +5,7 @@
  * `...\EMPRESAS\LEGALIZACAO\<razão social>\Alvaras` — extrai o VENCIMENTO do texto do PDF e manda pro Grupo-E.
  * Funciona pra qualquer cidade (não depende de prefeitura) e roda todo dia: alvará novo salvo na pasta entra sozinho.
  * Só o SANITÁRIO (decisão do Reysner, 20/09/2026): o de FUNCIONAMENTO vem direto da prefeitura/Redesim, nunca desta pasta.
- * EXCEÇÃO TEMPORÁRIA ("até segunda ordem", 20/09/2026): cidade de São Paulo — as consultas públicas de lá exigem reCAPTCHA e nada
+ * EXCEÇÃO TEMPORÁRIA ("até segunda ordem", 20/09/2026): São Paulo e as cidades do VRE listadas em municipiosCli.js — as consultas públicas de lá exigem reCAPTCHA e nada
  * confirma a validade, então o funcionamento (alvará ou Certificado de Licenciamento Integrado, CLI) é lido da pasta. Pra voltar
  * ao normal, esvazie IBGES_FUNCIONAMENTO_PELA_PASTA. A data que vale é a DENTRO do PDF (o nome do arquivo às vezes está errado).
  *
@@ -30,7 +30,7 @@ const PASTA = process.env.LEGALIZACAO_PASTA || '\\\\192.168.251.13\\escritorial$
 const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
 const TOKEN = process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC_TOKEN;
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
-const IBGES_FUNCIONAMENTO_PELA_PASTA = new Set(['3550308']); // São Paulo/SP — exceção temporária (ver cabeçalho)
+const { IBGES_CLI: IBGES_FUNCIONAMENTO_PELA_PASTA } = require('./municipiosCli'); // exceção temporária (ver municipiosCli.js)
 const args = process.argv.slice(2);
 const SIMULAR = args.includes('--simular');
 const USAR_OCR = !args.includes('--sem-ocr') && ocr.disponivel();

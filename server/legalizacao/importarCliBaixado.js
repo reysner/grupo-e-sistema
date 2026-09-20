@@ -4,7 +4,7 @@
  * Lê CLIs (Certificado de Licenciamento Integrado, JUCESP/Facilita SP) baixados à mão do site — a Consulta Pública
  * (jucesp.sp.gov.br/IntegradorPaulista/ConsultaPublica) tem reCAPTCHA e o botão "Emitir CLI" só abre com clique humano —
  * e grava o vencimento (DATA DE VALIDADE do documento) como alvará de FUNCIONAMENTO.
- * Vale só pra cidade de São Paulo (exceção "até segunda ordem" do Reysner, 20/09/2026 — mesma de lerAlvarasPasta.js).
+ * Vale só pras cidades de municipiosCli.js (exceção "até segunda ordem" do Reysner, 20/09/2026 — mesma de lerAlvarasPasta.js).
  * Só LÊ os PDFs (nunca apaga nem move). O CNPJ do documento tem que ser de uma empresa ativa do Grupo-E.
  *
  * Uso: node server/legalizacao/importarCliBaixado.js [pasta] [--simular] [--horas=24]
@@ -22,7 +22,7 @@ const SIMULAR = args.includes('--simular');
 const HORAS = parseInt((args.find((a) => a.startsWith('--horas=')) || '').slice(8), 10) || 24;
 const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
 const TOKEN = process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC_TOKEN;
-const IBGES_SP = new Set(['3550308']);
+const { IBGES_CLI: IBGES_SP } = require('./municipiosCli');
 const soDigitos = (s) => String(s || '').replace(/\D/g, '');
 
 async function api(metodo, rota, corpo) {
