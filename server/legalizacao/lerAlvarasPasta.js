@@ -5,6 +5,9 @@
  * `...\EMPRESAS\LEGALIZACAO\<razão social>\Alvaras` — extrai o VENCIMENTO do texto do PDF e manda pro Grupo-E.
  * Funciona pra qualquer cidade (não depende de prefeitura) e roda todo dia: alvará novo salvo na pasta entra sozinho.
  * Só o SANITÁRIO (decisão do Reysner, 20/09/2026): o de FUNCIONAMENTO vem direto da prefeitura/Redesim, nunca desta pasta.
+ * EXCEÇÃO TEMPORÁRIA ("até segunda ordem", 20/09/2026): cidade de São Paulo — as consultas públicas de lá exigem reCAPTCHA e nada
+ * confirma a validade, então o funcionamento (alvará ou Certificado de Licenciamento Integrado, CLI) é lido da pasta. Pra voltar
+ * ao normal, esvazie IBGES_FUNCIONAMENTO_PELA_PASTA. A data que vale é a DENTRO do PDF (o nome do arquivo às vezes está errado).
  *
  * SÓ LÊ: nunca cria, move, renomeia nem apaga arquivo do servidor.
  * Segurança da leitura: só aceita o documento se o CNPJ da empresa aparece no texto do PDF.
@@ -27,6 +30,7 @@ const PASTA = process.env.LEGALIZACAO_PASTA || '\\\\192.168.251.13\\escritorial$
 const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
 const TOKEN = process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC_TOKEN;
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
+const IBGES_FUNCIONAMENTO_PELA_PASTA = new Set(['3550308']); // São Paulo/SP — exceção temporária (ver cabeçalho)
 const args = process.argv.slice(2);
 const SIMULAR = args.includes('--simular');
 const USAR_OCR = !args.includes('--sem-ocr') && ocr.disponivel();
@@ -109,8 +113,9 @@ function acharVencimento(texto, nomeArquivo) {
 
 function acharTipo(texto, nomeArquivo) {
   if (/sanit|visa|vigil/i.test(nomeArquivo)) return 'sanitario';
-  if (/funcion|localiz/i.test(nomeArquivo)) return 'funcionamento';
+  if (/funcion|localiz|licenciamento\s+integrado/i.test(nomeArquivo)) return 'funcionamento';
   const inicio = texto.slice(0, 700);
+  if (/CERTIFICADO\s+DE\s+LICENCIAMENTO\s+INTEGRADO/i.test(inicio)) return 'funcionamento';
   if (/ALVAR[ÁA]\s+SANIT[ÁA]RIO|AUTORIZA[ÇC][ÃA]O\s+SANIT[ÁA]RIA|LICEN[ÇC]A\s+SANIT[ÁA]RIA|LICENCIAMENTO\s+VIGIL/i.test(inicio)) return 'sanitario';
   if (/ALVAR[ÁA]\s+DE\s+(LICEN[ÇC]A|FUNCIONAMENTO|LOCALIZA)|LICEN[ÇC]A\s+DE\s+FUNCIONAMENTO/i.test(inicio)) return 'funcionamento';
   return null;
@@ -121,11 +126,11 @@ function acharNumero(texto) {
   return m ? m[1] : null;
 }
 
-async function lerPdf(arquivo, cnpj, nomeEmpresa) {
+async function lerPdf(arquivo, cnpj, nomeEmpresa, permitirFuncionamento) {
   const st = fs.statSync(arquivo);
   if (st.size > MAX_PDF_BYTES) return { ignorado: 'grande demais' };
   const nome = path.basename(arquivo);
-  if (/funcion|localiz/i.test(nome) && !/sanit|visa|vigil/i.test(nome)) return { ignorado: 'funcionamento' };
+  if (!permitirFuncionamento && /funcion|localiz/i.test(nome) && !/sanit|visa|vigil/i.test(nome)) return { ignorado: 'funcionamento' };
   let texto = '';
   try { texto = (await pdfParse(fs.readFileSync(arquivo))).text || ''; } catch (e) { return { erro: 'PDF ilegível' }; }
   let usouOcr = false;
@@ -147,7 +152,7 @@ async function lerPdf(arquivo, cnpj, nomeEmpresa) {
   const cnpjOk = usouOcr ? (digitos.includes(cnpj) || digitos.includes(cnpj.slice(0, 8)) || nomeBate) : digitos.includes(cnpj);
   if (!cnpjOk) return { cnpjDiferente: true };
   const tipo = acharTipo(texto, nome);
-  if (tipo !== 'sanitario') return { ignorado: 'não é sanitário' };
+  if (tipo !== 'sanitario' && !(permitirFuncionamento && tipo === 'funcionamento')) return { ignorado: 'não é sanitário' };
   return { tipo, vencimento: acharVencimento(texto, nome), numero: acharNumero(texto), arquivo: usouOcr ? nome + ' (lido por OCR — conferir)' : nome };
 }
 
@@ -175,7 +180,7 @@ async function main() {
     const melhor = {}; // tipo -> {vencimento, numero, arquivo}
     for (const pdf of listarPdfs(alv, 2)) {
       let r;
-      try { r = await lerPdf(pdf, cnpj, e.nome_empresa); } catch (err) { r = { erro: err.message }; }
+      try { r = await lerPdf(pdf, cnpj, e.nome_empresa, IBGES_FUNCIONAMENTO_PELA_PASTA.has(String(e.municipio_ibge))); } catch (err) { r = { erro: err.message }; }
       if (r.semTexto) rel.semTexto.push(`${e.nome_empresa} — ${path.basename(pdf)}`);
       else if (r.cnpjDiferente) rel.cnpjDiferente.push(`${e.nome_empresa} — ${path.basename(pdf)}`);
       else if (r.tipo) {
@@ -201,7 +206,7 @@ async function main() {
     try { const a = await api('POST', 'sanitario-avaliar'); console.log(`[${hora()}] Avaliação por CNAE: ${JSON.stringify(a)}`); } catch (err) { console.log('Avaliação por CNAE falhou:', err.message); }
   }
   const mostra = (t, l) => console.log(`\n${t}: ${l.length}${l.length ? '\n  ' + l.slice(0, 25).join('\n  ') + (l.length > 25 ? `\n  … (+${l.length - 25})` : '') : ''}`);
-  console.log(`\n=== RESUMO ===\nalvarás sanitários gravados: ${rel.gravados.sanitario}`);
+  console.log(`\n=== RESUMO ===\nalvarás sanitários gravados: ${rel.gravados.sanitario} | funcionamento (só São Paulo) gravados: ${rel.gravados.funcionamento}`);
   mostra('Empresas sem pasta no servidor', rel.semPasta);
   mostra('Empresas sem subpasta Alvaras', rel.semAlvaras);
   mostra('PDFs ESCANEADOS que o OCR não conseguiu ler', rel.semTexto);

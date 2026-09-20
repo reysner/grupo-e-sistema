@@ -130,7 +130,7 @@ router.get('/legalizacao/clientes-ativos', async (req, res) => {
   try {
     if (!tokenSyncOk(req, res)) return;
     const { rows } = await pool.query(
-      `SELECT id::text AS cliente_id, nome_empresa, cnpj FROM clientes
+      `SELECT id::text AS cliente_id, nome_empresa, cnpj, municipio_ibge FROM clientes
         WHERE status = 'ativo' AND length(regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g')) = 14 ORDER BY nome_empresa`
     );
     res.json({ data: rows });
