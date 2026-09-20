@@ -31,6 +31,10 @@ const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
 const TOKEN = process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC_TOKEN;
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
 const { IBGES_FUNCIONAMENTO_PELA_PASTA } = require('./municipiosCli'); // exceção temporária (ver municipiosCli.js)
+const { IBGES_INTEGRADOS } = require('./municipiosIntegrados');
+// Decisão do Reysner (20/09/2026): toda cidade SEM consulta automática funcional (não integrada) é acompanhada pela pasta da Legalização.
+// Só as cidades integradas (Uberlândia, Uberaba, BH…) continuam pegando o funcionamento direto da prefeitura.
+const funcionamentoPelaPasta = (ibge) => IBGES_FUNCIONAMENTO_PELA_PASTA.has(String(ibge)) || !IBGES_INTEGRADOS.includes(String(ibge));
 const args = process.argv.slice(2);
 const SIMULAR = args.includes('--simular');
 const USAR_OCR = !args.includes('--sem-ocr') && ocr.disponivel();
@@ -186,7 +190,7 @@ async function main() {
     const melhor = {}; // tipo -> {vencimento, numero, arquivo}
     for (const pdf of alvs.flatMap((d) => listarPdfs(d, 2))) {
       let r;
-      try { r = await lerPdf(pdf, cnpj, e.nome_empresa, IBGES_FUNCIONAMENTO_PELA_PASTA.has(String(e.municipio_ibge))); } catch (err) { r = { erro: err.message }; } if (process.env.DBG) console.log("DBG", e.cnpj, pdf.slice(-70), JSON.stringify(r));
+      try { r = await lerPdf(pdf, cnpj, e.nome_empresa, funcionamentoPelaPasta(e.municipio_ibge)); } catch (err) { r = { erro: err.message }; } if (process.env.DBG) console.log("DBG", e.cnpj, pdf.slice(-70), JSON.stringify(r));
       if (r.semTexto) rel.semTexto.push(`${e.nome_empresa} — ${path.basename(pdf)}`);
       else if (r.cnpjDiferente) rel.cnpjDiferente.push(`${e.nome_empresa} — ${path.basename(pdf)}`);
       else if (r.tipo) {
