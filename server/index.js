@@ -103,6 +103,11 @@ app.get('/legalizacao', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'legalizacao-publica.html'));
 });
 
+// ── De onde vêm os dados da Legalização (sem login, como /gamificacao/regras) ──
+app.get('/legalizacao/regras', (req, res) => {
+  res.sendFile(path.join(PUBLIC, 'legalizacao-regras.html'));
+});
+
 // ── Arquivos estáticos com MIME correto ───────────────────────────────────────
 app.get('/js/:file', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');

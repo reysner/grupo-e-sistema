@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>De onde vêm os dados — Legalização</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet" />
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    :root{
+      --green:#1a4233;--green-light:#2a6e4a;--green-pale:#e8f4ef;
+      --gold:#f5c518;--gold-dark:#c9a000;
+      --gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;
+      --gray-400:#94a3b8;--gray-600:#475569;--gray-800:#1e293b;
+      --good-bg:#e6f7ee;--good-fg:#1d8a4e;
+      --warn-bg:#fff6dd;--warn-fg:#a3790b;
+      --bad-bg:#fdecec;--bad-fg:#c0362c;
+      --neu-bg:#eef1f4;--neu-fg:#64748b;
+      --white:#fff;--radius:16px;
+      --shadow:0 4px 24px rgba(0,0,0,.08);
+    }
+    body{font-family:'Inter',sans-serif;background:linear-gradient(180deg,#fdf6e3 0%,#fff 100%);color:var(--gray-800);min-height:100vh}
+    .header{background:var(--green);padding:24px 20px 44px;text-align:center;position:relative;overflow:hidden}
+    .header::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 20% 20%,rgba(245,197,24,.15) 0%,transparent 50%),radial-gradient(circle at 80% 80%,rgba(245,197,24,.1) 0%,transparent 50%)}
+    .header-inner{position:relative;z-index:1;max-width:680px;margin:0 auto}
+    .back-link{display:inline-flex;align-items:center;gap:6px;color:rgba(255,255,255,.75);font-size:17px;font-weight:600;text-decoration:none;margin-bottom:16px}
+    .back-link:hover{color:#fff}
+    h1{font-family:'Plus Jakarta Sans',sans-serif;font-size:36px;font-weight:800;color:var(--white);letter-spacing:-.5px;margin-bottom:10px}
+    .tagline{color:rgba(255,255,255,.7);font-size:19px;max-width:640px;margin:0 auto;line-height:1.6}
+    .badge{display:inline-flex;align-items:center;gap:7px;background:rgba(245,197,24,.15);border:1px solid rgba(245,197,24,.35);border-radius:999px;padding:7px 16px;margin-top:16px;font-size:13.5px;font-weight:600;color:var(--gold)}
+    .container{max-width:680px;margin:-24px auto 0;padding:0 16px 60px;position:relative;z-index:2}
+    .stage-head{display:flex;align-items:flex-start;gap:12px;margin:40px 0 16px}
+    .stage-head:first-of-type{margin-top:28px}
+    .stage-num{background:var(--green);color:#fff;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;flex-shrink:0}
+    .stage-head h2{font-family:'Plus Jakarta Sans',sans-serif;font-size:24px;font-weight:800;color:var(--green)}
+    .stage-head p{font-size:17px;color:var(--gray-400);margin-top:3px}
+    .card{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px 24px;margin-bottom:16px}
+    .card-title{display:flex;align-items:center;gap:9px;font-size:21px;font-weight:800;color:var(--gray-800);margin-bottom:12px}
+    .card-sub{font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--gray-400);margin:14px 0 5px}
+    .card-note{font-size:17px;color:var(--gray-600);margin:0 0 12px;line-height:1.6}
+    .card-foot{font-size:15.5px;color:var(--gray-400);font-style:italic;margin-top:12px;line-height:1.6}
+    .rowline{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--gray-100);font-size:18px}
+    .rowline:first-of-type{border-top:none}
+    .rowline small{display:block;font-size:14.5px;color:var(--gray-400);margin-top:2px;line-height:1.45}
+    .pill{flex-shrink:0;font-size:14px;font-weight:800;padding:4px 12px;border-radius:999px}
+    .pill.good{background:var(--good-bg);color:var(--good-fg)}
+    .pill.warn{background:var(--warn-bg);color:var(--warn-fg)}
+    .pill.bad{background:var(--bad-bg);color:var(--bad-fg)}
+    .pill.neu{background:var(--neu-bg);color:var(--neu-fg)}
+    .info-note{display:flex;gap:9px;align-items:flex-start;background:var(--green-pale);color:var(--green);border-radius:8px;padding:12px 14px;font-size:16px;line-height:1.6;margin-top:12px}
+    .rule-banner{background:var(--green);color:#fff;border-radius:var(--radius);padding:24px 26px;margin:20px 0 12px}
+    .rule-banner .label{font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;opacity:.75;margin-bottom:8px}
+    .rule-banner .formula{font-size:21px;font-weight:800;margin-bottom:8px;line-height:1.4}
+    .rule-banner .cap{font-size:17px;opacity:.88;line-height:1.6}
+    .rule-banner .cap b{color:var(--gold)}
+    .footer-msg{text-align:center;padding:26px 16px 0;color:var(--gray-400);font-size:17px;line-height:1.6}
+    .footer-msg a{color:var(--green-light);font-weight:700;text-decoration:none}
+    @media(max-width:480px){h1{font-size:24px}.card{padding:15px 16px}.rowline{font-size:16.5px}}
+    @media(min-width:900px){.header-inner,.container{max-width:960px}}
+    @media(min-width:1200px){.header-inner,.container{max-width:1100px}h1{font-size:40px}}
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-inner">
+      <a href="/legalizacao" class="back-link">← Voltar pra Legalização</a>
+      <h1>📋 De onde vêm os dados</h1>
+      <div class="tagline">Nada aqui é digitado na mão: cada data de vencimento vem de uma fonte oficial, é conferida automaticamente e só é consultada de novo quando precisa.</div>
+      <div class="badge">🔄 Consulta de alvarás todo dia, às 03:00 · leitura das pastas às 05:00</div>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <div class="rule-banner">
+      <div class="label">A regra geral</div>
+      <div class="formula">Achou uma data válida? Só volta a consultar no dia do vencimento.</div>
+      <div class="cap">Sem data ou com a data <b>vencida</b>, a empresa é consultada de novo toda madrugada até aparecer uma data nova e válida. Vencimentos aparecem no painel e no 🔔 com antecedência: <b>alvará 60 dias · certificado 10 dias · procuração 5 dias</b>.</div>
+    </div>
+
+    <div class="stage-head">
+      <span class="stage-num">1</span>
+      <div><h2>Certificados digitais PJ e PF</h2><p>Quem é a empresa, de que tipo é o certificado e quando vence</p></div>
+    </div>
+
+    <div class="card">
+      <p class="card-title">🔐 CertiSeguro</p>
+      <p class="card-note">Os certificados digitais (e-CNPJ das empresas — PJ — e e-CPF dos sócios — PF) são lidos direto da plataforma de gestão de certificados da <b>CertiSeguro</b>, por uma sincronização automática que traz a data de validade de cada um para o painel.</p>
+      <div class="rowline"><span>Fonte</span><span class="pill neu">CertiSeguro</span></div>
+      <div class="rowline"><span>Atualização</span><span class="pill good">automática</span></div>
+      <div class="rowline"><span>Aviso de vencimento</span><span class="pill warn">10 dias antes</span></div>
+      <p class="card-foot">Certificado de empresa desativada ou marcada como "Desativado" no painel não cobra nem entra nos avisos.</p>
+    </div>
+
+    <div class="stage-head">
+      <span class="stage-num">2</span>
+      <div><h2>Procurações e-CAC e FGTS Digital</h2><p>Quando a procuração que dá acesso ao escritório vence</p></div>
+    </div>
+
+    <div class="card">
+      <p class="card-title">🧾 Portais da Receita e da Caixa</p>
+      <p class="card-note">As procurações do <b>e-CAC</b> (Receita Federal) e do <b>FGTS Digital</b> são lidas dos próprios portais do governo, com o certificado digital do escritório. Um assistente instalado no navegador (Tampermonkey) percorre as empresas e devolve a data de validade de cada procuração.</p>
+      <div class="rowline"><span>Fonte</span><span class="pill neu">e-CAC · FGTS Digital</span></div>
+      <div class="rowline"><span>Atualização</span><span class="pill warn">assistente no navegador</span></div>
+      <div class="rowline"><span>Aviso de vencimento</span><span class="pill warn">5 dias antes</span></div>
+      <p class="card-foot">Esses portais exigem o certificado digital e a sessão do gov.br, então a coleta acontece quando alguém do escritório inicia o assistente — não é sozinha, como as demais.</p>
+    </div>
+
+    <div class="stage-head">
+      <span class="stage-num">3</span>
+      <div><h2>Alvarás de Funcionamento</h2><p>Direto da prefeitura sempre que ela tem consulta pública</p></div>
+    </div>
+
+    <div class="card">
+      <p class="card-title">🏛️ Como o município é definido</p>
+      <p class="card-note">Toda empresa ativa no Acessórias tem o <b>município</b> e o <b>código IBGE</b> conferidos pelo CNPJ (Receita). É esse município que decide onde o alvará é procurado — e empresas novas passam pela mesma conferência automaticamente.</p>
+    </div>
+
+    <div class="card">
+      <p class="card-title">✅ Consulta automática na prefeitura</p>
+      <div class="rowline"><span>Uberlândia/MG<small>portal da Secretaria de Finanças, por CNPJ</small></span><span class="pill good">automático</span></div>
+      <div class="rowline"><span>Uberaba/MG<small>portal de tributos, lê o PDF "Consulta de alvará"</small></span><span class="pill good">automático</span></div>
+      <div class="rowline"><span>Belo Horizonte/MG<small>sistema de Atividades Econômicas (ALF), consulta pública por CNPJ</small></span><span class="pill good">automático</span></div>
+      <p class="card-foot">Essas consultas rodam todo dia às 03:00, num computador do escritório, com 20 segundos entre uma empresa e outra para não sobrecarregar os portais.</p>
+    </div>
+
+    <div class="card">
+      <p class="card-title">🗂️ Redesim (JUCEMG) — Minas Gerais</p>
+      <p class="card-note">Para empresas de MG, o assistente do navegador também consulta o portal de serviços da <b>Redesim/JUCEMG</b>, na tela de Licenciamento, e traz os órgãos e as validades que constarem lá. Muitas empresas ainda não têm licenciamento nesse portal, e às vezes ele está defasado (não mostra renovações recentes).</p>
+    </div>
+
+    <div class="card">
+      <p class="card-title">📁 Cidades sem consulta automática: pasta da Legalização</p>
+      <p class="card-note">Onde a prefeitura não tem consulta pública por CNPJ (ou exige captcha a cada pesquisa), o vencimento é lido do <b>PDF do alvará salvo na pasta da empresa</b> no servidor do escritório. Isso vale para São Paulo, o interior de SP (Certificado de Licenciamento Integrado — CLI), Paracatu, Gouvelândia, Araguari, Contagem e todas as demais cidades sem consulta automática.</p>
+      <div class="rowline"><span>Data lida</span><span class="pill good">a que está dentro do PDF</span></div>
+      <div class="rowline"><span>PDF escaneado</span><span class="pill warn">lido por OCR — conferir</span></div>
+      <div class="rowline"><span>CNPJ do documento</span><span class="pill good">conferido (matriz × filial)</span></div>
+      <p class="card-foot">O sistema só lê os arquivos — nunca move, renomeia nem apaga. Alvará novo salvo na pasta entra sozinho na leitura das 05:00. Alvará que só aparece vencido na pasta fica marcado como vencido, e datas ilegíveis não são gravadas.</p>
+    </div>
+
+    <div class="stage-head">
+      <span class="stage-num">4</span>
+      <div><h2>Alvarás Sanitários</h2><p>Vigilância Sanitária — na maioria das cidades não há consulta pública</p></div>
+    </div>
+
+    <div class="card">
+      <p class="card-title">🩺 De onde vem a data</p>
+      <div class="rowline"><span>Pasta da Legalização<small>PDF do alvará sanitário, lido todo dia (com OCR nos escaneados)</small></span><span class="pill good">principal fonte</span></div>
+      <div class="rowline"><span>Belo Horizonte<small>consulta pública do SISVISA por CNPJ, junto com o funcionamento</small></span><span class="pill good">automático</span></div>
+      <div class="rowline"><span>Uberlândia e demais<small>o portal não oferece consulta pública do sanitário</small></span><span class="pill neu">pela pasta</span></div>
+      <p class="card-foot">O sanitário costuma ser emitido por outro órgão (Vigilância Sanitária municipal ou estadual), por isso cada cidade é avaliada separadamente — funcionamento e sanitário podem ter fontes diferentes.</p>
+    </div>
+
+    <div class="card">
+      <p class="card-title">🧬 "Exige, não localizado"</p>
+      <p class="card-note">Para saber se a empresa <b>precisa</b> de alvará sanitário, o sistema olha as atividades (CNAE) do cartão CNPJ. Se a atividade exige e nenhum alvará foi encontrado, aparece a observação automática <b>"exige, não localizado"</b> — assim ninguém fica esquecido só por não haver PDF ou consulta.</p>
+    </div>
+
+    <div class="stage-head">
+      <span class="stage-num">5</span>
+      <div><h2>O que você pode fazer no painel</h2><p>Sem lápis: o que vem de fonte oficial não é editado à mão</p></div>
+    </div>
+
+    <div class="card">
+      <div class="rowline"><span>Desativar / Reativar<small>empresa que não cobra mais alvará ou certificado (some da cobrança e do link público)</small></span><span class="pill neu">botão</span></div>
+      <div class="rowline"><span>Sino 🔔<small>avisa quando algo está para vencer (alvará 60d · certificado 10d · procuração 5d)</small></span><span class="pill warn">automático</span></div>
+      <div class="rowline"><span>Município e links<small>cada linha mostra o município e o link do portal da prefeitura</small></span><span class="pill good">automático</span></div>
+    </div>
+
+    <div class="footer-msg">Encontrou uma data errada? Avise a equipe — <a href="/legalizacao">voltar pra Legalização</a></div>
+
+  </div>
+
+</body>
+</html>
