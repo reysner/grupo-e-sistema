@@ -100,6 +100,32 @@ router.get('/legalizacao/redesim-a-consultar', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar empresas.' }); }
 });
 
+/** GET /legalizacao/redesim-resumo — conferência do que o script da Redesim já mandou (só leitura). ?cidade=UBERABA lista os detalhes. */
+router.get('/legalizacao/redesim-resumo', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    await ensureLegalizacaoSchema();
+    const { rows: tot } = await pool.query(`SELECT count(*)::int AS total,
+        count(*) FILTER (WHERE sem_licenciamento)::int AS sem_licenciamento,
+        count(*) FILTER (WHERE nao_encontrado)::int AS nao_encontrado,
+        count(*) FILTER (WHERE jsonb_array_length(COALESCE(dados, '[]'::jsonb)) > 0)::int AS com_orgaos
+      FROM legalizacao_redesim`);
+    const cidade = req.query.cidade ? String(req.query.cidade).toUpperCase() : null;
+    const { rows: det } = await pool.query(
+      `SELECT c.nome_empresa, c.municipio, r.sem_licenciamento, r.nao_encontrado, r.dados
+         FROM legalizacao_redesim r JOIN clientes c ON c.id::text = r.cliente_id
+        WHERE ($1::text IS NULL OR upper(c.municipio) = $1) AND ($1::text IS NOT NULL OR jsonb_array_length(COALESCE(r.dados, '[]'::jsonb)) > 0)
+        ORDER BY c.nome_empresa LIMIT 60`, [cidade]
+    );
+    const { rows: porCidade } = await pool.query(
+      `SELECT upper(COALESCE(c.municipio, '?')) AS municipio, count(*)::int AS consultadas,
+              count(*) FILTER (WHERE jsonb_array_length(COALESCE(r.dados, '[]'::jsonb)) > 0)::int AS com_orgaos
+         FROM legalizacao_redesim r JOIN clientes c ON c.id::text = r.cliente_id GROUP BY 1 ORDER BY 2 DESC LIMIT 30`
+    );
+    res.json({ totais: tot[0], porCidade, detalhes: det });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro no resumo.' }); }
+});
+
 router.post('/legalizacao/redesim-resultado', async (req, res) => {
   try {
     if (!tokenSyncOk(req, res)) return;
