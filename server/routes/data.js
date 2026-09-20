@@ -126,6 +126,80 @@ router.get('/legalizacao/redesim-resumo', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro no resumo.' }); }
 });
 
+/**
+ * Aplica o que a Redesim mostrou de uma empresa aos alvarás do Grupo-E:
+ *   - Vigilância Sanitária (concluído + validade)  → alvará SANITÁRIO com a data;
+ *   - Prefeitura (concluído): nº do alvará de FUNCIONAMENTO; e, se veio uma validade FUTURA, a data também —
+ *     só quando não há data ou a que existe é mais antiga (nunca rebaixa uma data já preenchida por outra fonte;
+ *     validade já vencida da Redesim não vira "vencido": pode haver alvará mais novo em outro processo).
+ * Item desativado (desativado_em) nunca é alterado.
+ */
+async function aplicarResultadoRedesim(clienteId, lista) {
+  const brParaIso = (d) => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(d || '').trim()); return m ? `${m[3]}-${m[2]}-${m[1]}` : null; };
+  const hoje = new Date().toISOString().slice(0, 10);
+  let sanitario = null, funcionamento = null;
+
+  for (const o of lista) {
+    const nome = String(o.orgao || '').toUpperCase();
+    const concluido = /CONCLU/i.test(String(o.situacao || ''));
+    const iso = brParaIso(o.validade);
+    if (/SA[UÚ]DE|VIGIL/.test(nome) && concluido && iso) {
+      const resumo = `Redesim/JUCEMG — ${o.documento || 'Licenciamento sanitário'} (validade ${o.validade})${o.risco ? ' · ' + o.risco : ''}.`;
+      await pool.query(
+        `INSERT INTO legalizacao_alvaras (cliente_id, tipo, data_vencimento, ultima_consulta_status, ultima_consulta_resumo, ultima_consulta_em, criado_por)
+         VALUES ($1,'sanitario',$2::date,NULL,$3,NOW(),'Redesim/JUCEMG')
+         ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+           data_vencimento = $2::date, ultima_consulta_status = NULL, ultima_consulta_resumo = $3,
+           ultima_consulta_em = NOW(), atualizado_em = NOW(),
+           notificado_vencimento_em = CASE WHEN $2::date IS DISTINCT FROM legalizacao_alvaras.data_vencimento THEN NULL ELSE legalizacao_alvaras.notificado_vencimento_em END
+         WHERE legalizacao_alvaras.desativado_em IS NULL`,
+        [clienteId, iso, resumo]
+      );
+      sanitario = iso;
+    } else if (/PREFEITURA|ALVAR[AÁ]/.test(nome) && concluido && (o.alvara || iso)) {
+      const futura = iso && iso > hoje ? iso : null;
+      const numero = o.alvara ? String(o.alvara).slice(0, 60) : null;
+      const resumo = futura
+        ? `Redesim/JUCEMG — alvará de funcionamento ${numero || ''} (validade ${o.validade}).`
+        : `Redesim/JUCEMG — alvará de funcionamento ${numero || ''} emitido${iso ? ' (validade ' + o.validade + ')' : ' (validade a confirmar no documento do SINAL)'}.`;
+      await pool.query(
+        `INSERT INTO legalizacao_alvaras (cliente_id, tipo, numero, data_vencimento, ultima_consulta_resumo, ultima_consulta_em, criado_por)
+         VALUES ($1,'funcionamento',$2,$4::date,$3,NOW(),'Redesim/JUCEMG')
+         ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+           numero = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < COALESCE($4::date, DATE '0001-01-01') THEN COALESCE($2, legalizacao_alvaras.numero) ELSE legalizacao_alvaras.numero END,
+           ultima_consulta_resumo = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < COALESCE($4::date, DATE '0001-01-01') THEN $3 ELSE legalizacao_alvaras.ultima_consulta_resumo END,
+           notificado_vencimento_em = CASE WHEN $4::date IS NOT NULL AND (legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $4::date) THEN NULL ELSE legalizacao_alvaras.notificado_vencimento_em END,
+           ultima_consulta_status = CASE WHEN $4::date IS NOT NULL AND (legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $4::date) THEN NULL ELSE legalizacao_alvaras.ultima_consulta_status END,
+           data_vencimento = CASE WHEN $4::date IS NOT NULL AND (legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $4::date) THEN $4::date ELSE legalizacao_alvaras.data_vencimento END,
+           ultima_consulta_em = NOW()
+         WHERE legalizacao_alvaras.desativado_em IS NULL`,
+        [clienteId, numero, resumo, futura]
+      );
+      funcionamento = futura || numero;
+    }
+  }
+  return { sanitario, funcionamento };
+}
+
+/** POST /legalizacao/redesim-reprocessar — reaplica os dados já guardados (sem consultar o portal de novo). */
+router.post('/legalizacao/redesim-reprocessar', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    await ensureLegalizacaoSchema();
+    const { rows } = await pool.query(
+      `SELECT r.cliente_id, r.dados FROM legalizacao_redesim r JOIN clientes c ON c.id::text = r.cliente_id
+        WHERE c.status = 'ativo' AND jsonb_array_length(COALESCE(r.dados, '[]'::jsonb)) > 0`
+    );
+    let sanitarios = 0, funcionamentos = 0;
+    for (const r of rows) {
+      const a = await aplicarResultadoRedesim(r.cliente_id, Array.isArray(r.dados) ? r.dados : []);
+      if (a.sanitario) sanitarios++;
+      if (a.funcionamento) funcionamentos++;
+    }
+    res.json({ ok: true, empresas: rows.length, sanitarios, funcionamentos });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao reprocessar.' }); }
+});
+
 router.post('/legalizacao/redesim-resultado', async (req, res) => {
   try {
     if (!tokenSyncOk(req, res)) return;
@@ -135,41 +209,7 @@ router.post('/legalizacao/redesim-resultado', async (req, res) => {
     const { rows: cli } = await pool.query(`SELECT 1 FROM clientes WHERE id::text = $1`, [String(cliente_id)]);
     if (!cli.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
     const lista = Array.isArray(orgaos) ? orgaos.slice(0, 20) : [];
-    const brParaIso = (d) => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(d || '').trim()); return m ? `${m[3]}-${m[2]}-${m[1]}` : null; };
-    let sanitario = null, funcionamento = null;
-
-    for (const o of lista) {
-      const nome = String(o.orgao || '').toUpperCase();
-      const concluido = /CONCLU/i.test(String(o.situacao || ''));
-      if (/SA[UÚ]DE|VIGIL/.test(nome) && concluido && brParaIso(o.validade)) {
-        const iso = brParaIso(o.validade);
-        const resumo = `Redesim/JUCEMG — ${o.documento || 'Licenciamento sanitário'} (validade ${o.validade})${o.risco ? ' · ' + o.risco : ''}.`;
-        await pool.query(
-          `INSERT INTO legalizacao_alvaras (cliente_id, tipo, data_vencimento, ultima_consulta_status, ultima_consulta_resumo, ultima_consulta_em, criado_por)
-           VALUES ($1,'sanitario',$2::date,NULL,$3,NOW(),'Redesim/JUCEMG')
-           ON CONFLICT (cliente_id, tipo) DO UPDATE SET
-             data_vencimento = $2::date, ultima_consulta_status = NULL, ultima_consulta_resumo = $3,
-             ultima_consulta_em = NOW(), atualizado_em = NOW(),
-             notificado_vencimento_em = CASE WHEN $2::date IS DISTINCT FROM legalizacao_alvaras.data_vencimento THEN NULL ELSE legalizacao_alvaras.notificado_vencimento_em END
-           WHERE legalizacao_alvaras.desativado_em IS NULL`,
-          [String(cliente_id), iso, resumo]
-        );
-        sanitario = iso;
-      } else if (/PREFEITURA/.test(nome) && concluido && o.alvara) {
-        // Só o NÚMERO do alvará novo (a validade fica no documento do SINAL): não mexe em data já preenchida.
-        const resumo = `Redesim/JUCEMG — alvará de funcionamento ${o.alvara} emitido (validade a confirmar no documento do SINAL).`;
-        await pool.query(
-          `INSERT INTO legalizacao_alvaras (cliente_id, tipo, numero, ultima_consulta_resumo, ultima_consulta_em, criado_por)
-           VALUES ($1,'funcionamento',$2,$3,NOW(),'Redesim/JUCEMG')
-           ON CONFLICT (cliente_id, tipo) DO UPDATE SET
-             numero = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL THEN $2 ELSE legalizacao_alvaras.numero END,
-             ultima_consulta_resumo = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL THEN $3 ELSE legalizacao_alvaras.ultima_consulta_resumo END,
-             ultima_consulta_em = NOW()`,
-          [String(cliente_id), String(o.alvara).slice(0, 60), resumo]
-        );
-        funcionamento = o.alvara;
-      }
-    }
+    const { sanitario, funcionamento } = await aplicarResultadoRedesim(String(cliente_id), lista);
 
     await pool.query(
       `INSERT INTO legalizacao_redesim (cliente_id, consultado_em, dados, sem_licenciamento, nao_encontrado)
