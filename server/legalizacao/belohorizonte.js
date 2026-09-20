@@ -8,7 +8,8 @@
  *   → { total, registros: [{ numero, dataValidade, dataConcessao, situacao: { nomeSituacao: 'Ativo' }, fase: { nomeFase: 'Alvará' } }] }
  * O WAF (GoCache) bloqueia clientes "sem cara de navegador" (curl puro), então a chamada leva User-Agent/Referer de navegador.
  * Roda só na estação local (como Uberlândia/Uberaba). O SANITÁRIO de BH tem outra consulta (aas.pbh.gov.br/consulta, SISVISA),
- * ainda não integrada — aqui o sanitário fica "não encontrado".
+ * integrado abaixo (consultarSanitarioBH). ATENÇÃO: o layout do resultado POSITIVO do SISVISA ainda não foi visto (nenhum cliente nosso em BH tinha
+ * alvará sanitário em 20/09/2026); o leitor é genérico e o texto bruto de todo positivo vai pra bh-sanitario-bruto.log pra conferir e ajustar.
  *
  * Devolve o mesmo formato de ciclo7Uberlandia.js (funcionamento/sanitario/vencimentoEncontrado/erros).
  */
@@ -21,7 +22,47 @@ const CABECALHOS = {
   Referer: 'https://alf.pbh.gov.br/publico/home/alfs/pesquisa',
 };
 
+const fs = require('fs');
+const path = require('path');
+const URL_AAS = 'https://aas.pbh.gov.br/consulta';
+
+/** SISVISA (alvará sanitário de BH): formulário Laravel com _token; CNPJ/CPF sem máscara; sem captcha. */
+async function consultarSanitarioBH(digitos) {
+  const r0 = await fetch(URL_AAS, { headers: { 'User-Agent': CABECALHOS['User-Agent'], 'Accept-Language': 'pt-BR' }, signal: AbortSignal.timeout(30000) });
+  const html0 = await r0.text();
+  const tok = /name="_token"\s+value="([^"]+)"/.exec(html0);
+  if (!r0.ok || !tok) throw new Error('SISVISA-BH indisponível ou bloqueado (' + r0.status + ').');
+  const cookie = r0.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+  const corpo = new URLSearchParams({ _token: tok[1], cnpjCpf: digitos, Tip_Logr: '', Nom_Logr: '', Num_Imov_Logr: '', Num_CEP: '', consultar: 'Consultar' });
+  const r = await fetch(URL_AAS, {
+    method: 'POST', body: corpo, signal: AbortSignal.timeout(30000),
+    headers: { 'User-Agent': CABECALHOS['User-Agent'], 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie, Referer: URL_AAS, Origin: 'https://aas.pbh.gov.br' },
+  });
+  const html = await r.text();
+  if (!r.ok) throw new Error('SISVISA-BH respondeu ' + r.status + '.');
+  if (/n[ãa]o encontrado/i.test(html)) return { encontrado: false };
+  // tudo que vem depois do título do formulário, sem tags: é onde o resultado aparece
+  const texto = html.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>|<select[\s\S]*?<\/select>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
+  const m = /(?:validade|vencimento|v[áa]lido\s+at[ée])[^0-9]{0,40}(\d{2})\/(\d{2})\/(\d{4})/i.exec(texto);
+  try { fs.appendFileSync(path.join(__dirname, 'bh-sanitario-bruto.log'), `[${new Date().toISOString()}] ${digitos}: ${texto.slice(0, 1500)}\n`); } catch (e) { /* log é só conferência */ }
+  return { encontrado: true, vencimento: m ? `${m[3]}-${m[2]}-${m[1]}` : null, texto: texto.slice(0, 300) };
+}
+
 async function consultarAlvaraBeloHorizonte(cnpj) {
+  const res = await consultarFuncionamentoBH(cnpj);
+  const digitos = res.cnpj;
+  try {
+    const san = await consultarSanitarioBH(digitos);
+    if (san.encontrado) {
+      res.sanitario = { encontrado: true, servico: 'Alvará Sanitário (SISVISA-BH) — conferir', solicitacao: null, numeroPlanilha: null, statusGeral: san.vencimento ? 'Com validade' : 'Encontrado, validade não lida', pareceres: san.vencimento ? [] : [{ secretaria: 'SISVISA', parecer: san.texto }] };
+      if (san.vencimento) res.vencimentos = { ...(res.vencimentos || {}), sanitario: san.vencimento };
+    }
+  } catch (e) { res.erros = [...(res.erros || []), 'Sanitário BH: ' + e.message]; }
+  if (res.funcionamento && res.funcionamento.encontrado && res.vencimentoEncontrado) res.vencimentos = { ...(res.vencimentos || {}), funcionamento: res.vencimentoEncontrado };
+  return res;
+}
+
+async function consultarFuncionamentoBH(cnpj) {
   const digitos = String(cnpj || '').replace(/\D/g, '');
   if (digitos.length !== 14) throw new Error('CNPJ inválido — preciso dos 14 dígitos.');
   const qs = new URLSearchParams({

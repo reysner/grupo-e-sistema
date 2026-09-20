@@ -7,3 +7,4 @@ server/legalizacao/.env
 diag.txt
 relatorio-alvaras-pasta.json
 estado-alvaras-pasta.json
+server/legalizacao/bh-sanitario-bruto.log

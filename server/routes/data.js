@@ -5461,6 +5461,8 @@ async function gravarResultadoConsultaAlvara(clienteId, tipo, resultado, autor) 
       funcionamento: achouFunc && !achouSanit ? resultado.vencimentoEncontrado : null,
       sanitario: achouSanit && !achouFunc ? resultado.vencimentoEncontrado : null,
     };
+    // Portais que devolvem as datas já separadas por tipo (ex.: Belo Horizonte: ALF + SISVISA) mandam `vencimentos`.
+    if (resultado.vencimentos) for (const t of ['funcionamento', 'sanitario']) if (resultado.vencimentos[t] && resultado[t]?.encontrado) venc[t] = resultado.vencimentos[t];
     const gravados = {};
     for (const t of ['funcionamento', 'sanitario']) {
       const bloco = resultado[t];
