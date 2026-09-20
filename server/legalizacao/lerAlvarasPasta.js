@@ -8,17 +8,20 @@
  *
  * SÓ LÊ: nunca cria, move, renomeia nem apaga arquivo do servidor.
  * Segurança da leitura: só aceita o documento se o CNPJ da empresa aparece no texto do PDF.
- * PDF escaneado (sem texto) não dá pra ler sem OCR: entra no relatório final, pra decidir depois.
+ * PDF escaneado (sem texto): lido por OCR local (ocr.js; dependências em server/legalizacao/ocr). O texto do OCR fica em cache
+ * (estado-alvaras-pasta.json) pra não refazer todo dia; o alvará gravado leva "(lido por OCR — conferir)" no nome do arquivo.
  *
  * Segredos: server/legalizacao/.env (APP_URL e CERTISEGURO_SYNC_TOKEN — os mesmos do certiseguroSync).
  * Uso: node server/legalizacao/lerAlvarasPasta.js [--simular] [--limite=N] [--empresa=TRECHO_DO_NOME]
  *   --simular  lê e mostra o que acharia, sem gravar nada no Grupo-E.
+ *   --sem-ocr  não usa OCR nos PDFs escaneados (entram só no relatório).
  */
 
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const pdfParse = require('pdf-parse');
+const ocr = require('./ocr');
 
 const PASTA = process.env.LEGALIZACAO_PASTA || '\\\\192.168.251.13\\escritorial$\\UNIDADE ORGANIZACIONAL\\EMPRESAS\\LEGALIZACAO';
 const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
@@ -26,6 +29,10 @@ const TOKEN = process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
 const args = process.argv.slice(2);
 const SIMULAR = args.includes('--simular');
+const USAR_OCR = !args.includes('--sem-ocr') && ocr.disponivel();
+const ARQ_CACHE = path.join(__dirname, 'estado-alvaras-pasta.json');
+let cacheOcr = {};
+try { cacheOcr = JSON.parse(fs.readFileSync(ARQ_CACHE, 'utf8')).ocr || {}; } catch (e) { /* 1ª vez */ }
 const LIMITE = parseInt((args.find((a) => a.startsWith('--limite=')) || '').slice(9), 10) || Infinity;
 const FILTRO = ((args.find((a) => a.startsWith('--empresa=')) || '').slice(10) || '').toUpperCase();
 const hora = () => new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -114,19 +121,34 @@ function acharNumero(texto) {
   return m ? m[1] : null;
 }
 
-async function lerPdf(arquivo, cnpj) {
+async function lerPdf(arquivo, cnpj, nomeEmpresa) {
   const st = fs.statSync(arquivo);
   if (st.size > MAX_PDF_BYTES) return { ignorado: 'grande demais' };
   const nome = path.basename(arquivo);
   if (/funcion|localiz/i.test(nome) && !/sanit|visa|vigil/i.test(nome)) return { ignorado: 'funcionamento' };
   let texto = '';
   try { texto = (await pdfParse(fs.readFileSync(arquivo))).text || ''; } catch (e) { return { erro: 'PDF ilegível' }; }
-  if (texto.replace(/\s+/g, '').length < 80) return { semTexto: true };
+  let usouOcr = false;
+  if (texto.replace(/\s+/g, '').length < 80) {
+    if (/bombeir|avcb/i.test(nome)) return { ignorado: 'bombeiros' };
+    if (!USAR_OCR) return { semTexto: true };
+    const chave = `${arquivo}|${st.size}|${st.mtimeMs}`;
+    if (cacheOcr[chave] === undefined) {
+      try { cacheOcr[chave] = await ocr.textoPorOcr(arquivo); } catch (e) { cacheOcr[chave] = ''; }
+    }
+    texto = cacheOcr[chave] || '';
+    if (texto.replace(/\s+/g, '').length < 40) return { semTexto: true };
+    usouOcr = true;
+  }
   const digitos = soDigitos(texto);
-  if (!digitos.includes(cnpj)) return { cnpjDiferente: true };
+  // OCR erra dígitos: além do CNPJ inteiro, aceita a raiz (8 dígitos) ou as duas 1ªs palavras da razão social
+  const palavras = norm(nomeEmpresa).split(' ').filter((w) => w.length >= 4).slice(0, 2);
+  const nomeBate = palavras.length === 2 && palavras.every((w) => norm(texto).includes(w));
+  const cnpjOk = usouOcr ? (digitos.includes(cnpj) || digitos.includes(cnpj.slice(0, 8)) || nomeBate) : digitos.includes(cnpj);
+  if (!cnpjOk) return { cnpjDiferente: true };
   const tipo = acharTipo(texto, nome);
   if (tipo !== 'sanitario') return { ignorado: 'não é sanitário' };
-  return { tipo, vencimento: acharVencimento(texto, nome), numero: acharNumero(texto), arquivo: nome };
+  return { tipo, vencimento: acharVencimento(texto, nome), numero: acharNumero(texto), arquivo: usouOcr ? nome + ' (lido por OCR — conferir)' : nome };
 }
 
 async function main() {
@@ -153,7 +175,7 @@ async function main() {
     const melhor = {}; // tipo -> {vencimento, numero, arquivo}
     for (const pdf of listarPdfs(alv, 2)) {
       let r;
-      try { r = await lerPdf(pdf, cnpj); } catch (err) { r = { erro: err.message }; }
+      try { r = await lerPdf(pdf, cnpj, e.nome_empresa); } catch (err) { r = { erro: err.message }; }
       if (r.semTexto) rel.semTexto.push(`${e.nome_empresa} — ${path.basename(pdf)}`);
       else if (r.cnpjDiferente) rel.cnpjDiferente.push(`${e.nome_empresa} — ${path.basename(pdf)}`);
       else if (r.tipo) {
@@ -182,10 +204,12 @@ async function main() {
   console.log(`\n=== RESUMO ===\nalvarás sanitários gravados: ${rel.gravados.sanitario}`);
   mostra('Empresas sem pasta no servidor', rel.semPasta);
   mostra('Empresas sem subpasta Alvaras', rel.semAlvaras);
-  mostra('PDFs ESCANEADOS (sem texto — precisariam de OCR)', rel.semTexto);
+  mostra('PDFs ESCANEADOS que o OCR não conseguiu ler', rel.semTexto);
   mostra('PDFs com CNPJ diferente do cadastro (ignorados)', rel.cnpjDiferente);
   mostra('Alvarás sanitários sem data legível', rel.semVencimento);
   try { fs.writeFileSync(path.join(__dirname, 'relatorio-alvaras-pasta.json'), JSON.stringify(rel, null, 1)); } catch (e) { /* relatório é só conveniência */ }
+  try { fs.writeFileSync(ARQ_CACHE, JSON.stringify({ ocr: cacheOcr })); } catch (e) { /* cache é só conveniência */ }
+  await ocr.encerrar();
 }
 
 main().catch((e) => { console.error('Falhou:', e.message); process.exit(1); });

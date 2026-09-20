@@ -1,0 +1,10 @@
+{
+  "name": "grupo-e-ocr-local",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dependências do OCR local do lerAlvarasPasta.js (NÃO vão pro Render — só esta estação instala).",
+  "dependencies": {
+    "tesseract.js": "^5.1.1",
+    "@tesseract.js-data/por": "^1.0.0"
+  }
+}
