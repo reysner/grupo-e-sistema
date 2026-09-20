@@ -122,7 +122,7 @@ function acharTipo(texto, nomeArquivo) {
 }
 
 function acharNumero(texto) {
-  const m = /N[ÚU]MERO:?\s*([0-9][0-9\/.\-]{3,})/i.exec(texto) || /Alvar[áa]\s+n[ºo°.]{0,2}\s*([0-9][0-9\/.\-]{2,})/i.exec(texto);
+  const m = /N[º°o]\s*ALVAR[ÁA]\s*:\s*([0-9][0-9\/.\-]{2,})/i.exec(texto) || /N[ÚU]MERO:?\s*([0-9][0-9\/.\-]{3,})/i.exec(texto) || /Alvar[áa]\s+n[ºo°.]{0,2}\s*([0-9][0-9\/.\-]{2,})/i.exec(texto);
   return m ? m[1] : null;
 }
 
@@ -132,7 +132,7 @@ async function lerPdf(arquivo, cnpj, nomeEmpresa, permitirFuncionamento) {
   const nome = path.basename(arquivo);
   if (!permitirFuncionamento && /funcion|localiz/i.test(nome) && !/sanit|visa|vigil/i.test(nome)) return { ignorado: 'funcionamento' };
   let texto = '';
-  try { texto = (await pdfParse(fs.readFileSync(arquivo))).text || ''; } catch (e) { return { erro: 'PDF ilegível' }; }
+  try { texto = (await pdfParse(fs.readFileSync(arquivo))).text || ""; } catch (e) { texto = ""; } // ilegível pro pdf-parse: tenta o OCR
   let usouOcr = false;
   if (texto.replace(/\s+/g, '').length < 80) {
     if (/bombeir|avcb/i.test(nome)) return { ignorado: 'bombeiros' };
@@ -150,6 +150,9 @@ async function lerPdf(arquivo, cnpj, nomeEmpresa, permitirFuncionamento) {
   const palavras = norm(nomeEmpresa).split(' ').filter((w) => w.length >= 4).slice(0, 2);
   const nomeBate = palavras.length === 2 && palavras.every((w) => norm(texto).includes(w));
   const cnpjOk = usouOcr ? (digitos.includes(cnpj) || digitos.includes(cnpj.slice(0, 8)) || nomeBate) : digitos.includes(cnpj);
+  // matriz x filial: se o documento traz CNPJ(s) formatado(s), um deles precisa ter a mesma raiz E a mesma ordem (12 1ºs dígitos)
+  const cnpjsNoDoc = [...texto.matchAll(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/g)].map((m) => soDigitos(m[0]));
+  if (cnpjOk && cnpjsNoDoc.length && !cnpjsNoDoc.some((c) => c.slice(0, 12) === cnpj.slice(0, 12))) return { cnpjDiferente: true };
   if (!cnpjOk) return { cnpjDiferente: true };
   const tipo = acharTipo(texto, nome);
   if (tipo !== 'sanitario' && !(permitirFuncionamento && tipo === 'funcionamento')) return { ignorado: 'não é sanitário' };
@@ -174,13 +177,14 @@ async function main() {
     let pasta = porNorm.get(n);
     if (!pasta) { const c = [...porNorm.keys()].find((k) => k.length >= 12 && n.length >= 12 && (k.startsWith(n) || n.startsWith(k))); if (c) pasta = porNorm.get(c); }
     if (!pasta) { rel.semPasta.push(e.nome_empresa); continue; }
-    const alv = acharPastaAlvaras(path.join(PASTA, pasta));
-    if (!alv) { rel.semAlvaras.push(e.nome_empresa); continue; }
+    // pastas irmãs "<empresa> - FILIAL": o CNPJ do PDF decide de quem é cada documento (matriz x filial)
+    const alvs = [pasta, ...dirs.filter((d) => d !== pasta && norm(d).startsWith(norm(pasta) + ' FILIAL'))].map((d) => acharPastaAlvaras(path.join(PASTA, d))).filter(Boolean);
+    if (!alvs.length) { rel.semAlvaras.push(e.nome_empresa); continue; }
 
     const melhor = {}; // tipo -> {vencimento, numero, arquivo}
-    for (const pdf of listarPdfs(alv, 2)) {
+    for (const pdf of alvs.flatMap((d) => listarPdfs(d, 2))) {
       let r;
-      try { r = await lerPdf(pdf, cnpj, e.nome_empresa, IBGES_FUNCIONAMENTO_PELA_PASTA.has(String(e.municipio_ibge))); } catch (err) { r = { erro: err.message }; }
+      try { r = await lerPdf(pdf, cnpj, e.nome_empresa, IBGES_FUNCIONAMENTO_PELA_PASTA.has(String(e.municipio_ibge))); } catch (err) { r = { erro: err.message }; } if (process.env.DBG) console.log("DBG", e.cnpj, pdf.slice(-70), JSON.stringify(r));
       if (r.semTexto) rel.semTexto.push(`${e.nome_empresa} — ${path.basename(pdf)}`);
       else if (r.cnpjDiferente) rel.cnpjDiferente.push(`${e.nome_empresa} — ${path.basename(pdf)}`);
       else if (r.tipo) {
