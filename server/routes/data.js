@@ -73,6 +73,108 @@ router.post('/legalizacao/alvaras-consulta-local', async (req, res) => {
 });
 
 /**
+ * Sanitário "exige, não localizado": pelo CNAE do cartão CNPJ (clientes.cnaes, ver municipioCnpj.js) estima se a
+ * atividade exige alvará sanitário (legalizacao/sanitario.js). Quem exige e NÃO tem data de vencimento ganha uma linha de
+ * alvará sanitário "sem data" com a observação "Exige alvará sanitário (CNAE …) — não localizado." (só observações
+ * automáticas são reescritas/limpas; texto escrito por gente nunca é tocado). Quando a data aparece (Redesim, pasta do
+ * servidor, prefeitura), a observação automática some sozinha.
+ */
+const { avaliarExigenciaSanitaria, textoExigencia, PADRAO_OBS_AUTOMATICA } = require('../legalizacao/sanitario');
+
+async function atualizarObservacaoSanitaria() {
+  await ensureLegalizacaoSchema();
+  const { rows } = await pool.query(
+    `SELECT c.id::text AS cliente_id, c.cnaes, a.id AS alvara_id, a.data_vencimento, a.observacoes, a.desativado_em,
+            a.ultima_consulta_status, a.criado_por
+       FROM clientes c
+       LEFT JOIN legalizacao_alvaras a ON a.cliente_id = c.id::text AND a.tipo = 'sanitario'
+      WHERE c.status = 'ativo' AND c.cnaes IS NOT NULL`
+  );
+  let marcadas = 0, limpas = 0, exigem = 0;
+  for (const r of rows) {
+    if (r.desativado_em) continue;
+    const obsAuto = PADRAO_OBS_AUTOMATICA.test(r.observacoes || '');
+    if (r.data_vencimento) {
+      if (obsAuto) { await pool.query(`UPDATE legalizacao_alvaras SET observacoes = NULL WHERE id = $1`, [r.alvara_id]); limpas++; }
+      continue;
+    }
+    const av = avaliarExigenciaSanitaria(Array.isArray(r.cnaes) ? r.cnaes : []);
+    if (av.exige) {
+      exigem++;
+      const texto = textoExigencia(av);
+      if (!r.alvara_id) {
+        await pool.query(
+          `INSERT INTO legalizacao_alvaras (cliente_id, tipo, observacoes, criado_por) VALUES ($1,'sanitario',$2,'Avaliação CNAE')
+           ON CONFLICT (cliente_id, tipo) DO NOTHING`, [r.cliente_id, texto]);
+        marcadas++;
+      } else if ((!r.observacoes || obsAuto) && r.observacoes !== texto) {
+        await pool.query(`UPDATE legalizacao_alvaras SET observacoes = $2 WHERE id = $1`, [r.alvara_id, texto]);
+        marcadas++;
+      }
+    } else if (obsAuto && r.alvara_id) {
+      if (r.criado_por === 'Avaliação CNAE' && !r.ultima_consulta_status) await pool.query(`DELETE FROM legalizacao_alvaras WHERE id = $1`, [r.alvara_id]);
+      else await pool.query(`UPDATE legalizacao_alvaras SET observacoes = NULL WHERE id = $1`, [r.alvara_id]);
+      limpas++;
+    }
+  }
+  return { avaliadas: rows.length, exigem, marcadas, limpas };
+}
+
+/**
+ * Rotas do script que lê os PDFs de alvará das pastas do servidor (legalizacao/lerAlvarasPasta.js):
+ *   GET  /legalizacao/clientes-ativos     → empresas ativas (id, nome, cnpj)
+ *   POST /legalizacao/alvaras-arquivo     → { cliente_id, tipo, vencimento (AAAA-MM-DD), numero, arquivo }
+ *   POST /legalizacao/sanitario-avaliar   → reavalia "exige, não localizado" (chamar depois de um lote)
+ */
+router.get('/legalizacao/clientes-ativos', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    const { rows } = await pool.query(
+      `SELECT id::text AS cliente_id, nome_empresa, cnpj FROM clientes
+        WHERE status = 'ativo' AND length(regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g')) = 14 ORDER BY nome_empresa`
+    );
+    res.json({ data: rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar empresas.' }); }
+});
+
+router.post('/legalizacao/alvaras-arquivo', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    await ensureLegalizacaoSchema();
+    const { cliente_id, tipo, vencimento, numero, arquivo } = req.body || {};
+    if (!cliente_id || !['funcionamento', 'sanitario'].includes(tipo) || !/^\d{4}-\d{2}-\d{2}$/.test(String(vencimento || ''))) {
+      return res.status(400).json({ error: 'cliente_id, tipo e vencimento (AAAA-MM-DD) são obrigatórios.' });
+    }
+    const { rows: cli } = await pool.query(`SELECT 1 FROM clientes WHERE id::text = $1`, [String(cliente_id)]);
+    if (!cli.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    const br = String(vencimento).split('-').reverse().join('/');
+    const resumo = `Lido do PDF na pasta do servidor: ${String(arquivo || 'alvará').slice(0, 90)} (vence ${br}).`;
+    const r = await pool.query(
+      `INSERT INTO legalizacao_alvaras (cliente_id, tipo, data_vencimento, numero, ultima_consulta_status, ultima_consulta_resumo, ultima_consulta_em, criado_por)
+       VALUES ($1,$2,$3::date,$4,NULL,$5,NOW(),'Pasta do servidor')
+       ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+         numero = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $3::date THEN COALESCE($4, legalizacao_alvaras.numero) ELSE legalizacao_alvaras.numero END,
+         ultima_consulta_resumo = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $3::date THEN $5 ELSE legalizacao_alvaras.ultima_consulta_resumo END,
+         ultima_consulta_status = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $3::date THEN NULL ELSE legalizacao_alvaras.ultima_consulta_status END,
+         notificado_vencimento_em = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $3::date THEN NULL ELSE legalizacao_alvaras.notificado_vencimento_em END,
+         data_vencimento = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $3::date THEN $3::date ELSE legalizacao_alvaras.data_vencimento END,
+         atualizado_em = NOW()
+       WHERE legalizacao_alvaras.desativado_em IS NULL
+       RETURNING (legalizacao_alvaras.data_vencimento = $3::date) AS gravou`,
+      [String(cliente_id), tipo, vencimento, numero ? String(numero).slice(0, 60) : null, resumo]
+    );
+    res.json({ ok: true, gravou: !!(r.rows[0] && r.rows[0].gravou) });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao gravar o alvará lido da pasta.' }); }
+});
+
+router.post('/legalizacao/sanitario-avaliar', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    res.json({ ok: true, ...(await atualizarObservacaoSanitaria()) });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao avaliar exigência sanitária.' }); }
+});
+
+/**
  * Licenciamento pela REDESIM MG (Portal de Serviços da JUCEMG) — o script do Tampermonkey
  * (public/tools/sincronizar-redesim.user.js) roda no Chrome do escritório, logado no gov.br, e por
  * CNPJ lê os órgãos que licenciam a empresa (Vigilância Sanitária municipal = alvará SANITÁRIO, com
@@ -735,6 +837,7 @@ async function garantirColunasMunicipio() {
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS municipio TEXT`).catch(() => {});
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS municipio_ibge TEXT`).catch(() => {});
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS municipio_verificado_em TIMESTAMPTZ`).catch(() => {});
+  await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS cnaes JSONB`).catch(() => {});
 }
 async function completarMunicipiosClientes({ limite = 300, intervaloMs = 3000 } = {}) {
   if (municipiosRodando) return { pulou: true };
@@ -744,7 +847,7 @@ async function completarMunicipiosClientes({ limite = 300, intervaloMs = 3000 } 
     const { consultarMunicipioCnpj } = require('../legalizacao/municipioCnpj');
     const { rows } = await pool.query(
       `SELECT id, cnpj, nome_empresa FROM clientes
-        WHERE status = 'ativo' AND municipio IS NULL
+        WHERE status = 'ativo' AND (municipio IS NULL OR cnaes IS NULL)
           AND length(regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g')) = 14
         ORDER BY nome_empresa LIMIT $1`, [limite]
     );
@@ -753,8 +856,8 @@ async function completarMunicipiosClientes({ limite = 300, intervaloMs = 3000 } 
       try {
         const m = await consultarMunicipioCnpj(c.cnpj);
         await pool.query(
-          `UPDATE clientes SET municipio = $1, uf = COALESCE($2, uf), municipio_ibge = $3, municipio_verificado_em = NOW() WHERE id = $4`,
-          [m.municipio, m.uf, m.ibge, c.id]
+          `UPDATE clientes SET municipio = $1, uf = COALESCE($2, uf), municipio_ibge = $3, municipio_verificado_em = NOW(), cnaes = $5::jsonb WHERE id = $4`,
+          [m.municipio, m.uf, m.ibge, c.id, JSON.stringify(m.cnaes || [])]
         );
         ok++; seguidas = 0;
       } catch (e) {
@@ -764,6 +867,7 @@ async function completarMunicipiosClientes({ limite = 300, intervaloMs = 3000 } 
       }
       await new Promise(r => setTimeout(r, intervaloMs));
     }
+    if (ok) await atualizarObservacaoSanitaria().catch((e) => console.error('[Sanitário] avaliação falhou:', e.message));
     return { pendentes: rows.length, ok, falhas };
   } finally {
     municipiosRodando = false;
@@ -5543,6 +5647,7 @@ router.delete('/legalizacao/certificados/:id', requireAdmin, async (req, res) =>
  */
 async function verificarNotificacoesLegalizacao() {
   await ensureLegalizacaoSchema();
+  await atualizarObservacaoSanitaria().catch((e) => console.error('[Sanitário] avaliação falhou:', e.message));
   let criadas = 0;
 
   const { rows: alvaras } = await pool.query(

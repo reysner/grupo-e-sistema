@@ -14,7 +14,7 @@ const FONTES = [
   (d) => `https://minhareceita.org/${d}`,
 ];
 
-/** @returns {Promise<{municipio: string, uf: string, ibge: string|null}>} — lança erro se nenhuma fonte responder. */
+/** @returns {Promise<{municipio: string, uf: string, ibge: string|null, cnaes: {codigo: string, descricao: string, principal: boolean}[]}>} — lança erro se nenhuma fonte responder. */
 async function consultarMunicipioCnpj(cnpj) {
   const d = String(cnpj || '').replace(/\D/g, '');
   if (d.length !== 14) throw new Error('CNPJ inválido — preciso dos 14 dígitos.');
@@ -27,7 +27,12 @@ async function consultarMunicipioCnpj(cnpj) {
       const municipio = String(j.municipio || '').trim();
       if (!municipio) { ultimoErro = new Error('resposta sem município'); continue; }
       const ibge = j.codigo_municipio_ibge != null ? String(j.codigo_municipio_ibge) : null;
-      return { municipio: municipio.toUpperCase(), uf: String(j.uf || '').trim().toUpperCase() || null, ibge };
+      // CNAEs do cartão CNPJ (principal + secundários) — base pra saber se a atividade exige alvará sanitário (sanitario.js).
+      const cod = (c) => String(c).padStart(7, '0');
+      const cnaes = [];
+      if (j.cnae_fiscal) cnaes.push({ codigo: cod(j.cnae_fiscal), descricao: String(j.cnae_fiscal_descricao || ''), principal: true });
+      (j.cnaes_secundarios || []).forEach((c) => { if (c && c.codigo) cnaes.push({ codigo: cod(c.codigo), descricao: String(c.descricao || ''), principal: false }); });
+      return { municipio: municipio.toUpperCase(), uf: String(j.uf || '').trim().toUpperCase() || null, ibge, cnaes };
     } catch (e) { ultimoErro = e; }
   }
   throw ultimoErro || new Error('nenhuma fonte respondeu');
