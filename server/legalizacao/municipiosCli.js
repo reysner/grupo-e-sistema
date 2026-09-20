@@ -23,7 +23,8 @@ const IBGES_CLI = new Set([
 
 // Outras cidades em que, por decisão do Reysner, o funcionamento também é lido da PASTA da Legalização (sem CLI):
 //   Paracatu/MG (20/09/2026) — o portal de lá só tem login de contribuinte e o alvará é presencial; leitura em toda rodada.
-const IBGES_PASTA_SEM_CLI = new Set(['3147006']); // Paracatu/MG
+//   Gouvelândia/GO (20/09/2026) — o portal Centi só mostra taxas pagas (hCaptcha), não a validade; funcionamento lido da pasta em toda rodada.
+const IBGES_PASTA_SEM_CLI = new Set(['3147006', '5209150']); // Paracatu/MG, Gouvelândia/GO
 
 /** Cidades em que lerAlvarasPasta.js lê o funcionamento da pasta (CLI + as de IBGES_PASTA_SEM_CLI). */
 const IBGES_FUNCIONAMENTO_PELA_PASTA = new Set([...IBGES_CLI, ...IBGES_PASTA_SEM_CLI]);
