@@ -714,7 +714,7 @@ router.get('/financeiro', requireAdmin, async (req, res) => {
                 SUM(qtd_atrasados) AS qtd_atrasados, MIN(mais_antigo) AS mais_antigo
            FROM financeiro_aberto WHERE ($1 = '__todas' OR unidade = $1) GROUP BY cnpj
        ), docs AS (
-         SELECT cnpj, nome FROM fc UNION SELECT cnpj, nome FROM fa
+         SELECT cnpj, MAX(nome) AS nome FROM (SELECT cnpj, nome FROM fc UNION ALL SELECT cnpj, nome FROM fa) u GROUP BY cnpj
        )
        SELECT d.cnpj, COALESCE(NULLIF(cc.nome_empresa, ''), d.nome) AS nome, cc.status AS status_carteira, cc.id AS cliente_id, cc.origem AS origem_carteira,
               fc.honorario_atual, fc.vigencia, fa.qtd, fa.valor_aberto, fa.valor_atrasado, fa.qtd_atrasados, fa.mais_antigo
