@@ -207,9 +207,6 @@
         Isso <b>não desativa o cliente imediatamente</b> — envia um pedido para o administrador revisar e confirmar.
       </p>
       <div class="field"><label>Empresa</label><input id="inat-empresa" type="text" disabled /></div>
-      <div class="field"><label>Motivo da inativação <span style="color:var(--red)">*</span></label>
-        <select id="inat-motivo"><option value="">Carregando motivos...</option></select>
-      </div>
       <div class="field"><label>Observação — explique o porquê <span style="color:var(--red)">*</span></label>
         <textarea id="inat-obs" rows="4" placeholder="Ex.: cliente encerrou a atividade em 08/2026, CNPJ baixado; sem contato há 3 meses..."></textarea>
       </div>
@@ -466,7 +463,7 @@ function goPage(p) {
     const semCadastro = l.sem_cadastro_acessorias ? '<div style="font-size:11px;color:var(--gray-500)">⚠️ Não há cadastro no Acessórias</div>' : '';
     const alvaras = l.func ? celula('Func.', l.func) + (l.sanit ? celula('Sanit.', l.sanit) : '') : '<span style="color:var(--gray-400)">—</span>';
     const inativar = l.cliente_id
-      ? '<button class="btn-inativar" title="Solicitar a inativação deste cliente (com motivo e observação)" data-id="' + l.cliente_id + '" data-nome="' + esc(l.nome_empresa) + '" onclick="abrirModalInativar(this.dataset.id,this.dataset.nome)">🚫 Inativar</button>' : '';
+      ? '<button class="btn-inativar" title="Solicitar a inativação deste cliente (com observação)" data-id="' + l.cliente_id + '" data-nome="' + esc(l.nome_empresa) + '" onclick="abrirModalInativar(this.dataset.id,this.dataset.nome)">🚫 Inativar</button>' : '';
     return '<tr>' +
       '<td><b>' + esc(l.nome_empresa || '—') + '</b><div style="font-size:11px;color:var(--gray-400)">' + esc(l.cnpj) + '</div>' + (l.municipio ? '<div style="font-size:11px;color:var(--gray-500)">📍 ' + esc(l.municipio) + (l.uf ? '/' + esc(l.uf) : '') + (l.prefeitura_integrada === false ? ' · <b>consulta manual</b>' + (l.prefeitura_url ? ' · <a href="' + esc(l.prefeitura_url) + '" target="_blank" rel="noopener">' + (l.prefeitura_url_oficial ? 'portal' : 'buscar') + '</a>' : '') + (l.prefeitura_url_sanitario ? ' · <a href="' + esc(l.prefeitura_url_sanitario) + '" target="_blank" rel="noopener">sanitário</a>' : '') : '') + ' · <a href="#" onclick="editarIM(\'' + esc(l.cliente_id) + '\', \'' + esc(l.inscricao_municipal || '') + '\');return false" title="Inscrição municipal (algumas prefeituras só consultam por ela)">' + (l.inscricao_municipal ? 'IM ' + esc(l.inscricao_municipal) : '+ inscrição municipal') + '</a></div>' : '') + semCadastro + '</td>' +
       '<td>' + alvaras + '</td>' +
@@ -529,22 +526,10 @@ function abrirJanelaPDF(titulo, colunas, linhasHtml, total) {
 }
 
 // ── SOLICITAR INATIVAÇÃO ─────────────────────────────────────────────
-let _motivos = null;
-async function carregarMotivos() {
-  const sel = document.getElementById('inat-motivo');
-  if (!_motivos) {
-    const res = await api('/api/data/legalizacao/motivos-inativacao');
-    const d = res.ok ? await res.json().catch(() => ({})) : {};
-    _motivos = (d.data && d.data.length) ? d.data : ['Encerramento de atividade / baixa do CNPJ', 'Inadimplência', 'Outro'];
-  }
-  sel.innerHTML = '<option value="">Selecione o motivo...</option>' + _motivos.map(m => '<option>' + esc(m) + '</option>').join('');
-}
-
 function abrirModalInativar(clienteId, nomeEmpresa) {
   _inatClienteId = clienteId;
   document.getElementById('inat-empresa').value = nomeEmpresa;
   document.getElementById('inat-obs').value = '';
-  carregarMotivos();
   document.getElementById('inat-err').style.display = 'none';
   document.getElementById('modal-inativar').style.display = 'flex';
 }
@@ -562,16 +547,14 @@ async function editarIM(clienteId, atual) {
 }
 
 async function confirmarInativacao() {
-  const motivo = document.getElementById('inat-motivo').value;
   const observacao = document.getElementById('inat-obs').value.trim();
   const err = document.getElementById('inat-err');
   err.style.display = 'none';
-  if (!motivo) { err.textContent = 'Escolha o motivo da inativação.'; err.style.display = 'block'; return; }
   if (!observacao) { err.textContent = 'Escreva uma observação explicando o porquê.'; err.style.display = 'block'; return; }
   const res = await api('/api/data/legalizacao/solicitar-inativacao', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ clienteId: _inatClienteId, motivo, observacao })
+    body: JSON.stringify({ clienteId: _inatClienteId, observacao })
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) { err.textContent = data.error || 'Erro ao enviar solicitação.'; err.style.display = 'block'; return; }

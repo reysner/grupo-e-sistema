@@ -5822,7 +5822,7 @@ router.post('/legalizacao/solicitar-inativacao', async (req, res) => {
     await ensureLegalizacaoSchema();
     const { clienteId, motivo, observacao } = req.body;
     if (!clienteId) return res.status(400).json({ error: 'Informe o cliente.' });
-    if (!motivo || !motivo.trim()) return res.status(400).json({ error: 'Escolha o motivo da inativação.' });
+    // Motivo é opcional (pedido do Reysner, 20/09/2026): só a observação é obrigatória.
     if (!observacao || !observacao.trim()) return res.status(400).json({ error: 'Escreva uma observação explicando o porquê.' });
 
     const { rows: cli } = await pool.query(`SELECT nome_empresa FROM clientes WHERE id = $1`, [clienteId]);
@@ -5836,13 +5836,13 @@ router.post('/legalizacao/solicitar-inativacao', async (req, res) => {
     const { rows } = await pool.query(
       `INSERT INTO legalizacao_solicitacoes_inativacao (cliente_id, nome_empresa, motivo, observacao, solicitado_por)
        VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-      [clienteId, cli[0].nome_empresa, motivo.trim(), observacao.trim(), req.user.name]
+      [clienteId, cli[0].nome_empresa, motivo && String(motivo).trim() ? String(motivo).trim() : null, observacao.trim(), req.user.name]
     );
     await pool.query(
       `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id)
        VALUES ('legalizacao_inativacao_solicitada', $1, $2, 'legalizacao', $3)`,
       ['Solicitação de inativação de cliente',
-       `${req.user.name} solicitou inativar ${cli[0].nome_empresa} — motivo: ${motivo.trim()}. "${observacao.trim()}"`, clienteId]
+       `${req.user.name} solicitou inativar ${cli[0].nome_empresa}${motivo && String(motivo).trim() ? ' — motivo: ' + String(motivo).trim() : ''}. "${observacao.trim()}"`, clienteId]
     );
     res.status(201).json({ ok: true, id: rows[0].id });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao registrar solicitação.' }); }
