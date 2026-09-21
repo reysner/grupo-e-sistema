@@ -1028,6 +1028,7 @@
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
               <h2 class="form-title" style="margin:0">Situação legal dos clientes</h2>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-ghost btn-sm" id="legal-btn-conferir" onclick="Legalizacao.abrirConferencia()" hidden title="Datas lidas por OCR de PDF escaneado que ainda precisam de conferência">🔎 Conferir leituras <span id="legal-conferir-n"></span></button>
                 <button class="btn btn-ghost btn-sm" onclick="Legalizacao.exportCSV()">⬇ CSV</button>
                 <button class="btn btn-ghost btn-sm" onclick="Legalizacao.exportPDF()">🖨 PDF</button>
               </div>

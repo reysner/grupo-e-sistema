@@ -5524,9 +5524,48 @@ const Legalizacao = (() => {
     if (!res || !res.ok) return;
     const { data } = await res.json();
     _linhas = data || [];
+    _atualizarContadorConferencia();
     _renderResumo();
     _renderDashboards();
     filtrar();
+  }
+
+  // ── Fila de conferência das datas lidas por OCR ──
+  function _atualizarContadorConferencia() {
+    const n = _linhas.reduce((s, l) => s + (l.func && l.func.a_conferir && !l.func.desativado ? 1 : 0) + (l.sanit && l.sanit.a_conferir && !l.sanit.desativado ? 1 : 0), 0);
+    const el = document.getElementById('legal-conferir-n');
+    if (el) el.textContent = n ? `(${n})` : '';
+    const btn = document.getElementById('legal-btn-conferir');
+    if (btn) btn.hidden = !n;
+  }
+
+  async function abrirConferencia() {
+    const res = await fetch('/api/data/legalizacao/conferencia', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { App.Toast.err('Erro ao carregar a fila de conferência.'); return; }
+    const { data } = await res.json();
+    if (!data.length) { App.Modal.close(); App.Toast.ok('Nada para conferir.'); await _carregarPainel(); return; }
+    const tipoLabel = { funcionamento: 'Funcionamento', sanitario: 'Sanitário' };
+    const linhas = data.map(x => `<div style="border:1px solid var(--gray-200);border-radius:10px;padding:12px;margin-bottom:10px">
+      <div><b>${_esc(x.nome_empresa)}</b> <span style="font-size:11px;color:var(--gray-400)">${_esc(x.cnpj)} · ${_esc(tipoLabel[x.tipo] || x.tipo)}${x.municipio ? ' · ' + _esc(x.municipio) : ''}</span></div>
+      <div style="font-size:12px;color:var(--gray-500);margin:4px 0">Arquivo: <code style="font-size:11px">${_esc(x.origem_arquivo || '—')}</code></div>
+      ${x.trecho_lido ? `<div style="font-size:12px;background:#fffbeb;border-radius:6px;padding:6px 8px;margin:4px 0">O OCR leu: “…${_esc(x.trecho_lido)}”</div>` : ''}
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+        <label style="font-size:12px">Vencimento lido:</label>
+        <input type="date" id="conf-${x.id}" class="input" value="${_esc(x.vencimento)}" style="width:auto" />
+        <button class="btn btn-primary btn-sm" onclick="Legalizacao.conferir('${x.id}', '${_esc(x.vencimento)}')">✔ Confirmar</button>
+      </div>
+    </div>`).join('');
+    App.Modal.open(`Conferir leituras por OCR (${data.length})`, `<p style="font-size:12px;color:var(--gray-500);margin:0 0 10px">O OCR pode errar dígitos. Confira a data no PDF (o caminho está abaixo de cada empresa, dentro da pasta LEGALIZACAO): se estiver certa, confirme; se estiver errada, corrija a data no campo e confirme.</p>${linhas}`, null, { wide: true, noFooter: true });
+  }
+
+  async function conferir(id, original) {
+    const nova = document.getElementById('conf-' + id)?.value || '';
+    const res = await fetch('/api/data/legalizacao/alvaras/' + id + '/conferir', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + _tk(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(nova && nova !== original ? { data_vencimento: nova } : {}),
+    });
+    if (res && res.ok) { App.Toast.ok(nova && nova !== original ? 'Data corrigida e confirmada.' : 'Leitura confirmada.'); await _carregarPainel(); await abrirConferencia(); }
+    else { const err = await res.json().catch(() => ({})); App.Toast.err(err.error || 'Erro ao confirmar.'); }
   }
 
   /** O item (Func., Sanit., Cert. PJ/PF, ECAC, FGTS) de uma linha — null se aquela linha não tem. */
@@ -5675,7 +5714,9 @@ const Legalizacao = (() => {
       detalhe = 'Nenhuma data cadastrada ainda.';
     }
     if (a.observacoes) detalhe += `<br><i>${_esc(a.observacoes)}</i>`;
+    if (a.a_conferir) detalhe += '<br><span style="color:#b7791f">⚠ Data lida por OCR de PDF escaneado — aguardando conferência.</span>';
     const botoes =
+      (a.a_conferir ? _btn('🔎', 'Legalizacao.abrirConferencia()', 'Conferir leitura por OCR', '#b7791f') : '') +
       (tipo === 'sanitario' && a.id ? _btn('🚫', `Legalizacao.desativarAlvara('${a.id}')`, 'Desativar (deixa de aparecer e de ser cobrado na página pública)', '#e53e3e') : '');
     return _celula(rotulo, a.status, `leg-${tipo}-${l.cliente_id}`, detalhe, botoes);
   }
@@ -5999,7 +6040,7 @@ const Legalizacao = (() => {
 
   return {
     load, filtrar, filtrarPorSituacao, goPage, _toggleDetalhe,
-    abrirFormAlvara, salvarAlvara, excluirAlvara, editarIM, desativarAlvara, desativarCertificado, reativarAlvara, reativarCertificado,
+    abrirFormAlvara, salvarAlvara, excluirAlvara, editarIM, abrirConferencia, conferir, desativarAlvara, desativarCertificado, reativarAlvara, reativarCertificado,
     consultarPrefeitura, consultarTodosPrefeitura, exportCSV, exportPDF,
     abrirFormCertificadoPJ, salvarCertificadoPJ, abrirFormCertificadoPF,
     salvarCertificadoPF, excluirCertificado, abrirFormProcuracao, salvarProcuracao,

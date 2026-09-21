@@ -164,7 +164,7 @@ router.post('/legalizacao/alvaras-arquivo', async (req, res) => {
   try {
     if (!tokenSyncOk(req, res)) return;
     await ensureLegalizacaoSchema();
-    const { cliente_id, tipo, vencimento, numero, arquivo } = req.body || {};
+    const { cliente_id, tipo, vencimento, numero, arquivo, ocr, caminho, trecho } = req.body || {};
     if (!cliente_id || !['funcionamento', 'sanitario'].includes(tipo) || !/^\d{4}-\d{2}-\d{2}$/.test(String(vencimento || ''))) {
       return res.status(400).json({ error: 'cliente_id, tipo e vencimento (AAAA-MM-DD) são obrigatórios.' });
     }
@@ -173,9 +173,16 @@ router.post('/legalizacao/alvaras-arquivo', async (req, res) => {
     const br = String(vencimento).split('-').reverse().join('/');
     const resumo = `Lido do PDF na pasta do servidor: ${String(arquivo || 'alvará').slice(0, 90)} (vence ${br}).`;
     const r = await pool.query(
-      `INSERT INTO legalizacao_alvaras (cliente_id, tipo, data_vencimento, numero, ultima_consulta_status, ultima_consulta_resumo, ultima_consulta_em, criado_por)
-       VALUES ($1,$2,$3::date,$4,NULL,$5,NOW(),'Pasta do servidor')
+      `INSERT INTO legalizacao_alvaras (cliente_id, tipo, data_vencimento, numero, ultima_consulta_status, ultima_consulta_resumo, ultima_consulta_em, criado_por, lido_por_ocr, origem_arquivo, trecho_lido)
+       VALUES ($1,$2,$3::date,$4,NULL,$5,NOW(),'Pasta do servidor',$6,$7,$8)
        ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+         lido_por_ocr = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $3::date THEN $6 ELSE legalizacao_alvaras.lido_por_ocr END,
+         origem_arquivo = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $3::date THEN $7 ELSE legalizacao_alvaras.origem_arquivo END,
+         trecho_lido = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $3::date THEN $8
+                            WHEN legalizacao_alvaras.data_vencimento = $3::date AND legalizacao_alvaras.trecho_lido IS NULL AND legalizacao_alvaras.lido_por_ocr THEN $8
+                            ELSE legalizacao_alvaras.trecho_lido END,
+         conferido_em = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $3::date THEN NULL ELSE legalizacao_alvaras.conferido_em END,
+         conferido_por = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $3::date THEN NULL ELSE legalizacao_alvaras.conferido_por END,
          numero = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $3::date THEN COALESCE($4, legalizacao_alvaras.numero) ELSE legalizacao_alvaras.numero END,
          ultima_consulta_resumo = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $3::date THEN $5 ELSE legalizacao_alvaras.ultima_consulta_resumo END,
          ultima_consulta_status = CASE WHEN legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento < $3::date THEN NULL ELSE legalizacao_alvaras.ultima_consulta_status END,
@@ -184,7 +191,8 @@ router.post('/legalizacao/alvaras-arquivo', async (req, res) => {
          atualizado_em = NOW()
        WHERE legalizacao_alvaras.desativado_em IS NULL
        RETURNING (legalizacao_alvaras.data_vencimento = $3::date) AS gravou`,
-      [String(cliente_id), tipo, vencimento, numero ? String(numero).slice(0, 60) : null, resumo]
+      [String(cliente_id), tipo, vencimento, numero ? String(numero).slice(0, 60) : null, resumo,
+       !!ocr, caminho ? String(caminho).slice(0, 400) : null, trecho ? String(trecho).slice(0, 300) : null]
     );
     res.json({ ok: true, gravou: !!(r.rows[0] && r.rows[0].gravou) });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao gravar o alvará lido da pasta.' }); }
@@ -5165,6 +5173,17 @@ async function ensureLegalizacaoSchema() {
   // próxima renovação também, sem spam repetido enquanto a data não muda.
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS notificado_vencimento_em TIMESTAMPTZ`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS desativado_em TIMESTAMPTZ`).catch(()=>{});
+  // Fila de conferência: datas lidas por OCR do PDF da pasta ficam "a conferir" até alguém confirmar/corrigir.
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS lido_por_ocr BOOLEAN NOT NULL DEFAULT false`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS origem_arquivo TEXT`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS trecho_lido TEXT`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS conferido_em TIMESTAMPTZ`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS conferido_por TEXT`).catch(()=>{});
+  // Uma vez só (origem_arquivo ainda nula): marca como "a conferir" o que já foi gravado por OCR antes desta fila existir.
+  await pool.query(`UPDATE legalizacao_alvaras
+       SET lido_por_ocr = true, origem_arquivo = COALESCE(substring(ultima_consulta_resumo from 'servidor: (.*) \\(vence'), 'PDF da pasta')
+     WHERE lido_por_ocr = false AND origem_arquivo IS NULL AND conferido_em IS NULL
+       AND data_vencimento IS NOT NULL AND ultima_consulta_resumo LIKE '%lido por OCR%'`).catch(()=>{});
   await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_redesim (
     cliente_id TEXT PRIMARY KEY,
     consultado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -5339,6 +5358,8 @@ router.get('/legalizacao/painel', async (req, res) => {
     const { rows: todas } = await pool.query(LEGAL_PAINEL_SQL);
     const { rows: muns } = await pool.query(`SELECT id::text AS id, municipio, uf, municipio_ibge, inscricao_municipal FROM clientes`);
     const munPorId = new Map(muns.map(m => [m.id, m]));
+    const { rows: pend } = await pool.query(`SELECT cliente_id, tipo FROM legalizacao_alvaras WHERE lido_por_ocr AND conferido_em IS NULL AND desativado_em IS NULL AND data_vencimento IS NOT NULL`);
+    const aConferir = new Set(pend.map(p => p.cliente_id + '|' + p.tipo));
     const verDesativados = req.query.desativados === '1' && req.user.role === 'administrador';
     const rows = verDesativados ? todas : todas.filter(r => !(r.sem_cadastro_acessorias && r.cert_desat)).map(r => (r.sanit_desat ? { ...r, sanit_id: null } : r));
     res.json({
@@ -5348,6 +5369,8 @@ router.get('/legalizacao/painel', async (req, res) => {
         l.municipio = m && m.municipio ? m.municipio : null;
         l.uf = m && m.uf ? m.uf : null;
         l.inscricao_municipal = m && m.inscricao_municipal ? m.inscricao_municipal : null;
+        if (l.func) l.func.a_conferir = aConferir.has(r.cliente_id + '|funcionamento');
+        if (l.sanit) l.sanit.a_conferir = aConferir.has(r.cliente_id + '|sanitario');
         // null = ainda não conferido; false = cidade sem consulta automática (buscar na prefeitura de lá)
         l.prefeitura_integrada = m && m.municipio_ibge ? IBGES_INTEGRADOS.includes(m.municipio_ibge) : null;
         if (l.prefeitura_integrada === false) { // atalho pro portal da cidade (consulta manual)
@@ -5359,6 +5382,46 @@ router.get('/legalizacao/painel', async (req, res) => {
       diasAlerta: { alvara: LEGAL_DIAS_ALERTA_ALVARA, certificado: LEGAL_DIAS_ALERTA_CERTIFICADO, procuracao: LEGAL_DIAS_ALERTA_PROCURACAO },
     });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar legalização.' }); }
+});
+
+/**
+ * FILA DE CONFERÊNCIA — datas lidas por OCR de PDF escaneado da pasta do servidor. O OCR erra (ex.: "31/12/2924"), então cada
+ * leitura fica "a conferir" até um admin confirmar ou corrigir a data.
+ *   GET  /legalizacao/conferencia            → lista o que falta conferir (empresa, tipo, data lida, arquivo e o trecho do texto)
+ *   POST /legalizacao/alvaras/:id/conferir   → { data_vencimento? } confirma; se vier uma data diferente, corrige e confirma
+ */
+router.get('/legalizacao/conferencia', requireAdmin, async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const { rows } = await pool.query(
+      `SELECT a.id, a.tipo, a.data_vencimento::text AS vencimento, a.numero, a.origem_arquivo, a.trecho_lido, a.atualizado_em,
+              a.cliente_id, c.nome_empresa, c.cnpj, c.municipio, c.uf
+         FROM legalizacao_alvaras a JOIN clientes c ON c.id::text = a.cliente_id
+        WHERE a.lido_por_ocr AND a.conferido_em IS NULL AND a.desativado_em IS NULL AND a.data_vencimento IS NOT NULL
+        ORDER BY c.nome_empresa, a.tipo`
+    );
+    res.json({ data: rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar a fila de conferência.' }); }
+});
+
+router.post('/legalizacao/alvaras/:id/conferir', requireAdmin, async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const nova = req.body && req.body.data_vencimento ? String(req.body.data_vencimento) : null;
+    if (nova && !/^\d{4}-\d{2}-\d{2}$/.test(nova)) return res.status(400).json({ error: 'Data inválida.' });
+    const { rows } = await pool.query(
+      `UPDATE legalizacao_alvaras SET
+         notificado_vencimento_em = CASE WHEN $2::date IS NOT NULL AND $2::date IS DISTINCT FROM data_vencimento THEN NULL ELSE notificado_vencimento_em END,
+         data_vencimento = COALESCE($2::date, data_vencimento),
+         conferido_em = NOW(), conferido_por = $3, atualizado_em = NOW()
+       WHERE id = $1 AND lido_por_ocr
+       RETURNING id, data_vencimento::text AS vencimento`,
+      [req.params.id, nova, req.user.name]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Item não encontrado ou já conferido.' });
+    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', nova ? 'Data lida por OCR corrigida e confirmada' : 'Data lida por OCR confirmada', req);
+    res.json({ ok: true, vencimento: rows[0].vencimento });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao confirmar a leitura.' }); }
 });
 
 /**
@@ -5420,6 +5483,8 @@ router.put('/legalizacao/alvaras/:clienteId/:tipo', async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6)
        ON CONFLICT (cliente_id, tipo) DO UPDATE SET
          data_vencimento = $3, numero = $4, observacoes = $5, atualizado_em = NOW(),
+         origem_arquivo = CASE WHEN legalizacao_alvaras.lido_por_ocr THEN 'manual' ELSE legalizacao_alvaras.origem_arquivo END,
+         lido_por_ocr = false, conferido_em = NULL, conferido_por = NULL,
          ultima_consulta_status = CASE WHEN $3 IS NOT NULL THEN NULL ELSE legalizacao_alvaras.ultima_consulta_status END,
          notificado_vencimento_em = CASE WHEN $3 IS DISTINCT FROM legalizacao_alvaras.data_vencimento THEN NULL ELSE legalizacao_alvaras.notificado_vencimento_em END
        RETURNING id`,

@@ -132,6 +132,16 @@ function acharNumero(texto) {
   return m ? m[1] : null;
 }
 
+/** Pedaço do texto em volta da data (AAAA-MM-DD) — vai pra fila de conferência, pra quem confere ver o que o OCR leu sem abrir o PDF. */
+function trechoDaData(texto, iso) {
+  const [a, m, d] = iso.split('-');
+  const t = String(texto || '').replace(/\s+/g, ' ');
+  const re = new RegExp(`${d}[/.\\-]${m}[/.\\-]${a}`);
+  const x = re.exec(t);
+  if (!x) return null;
+  return t.slice(Math.max(0, x.index - 90), x.index + x[0].length + 25).trim();
+}
+
 /**
  * Inscrição municipal impressa no alvará (pra o painel não depender de digitação): "C.M.C.:601.290-00" (Uberlândia),
  * "INSC. MUNICIPAL: 1464" (Gouvelândia), "Inscrição Municipal ... Vencimento 659.153-00" (Uberlândia, layout em colunas),
@@ -185,7 +195,8 @@ async function lerPdf(arquivo, cnpj, nomeEmpresa, permitirFuncionamento) {
   const tipo = acharTipo(texto, nome);
   const inscricao = acharInscricao(texto);
   if (tipo !== 'sanitario' && !(permitirFuncionamento && tipo === 'funcionamento')) return { ignorado: 'não é sanitário', inscricao };
-  return { inscricao, tipo, vencimento: acharVencimento(texto, nome), numero: acharNumero(texto), arquivo: usouOcr ? nome + ' (lido por OCR — conferir)' : nome };
+  const vencimento = acharVencimento(texto, nome);
+  return { inscricao, tipo, vencimento, numero: acharNumero(texto), arquivo: usouOcr ? nome + ' (lido por OCR — conferir)' : nome, ocr: usouOcr, caminho: arquivo, trecho: vencimento ? trechoDaData(texto, vencimento) : null };
 }
 
 /**
@@ -276,7 +287,7 @@ async function main() {
       const m = melhor[tipo];
       let gravou = '(simulação)';
       if (!SIMULAR) {
-        try { const r = await api('POST', 'alvaras-arquivo', { cliente_id: e.cliente_id, tipo, vencimento: m.vencimento, numero: m.numero, arquivo: m.arquivo }); gravou = r.gravou ? 'gravado' : 'já tinha data igual/mais nova'; }
+        try { const r = await api('POST', 'alvaras-arquivo', { cliente_id: e.cliente_id, tipo, vencimento: m.vencimento, numero: m.numero, arquivo: m.arquivo, ocr: m.ocr, caminho: path.relative(PASTA, m.caminho), trecho: m.trecho }); gravou = r.gravou ? 'gravado' : 'já tinha data igual/mais nova'; }
         catch (err) { gravou = 'FALHOU ' + err.message; }
       }
       if (/gravado|simula/.test(gravou)) rel.gravados[tipo]++;
