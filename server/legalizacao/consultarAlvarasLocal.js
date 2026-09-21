@@ -47,6 +47,9 @@ async function main() {
   console.log(`[${hora()}] ${alvos.length} empresa(s) pra consultar (1 a cada ${INTERVALO_MS / 1000}s).`);
 
   let comData = 0, comSolicitacao = 0, nada = 0, falhas = 0, seguidas = 0;
+  const inicioRodada = new Date().toISOString();
+  const porCidade = {}; // ibge -> { nome, total, comData, semAlvara, falhas, erro } — vai pra tela de saúde das consultas
+  const cid = (a) => (porCidade[a.municipio_ibge] = porCidade[a.municipio_ibge] || { nome: (MUNICIPIOS_INTEGRADOS[a.municipio_ibge] || {}).nome || a.municipio_ibge, total: 0, comData: 0, semAlvara: 0, falhas: 0, erro: null });
   for (let i = 0; i < alvos.length; i++) {
     const a = alvos[i];
     try {
@@ -57,15 +60,21 @@ async function main() {
       seguidas = 0;
       const achou = (resultado.funcionamento && resultado.funcionamento.encontrado) || (resultado.sanitario && resultado.sanitario.encontrado);
       if (resultado.vencimentoEncontrado) comData++; else if (achou) comSolicitacao++; else nada++;
+      { const c = cid(a); c.total++; if (resultado.vencimentoEncontrado) c.comData++; else c.semAlvara++; }
       console.log(`[${hora()}] ${i + 1}/${alvos.length} ${a.nome_empresa}: ${resultado.vencimentoEncontrado ? 'vence ' + resultado.vencimentoEncontrado : achou ? 'solicitação em andamento' : 'nada encontrado'}${g && resultado.sanitario && resultado.sanitario.encontrado ? ' (+ sanitário)' : ''}`);
     } catch (e) {
       falhas++; seguidas++;
+      { const c = cid(a); c.total++; c.falhas++; c.erro = String(e.message).slice(0, 160); }
       console.log(`[${hora()}] ${i + 1}/${alvos.length} ${a.nome_empresa}: FALHOU — ${e.message}`);
       if (seguidas >= MAX_FALHAS_SEGUIDAS) { console.log('Muitas falhas seguidas — parando pra não forçar o portal (pode ser bloqueio). Tente de novo mais tarde.'); break; }
     }
     if (i < alvos.length - 1) await dorme(INTERVALO_MS);
   }
   console.log(`[${hora()}] Fim: ${comData} com data, ${comSolicitacao} em andamento, ${nada} sem alvará, ${falhas} falha(s).`);
+  if (!ibge && !forcar || alvos.length) {
+    try { await api('POST', 'saude-rotina', { rotina: 'consulta_prefeituras', inicio: inicioRodada, total: alvos.length, ok: alvos.length - falhas, falhas, resumo: { comData, comSolicitacao, semAlvara: nada, interrompida: seguidas >= MAX_FALHAS_SEGUIDAS }, por_cidade: porCidade }); }
+    catch (e) { console.log('Não consegui registrar a rodada na tela de saúde:', e.message); }
+  }
 }
 
 main().catch((e) => { console.error('Falhou:', e.message); process.exit(1); });

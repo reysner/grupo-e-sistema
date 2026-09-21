@@ -5179,6 +5179,19 @@ async function ensureLegalizacaoSchema() {
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS trecho_lido TEXT`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS conferido_em TIMESTAMPTZ`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS conferido_por TEXT`).catch(()=>{});
+  // Saúde das consultas: cada rotina do escritório (consulta às prefeituras, leitura das pastas) registra aqui como foi a rodada.
+  await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_rotinas (
+    id SERIAL PRIMARY KEY,
+    rotina TEXT NOT NULL,
+    inicio TIMESTAMPTZ,
+    fim TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    total INT NOT NULL DEFAULT 0,
+    ok INT NOT NULL DEFAULT 0,
+    falhas INT NOT NULL DEFAULT 0,
+    resumo JSONB,
+    por_cidade JSONB
+  )`).catch(()=>{});
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_legal_rotinas_rotina_fim ON legalizacao_rotinas (rotina, fim DESC)`).catch(()=>{});
   // Uma vez só (origem_arquivo ainda nula): marca como "a conferir" o que já foi gravado por OCR antes desta fila existir.
   await pool.query(`UPDATE legalizacao_alvaras
        SET lido_por_ocr = true, origem_arquivo = COALESCE(substring(ultima_consulta_resumo from 'servidor: (.*) \\(vence'), 'PDF da pasta')
@@ -5383,6 +5396,91 @@ router.get('/legalizacao/painel', async (req, res) => {
     });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar legalização.' }); }
 });
+
+/**
+ * SAÚDE DAS CONSULTAS — as rotinas do computador do escritório (consulta às prefeituras às 03:00, leitura das pastas às 05:00)
+ * registram o resultado de cada rodada; a tela mostra se rodaram, quantas falharam e a situação de cada cidade.
+ *   POST /legalizacao/saude-rotina  (X-Sync-Token) → { rotina, inicio, total, ok, falhas, resumo, por_cidade }
+ *   GET  /legalizacao/saude         (admin)        → rotinas + cidades
+ */
+const ROTINAS_LEGALIZACAO = {
+  consulta_prefeituras: { nome: 'Consulta às prefeituras', horario: 'todo dia às 03:00', horasMax: 30 },
+  leitura_pastas: { nome: 'Leitura das pastas da Legalização', horario: 'todo dia às 05:00', horasMax: 30 },
+};
+
+router.post('/legalizacao/saude-rotina', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    await ensureLegalizacaoSchema();
+    const { rotina, inicio, total, ok, falhas, resumo, por_cidade } = req.body || {};
+    if (!ROTINAS_LEGALIZACAO[rotina]) return res.status(400).json({ error: 'Rotina desconhecida.' });
+    await pool.query(
+      `INSERT INTO legalizacao_rotinas (rotina, inicio, total, ok, falhas, resumo, por_cidade) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb)`,
+      [rotina, inicio || null, parseInt(total, 10) || 0, parseInt(ok, 10) || 0, parseInt(falhas, 10) || 0, JSON.stringify(resumo || {}), JSON.stringify(por_cidade || {})]
+    );
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao registrar a rotina.' }); }
+});
+
+/** Situação de cada rotina: última rodada, se está atrasada e se houve muitas falhas. */
+async function situacaoRotinas() {
+  const saida = [];
+  for (const [chave, cfg] of Object.entries(ROTINAS_LEGALIZACAO)) {
+    const { rows } = await pool.query(`SELECT * FROM legalizacao_rotinas WHERE rotina = $1 ORDER BY fim DESC LIMIT 1`, [chave]);
+    const u = rows[0] || null;
+    const horas = u ? (Date.now() - new Date(u.fim).getTime()) / 3600000 : null;
+    let status = 'sem_registro';
+    if (u) status = horas > cfg.horasMax ? 'atrasada' : (u.total > 0 && u.falhas / u.total > 0.2 ? 'com_falhas' : 'ok');
+    saida.push({ rotina: chave, nome: cfg.nome, horario: cfg.horario, status, horas_desde: horas == null ? null : Math.round(horas * 10) / 10,
+      ultima: u ? { fim: u.fim, inicio: u.inicio, total: u.total, ok: u.ok, falhas: u.falhas, resumo: u.resumo, por_cidade: u.por_cidade } : null });
+  }
+  return saida;
+}
+
+router.get('/legalizacao/saude', requireAdmin, async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const rotinas = await situacaoRotinas();
+    const consulta = rotinas.find(r => r.rotina === 'consulta_prefeituras');
+    const porCidadeRodada = (consulta && consulta.ultima && consulta.ultima.por_cidade) || {};
+    const { rows } = await pool.query(
+      `SELECT c.municipio_ibge AS ibge, COALESCE(NULLIF(c.municipio, ''), 'Não conferido') AS municipio, c.uf,
+              COUNT(DISTINCT c.id) AS empresas,
+              COUNT(DISTINCT c.id) FILTER (WHERE f.data_vencimento IS NOT NULL) AS func_com_data,
+              COUNT(DISTINCT c.id) FILTER (WHERE f.data_vencimento IS NOT NULL AND f.data_vencimento < CURRENT_DATE) AS func_vencido,
+              COUNT(DISTINCT c.id) FILTER (WHERE s.data_vencimento IS NOT NULL) AS sanit_com_data,
+              MAX(f.ultima_consulta_em) AS ultima_consulta
+         FROM clientes c
+         LEFT JOIN legalizacao_alvaras f ON f.cliente_id = c.id::text AND f.tipo = 'funcionamento' AND f.desativado_em IS NULL
+         LEFT JOIN legalizacao_alvaras s ON s.cliente_id = c.id::text AND s.tipo = 'sanitario' AND s.desativado_em IS NULL
+        WHERE c.status = 'ativo'
+        GROUP BY c.municipio_ibge, c.municipio, c.uf
+        ORDER BY COUNT(DISTINCT c.id) DESC, c.municipio`
+    );
+    const cidades = rows.map(r => {
+      const rod = r.ibge ? porCidadeRodada[r.ibge] : null;
+      return { ibge: r.ibge, municipio: r.municipio, uf: r.uf, empresas: +r.empresas, func_com_data: +r.func_com_data, func_vencido: +r.func_vencido,
+        sanit_com_data: +r.sanit_com_data, ultima_consulta: r.ultima_consulta,
+        fonte: r.ibge && IBGES_INTEGRADOS.includes(r.ibge) ? 'consulta automática' : 'pasta da Legalização',
+        rodada: rod || null };
+    });
+    res.json({ rotinas, cidades });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar a saúde das consultas.' }); }
+});
+
+/** Avisa no sino (1x por dia) quando uma rotina do escritório não reportou dentro do prazo — computador desligado, tarefa parada… */
+async function checarSaudeRotinasLegalizacao() {
+  try {
+    await ensureLegalizacaoSchema();
+    for (const r of await situacaoRotinas()) {
+      if (r.status !== 'atrasada') continue; // 'sem_registro' (nunca rodou) não alarma: evita falso alerta antes da 1ª rodada
+      const { rows } = await pool.query(`SELECT 1 FROM notificacoes WHERE tipo = 'legalizacao_rotina_atrasada' AND mensagem LIKE $1 AND created_at > NOW() - INTERVAL '20 hours' LIMIT 1`, [r.nome + '%']);
+      if (rows.length) continue;
+      await pool.query(`INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ('legalizacao_rotina_atrasada', $1, $2, 'legalizacao')`,
+        ['Rotina da Legalização não rodou', `${r.nome} não reporta há ${Math.round(r.horas_desde)} h (deveria rodar ${r.horario}). Confira se o computador do escritório está ligado.`]);
+    }
+  } catch (err) { console.error('[Legalização] checarSaudeRotinas:', err.message); }
+}
 
 /**
  * FILA DE CONFERÊNCIA — datas lidas por OCR de PDF escaneado da pasta do servidor. O OCR erra (ex.: "31/12/2924"), então cada
@@ -5981,6 +6079,7 @@ router.patch('/legalizacao/solicitacoes-inativacao/:id/rejeitar', requireAdmin, 
 module.exports = router;
 module.exports.verificarNotificacoesLegalizacao = verificarNotificacoesLegalizacao;
 module.exports.rodarConsultaNoturnaAlvaras = rodarConsultaNoturnaAlvaras;
+module.exports.checarSaudeRotinasLegalizacao = checarSaudeRotinasLegalizacao;
 
 
 module.exports.publicRouter = publicRouter;

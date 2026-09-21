@@ -279,6 +279,9 @@ initDB().then(async () => {
       }
     };
     setInterval(checarConsultaNoturnaAlvaras, 5 * 60 * 1000);
+    // Saúde das rotinas do escritório (consulta 03:00 / leitura de pastas 05:00): avisa no sino se alguma parou de reportar.
+    const { checarSaudeRotinasLegalizacao } = require('./routes/data');
+    setInterval(checarSaudeRotinasLegalizacao, 60 * 60 * 1000);
     setInterval(checarAgendaDiaria, 5 * 60 * 1000); // checa a cada 5 min
     checarAgendaDiaria(); // confere já ao subir, caso o boot caia dentro de uma das janelas
   }

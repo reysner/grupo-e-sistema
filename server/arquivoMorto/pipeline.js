@@ -6,7 +6,8 @@
  *      (reaproveita listarEmpresasInativasDesde de ../acessoriasClient.js)
  *   2. pula as que o estado local já marca como 'ok'
  *   3. pra cada empresa, localiza a pasta dela em cada origem e COPIA o conteúdo
- *      (incremental, nunca sobrescreve) montando a árvore-alvo nos 2 destinos:
+ *      (incremental, nunca sobrescreve) montando a árvore-alvo nos 3 destinos
+ *      (servidor local + Drive por faixa + backup no Desktop por faixa):
  *        <RAZÃO>/2024  /2025  /2026  /Legalização[/Certificado Digital]  /Sucesso do Cliente
  *   4. grava o estado e devolve o relatório pro e-mail de resumo
  */
@@ -29,8 +30,24 @@ function nomePastaSeguro(nome) {
 
 const SO_CERTIFICADO = rel => /\.(pfx|p12)$/i.test(rel);
 
+// Operação de arquivo (readdir/copyFile) no compartilhamento de rede não tem
+// timeout nenhum — se o link cair no meio, trava pra sempre (visto na prática:
+// job travou >1h sem erro nem atividade de rede, numa empresa qualquer da
+// lista). `comTimeout` não cancela a chamada pendurada (fs não dá pra
+// abortar), só desiste de ESPERAR por ela e segue pra próxima empresa — o
+// `process.exit()` no fim de run.js encerra o processo mesmo com isso pendente.
+// Como a cópia é incremental, uma próxima execução retoma de onde travou.
+const TIMEOUT_EMPRESA_MS = 8 * 60 * 1000;
+function comTimeout(promessa, ms, rotulo) {
+  let t;
+  const timeout = new Promise((_, rej) => {
+    t = setTimeout(() => rej(new Error(`timeout de ${Math.round(ms / 1000)}s processando "${rotulo}" (provável instabilidade do link de rede)`)), ms);
+  });
+  return Promise.race([promessa, timeout]).finally(() => clearTimeout(t));
+}
+
 /**
- * Arquiva UMA empresa nos 2 destinos.
+ * Arquiva UMA empresa nos 3 destinos.
  * @returns {{status:'ok'|'parcial'|'nao_localizada', faixa:string, blocos:object,
  *            totais:{copiados:number,jaExistiam:number,bytes:number},
  *            ambiguidades:Array, erros:Array}}
@@ -43,9 +60,11 @@ async function arquivarEmpresa(emp, config, { dryRun }) {
   const pastaEmpresa = nomePastaSeguro(emp.nome_empresa);
 
   const driveBase = config.destinos.driveBasePorFaixa[faixa];
+  const backupBase = config.destinos.backupDesktopBasePorFaixa[faixa];
   const destinos = [
     path.win32.join(config.destinos.localBase, pastaEmpresa),
     path.win32.join(driveBase, pastaEmpresa),
+    path.win32.join(backupBase, pastaEmpresa),
   ];
 
   const acc = {
@@ -115,11 +134,16 @@ async function rodar(config, opcoes = {}) {
     }
   }
 
-  // filtro pontual (--empresa / --cnpj): processa só ela e IGNORA o estado
+  // filtro pontual (--empresa / --empresas / --cnpj): processa só essas e IGNORA o estado
   let ignorarEstado = false;
   if (opcoes.empresaFiltro) {
     const alvo = normalizar(opcoes.empresaFiltro);
     inativas = inativas.filter(e => normalizar(e.nome_empresa) === alvo);
+    ignorarEstado = true;
+  }
+  if (opcoes.empresasFiltro && opcoes.empresasFiltro.length) {
+    const alvos = new Set(opcoes.empresasFiltro.map(normalizar));
+    inativas = inativas.filter(e => alvos.has(normalizar(e.nome_empresa)));
     ignorarEstado = true;
   }
   if (opcoes.cnpjFiltro) {
@@ -135,10 +159,15 @@ async function rodar(config, opcoes = {}) {
     processadas: [], naoLocalizadas: [], comAmbiguidade: [], erros: [],
   };
 
+  let i = 0;
   for (const emp of inativas) {
+    i++;
     if (!ignorarEstado && estado.jaConcluida(estadoDados, emp.acessorias_id)) { rel.puladas++; continue; }
+    console.log(`[arquivoMorto] (${i}/${inativas.length}) ${emp.nome_empresa}`);
     try {
-      const r = await arquivarEmpresa(emp, config, { dryRun });
+      const t0Emp = Date.now();
+      const r = await comTimeout(arquivarEmpresa(emp, config, { dryRun }), TIMEOUT_EMPRESA_MS, emp.nome_empresa);
+      console.log(`  [${r.status}] faixa ${r.faixa} · ${r.totais.copiados} copiado(s), ${r.totais.jaExistiam} já existia(m) · ${Math.round((Date.now() - t0Emp) / 1000)}s`);
       rel.processadas.push({
         nome: emp.nome_empresa, cnpj: emp.cnpj, clienteAte: emp.clienteAte,
         status: r.status, faixa: r.faixa, blocos: r.blocos, totais: r.totais,
@@ -155,6 +184,7 @@ async function rodar(config, opcoes = {}) {
         });
       }
     } catch (e) {
+      console.log(`  [erro] ${e.message}`);
       rel.erros.push({ nome: emp.nome_empresa, itens: [{ bloco: '-', motivo: e.message }] });
       if (!dryRun) {
         estado.registrar(estadoDados, emp.acessorias_id, {

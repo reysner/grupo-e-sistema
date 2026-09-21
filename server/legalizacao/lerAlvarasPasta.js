@@ -240,7 +240,8 @@ async function main() {
   empresas = empresas.slice(0, LIMITE);
   console.log(`[${hora()}] ${empresas.length} empresa(s) ativa(s) pra conferir.`);
 
-  const rel = { semPasta: [], semAlvaras: [], semTexto: [], cnpjDiferente: [], semVencimento: [], achadosPorCnpj: [], gravados: { sanitario: 0, funcionamento: 0 }, empresasComSanitario: 0 };
+  const inicioRodada = new Date().toISOString();
+  const rel = { falhasApi: 0, semPasta: [], semAlvaras: [], semTexto: [], cnpjDiferente: [], semVencimento: [], achadosPorCnpj: [], gravados: { sanitario: 0, funcionamento: 0 }, empresasComSanitario: 0 };
   const acharPasta = (e) => {
     const n = norm(e.nome_empresa);
     let pasta = porNorm.get(n);
@@ -288,7 +289,7 @@ async function main() {
       let gravou = '(simulação)';
       if (!SIMULAR) {
         try { const r = await api('POST', 'alvaras-arquivo', { cliente_id: e.cliente_id, tipo, vencimento: m.vencimento, numero: m.numero, arquivo: m.arquivo, ocr: m.ocr, caminho: path.relative(PASTA, m.caminho), trecho: m.trecho }); gravou = r.gravou ? 'gravado' : 'já tinha data igual/mais nova'; }
-        catch (err) { gravou = 'FALHOU ' + err.message; }
+        catch (err) { gravou = 'FALHOU ' + err.message; rel.falhasApi++; }
       }
       if (/gravado|simula/.test(gravou)) rel.gravados[tipo]++;
       if (tipo === 'sanitario') rel.empresasComSanitario++;
@@ -309,6 +310,12 @@ async function main() {
   mostra('PDFs ESCANEADOS que o OCR não conseguiu ler', rel.semTexto);
   mostra('PDFs com CNPJ diferente do cadastro (ignorados)', rel.cnpjDiferente);
   mostra('Alvarás sanitários sem data legível', rel.semVencimento);
+  if (!SIMULAR && !FILTRO && LIMITE === Infinity) { // rodada completa: registra na tela de saúde das consultas
+    try {
+      await api('POST', 'saude-rotina', { rotina: 'leitura_pastas', inicio: inicioRodada, total: empresas.length, ok: empresas.length - rel.falhasApi, falhas: rel.falhasApi,
+        resumo: { sanitariosGravados: rel.gravados.sanitario, funcionamentoGravados: rel.gravados.funcionamento, inscricoesGravadas: rel.inscricoes || 0, achadosPorCnpj: rel.achadosPorCnpj.length, semTexto: rel.semTexto.length, semPasta: rel.semPasta.length }, por_cidade: {} });
+    } catch (err) { console.log('Não consegui registrar a rodada na tela de saúde:', err.message); }
+  }
   try { fs.writeFileSync(path.join(__dirname, 'relatorio-alvaras-pasta.json'), JSON.stringify(rel, null, 1)); } catch (e) { /* relatório é só conveniência */ }
   try { fs.writeFileSync(ARQ_CACHE, JSON.stringify({ ocr: cacheOcr })); } catch (e) { /* cache é só conveniência */ }
   await ocr.encerrar();

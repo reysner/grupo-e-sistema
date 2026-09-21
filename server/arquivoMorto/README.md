@@ -2,14 +2,14 @@
 
 Job noturno que varre o Sistema Acessórias (via API) atrás de empresas
 **inativadas** e consolida os arquivos delas num **Arquivo Morto**, **copiando
-sempre** (nunca mover/apagar) de várias origens para dois destinos.
+sempre** (nunca mover/apagar) de várias origens para três destinos.
 
 ## O que faz
 
 1. Busca no Acessórias as empresas inativas com `Cliente até >= ARQUIVO_MORTO_DESDE`.
 2. Pula as que já arquivou com sucesso (estado local em `estado/processadas.json`).
 3. Para cada empresa, acha a pasta dela (por nome normalizado) em cada origem e
-   copia o conteúdo montando esta árvore **nos dois destinos**:
+   copia o conteúdo montando esta árvore **nos três destinos**:
 
    ```
    <RAZÃO SOCIAL>/
@@ -27,10 +27,14 @@ sempre** (nunca mover/apagar) de várias origens para dois destinos.
 
 | Destino | Caminho |
 |---|---|
-| Local (sem faixa) | `{UNC}\EMPRESAS\EMPRESAS - ARQUIVO MORTO\<RAZÃO>\...` |
-| Drive (por faixa) | `{DRV}\EMPRESAS - ARQUIVO MORTO <faixa>\<RAZÃO>\...` |
+| Local — servidor (sem faixa) | `{UNC}\EMPRESAS\EMPRESAS - ARQUIVO MORTO\<RAZÃO>\...` |
+| Drive Compartilhado (por faixa) | `{DRV}\EMPRESAS - ARQUIVO MORTO <faixa>\EMPRESAS - ARQUIVO MORTO <faixa>\<RAZÃO>\...` |
+| Backup local no Desktop (por faixa) | `{BKP}\EMPRESAS - ARQUIVO MORTO <faixa>\EMPRESAS - ARQUIVO MORTO <faixa>\<RAZÃO>\...` |
 
 Faixas: `A a D` (inclui nomes que começam com 0–9), `E a L`, `M a R`, `S a T`, `U a Z`.
+`{BKP}` = `ARQUIVO_MORTO_BACKUP_DESKTOP` (padrão `C:\Users\Grupo e\Desktop\BACKUP ARQUIVO MORTO`).
+O Drive e o backup no Desktop têm a pasta da faixa **duplamente aninhada** (a de
+fora é artefato da migração rclone; a de dentro tem o conteúdo).
 
 ## Regras
 

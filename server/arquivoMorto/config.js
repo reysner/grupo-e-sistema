@@ -34,6 +34,8 @@ function sob(raiz, ...partes) {
 function carregarConfig() {
   const UNC = obrigatorio('ARQUIVO_MORTO_UNC_ROOT');       // \\192.168.251.13\escritorial$\UNIDADE ORGANIZACIONAL
   const DRV = obrigatorio('ARQUIVO_MORTO_DRIVE_MOUNT');    // H:\Drives compartilhados
+  // 3º destino: cópia local no Desktop, mesma estrutura por faixa do Drive.
+  const BKP = (process.env.ARQUIVO_MORTO_BACKUP_DESKTOP || 'C:\\Users\\Grupo e\\Desktop\\BACKUP ARQUIVO MORTO').trim();
   const EMPRESAS = sob(UNC, 'EMPRESAS');
 
   // Os Drives Compartilhados vindos da migração rclone têm aninhamento duplo:
@@ -41,6 +43,9 @@ function carregarConfig() {
   // nela. Confirmado no diag (cada um com 1 subpasta homônima). `drvDuplo`
   // aponta pro nível certo.
   const drvDuplo = nome => sob(DRV, nome, nome);
+  // O backup no Desktop foi criado espelhando os caminhos do Drive, então
+  // herdou o mesmo aninhamento duplo (`...\FAIXA\FAIXA\<EMPRESA>\...`).
+  const bkpDuplo = nome => sob(BKP, nome, nome);
 
   return {
     // ── Acessórias ──────────────────────────────────────────────────────────
@@ -76,7 +81,7 @@ function carregarConfig() {
 
     // ── Destinos ──────────────────────────────────────────────────────────
     destinos: {
-      // Local: sem divisão por faixa — \...\EMPRESAS - ARQUIVO MORTO\<EMPRESA>\...
+      // Local (servidor): sem divisão por faixa — \...\EMPRESAS - ARQUIVO MORTO\<EMPRESA>\...
       localBase: sob(EMPRESAS, 'EMPRESAS - ARQUIVO MORTO'),
       // Drive: dividido por faixa de letra inicial do nome.
       driveBasePorFaixa: {
@@ -85,6 +90,14 @@ function carregarConfig() {
         'M a R': drvDuplo('EMPRESAS - ARQUIVO MORTO M a R'),
         'S a T': drvDuplo('EMPRESAS - ARQUIVO MORTO S a T'),
         'U a Z': drvDuplo('EMPRESAS - ARQUIVO MORTO U a Z'),
+      },
+      // Backup local no Desktop: mesma divisão por faixa do Drive.
+      backupDesktopBasePorFaixa: {
+        'A a D': bkpDuplo('EMPRESAS - ARQUIVO MORTO A a D'),
+        'E a L': bkpDuplo('EMPRESAS - ARQUIVO MORTO E a L'),
+        'M a R': bkpDuplo('EMPRESAS - ARQUIVO MORTO M a R'),
+        'S a T': bkpDuplo('EMPRESAS - ARQUIVO MORTO S a T'),
+        'U a Z': bkpDuplo('EMPRESAS - ARQUIVO MORTO U a Z'),
       },
     },
 

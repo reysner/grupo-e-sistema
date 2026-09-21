@@ -5558,6 +5558,49 @@ const Legalizacao = (() => {
     App.Modal.open(`Conferir leituras por OCR (${data.length})`, `<p style="font-size:12px;color:var(--gray-500);margin:0 0 10px">O OCR pode errar dígitos. Confira a data no PDF (o caminho está abaixo de cada empresa, dentro da pasta LEGALIZACAO): se estiver certa, confirme; se estiver errada, corrija a data no campo e confirme.</p>${linhas}`, null, { wide: true, noFooter: true });
   }
 
+  // ── Saúde das consultas: as rotinas do escritório rodaram? Quantas falharam? Como está cada cidade? ──
+  async function abrirSaude() {
+    const res = await fetch('/api/data/legalizacao/saude', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { App.Toast.err('Erro ao carregar a saúde das consultas.'); return; }
+    const { rotinas, cidades } = await res.json();
+    const cor = { ok: ['#f0fff4', '#276749', 'Em dia'], com_falhas: ['#fffbeb', '#b7791f', 'Com falhas'], atrasada: ['#fff5f5', '#c53030', 'Não rodou no prazo'], sem_registro: ['#f7fafc', '#718096', 'Sem registro ainda'] };
+    const quando = (d) => d ? new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+    const cards = rotinas.map(r => {
+      const [bg, fg, rotulo] = cor[r.status] || cor.sem_registro;
+      const u = r.ultima;
+      const extra = u && u.resumo ? Object.entries(u.resumo).filter(([, v]) => typeof v === 'number' || typeof v === 'boolean').map(([k, v]) => `${k}: ${v}`).join(' · ') : '';
+      return `<div style="flex:1;min-width:260px;border:1px solid var(--gray-200);border-radius:12px;padding:14px;background:${bg}">
+        <div style="font-weight:800">${_esc(r.nome)}</div>
+        <div style="font-size:11px;color:var(--gray-500)">Deve rodar ${_esc(r.horario)}</div>
+        <div style="margin:8px 0"><span style="background:#fff;color:${fg};font-weight:800;font-size:12px;padding:3px 10px;border-radius:999px">${rotulo}</span></div>
+        <div style="font-size:12px">${u ? `Última rodada: <b>${quando(u.fim)}</b> (${r.horas_desde} h atrás)<br>${u.total} empresa(s) · ${u.ok} ok · <b style="color:${u.falhas ? '#c53030' : 'inherit'}">${u.falhas} falha(s)</b>` : 'Ainda não reportou nenhuma rodada. A próxima rodada agendada passa a aparecer aqui.'}</div>
+        ${extra ? `<div style="font-size:11px;color:var(--gray-500);margin-top:4px">${_esc(extra)}</div>` : ''}
+      </div>`;
+    }).join('');
+    const pct = (a, b) => b ? Math.round((a / b) * 100) + '%' : '—';
+    const linhas = cidades.map(c => {
+      const rod = c.rodada;
+      const sit = rod ? (rod.falhas ? `<span style="color:#c53030" title="${_esc(rod.erro || '')}">⚠ ${rod.falhas} falha(s)${rod.erro ? ': ' + _esc(rod.erro) : ''}</span>` : '<span style="color:#276749">✔ sem falhas</span>') : '<span style="color:var(--gray-400)">—</span>';
+      return `<tr>
+        <td><b>${_esc(c.municipio)}</b>${c.uf ? '/' + _esc(c.uf) : ''}</td>
+        <td style="text-align:right">${c.empresas}</td>
+        <td style="font-size:12px">${_esc(c.fonte)}</td>
+        <td style="text-align:right">${c.func_com_data} <span style="color:var(--gray-400)">(${pct(c.func_com_data, c.empresas)})</span></td>
+        <td style="text-align:right;${c.func_vencido ? 'color:#c53030;font-weight:700' : ''}">${c.func_vencido}</td>
+        <td style="text-align:right">${c.sanit_com_data}</td>
+        <td style="font-size:12px">${quando(c.ultima_consulta)}</td>
+        <td style="font-size:12px">${sit}</td>
+      </tr>`;
+    }).join('');
+    App.Modal.open('🩺 Saúde das consultas', `
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">${cards}</div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="text-align:left;color:var(--gray-500);font-size:11px;text-transform:uppercase">
+          <th>Cidade</th><th style="text-align:right">Empresas</th><th>Fonte</th><th style="text-align:right">Func. com data</th><th style="text-align:right">Vencidos</th><th style="text-align:right">Sanit. com data</th><th>Última consulta</th><th>Última rodada</th>
+        </tr></thead><tbody>${linhas}</tbody></table></div>
+      <p style="font-size:11px;color:var(--gray-400);margin-top:10px">"Última rodada" só existe para as cidades de consulta automática. Se uma rotina passar de 30 h sem reportar, o sino avisa (1× por dia).</p>`, null, { wide: true, noFooter: true });
+  }
+
   async function conferir(id, original) {
     const nova = document.getElementById('conf-' + id)?.value || '';
     const res = await fetch('/api/data/legalizacao/alvaras/' + id + '/conferir', {
@@ -6040,7 +6083,7 @@ const Legalizacao = (() => {
 
   return {
     load, filtrar, filtrarPorSituacao, goPage, _toggleDetalhe,
-    abrirFormAlvara, salvarAlvara, excluirAlvara, editarIM, abrirConferencia, conferir, desativarAlvara, desativarCertificado, reativarAlvara, reativarCertificado,
+    abrirFormAlvara, salvarAlvara, excluirAlvara, editarIM, abrirConferencia, conferir, abrirSaude, desativarAlvara, desativarCertificado, reativarAlvara, reativarCertificado,
     consultarPrefeitura, consultarTodosPrefeitura, exportCSV, exportPDF,
     abrirFormCertificadoPJ, salvarCertificadoPJ, abrirFormCertificadoPF,
     salvarCertificadoPF, excluirCertificado, abrirFormProcuracao, salvarProcuracao,

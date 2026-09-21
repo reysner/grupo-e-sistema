@@ -8,6 +8,7 @@
  *   --dry-run              não escreve nada, não manda e-mail (só mostra o que faria)
  *   --desde=AAAA-MM-DD     sobrescreve a data de corte do .env
  *   --empresa="RAZÃO"      processa só essa empresa e ignora o estado
+ *   --empresas="RAZÃO 1,RAZÃO 2"   idem, mas várias de uma vez (separadas por vírgula)
  *   --cnpj=00.000.000/0001-00   idem, por CNPJ
  *   --sem-email            roda normal mas não envia o resumo
  *
@@ -27,6 +28,7 @@ function parseFlags(argv) {
     else if (a === '--sem-email') o.semEmail = true;
     else if (a.startsWith('--desde=')) o.desde = a.slice(8).trim();
     else if (a.startsWith('--empresa=')) o.empresaFiltro = a.slice(10).replace(/^["']|["']$/g, '');
+    else if (a.startsWith('--empresas=')) o.empresasFiltro = a.slice(11).replace(/^["']|["']$/g, '').split(',').map(s => s.trim()).filter(Boolean);
     else if (a.startsWith('--cnpj=')) o.cnpjFiltro = a.slice(7).trim();
     else console.warn(`[arquivoMorto] flag ignorada: ${a}`);
   }
