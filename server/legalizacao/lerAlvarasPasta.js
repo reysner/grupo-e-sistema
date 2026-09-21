@@ -188,6 +188,37 @@ async function lerPdf(arquivo, cnpj, nomeEmpresa, permitirFuncionamento) {
   return { inscricao, tipo, vencimento: acharVencimento(texto, nome), numero: acharNumero(texto), arquivo: usouOcr ? nome + ' (lido por OCR — conferir)' : nome };
 }
 
+/**
+ * Lê os PDFs da subpasta Alvaras das pastas SEM empresa correspondente pelo nome e devolve Map<CNPJ 14 dígitos, [caminho do PDF]>
+ * com todos os CNPJs impressos neles. PDF escaneado passa pelo OCR (com o mesmo cache). Só lê — nunca mexe nos arquivos.
+ */
+async function indexarPastasSemDono(pastasSemDono) {
+  const indice = new Map();
+  for (const d of pastasSemDono) {
+    const alv = acharPastaAlvaras(path.join(PASTA, d));
+    if (!alv) continue;
+    for (const pdf of listarPdfs(alv, 2)) {
+      try {
+        const st = fs.statSync(pdf);
+        if (st.size > MAX_PDF_BYTES) continue;
+        let texto = '';
+        try { texto = (await pdfParse(fs.readFileSync(pdf))).text || ''; } catch (e) { texto = ''; }
+        if (texto.replace(/\s+/g, '').length < 80 && USAR_OCR && !/bombeir|avcb/i.test(path.basename(pdf))) {
+          const chave = `${pdf}|${st.size}|${st.mtimeMs}`;
+          if (cacheOcr[chave] === undefined) { try { cacheOcr[chave] = await ocr.textoPorOcr(pdf); } catch (e) { cacheOcr[chave] = ''; } }
+          texto = cacheOcr[chave] || '';
+        }
+        for (const m of texto.matchAll(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/g)) {
+          const c = soDigitos(m[0]);
+          if (!indice.has(c)) indice.set(c, []);
+          if (!indice.get(c).includes(pdf)) indice.get(c).push(pdf);
+        }
+      } catch (e) { /* PDF ilegível: ignora */ }
+    }
+  }
+  return indice;
+}
+
 async function main() {
   if (!APP_URL || !TOKEN) { console.error('Faltam APP_URL e/ou CERTISEGURO_SYNC_TOKEN em server/legalizacao/.env'); process.exit(1); }
   console.log(`[${hora()}] ${SIMULAR ? 'SIMULAÇÃO (não grava) — ' : ''}pasta: ${PASTA}`);
@@ -198,21 +229,33 @@ async function main() {
   empresas = empresas.slice(0, LIMITE);
   console.log(`[${hora()}] ${empresas.length} empresa(s) ativa(s) pra conferir.`);
 
-  const rel = { semPasta: [], semAlvaras: [], semTexto: [], cnpjDiferente: [], semVencimento: [], gravados: { sanitario: 0, funcionamento: 0 }, empresasComSanitario: 0 };
-  for (let i = 0; i < empresas.length; i++) {
-    const e = empresas[i];
-    const cnpj = soDigitos(e.cnpj);
+  const rel = { semPasta: [], semAlvaras: [], semTexto: [], cnpjDiferente: [], semVencimento: [], achadosPorCnpj: [], gravados: { sanitario: 0, funcionamento: 0 }, empresasComSanitario: 0 };
+  const acharPasta = (e) => {
     const n = norm(e.nome_empresa);
     let pasta = porNorm.get(n);
     if (!pasta) { const c = [...porNorm.keys()].find((k) => k.length >= 12 && n.length >= 12 && (k.startsWith(n) || n.startsWith(k))); if (c) pasta = porNorm.get(c); }
-    if (!pasta) { rel.semPasta.push(e.nome_empresa); continue; }
+    return pasta || null;
+  };
+  const pastasDe = (pasta) => (pasta ? [pasta, ...dirs.filter((d) => d !== pasta && norm(d).startsWith(norm(pasta) + ' FILIAL'))] : []);
+  // Pastas que não casam com nenhuma empresa ativa pelo nome (nome errado, renomeada, empresa inativa…): o CNPJ dentro do PDF decide de quem é.
+  const usadas = new Set(data.flatMap((e) => pastasDe(acharPasta(e))));
+  const indicePorCnpj = await indexarPastasSemDono(dirs.filter((d) => !usadas.has(d)));
+  console.log(`[${hora()}] ${dirs.length - usadas.size} pasta(s) sem empresa correspondente pelo nome; ${indicePorCnpj.size} CNPJ(s) achados nos PDFs delas.`);
+  for (let i = 0; i < empresas.length; i++) {
+    const e = empresas[i];
+    const cnpj = soDigitos(e.cnpj);
+    const pasta = acharPasta(e);
     // pastas irmãs "<empresa> - FILIAL": o CNPJ do PDF decide de quem é cada documento (matriz x filial)
-    const alvs = [pasta, ...dirs.filter((d) => d !== pasta && norm(d).startsWith(norm(pasta) + ' FILIAL'))].map((d) => acharPastaAlvaras(path.join(PASTA, d))).filter(Boolean);
-    if (!alvs.length) { rel.semAlvaras.push(e.nome_empresa); continue; }
+    const alvs = pastasDe(pasta).map((d) => acharPastaAlvaras(path.join(PASTA, d))).filter(Boolean);
+    const proprios = alvs.flatMap((d) => listarPdfs(d, 2));
+    const extras = (indicePorCnpj.get(cnpj) || []).filter((p) => !proprios.includes(p));
+    for (const p of extras) rel.achadosPorCnpj.push(`${e.nome_empresa} ← ${path.relative(PASTA, p)}`);
+    if (!pasta && !extras.length) { rel.semPasta.push(e.nome_empresa); continue; }
+    if (!alvs.length && !extras.length) { rel.semAlvaras.push(e.nome_empresa); continue; }
 
     const melhor = {}; // tipo -> {vencimento, numero, arquivo}
     let imAchada = null; // inscrição municipal impressa em algum PDF da empresa (CNPJ conferido)
-    for (const pdf of alvs.flatMap((d) => listarPdfs(d, 2))) {
+    for (const pdf of [...proprios, ...extras]) {
       let r;
       try { r = await lerPdf(pdf, cnpj, e.nome_empresa, funcionamentoPelaPasta(e.municipio_ibge)); } catch (err) { r = { erro: err.message }; } if (process.env.DBG) console.log("DBG", e.cnpj, pdf.slice(-70), JSON.stringify(r));
       if (r.inscricao && !imAchada) imAchada = r.inscricao;
@@ -249,6 +292,7 @@ async function main() {
   const mostra = (t, l) => console.log(`\n${t}: ${l.length}${l.length ? '\n  ' + l.slice(0, 25).join('\n  ') + (l.length > 25 ? `\n  … (+${l.length - 25})` : '') : ''}`);
   console.log(`\n=== RESUMO ===\nalvarás sanitários gravados: ${rel.gravados.sanitario} | funcionamento (só São Paulo) gravados: ${rel.gravados.funcionamento}`);
   console.log(`inscrições municipais lidas dos PDFs e gravadas: ${rel.inscricoes || 0}`);
+  mostra('PDFs achados pelo CNPJ em pasta com outro nome (conferir se vale renomear a pasta)', rel.achadosPorCnpj);
   mostra('Empresas sem pasta no servidor', rel.semPasta);
   mostra('Empresas sem subpasta Alvaras', rel.semAlvaras);
   mostra('PDFs ESCANEADOS que o OCR não conseguiu ler', rel.semTexto);
