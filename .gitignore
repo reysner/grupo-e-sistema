@@ -10,3 +10,4 @@ estado-alvaras-pasta.json
 server/legalizacao/bh-sanitario-bruto.log
 server/legalizacao/ocr/node_modules/
 server/legalizacao/_omie_*
+server/omie/tmp/
