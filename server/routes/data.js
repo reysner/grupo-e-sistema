@@ -186,7 +186,34 @@ router.post('/financeiro/importar', async (req, res) => {
     }
     await client.query(`INSERT INTO financeiro_importacoes (unidade, fonte, total_clientes, total_abertos) VALUES ($1,$2,$3,$4)`, [unidade, fonte || 'Omie', clientes.length, abertos.length]);
     await client.query('COMMIT');
-    res.json({ ok: true, unidade, clientes: clientes.length, abertos: abertos.length });
+    // Carteira alimentada pelo Financeiro: honorário em vigor no Omie vira o honorário atual do cliente ATIVO (nova linha em
+    // `honorarios`, histórico/receita acumulada intactos). Status quem manda é o Acessórias: encerrado lá não é reativado, só listado.
+    const carteira = { atualizados: 0, iguais: 0, encerradosFaturando: [], erros: 0 };
+    for (const c of clientes) {
+      try {
+        const doc = so(c.cnpj); const v = Math.round((+c.valor || 0) * 100) / 100;
+        if (![11, 14].includes(doc.length) || v <= 0) continue;
+        const { rows } = await pool.query(
+          `SELECT c.id, c.nome_empresa, c.status,
+                  (SELECT valor FROM honorarios h WHERE h.cliente_id = c.id ORDER BY data_vigencia DESC LIMIT 1) AS atual,
+                  (SELECT MAX(data_vigencia) FROM honorarios h WHERE h.cliente_id = c.id) AS ultima
+             FROM clientes c WHERE regexp_replace(c.cnpj, '\\D', '', 'g') = $1
+            ORDER BY (c.status = 'ativo') DESC, c.created_at DESC LIMIT 1`, [doc]);
+        const cli = rows[0];
+        if (!cli) continue; // sem cadastro: /gestao/honorarios-omie cria
+        if (cli.status !== 'ativo') { carteira.encerradosFaturando.push({ nome: cli.nome_empresa, valor: v }); continue; }
+        const atual = cli.atual != null ? parseFloat(cli.atual) : null;
+        if (atual != null && Math.abs(atual - v) < 0.005) { carteira.iguais++; continue; }
+        const mesOmie = /^\d{4}-\d{2}(-\d{2})?$/.test(c.vigencia || '') ? String(c.vigencia).slice(0, 7) + '-01' : null;
+        const hoje1 = new Date().toISOString().slice(0, 7) + '-01';
+        const ultima = cli.ultima ? new Date(cli.ultima).toISOString().slice(0, 10) : null;
+        const vig = mesOmie && (!ultima || mesOmie >= ultima) ? mesOmie : (ultima && ultima > hoje1 ? ultima : hoje1);
+        await pool.query(`INSERT INTO honorarios (cliente_id, valor, data_vigencia, obs) VALUES ($1,$2,$3,$4)`, [cli.id, v, vig, `Financeiro/Omie — ${unidade}`]);
+        if (atual != null && atual > 0) await pool.query(`INSERT INTO eventos_clientes (cliente_id, tipo, descricao, valor_anterior, valor_novo, data_evento) VALUES ($1,'reajuste',$2,$3,$4,$5)`, [cli.id, `Honorário atualizado pelo Financeiro (${unidade})`, atual, v, vig]);
+        carteira.atualizados++;
+      } catch (e) { carteira.erros++; console.error('[Financeiro→Carteira]', e.message); }
+    }
+    res.json({ ok: true, unidade, clientes: clientes.length, abertos: abertos.length, carteira });
   } catch (err) { await client.query('ROLLBACK').catch(() => {}); console.error('[Financeiro] importar:', err); res.status(500).json({ error: 'Erro ao importar o financeiro.' }); }
   finally { client.release(); }
 });
