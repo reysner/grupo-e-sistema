@@ -3051,7 +3051,7 @@ const Carteira = (() => {
     const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
     set('cart-mrr', _fmt(d.mrr));
     const nota = document.getElementById('cart-omie-nota');
-    if (nota) { const L = d.omie_leituras || []; nota.innerHTML = '📌 <b>Atenção:</b> os honorários (MRR, ARR, ticket médio e LTV) vêm do <b>Financeiro / Omie</b> e valem para a data da última leitura' + (L.length ? ': ' + L.map(x => x.unidade + ' em ' + new Date(x.em).toLocaleDateString('pt-BR') + ' às ' + new Date(x.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })).join(' · ') : ' (ainda sem leitura)') + '. Não são valores em tempo real.'; }
+    if (nota) { const L = d.omie_leituras || []; nota.innerHTML = '📌 <b>Atenção:</b> os honorários (MRR, ARR, ticket médio e LTV) vêm do <b>Financeiro / Omie</b> e valem para a data da última leitura (janela de 7 meses)' + (L.length ? ': ' + L.map(x => { const e = new Date(x.em); const ini = new Date(e.getFullYear(), e.getMonth() - 6, 1); return x.unidade + ': lida em ' + e.toLocaleDateString('pt-BR') + ' às ' + e.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ', cobrindo vencimentos desde ' + ini.toLocaleDateString('pt-BR'); }).join(' · ') : ' (ainda sem leitura)') + '. Não são valores em tempo real.'; }
     set('cart-arr', _fmt(d.arr));
     set('cart-ativos', d.ativos);
     set('cart-ticket', _fmt(d.ticket_medio));
