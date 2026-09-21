@@ -122,8 +122,8 @@
       <p class="card-title">✅ Consulta automática na prefeitura</p>
       <div class="rowline"><span>Uberlândia/MG<small>portal da Secretaria de Finanças, por CNPJ</small></span><span class="pill good">automático</span></div>
       <div class="rowline"><span>Uberaba/MG<small>portal de tributos, lê o PDF "Consulta de alvará"</small></span><span class="pill good">automático</span></div>
-      <div class="rowline"><span>Belo Horizonte/MG<small>sistema de Atividades Econômicas (ALF), consulta pública por CNPJ</small></span><span class="pill good">automático</span></div>
-      <p class="card-foot">Essas consultas rodam todo dia às 03:00, num computador do escritório, com 20 segundos entre uma empresa e outra para não sobrecarregar os portais.</p>
+      <div class="rowline"><span>Belo Horizonte/MG<small>sistema de Atividades Econômicas (ALF), consulta pública por CNPJ — traz número, situação e validade</small></span><span class="pill good">automático</span></div>
+      <p class="card-foot">Essas consultas rodam todo dia às 03:00, num computador do escritório, com 20 segundos entre uma empresa e outra para não sobrecarregar os portais. Achou data válida, a empresa só é consultada de novo no vencimento.</p>
     </div>
 
     <div class="card">
@@ -133,7 +133,11 @@
 
     <div class="card">
       <p class="card-title">📁 Cidades sem consulta automática: pasta da Legalização</p>
-      <p class="card-note">Onde a prefeitura não tem consulta pública por CNPJ (ou exige captcha a cada pesquisa), o vencimento é lido do <b>PDF do alvará salvo na pasta da empresa</b> no servidor do escritório. Isso vale para São Paulo, o interior de SP (Certificado de Licenciamento Integrado — CLI), Paracatu, Gouvelândia, Araguari, Contagem e todas as demais cidades sem consulta automática.</p>
+      <p class="card-note">Onde a prefeitura não tem consulta pública por CNPJ (ou exige captcha, login ou dados que só o contribuinte tem), o vencimento é lido do <b>PDF do alvará salvo na pasta da empresa</b> no servidor do escritório. A leitura roda todo dia às 05:00 e vale para todas as cidades que não têm consulta automática.</p>
+      <div class="rowline"><span>São Paulo e interior de SP<small>Certificado de Licenciamento Integrado (CLI): capital, Barueri, Bebedouro, Campinas, Guarujá, Ribeirão Preto, São Caetano do Sul e Mogi das Cruzes</small></span><span class="pill good">CLI da pasta</span></div>
+      <div class="rowline"><span>Minas Gerais<small>Paracatu, Araguari, Contagem, Monte Alegre de Minas, Patos de Minas, Prata, Arcos, Centralina, Iraí de Minas, Santa Fé de Minas, Santo Antônio do Monte, São Gotardo, Tiros e Unaí</small></span><span class="pill good">alvará da pasta</span></div>
+      <div class="rowline"><span>Goiás<small>Gouvelândia, Catalão e Aparecida de Goiânia</small></span><span class="pill good">alvará da pasta</span></div>
+      <div class="rowline"><span>Outros estados<small>Lauro de Freitas (BA), Rio de Janeiro (RJ) e Vilhena (RO)</small></span><span class="pill good">alvará da pasta</span></div>
       <div class="rowline"><span>Data lida</span><span class="pill good">a que está dentro do PDF</span></div>
       <div class="rowline"><span>PDF escaneado</span><span class="pill warn">lido por OCR — conferir</span></div>
       <div class="rowline"><span>CNPJ do documento</span><span class="pill good">conferido (matriz × filial)</span></div>
@@ -149,8 +153,8 @@
       <p class="card-title">🩺 De onde vem a data</p>
       <div class="rowline"><span>Pasta da Legalização<small>PDF do alvará sanitário, lido todo dia (com OCR nos escaneados)</small></span><span class="pill good">principal fonte</span></div>
       <div class="rowline"><span>Belo Horizonte<small>consulta pública do SISVISA por CNPJ, junto com o funcionamento</small></span><span class="pill good">automático</span></div>
-      <div class="rowline"><span>Uberlândia e demais<small>o portal não oferece consulta pública do sanitário</small></span><span class="pill neu">pela pasta</span></div>
-      <p class="card-foot">O sanitário costuma ser emitido por outro órgão (Vigilância Sanitária municipal ou estadual), por isso cada cidade é avaliada separadamente — funcionamento e sanitário podem ter fontes diferentes.</p>
+      <div class="rowline"><span>Uberlândia e demais cidades<small>a prefeitura ou a Vigilância Sanitária não oferece consulta pública por CNPJ</small></span><span class="pill neu">pela pasta</span></div>
+      <p class="card-foot">O sanitário costuma ser emitido por outro órgão (Vigilância Sanitária municipal ou estadual), por isso cada cidade foi avaliada separadamente — funcionamento e sanitário podem ter fontes diferentes. Em Goiás, por exemplo, o sanitário estadual exige login no portal Expresso; no Rio e em Lauro de Freitas, o acesso é de contribuinte.</p>
     </div>
 
     <div class="card">
