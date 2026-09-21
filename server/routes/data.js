@@ -706,15 +706,21 @@ router.get('/financeiro', requireAdmin, async (req, res) => {
     const unidade = req.query.unidade || (unis[0] && unis[0].unidade);
     if (!unidade) return res.json({ unidades: [], resumo: null, clientes: [] });
     const { rows } = await pool.query(
-      `WITH docs AS (
-         SELECT cnpj, nome FROM financeiro_clientes WHERE unidade = $1
-         UNION SELECT cnpj, nome FROM financeiro_aberto WHERE unidade = $1
+      `WITH fc AS (
+         SELECT cnpj, MAX(nome) AS nome, SUM(honorario_atual) AS honorario_atual, MIN(vigencia) AS vigencia
+           FROM financeiro_clientes WHERE ($1 = '__todas' OR unidade = $1) GROUP BY cnpj
+       ), fa AS (
+         SELECT cnpj, MAX(nome) AS nome, SUM(qtd) AS qtd, SUM(valor_aberto) AS valor_aberto, SUM(valor_atrasado) AS valor_atrasado,
+                SUM(qtd_atrasados) AS qtd_atrasados, MIN(mais_antigo) AS mais_antigo
+           FROM financeiro_aberto WHERE ($1 = '__todas' OR unidade = $1) GROUP BY cnpj
+       ), docs AS (
+         SELECT cnpj, nome FROM fc UNION SELECT cnpj, nome FROM fa
        )
        SELECT d.cnpj, COALESCE(NULLIF(cc.nome_empresa, ''), d.nome) AS nome, cc.status AS status_carteira, cc.id AS cliente_id, cc.origem AS origem_carteira,
               fc.honorario_atual, fc.vigencia, fa.qtd, fa.valor_aberto, fa.valor_atrasado, fa.qtd_atrasados, fa.mais_antigo
          FROM docs d
-         LEFT JOIN financeiro_clientes fc ON fc.unidade = $1 AND fc.cnpj = d.cnpj
-         LEFT JOIN financeiro_aberto fa ON fa.unidade = $1 AND fa.cnpj = d.cnpj
+         LEFT JOIN fc ON fc.cnpj = d.cnpj
+         LEFT JOIN fa ON fa.cnpj = d.cnpj
          LEFT JOIN LATERAL (SELECT nome_empresa, status, id, origem FROM clientes c WHERE regexp_replace(c.cnpj, '\\D', '', 'g') = d.cnpj
                              ORDER BY (c.status = 'ativo') DESC, c.created_at DESC LIMIT 1) cc ON true
         ORDER BY fc.honorario_atual DESC NULLS LAST, nome`, [unidade]);
@@ -743,7 +749,7 @@ router.get('/financeiro', requireAdmin, async (req, res) => {
         receita_mensal: Math.round(ativos.reduce((s, c) => s + c.honorario_atual, 0) * 100) / 100,
         acima: ativos.filter(c => c.faixa === 'acima').length, na_media: ativos.filter(c => c.faixa === 'na_media').length, abaixo: ativos.filter(c => c.faixa === 'abaixo').length,
         inadimplentes: inad.length, valor_atrasado: Math.round(inad.reduce((s, c) => s + c.atrasado, 0) * 100) / 100,
-        importado_em: (unis.find(u => u.unidade === unidade) || {}).importado_em || null,
+        importado_em: unidade === '__todas' ? (unis.map(u => u.importado_em).sort().pop() || null) : ((unis.find(u => u.unidade === unidade) || {}).importado_em || null),
       },
       clientes,
     });

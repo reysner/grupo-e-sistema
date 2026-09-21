@@ -6112,7 +6112,10 @@ const Financeiro = (() => {
     if (!res || !res.ok) { document.getElementById('fin-tbody').innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:#c53030">Erro ao carregar o Financeiro.</td></tr>'; return; }
     _dados = await res.json();
     const sel = document.getElementById('fin-unidade');
-    sel.innerHTML = (_dados.unidades || []).map(u => `<option value="${_esc(u.unidade)}"${u.unidade === _dados.unidade ? ' selected' : ''}>${_esc(u.unidade)}</option>`).join('') || '<option>Sem dados importados</option>';
+    const us = _dados.unidades || [];
+    sel.innerHTML = us.map(u => `<option value="${_esc(u.unidade)}"${u.unidade === _dados.unidade ? ' selected' : ''}>${_esc(u.unidade)}</option>`).join('') || '<option>Sem dados importados</option>';
+    // com 2+ unidades importadas (Soluções Escritorial e Escritorial), aparece também a visão das duas JUNTAS (honorários somados por cliente)
+    if (us.length >= 2) sel.insertAdjacentHTML('beforeend', `<option value="__todas"${_dados.unidade === '__todas' ? ' selected' : ''}>Todas as unidades (juntas)</option>`);
     _render();
   }
   const trocarUnidade = () => load(document.getElementById('fin-unidade').value);
