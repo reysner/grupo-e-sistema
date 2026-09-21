@@ -710,12 +710,12 @@ router.get('/financeiro', requireAdmin, async (req, res) => {
          SELECT cnpj, nome FROM financeiro_clientes WHERE unidade = $1
          UNION SELECT cnpj, nome FROM financeiro_aberto WHERE unidade = $1
        )
-       SELECT d.cnpj, COALESCE(NULLIF(cc.nome_empresa, ''), d.nome) AS nome, cc.status AS status_carteira, cc.id AS cliente_id,
+       SELECT d.cnpj, COALESCE(NULLIF(cc.nome_empresa, ''), d.nome) AS nome, cc.status AS status_carteira, cc.id AS cliente_id, cc.origem AS origem_carteira,
               fc.honorario_atual, fc.vigencia, fa.qtd, fa.valor_aberto, fa.valor_atrasado, fa.qtd_atrasados, fa.mais_antigo
          FROM docs d
          LEFT JOIN financeiro_clientes fc ON fc.unidade = $1 AND fc.cnpj = d.cnpj
          LEFT JOIN financeiro_aberto fa ON fa.unidade = $1 AND fa.cnpj = d.cnpj
-         LEFT JOIN LATERAL (SELECT nome_empresa, status, id FROM clientes c WHERE regexp_replace(c.cnpj, '\\D', '', 'g') = d.cnpj
+         LEFT JOIN LATERAL (SELECT nome_empresa, status, id, origem FROM clientes c WHERE regexp_replace(c.cnpj, '\\D', '', 'g') = d.cnpj
                              ORDER BY (c.status = 'ativo') DESC, c.created_at DESC LIMIT 1) cc ON true
         ORDER BY fc.honorario_atual DESC NULLS LAST, nome`, [unidade]);
     const hon = rows.filter(r => r.honorario_atual != null).map(r => parseFloat(r.honorario_atual));
@@ -727,7 +727,7 @@ router.get('/financeiro', requireAdmin, async (req, res) => {
       const doc = r.cnpj;
       return {
         cnpj: doc.length === 14 ? doc.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : doc.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4'),
-        nome: r.nome, status_carteira: r.status_carteira || null, na_carteira: !!r.cliente_id,
+        nome: r.nome, status_carteira: r.status_carteira || null, na_carteira: !!r.cliente_id && r.origem_carteira !== 'Omie (sem Acessórias)',
         honorario_atual: h, vigencia: r.vigencia, faixa: classificarFaixa(h, ticket), diferenca_ticket: h != null ? Math.round((h - ticket) * 100) / 100 : null,
         ativo_omie: h != null, em_aberto: parseFloat(r.valor_aberto || 0), atrasado, qtd_atrasados: r.qtd_atrasados || 0,
         atrasado_desde: r.mais_antigo, dias_atraso: r.mais_antigo && atrasado > 0 ? Math.max(0, Math.floor((hoje - new Date(r.mais_antigo).getTime()) / 86400000)) : null,

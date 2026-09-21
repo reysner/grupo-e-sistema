@@ -9,3 +9,4 @@ relatorio-alvaras-pasta.json
 estado-alvaras-pasta.json
 server/legalizacao/bh-sanitario-bruto.log
 server/legalizacao/ocr/node_modules/
+server/legalizacao/_omie_*
