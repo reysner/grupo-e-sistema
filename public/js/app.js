@@ -5717,7 +5717,7 @@ const Legalizacao = (() => {
         ? _celulaAlvara('Func.', l.func, 'funcionamento', l) + (l.sanit ? _celulaAlvara('Sanit.', l.sanit, 'sanitario', l) : '')
         : _VAZIO;
       return `<tr>` +
-        `<td><b>${_esc(l.nome_empresa) || '—'}</b><div style="font-size:11px;color:var(--gray-400)">${_esc(l.cnpj)}</div>${(l.municipio ? `<div style="font-size:11px;color:var(--gray-500)">📍 ${_esc(l.municipio)}${l.uf ? '/' + _esc(l.uf) : ''}${l.prefeitura_integrada === false ? ' · <b>consulta manual</b>' + (l.prefeitura_url ? ` · <a href="${_esc(l.prefeitura_url)}" target="_blank" rel="noopener" title="${l.prefeitura_url_oficial ? 'Portal da prefeitura' : 'Busca no Google (portal ainda não mapeado)'}">${l.prefeitura_url_oficial ? 'portal' : 'buscar'}</a>` : '') + (l.prefeitura_url_sanitario ? ` · <a href="${_esc(l.prefeitura_url_sanitario)}" target="_blank" rel="noopener" title="Licença sanitária (SIVISA-SP, pede captcha)">sanitário</a>` : '') : ''}</div>` : '') || ''}${semCadastro}</td>` +
+        `<td><b>${_esc(l.nome_empresa) || '—'}</b><div style="font-size:11px;color:var(--gray-400)">${_esc(l.cnpj)}</div>${(l.municipio ? `<div style="font-size:11px;color:var(--gray-500)">📍 ${_esc(l.municipio)}${l.uf ? '/' + _esc(l.uf) : ''}${l.prefeitura_integrada === false ? ' · <b>consulta manual</b>' + (l.prefeitura_url ? ` · <a href="${_esc(l.prefeitura_url)}" target="_blank" rel="noopener" title="${l.prefeitura_url_oficial ? 'Portal da prefeitura' : 'Busca no Google (portal ainda não mapeado)'}">${l.prefeitura_url_oficial ? 'portal' : 'buscar'}</a>` : '') + (l.prefeitura_url_sanitario ? ` · <a href="${_esc(l.prefeitura_url_sanitario)}" target="_blank" rel="noopener" title="Licença sanitária (SIVISA-SP, pede captcha)">sanitário</a>` : '') : ''} · <a href="#" onclick="Legalizacao.editarIM('${l.cliente_id}', '${_esc(l.inscricao_municipal || '')}');return false" title="Inscrição municipal (algumas prefeituras só consultam por ela)">${l.inscricao_municipal ? 'IM ' + _esc(l.inscricao_municipal) : '+ inscrição municipal'}</a></div>` : '') || ''}${semCadastro}</td>` +
         `<td>${alvaras}</td>` +
         `<td>${_celulaCert(l)}</td>` +
         `<td>${_celulaProc(l, 'ecac')}</td>` +
@@ -5765,6 +5765,15 @@ const Legalizacao = (() => {
     const res = await fetch('/api/data/legalizacao/' + rota + '/' + id + '/desativar', { method: 'PATCH', headers: { Authorization: 'Bearer ' + _tk() } });
     if (res && res.ok) { App.Toast.ok('Desativado.'); await _carregarPainel(); }
     else App.Toast.err('Erro ao desativar.');
+  }
+  async function editarIM(clienteId, atual) {
+    const v = prompt('Inscrição municipal desta empresa (deixe vazio para apagar):', atual || '');
+    if (v === null) return;
+    const res = await fetch('/api/data/legalizacao/clientes/' + clienteId + '/inscricao-municipal', {
+      method: 'PATCH', headers: { Authorization: 'Bearer ' + _tk(), 'Content-Type': 'application/json' }, body: JSON.stringify({ inscricao_municipal: v }),
+    });
+    if (res && res.ok) { App.Toast.ok('Inscrição municipal salva.'); await _carregarPainel(); }
+    else { const err = await res.json().catch(() => ({})); App.Toast.err(err.error || 'Erro ao salvar a inscrição municipal.'); }
   }
   const desativarAlvara = (id) => _desativar('alvaras', id, 'este Alvará Sanitário');
   const desativarCertificado = (id) => _desativar('certificados', id, 'este certificado');
@@ -5990,7 +5999,7 @@ const Legalizacao = (() => {
 
   return {
     load, filtrar, filtrarPorSituacao, goPage, _toggleDetalhe,
-    abrirFormAlvara, salvarAlvara, excluirAlvara, desativarAlvara, desativarCertificado, reativarAlvara, reativarCertificado,
+    abrirFormAlvara, salvarAlvara, excluirAlvara, editarIM, desativarAlvara, desativarCertificado, reativarAlvara, reativarCertificado,
     consultarPrefeitura, consultarTodosPrefeitura, exportCSV, exportPDF,
     abrirFormCertificadoPJ, salvarCertificadoPJ, abrirFormCertificadoPF,
     salvarCertificadoPF, excluirCertificado, abrirFormProcuracao, salvarProcuracao,

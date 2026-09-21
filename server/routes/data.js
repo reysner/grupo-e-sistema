@@ -130,7 +130,7 @@ router.get('/legalizacao/clientes-ativos', async (req, res) => {
   try {
     if (!tokenSyncOk(req, res)) return;
     const { rows } = await pool.query(
-      `SELECT id::text AS cliente_id, nome_empresa, cnpj, municipio_ibge FROM clientes
+      `SELECT id::text AS cliente_id, nome_empresa, cnpj, municipio_ibge, inscricao_municipal FROM clientes
         WHERE status = 'ativo' AND length(regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g')) = 14 ORDER BY nome_empresa`
     );
     res.json({ data: rows });
@@ -845,6 +845,7 @@ async function garantirColunasMunicipio() {
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS municipio_ibge TEXT`).catch(() => {});
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS municipio_verificado_em TIMESTAMPTZ`).catch(() => {});
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS cnaes JSONB`).catch(() => {});
+  await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS inscricao_municipal TEXT`).catch(() => {});
 }
 async function completarMunicipiosClientes({ limite = 300, intervaloMs = 3000 } = {}) {
   if (municipiosRodando) return { pulou: true };
@@ -5313,7 +5314,7 @@ router.get('/legalizacao/painel', async (req, res) => {
   try {
     await ensureLegalizacaoSchema();
     const { rows: todas } = await pool.query(LEGAL_PAINEL_SQL);
-    const { rows: muns } = await pool.query(`SELECT id::text AS id, municipio, uf, municipio_ibge FROM clientes`);
+    const { rows: muns } = await pool.query(`SELECT id::text AS id, municipio, uf, municipio_ibge, inscricao_municipal FROM clientes`);
     const munPorId = new Map(muns.map(m => [m.id, m]));
     const verDesativados = req.query.desativados === '1' && req.user.role === 'administrador';
     const rows = verDesativados ? todas : todas.filter(r => !(r.sem_cadastro_acessorias && r.cert_desat)).map(r => (r.sanit_desat ? { ...r, sanit_id: null } : r));
@@ -5323,6 +5324,7 @@ router.get('/legalizacao/painel', async (req, res) => {
         const m = munPorId.get(r.cliente_id);
         l.municipio = m && m.municipio ? m.municipio : null;
         l.uf = m && m.uf ? m.uf : null;
+        l.inscricao_municipal = m && m.inscricao_municipal ? m.inscricao_municipal : null;
         // null = ainda não conferido; false = cidade sem consulta automática (buscar na prefeitura de lá)
         l.prefeitura_integrada = m && m.municipio_ibge ? IBGES_INTEGRADOS.includes(m.municipio_ibge) : null;
         if (l.prefeitura_integrada === false) { // atalho pro portal da cidade (consulta manual)
@@ -5334,6 +5336,23 @@ router.get('/legalizacao/painel', async (req, res) => {
       diasAlerta: { alvara: LEGAL_DIAS_ALERTA_ALVARA, certificado: LEGAL_DIAS_ALERTA_CERTIFICADO, procuracao: LEGAL_DIAS_ALERTA_PROCURACAO },
     });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar legalização.' }); }
+});
+
+/**
+ * PATCH /api/data/legalizacao/clientes/:clienteId/inscricao-municipal — grava a Inscrição Municipal (CGA/CMC…) da empresa.
+ * Várias prefeituras (Lauro de Freitas, Rio, Arcos…) só consultam alvará por inscrição, não por CNPJ. Vazio = apaga.
+ * Mesma abertura da solicitação de inativação: qualquer usuário logado com acesso à Legalização.
+ */
+router.patch('/legalizacao/clientes/:clienteId/inscricao-municipal', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const bruto = String(req.body && req.body.inscricao_municipal != null ? req.body.inscricao_municipal : '').trim();
+    if (bruto.length > 30 || /[^0-9A-Za-z.\-\/ ]/.test(bruto)) return res.status(400).json({ error: 'Inscrição municipal inválida — use só números, letras, ponto, hífen ou barra (até 30 caracteres).' });
+    const valor = bruto || null;
+    const { rowCount } = await pool.query(`UPDATE clientes SET inscricao_municipal = $1 WHERE id = $2`, [valor, req.params.clienteId]);
+    if (!rowCount) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    res.json({ ok: true, inscricao_municipal: valor });
+  } catch (err) { console.error('[legalizacao] inscrição municipal:', err); res.status(500).json({ error: 'Erro ao salvar a inscrição municipal.' }); }
 });
 
 /** PUT /api/data/legalizacao/procuracoes/:clienteId/:tipo (ecac|fgts) — só admin; UPSERT da data de vencimento. */
