@@ -196,6 +196,12 @@
       </div>
       <div class="filtros">
         <input id="busca" type="text" placeholder="🔍 Buscar empresa, titular ou CNPJ/CPF..." oninput="filtrar()" />
+        <select id="automacao" onchange="filtrar()" title="Empresas cuja busca automática na prefeitura não é possível ficam só na pasta da Legalização">
+          <option value="todas">Todas as empresas (automação)</option>
+          <option value="automatica">🤖 Consulta automática (Uberlândia, Uberaba, BH)</option>
+          <option value="pasta">📁 Só pela pasta (cidade sem consulta)</option>
+          <option value="sem_municipio">❔ Município não identificado</option>
+        </select>
         <select id="situacao" onchange="filtrar()">
           <option value="todas">Todas as situações</option>
           <option value="func">Alvarás de Funcionamento</option>
@@ -411,13 +417,15 @@ function item(l, sit) {
   return l[sit] || null;
 }
 function statusDe(l, sit) { const i = item(l, sit); return i ? [i.status] : []; }
+/** Linhas depois do filtro de automação (consulta automática × só pasta × município não identificado). */
+function baseLinhas() { const a = document.getElementById('automacao').value; return a === 'todas' ? _linhas : _linhas.filter(l => l.automacao === a); }
 
 /** Cards do topo: seguem a situação escolhida no filtro ("Todas" = geral). */
 function renderResumo() {
   const sit = document.getElementById('situacao').value;
   const alvo = sit === 'todas' ? SITUACOES : [sit];
   const cont = { vencido: 0, vencendo: 0, solicitacao: 0, ok: 0 };
-  _linhas.forEach(l => alvo.forEach(s => statusDe(l, s).forEach(st => { if (st in cont) cont[st]++; })));
+  baseLinhas().forEach(l => alvo.forEach(s => statusDe(l, s).forEach(st => { if (st in cont) cont[st]++; })));
   document.getElementById('resumo-caption').textContent = sit === 'todas' ? 'Resumo geral — todas as situações' : 'Resumo — ' + SIT_LABEL[sit];
   document.getElementById('qtd-vencido').textContent = cont.vencido;
   document.getElementById('qtd-vencendo').textContent = cont.vencendo;
@@ -429,7 +437,7 @@ function linhasFiltradas() {
   const busca = (document.getElementById('busca').value || '').toLowerCase().trim();
   const sit = document.getElementById('situacao').value;
   const status = document.getElementById('status').value;
-  let lista = _linhas;
+  let lista = baseLinhas();
   if (busca) lista = lista.filter(l => (l.nome_empresa || '').toLowerCase().includes(busca) || (l.cnpj || '').includes(busca));
   if (sit !== 'todas') lista = lista.filter(l => item(l, sit));
   if (status !== 'todos') {
@@ -450,7 +458,7 @@ const SIT_ICO = { func: '🏢', sanit: '🩺', cert_pf: '👤', cert_pj: '🏛�
 function statsSit(sit) {
   const c = { vencido: 0, vencendo: 0, solicitacao: 0, ok: 0, sem_data: 0 };
   let proximo = null;
-  _linhas.forEach(l => {
+  baseLinhas().forEach(l => {
     const i = item(l, sit);
     if (!i) return;
     c[i.status]++;
@@ -552,7 +560,7 @@ function goPage(p) {
     const inativar = l.cliente_id
       ? '<button class="btn-inativar" title="Solicitar a inativação deste cliente (com observação)" data-id="' + l.cliente_id + '" data-nome="' + esc(l.nome_empresa) + '" onclick="abrirModalInativar(this.dataset.id,this.dataset.nome)">🚫 Inativar</button>' : '';
     return '<tr>' +
-      '<td><b>' + esc(l.nome_empresa || '—') + '</b><div style="font-size:11px;color:var(--gray-400)">' + esc(l.cnpj) + '</div>' + (l.municipio ? '<div style="font-size:11px;color:var(--gray-500)">📍 ' + esc(l.municipio) + (l.uf ? '/' + esc(l.uf) : '') + (l.prefeitura_integrada === false ? ' · <b>consulta manual</b>' + (l.prefeitura_url ? ' · <a href="' + esc(l.prefeitura_url) + '" target="_blank" rel="noopener">' + (l.prefeitura_url_oficial ? 'portal' : 'buscar') + '</a>' : '') + (l.prefeitura_url_sanitario ? ' · <a href="' + esc(l.prefeitura_url_sanitario) + '" target="_blank" rel="noopener">sanitário</a>' : '') : '') + ' · <a href="#" onclick="editarIM(\'' + esc(l.cliente_id) + '\', \'' + esc(l.inscricao_municipal || '') + '\');return false" title="Inscrição municipal (algumas prefeituras só consultam por ela)">' + (l.inscricao_municipal ? 'IM ' + esc(l.inscricao_municipal) : '+ inscrição municipal') + '</a></div>' : '') + semCadastro + '</td>' +
+      '<td><b>' + esc(l.nome_empresa || '—') + '</b><div style="font-size:11px;color:var(--gray-400)">' + esc(l.cnpj) + '</div>' + (l.municipio ? '<div style="font-size:11px;color:var(--gray-500)">📍 ' + esc(l.municipio) + (l.uf ? '/' + esc(l.uf) : '') + (l.prefeitura_integrada === false ? ' · <b>consulta manual</b>' + (l.prefeitura_url ? ' · <a href="' + esc(l.prefeitura_url) + '" target="_blank" rel="noopener">' + (l.prefeitura_url_oficial ? 'portal' : 'buscar') + '</a>' : '') + (l.prefeitura_url_sanitario ? ' · <a href="' + esc(l.prefeitura_url_sanitario) + '" target="_blank" rel="noopener">sanitário</a>' : '') : '') + ' · <a href="#" onclick="editarIM(\'' + esc(l.cliente_id) + '\', \'' + esc(l.inscricao_municipal || '') + '\');return false" title="Inscrição municipal (algumas prefeituras só consultam por ela)">' + (l.inscricao_municipal ? 'IM ' + esc(l.inscricao_municipal) : '+ inscrição municipal') + '</a></div>' : (l.cliente_id ? '<div style="font-size:11px;color:var(--gray-500)">📍 sem município · <a href="#" onclick="editarMunicipio(\'' + esc(l.cliente_id) + '\');return false" title="Informar a cidade (quem não tem CNPJ não tem cartão CNPJ)">+ município</a></div>' : '')) + semCadastro + '</td>' +
       '<td>' + alvaras + '</td>' +
       '<td>' + celula(l.cert.tipo.toUpperCase(), l.cert) + '</td>' +
       '<td>' + celula('', l.ecac) + '</td>' +
@@ -621,6 +629,17 @@ function abrirModalInativar(clienteId, nomeEmpresa) {
   document.getElementById('modal-inativar').style.display = 'flex';
 }
 function fecharModalInativar() { document.getElementById('modal-inativar').style.display = 'none'; }
+
+async function editarMunicipio(clienteId) {
+  const v = prompt('Município e UF da empresa (ex.: Uberlândia/MG):', '');
+  if (!v) return;
+  const m = /^(.+?)\s*[\/,\-]\s*([A-Za-z]{2})\s*$/.exec(v.trim());
+  if (!m) { alert('Use o formato Cidade/UF, por exemplo Uberlândia/MG.'); return; }
+  const res = await api('/api/data/legalizacao/clientes/' + clienteId + '/municipio', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ municipio: m[1], uf: m[2] }) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { alert(data.error || 'Erro ao salvar o município.'); return; }
+  await carregar();
+}
 
 async function editarIM(clienteId, atual) {
   const v = prompt('Inscrição municipal desta empresa (deixe vazio para apagar):', atual || '');

@@ -5622,13 +5622,15 @@ const Legalizacao = (() => {
     return i && i.desativado ? null : i; // desativado não conta nem entra nos filtros
   }
   function _statusDe(l, sit) { const i = _item(l, sit); return i ? [i.status] : []; }
+  /** Linhas depois do filtro de automação (consulta automática × só pasta × município não identificado). */
+  function _base() { const a = document.getElementById('legal-automacao')?.value || 'todas'; return a === 'todas' ? _linhas : _linhas.filter(l => l.automacao === a); }
 
   /** Cards do topo: seguem a situação escolhida no filtro ("Todas" = geral). */
   function _renderResumo() {
     const sit = document.getElementById('legal-situacao')?.value || 'todas';
     const alvo = sit === 'todas' ? SITUACOES : [sit];
     const cont = { vencido: 0, vencendo: 0, solicitacao: 0, ok: 0 };
-    _linhas.forEach(l => alvo.forEach(s => _statusDe(l, s).forEach(st => { if (st in cont) cont[st]++; })));
+    _base().forEach(l => alvo.forEach(s => _statusDe(l, s).forEach(st => { if (st in cont) cont[st]++; })));
     const cap = document.getElementById('legal-resumo-caption');
     if (cap) cap.textContent = sit === 'todas' ? 'Resumo geral — todas as situações' : 'Resumo — ' + SIT_LABEL[sit];
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
@@ -5642,7 +5644,7 @@ const Legalizacao = (() => {
     const busca = (document.getElementById('legal-busca')?.value || '').toLowerCase().trim();
     const sit = document.getElementById('legal-situacao')?.value || 'todas';
     const status = document.getElementById('legal-status')?.value || 'todos';
-    let lista = _linhas;
+    let lista = _base();
     if (busca) lista = lista.filter(l => (l.nome_empresa || '').toLowerCase().includes(busca) || (l.cnpj || '').includes(busca));
     // Escolheu uma situação: só entra quem TEM aquele item (ex.: só empresas com Sanitário, só certificados PF).
     if (sit !== 'todas') lista = lista.filter(l => _item(l, sit));
@@ -5664,7 +5666,7 @@ const Legalizacao = (() => {
   function _statsSit(sit) {
     const c = { vencido: 0, vencendo: 0, solicitacao: 0, ok: 0, sem_data: 0 };
     let proximo = null;
-    _linhas.forEach(l => {
+    _base().forEach(l => {
       const i = _item(l, sit);
       if (!i) return;
       c[i.status]++;
@@ -5803,7 +5805,7 @@ const Legalizacao = (() => {
         ? _celulaAlvara('Func.', l.func, 'funcionamento', l) + (l.sanit ? _celulaAlvara('Sanit.', l.sanit, 'sanitario', l) : '')
         : _VAZIO;
       return `<tr>` +
-        `<td><b>${_esc(l.nome_empresa) || '—'}</b><div style="font-size:11px;color:var(--gray-400)">${_esc(l.cnpj)}</div>${(l.municipio ? `<div style="font-size:11px;color:var(--gray-500)">📍 ${_esc(l.municipio)}${l.uf ? '/' + _esc(l.uf) : ''}${l.prefeitura_integrada === false ? ' · <b>consulta manual</b>' + (l.prefeitura_url ? ` · <a href="${_esc(l.prefeitura_url)}" target="_blank" rel="noopener" title="${l.prefeitura_url_oficial ? 'Portal da prefeitura' : 'Busca no Google (portal ainda não mapeado)'}">${l.prefeitura_url_oficial ? 'portal' : 'buscar'}</a>` : '') + (l.prefeitura_url_sanitario ? ` · <a href="${_esc(l.prefeitura_url_sanitario)}" target="_blank" rel="noopener" title="Licença sanitária (SIVISA-SP, pede captcha)">sanitário</a>` : '') : ''} · <a href="#" onclick="Legalizacao.editarIM('${l.cliente_id}', '${_esc(l.inscricao_municipal || '')}');return false" title="Inscrição municipal (algumas prefeituras só consultam por ela)">${l.inscricao_municipal ? 'IM ' + _esc(l.inscricao_municipal) : '+ inscrição municipal'}</a></div>` : '') || ''}${semCadastro}</td>` +
+        `<td><b>${_esc(l.nome_empresa) || '—'}</b><div style="font-size:11px;color:var(--gray-400)">${_esc(l.cnpj)}</div>${(l.municipio ? `<div style="font-size:11px;color:var(--gray-500)">📍 ${_esc(l.municipio)}${l.uf ? '/' + _esc(l.uf) : ''}${l.prefeitura_integrada === false ? ' · <b>consulta manual</b>' + (l.prefeitura_url ? ` · <a href="${_esc(l.prefeitura_url)}" target="_blank" rel="noopener" title="${l.prefeitura_url_oficial ? 'Portal da prefeitura' : 'Busca no Google (portal ainda não mapeado)'}">${l.prefeitura_url_oficial ? 'portal' : 'buscar'}</a>` : '') + (l.prefeitura_url_sanitario ? ` · <a href="${_esc(l.prefeitura_url_sanitario)}" target="_blank" rel="noopener" title="Licença sanitária (SIVISA-SP, pede captcha)">sanitário</a>` : '') : ''} · <a href="#" onclick="Legalizacao.editarIM('${l.cliente_id}', '${_esc(l.inscricao_municipal || '')}');return false" title="Inscrição municipal (algumas prefeituras só consultam por ela)">${l.inscricao_municipal ? 'IM ' + _esc(l.inscricao_municipal) : '+ inscrição municipal'}</a></div>` : (l.cliente_id ? `<div style="font-size:11px;color:var(--gray-500)">📍 sem município · <a href="#" onclick="Legalizacao.editarMunicipio('${l.cliente_id}');return false" title="Informar a cidade (quem não tem CNPJ não tem cartão CNPJ)">+ município</a></div>` : '')) || ''}${semCadastro}</td>` +
         `<td>${alvaras}</td>` +
         `<td>${_celulaCert(l)}</td>` +
         `<td>${_celulaProc(l, 'ecac')}</td>` +
@@ -5851,6 +5853,15 @@ const Legalizacao = (() => {
     const res = await fetch('/api/data/legalizacao/' + rota + '/' + id + '/desativar', { method: 'PATCH', headers: { Authorization: 'Bearer ' + _tk() } });
     if (res && res.ok) { App.Toast.ok('Desativado.'); await _carregarPainel(); }
     else App.Toast.err('Erro ao desativar.');
+  }
+  async function editarMunicipio(clienteId) {
+    const v = prompt('Município e UF da empresa (ex.: Uberlândia/MG):', '');
+    if (!v) return;
+    const m = /^(.+?)\s*[\/,\-]\s*([A-Za-z]{2})\s*$/.exec(v.trim());
+    if (!m) { App.Toast.err('Use o formato Cidade/UF, por exemplo Uberlândia/MG.'); return; }
+    const res = await fetch('/api/data/legalizacao/clientes/' + clienteId + '/municipio', { method: 'PATCH', headers: { Authorization: 'Bearer ' + _tk(), 'Content-Type': 'application/json' }, body: JSON.stringify({ municipio: m[1], uf: m[2] }) });
+    if (res && res.ok) { App.Toast.ok('Município salvo.'); await _carregarPainel(); }
+    else { const err = await res.json().catch(() => ({})); App.Toast.err(err.error || 'Erro ao salvar o município.'); }
   }
   async function editarIM(clienteId, atual) {
     const v = prompt('Inscrição municipal desta empresa (deixe vazio para apagar):', atual || '');
@@ -6085,7 +6096,7 @@ const Legalizacao = (() => {
 
   return {
     load, filtrar, filtrarPorSituacao, goPage, _toggleDetalhe,
-    abrirFormAlvara, salvarAlvara, excluirAlvara, editarIM, abrirConferencia, conferir, abrirSaude, desativarAlvara, desativarCertificado, reativarAlvara, reativarCertificado,
+    abrirFormAlvara, salvarAlvara, excluirAlvara, editarIM, editarMunicipio, abrirConferencia, conferir, abrirSaude, desativarAlvara, desativarCertificado, reativarAlvara, reativarCertificado,
     consultarPrefeitura, consultarTodosPrefeitura, exportCSV, exportPDF,
     abrirFormCertificadoPJ, salvarCertificadoPJ, abrirFormCertificadoPF,
     salvarCertificadoPF, excluirCertificado, abrirFormProcuracao, salvarProcuracao,

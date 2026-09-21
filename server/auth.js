@@ -94,7 +94,7 @@ function requireAuth(req, res, next) {
     // admin nunca edita datas/certificados pela API (PUT/POST/PATCH/DELETE).
     const isLegalizacaoRoute = req.path && req.path.includes('/legalizacao')
       && (req.method === 'GET' || req.path.includes('/solicitar-inativacao') || req.path.includes('/notificacoes/lidas')
-          || (req.method === 'PATCH' && req.path.includes('/inscricao-municipal'))); // cadastrar a inscrição municipal da empresa
+          || (req.method === 'PATCH' && /\/clientes\/[^/]+\/(inscricao-municipal|municipio)$/.test(req.path))); // cadastrar inscrição municipal / município da empresa
 
     // Usuário contábil só pode acessar rotas de tickets (+ Minha Nota/Legalização, se as flags estiverem ligadas) — bloqueia o resto.
     if (payload.role === 'contabil') {

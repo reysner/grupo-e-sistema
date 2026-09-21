@@ -1053,12 +1053,26 @@ const { portalDaPrefeitura } = require('../legalizacao/portaisPrefeituras');
 const IBGE_UBERLANDIA = '3170206';
 const { IBGES_INTEGRADOS } = require('../legalizacao/municipiosIntegrados');
 let municipiosRodando = false;
+// Código IBGE de município → UF (2 primeiros dígitos). Vale mais que o "UF" do Acessórias (estado do cadastro, nem sempre o da empresa).
+const UF_POR_CODIGO_IBGE = { 11: 'RO', 12: 'AC', 13: 'AM', 14: 'RR', 15: 'PA', 16: 'AP', 17: 'TO', 21: 'MA', 22: 'PI', 23: 'CE', 24: 'RN', 25: 'PB', 26: 'PE', 27: 'AL', 28: 'SE', 29: 'BA', 31: 'MG', 32: 'ES', 33: 'RJ', 35: 'SP', 41: 'PR', 42: 'SC', 43: 'RS', 50: 'MS', 51: 'MT', 52: 'GO', 53: 'DF' };
+const ufDoIbge = (ibge) => UF_POR_CODIGO_IBGE[String(ibge || '').slice(0, 2)] || null;
 async function garantirColunasMunicipio() {
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS municipio TEXT`).catch(() => {});
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS municipio_ibge TEXT`).catch(() => {});
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS municipio_verificado_em TIMESTAMPTZ`).catch(() => {});
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS cnaes JSONB`).catch(() => {});
   await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS inscricao_municipal TEXT`).catch(() => {});
+  // corrige UF que destoa do município (ex.: São Paulo/MG): o município (IBGE) manda
+  await pool.query(`UPDATE clientes SET uf = CASE substring(municipio_ibge, 1, 2)
+      WHEN '11' THEN 'RO' WHEN '12' THEN 'AC' WHEN '13' THEN 'AM' WHEN '14' THEN 'RR' WHEN '15' THEN 'PA' WHEN '16' THEN 'AP' WHEN '17' THEN 'TO'
+      WHEN '21' THEN 'MA' WHEN '22' THEN 'PI' WHEN '23' THEN 'CE' WHEN '24' THEN 'RN' WHEN '25' THEN 'PB' WHEN '26' THEN 'PE' WHEN '27' THEN 'AL' WHEN '28' THEN 'SE' WHEN '29' THEN 'BA'
+      WHEN '31' THEN 'MG' WHEN '32' THEN 'ES' WHEN '33' THEN 'RJ' WHEN '35' THEN 'SP' WHEN '41' THEN 'PR' WHEN '42' THEN 'SC' WHEN '43' THEN 'RS'
+      WHEN '50' THEN 'MS' WHEN '51' THEN 'MT' WHEN '52' THEN 'GO' WHEN '53' THEN 'DF' ELSE uf END
+    WHERE municipio_ibge IS NOT NULL AND length(municipio_ibge) >= 2 AND uf IS DISTINCT FROM CASE substring(municipio_ibge, 1, 2)
+      WHEN '11' THEN 'RO' WHEN '12' THEN 'AC' WHEN '13' THEN 'AM' WHEN '14' THEN 'RR' WHEN '15' THEN 'PA' WHEN '16' THEN 'AP' WHEN '17' THEN 'TO'
+      WHEN '21' THEN 'MA' WHEN '22' THEN 'PI' WHEN '23' THEN 'CE' WHEN '24' THEN 'RN' WHEN '25' THEN 'PB' WHEN '26' THEN 'PE' WHEN '27' THEN 'AL' WHEN '28' THEN 'SE' WHEN '29' THEN 'BA'
+      WHEN '31' THEN 'MG' WHEN '32' THEN 'ES' WHEN '33' THEN 'RJ' WHEN '35' THEN 'SP' WHEN '41' THEN 'PR' WHEN '42' THEN 'SC' WHEN '43' THEN 'RS'
+      WHEN '50' THEN 'MS' WHEN '51' THEN 'MT' WHEN '52' THEN 'GO' WHEN '53' THEN 'DF' ELSE uf END`).catch(() => {});
 }
 async function completarMunicipiosClientes({ limite = 300, intervaloMs = 3000 } = {}) {
   if (municipiosRodando) return { pulou: true };
@@ -1078,7 +1092,7 @@ async function completarMunicipiosClientes({ limite = 300, intervaloMs = 3000 } 
         const m = await consultarMunicipioCnpj(c.cnpj);
         await pool.query(
           `UPDATE clientes SET municipio = $1, uf = COALESCE($2, uf), municipio_ibge = $3, municipio_verificado_em = NOW(), cnaes = $5::jsonb WHERE id = $4`,
-          [m.municipio, m.uf, m.ibge, c.id, JSON.stringify(m.cnaes || [])]
+          [m.municipio, ufDoIbge(m.ibge) || m.uf, m.ibge, c.id, JSON.stringify(m.cnaes || [])]
         );
         ok++; seguidas = 0;
       } catch (e) {
@@ -1167,7 +1181,7 @@ async function sincronizarAcessorias({ userId = null } = {}) {
              regime_tributario = COALESCE($2, regime_tributario),
              codigo = COALESCE(codigo, $3),
              acessorias_id = $4,
-             uf = COALESCE($6, uf),
+             uf = CASE WHEN municipio_ibge IS NOT NULL THEN uf ELSE COALESCE($6, uf) END,
              alerta_baixa_notificado_em = NULL
            WHERE id = $5`,
           [emp.nome_empresa, emp.regime_tributario, emp.codigo, emp.acessorias_id, existente.rows[0].id, emp.uf]
@@ -5568,6 +5582,8 @@ router.get('/legalizacao/painel', async (req, res) => {
         if (l.sanit) l.sanit.a_conferir = aConferir.has(r.cliente_id + '|sanitario');
         // null = ainda não conferido; false = cidade sem consulta automática (buscar na prefeitura de lá)
         l.prefeitura_integrada = m && m.municipio_ibge ? IBGES_INTEGRADOS.includes(m.municipio_ibge) : null;
+        // automatica = Uberlândia/Uberaba/BH (consulta na prefeitura) · pasta = cidade sem consulta (só pela pasta da Legalização) · sem_municipio = ainda sem cidade (CPF, cadastro sem CNPJ…)
+        l.automacao = l.prefeitura_integrada === true ? 'automatica' : (m && m.municipio ? 'pasta' : 'sem_municipio');
         if (l.prefeitura_integrada === false) { // atalho pro portal da cidade (consulta manual)
           const p = portalDaPrefeitura(m.municipio, m.uf);
           l.prefeitura_url = p.url; l.prefeitura_url_oficial = p.oficial; l.prefeitura_url_sanitario = p.url_sanitario;
@@ -5649,6 +5665,29 @@ async function checarSaudeRotinasLegalizacao() {
     }
   } catch (err) { console.error('[Legalização] checarSaudeRotinas:', err.message); }
 }
+
+/**
+ * PATCH /legalizacao/clientes/:clienteId/municipio — { municipio, uf }: informa a cidade de quem não tem como achar pelo cartão CNPJ
+ * (pessoa física/produtor rural, cadastro com identificador que não é CNPJ). Descobre o código IBGE pelo nome (API do IBGE) e grava
+ * município, UF e IBGE — assim o filtro "só pasta"/"automática" e as buscas passam a saber onde procurar.
+ */
+router.patch('/legalizacao/clientes/:clienteId/municipio', async (req, res) => {
+  try {
+    await garantirColunasMunicipio();
+    const uf = String((req.body && req.body.uf) || '').trim().toUpperCase();
+    const semAcento = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+    const nome = semAcento(req.body && req.body.municipio);
+    if (!/^[A-Z]{2}$/.test(uf) || !nome) return res.status(400).json({ error: 'Informe o município e a UF (ex.: Uberlândia / MG).' });
+    const r = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios`, { signal: AbortSignal.timeout(20000) });
+    if (!r.ok) return res.status(502).json({ error: 'Não consegui consultar o IBGE agora. Tente de novo.' });
+    const lista = await r.json();
+    const achado = lista.find((m) => semAcento(m.nome) === nome);
+    if (!achado) return res.status(404).json({ error: `Não achei "${req.body.municipio}" em ${uf}. Confira a grafia.` });
+    const up = await pool.query(`UPDATE clientes SET municipio = $1, uf = $2, municipio_ibge = $3, municipio_verificado_em = NOW() WHERE id::text = $4`, [semAcento(achado.nome), uf, String(achado.id), req.params.clienteId]);
+    if (!up.rowCount) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    res.json({ ok: true, municipio: semAcento(achado.nome), uf, ibge: String(achado.id) });
+  } catch (err) { console.error('[legalizacao] município:', err); res.status(500).json({ error: 'Erro ao salvar o município.' }); }
+});
 
 /**
  * FILA DE CONFERÊNCIA — datas lidas por OCR de PDF escaneado da pasta do servidor. O OCR erra (ex.: "31/12/2924"), então cada
