@@ -5584,7 +5584,10 @@ router.get('/legalizacao/painel', async (req, res) => {
         l.prefeitura_integrada = m && m.municipio_ibge ? IBGES_INTEGRADOS.includes(m.municipio_ibge) : null;
         // automatica = Uberlândia/Uberaba/BH (consulta na prefeitura) · pasta = cidade sem consulta (só pela pasta da Legalização) · sem_municipio = ainda sem cidade (CPF, cadastro sem CNPJ…)
         // pessoa_fisica = CPF sem município: não precisa de cidade (só certificado/procuração PF), então não conta como pendência
-        const ehPF = String(r.cnpj || l.cnpj || '').replace(/\D/g, '').length === 11;
+        // idem CNO/CAEPF (rural: CPF + sufixo) e cadastros internos (9997..9999): documento que não é CPF nem CNPJ válido
+        const docPF = String(r.cnpj || l.cnpj || '').replace(/\D/g, '');
+        const cnpjValido = (d) => { if (d.length !== 14 || /^(\d)\1+$/.test(d)) return false; const dv = (n) => { let s = 0, p = n - 7; for (let i = 0; i < n; i++) { s += +d[i] * p--; if (p < 2) p = 9; } const r = s % 11; return r < 2 ? 0 : 11 - r; }; return dv(12) === +d[12] && dv(13) === +d[13]; };
+        const ehPF = docPF.length === 11 || !cnpjValido(docPF);
         l.automacao = l.prefeitura_integrada === true ? 'automatica' : (m && m.municipio ? 'pasta' : (ehPF ? 'pessoa_fisica' : 'sem_municipio'));
         if (l.prefeitura_integrada === false) { // atalho pro portal da cidade (consulta manual)
           const p = portalDaPrefeitura(m.municipio, m.uf);
