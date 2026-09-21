@@ -81,6 +81,21 @@ router.post('/legalizacao/inscricao-municipal-arquivo', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao gravar a inscrição municipal.' }); }
 });
 
+// (rota de máquina: fica ANTES do requireAuth, autenticada só pelo X-Sync-Token)
+router.post('/legalizacao/saude-rotina', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    await ensureLegalizacaoSchema();
+    const { rotina, inicio, total, ok, falhas, resumo, por_cidade } = req.body || {};
+    if (!ROTINAS_LEGALIZACAO[rotina]) return res.status(400).json({ error: 'Rotina desconhecida.' });
+    await pool.query(
+      `INSERT INTO legalizacao_rotinas (rotina, inicio, total, ok, falhas, resumo, por_cidade) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb)`,
+      [rotina, inicio || null, parseInt(total, 10) || 0, parseInt(ok, 10) || 0, parseInt(falhas, 10) || 0, JSON.stringify(resumo || {}), JSON.stringify(por_cidade || {})]
+    );
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao registrar a rotina.' }); }
+});
+
 router.post('/legalizacao/alvaras-consulta-local', async (req, res) => {
   try {
     if (!tokenSyncOk(req, res)) return;
@@ -5407,20 +5422,6 @@ const ROTINAS_LEGALIZACAO = {
   consulta_prefeituras: { nome: 'Consulta às prefeituras', horario: 'todo dia às 03:00', horasMax: 30 },
   leitura_pastas: { nome: 'Leitura das pastas da Legalização', horario: 'todo dia às 05:00', horasMax: 30 },
 };
-
-router.post('/legalizacao/saude-rotina', async (req, res) => {
-  try {
-    if (!tokenSyncOk(req, res)) return;
-    await ensureLegalizacaoSchema();
-    const { rotina, inicio, total, ok, falhas, resumo, por_cidade } = req.body || {};
-    if (!ROTINAS_LEGALIZACAO[rotina]) return res.status(400).json({ error: 'Rotina desconhecida.' });
-    await pool.query(
-      `INSERT INTO legalizacao_rotinas (rotina, inicio, total, ok, falhas, resumo, por_cidade) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb)`,
-      [rotina, inicio || null, parseInt(total, 10) || 0, parseInt(ok, 10) || 0, parseInt(falhas, 10) || 0, JSON.stringify(resumo || {}), JSON.stringify(por_cidade || {})]
-    );
-    res.json({ ok: true });
-  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao registrar a rotina.' }); }
-});
 
 /** Situação de cada rotina: última rodada, se está atrasada e se houve muitas falhas. */
 async function situacaoRotinas() {
