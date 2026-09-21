@@ -96,7 +96,7 @@ const PADROES_VENC = [
   new RegExp('Data\\s+de\\s+Vencimento:?\\s*' + DATA_RE, 'i'),
   new RegExp('Vencimento:?\\s*' + DATA_RE, 'i'),
   new RegExp('V[áa]lid[oa]\\s+at[ée]:?\\s*' + DATA_RE, 'i'),
-  new RegExp('Validade:?\\s*' + DATA_RE, 'i'),
+  new RegExp('Validade[^0-9A-Za-z]{0,6}' + DATA_RE, 'i'), // aceita ruído de OCR entre o rótulo e a data (ex.: Validade: “20/01/2025)
   new RegExp('Vig[êe]ncia[^0-9]{0,40}' + DATA_RE, 'i'),
   // Alvará de funcionamento de Uberlândia: "Emissão:22/12/2023 07/11/2026" — a 2ª data (logo após a emissão) é o vencimento.
   new RegExp('Emiss[ãa]o:?\\s*\\d{2}[\\/.-]\\d{2}[\\/.-]\\d{4}\\s+' + DATA_RE, 'i'),
