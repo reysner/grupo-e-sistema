@@ -2337,8 +2337,10 @@ router.get('/carteira/dashboard', requireAuth, async (req, res) => {
     const mesesMedio = parseFloat(retencao.rows[0].meses) || 48;
     const ticketMedio = parseFloat(ticket.rows[0].ticket) || 0;
     const mrrVal = parseFloat(mrr.rows[0].mrr) || 0;
+    const omie = await pool.query(`SELECT unidade, MAX(importado_em) AS em FROM financeiro_importacoes GROUP BY unidade ORDER BY unidade`).catch(() => ({ rows: [] }));
     res.json({
       mrr: mrrVal,
+      omie_leituras: omie.rows.map(r => ({ unidade: r.unidade, em: r.em })),
       arr: mrrVal * 12,
       ativos: parseInt(ativos.rows[0].count),
       encerrados: parseInt(encerrados.rows[0].count),
