@@ -3114,9 +3114,9 @@ const Carteira = (() => {
   function exportCSV() {
     const data = _dadosFiltrados();
     if (!data.length) { App.Toast.err('Nenhum dado para exportar.'); return; }
-    const cols = ['codigo','nome_empresa','cnpj','honorario_atual','receita_acumulada','data_entrada','status','origem','cac'];
+    const cols = ['codigo','nome_empresa','cnpj','honorario_atual','receita_acumulada','data_entrada','status','cac'];
     const labels = {codigo:'Código',nome_empresa:'Empresa',cnpj:'CNPJ',honorario_atual:'Honorário',
-      receita_acumulada:'Receita Acumulada',data_entrada:'Data Entrada',status:'Status',origem:'Origem',cac:'CAC'};
+      receita_acumulada:'Receita Acumulada',data_entrada:'Data Entrada',status:'Status',cac:'CAC'};
     const header = cols.map(c=>labels[c]).join(';');
     const rows = data.map(r=>cols.map(c=>`"${(r[c]??'').toString().replace(/"/g,'""')}"`).join(';'));
     const csv = [header,...rows].join('\n');
@@ -3134,9 +3134,9 @@ const Carteira = (() => {
     const status = document.getElementById('cart-status-filter')?.value || 'todos';
     const ano = document.getElementById('cart-ano-filter')?.value || 'todos';
     const titulo = `Análise da Carteira — ${status==='todos'?'Todos':status==='ativo'?'Ativos':'Encerrados'} / ${ano==='todos'?'Todos os anos':ano}`;
-    const cols = ['codigo','nome_empresa','cnpj','honorario_atual','receita_acumulada','data_entrada','status','origem'];
+    const cols = ['codigo','nome_empresa','cnpj','honorario_atual','receita_acumulada','data_entrada','status'];
     const labels = {codigo:'Código',nome_empresa:'Empresa',cnpj:'CNPJ',honorario_atual:'Honorário',
-      receita_acumulada:'Rec. Acumulada',data_entrada:'Entrada',status:'Status',origem:'Origem'};
+      receita_acumulada:'Rec. Acumulada',data_entrada:'Entrada',status:'Status'};
     const rows = data.map(r=>`<tr>${cols.map(c=>{
       let v=r[c]??'—';
       if(c==='honorario_atual'||c==='receita_acumulada') v=_fmt(parseFloat(v)||0);
