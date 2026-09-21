@@ -3022,7 +3022,7 @@ const Carteira = (() => {
         <td style="font-weight:600">${c.nome_empresa}${reajusteAlert}</td>
         <td style="font-size:12px;color:var(--gray-500)">${c.cnpj}</td>
         <td style="font-size:12px">${c.regime_tributario || '—'}</td>
-        <td style="font-weight:600;color:var(--g700)">${_fmt(hon)}</td>
+        <td style="font-weight:600;color:var(--g700)">${_fmt(hon)}${c.honorario_desde ? `<div title="${(c.honorario_obs||'').replace(/"/g,'')}" style="font-size:10.5px;color:var(--gray-400);font-weight:400">desde ${c.honorario_desde.slice(5,7)}/${c.honorario_desde.slice(0,4)}</div>` : ''}</td>
         <td>${_fmt(rec)}</td>
         <td style="font-size:12px;color:var(--gray-500)">${_tempo(c.data_entrada, c.data_saida)}</td>
         <td style="font-size:12px;color:var(--gray-500)">${c.origem||'—'}</td>

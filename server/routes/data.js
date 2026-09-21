@@ -1939,6 +1939,8 @@ router.get('/clientes', requireAuth, async (req, res) => {
     const { status } = req.query;
     let q = `SELECT c.*,
       (SELECT valor FROM honorarios h WHERE h.cliente_id = c.id ORDER BY data_vigencia DESC LIMIT 1) AS honorario_atual,
+      (SELECT to_char(data_vigencia,'YYYY-MM-DD') FROM honorarios h WHERE h.cliente_id = c.id ORDER BY data_vigencia DESC LIMIT 1) AS honorario_desde,
+      (SELECT obs FROM honorarios h WHERE h.cliente_id = c.id ORDER BY data_vigencia DESC LIMIT 1) AS honorario_obs,
       (SELECT COALESCE(SUM(
         CASE
           WHEN h2.data_vigencia <= CURRENT_DATE THEN
