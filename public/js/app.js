@@ -2991,7 +2991,7 @@ const Carteira = (() => {
     const tbody = document.getElementById('cart-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum cliente encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum cliente encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(c => {
@@ -3025,7 +3025,6 @@ const Carteira = (() => {
         <td style="font-weight:600;color:var(--g700)">${_fmt(hon)}${c.honorario_desde ? `<div title="${(c.honorario_obs||'').replace(/"/g,'')}" style="font-size:10.5px;color:var(--gray-400);font-weight:400">desde ${c.honorario_desde.slice(5,7)}/${c.honorario_desde.slice(0,4)}</div>` : ''}</td>
         <td>${_fmt(rec)}</td>
         <td style="font-size:12px;color:var(--gray-500)">${_tempo(c.data_entrada, c.data_saida)}</td>
-        <td style="font-size:12px;color:var(--gray-500)">${c.origem||'—'}</td>
         <td><span style="background:${healthColor}20;color:${healthColor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${healthLabel}</span></td>
         <td>${statusBadge}</td>
         <td style="white-space:nowrap">
@@ -3065,12 +3064,12 @@ const Carteira = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('cart-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr>';
     const res = await fetch('/api/data/clientes?status=todos', {
       headers: { 'Authorization': `Bearer ${_token()}` }
     });
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#e53e3e;padding:32px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#e53e3e;padding:32px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data } = await res.json();
