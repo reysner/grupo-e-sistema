@@ -91,6 +91,9 @@
         <a class="nav-item admin-only" data-page="legalizacao" href="#">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M12 3l8 4v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V7l8-4Z"/></svg>Legalização
         </a>
+        <a class="nav-item admin-only" data-page="financeiro" href="#">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M14.5 9.2c-.4-.8-1.3-1.2-2.5-1.2-1.5 0-2.5.8-2.5 1.9 0 2.8 5.2 1.3 5.2 4.1 0 1.2-1.1 2-2.7 2-1.3 0-2.3-.5-2.8-1.4"/><path d="M12 6.5V8m0 8v1.5"/></svg>Financeiro
+        </a>
         <div class="nav-sep"></div>
         <a class="nav-item admin-only" data-page="gamificacao" href="#">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0012 0V2Z"/></svg>Gamificação
@@ -994,6 +997,29 @@
             </div>
           </div>
 
+        </section>
+
+        <!-- FINANCEIRO -->
+        <section id="page-financeiro" class="page admin-only" hidden>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+            <div>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <select id="fin-unidade" onchange="Financeiro.trocarUnidade()" style="padding:7px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;font-weight:700;background:#fff;cursor:pointer"></select>
+                <span id="fin-importado" style="font-size:12px;color:var(--gray-400)"></span>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" onclick="Financeiro.exportCSV()">⬇ CSV</button></div>
+          </div>
+          <p style="font-size:12px;color:var(--gray-400);margin:0 0 12px">Honorário atual = valor mensal de <b>SERVIÇOS HONORÁRIOS CONTÁBEIS</b> lido do Omie (serviços extras e outras categorias ficam de fora). Ticket médio = média dos honorários atuais da unidade; "na média" é a média ± R$ <span id="fin-banda">50</span>.</p>
+          <div id="fin-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:14px"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+            <div id="fin-chips" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+            <input id="fin-busca" type="text" placeholder="🔍 Buscar cliente ou CNPJ..." oninput="Financeiro.filtrar()" style="padding:7px 14px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff;min-width:220px;flex:1;max-width:320px" />
+            <select id="fin-ordem" onchange="Financeiro.filtrar()" style="padding:7px 12px;border:1px solid var(--gray-200);border-radius:8px;font-size:13px;background:#fff">
+              <option value="hon_desc">Maior honorário</option><option value="hon_asc">Menor honorário</option><option value="atraso_desc">Maior valor em atraso</option><option value="dias_desc">Mais dias em atraso</option><option value="nome">Nome (A–Z)</option>
+            </select>
+          </div>
+          <div class="card"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr id="fin-thead"></tr></thead><tbody id="fin-tbody"><tr><td colspan="6" style="padding:24px;text-align:center;color:var(--gray-400)">Carregando…</td></tr></tbody></table></div><div id="fin-rodape" style="font-size:12px;color:var(--gray-400);margin-top:8px"></div></div>
         </section>
 
         <!-- LEGALIZAÇÃO -->

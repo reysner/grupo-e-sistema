@@ -359,6 +359,7 @@ const App = (() => {
     'sucesso-cliente':'Sucesso do Cliente',
     'analise-inteligente':'Análise Inteligente',
     legalizacao:'Legalização',
+    financeiro:'Financeiro',
   };
 
   const Nav = {
@@ -388,6 +389,7 @@ const App = (() => {
       if (page === 'sucesso-cliente') window.SucessoCliente?.load();
       if (page === 'analise-inteligente') window.AnaliseInteligente?.load();
       if (page === 'legalizacao') window.Legalizacao?.load();
+      if (page === 'financeiro') window.Financeiro?.load();
       return false;
     },
   };
@@ -6092,6 +6094,104 @@ const Legalizacao = (() => {
 })();
 
 window.Legalizacao = Legalizacao;
+
+// ── FINANCEIRO: honorário atual por unidade (Omie), ticket médio, faixas e inadimplência ──
+const Financeiro = (() => {
+  const _tk = () => localStorage.getItem('ge_token') || '';
+  const _esc = (s) => { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; };
+  const _rs = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const _data = (d) => d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—';
+  let _dados = null;
+  let _faixa = 'todos';      // todos | acima | na_media | abaixo
+  let _soInad = false;       // "somente inadimplentes" (combina com a faixa)
+  const FAIXA = { acima: ['⬆ Acima', '#c05621', '#fffaf0'], na_media: ['● Na média', '#276749', '#f0fff4'], abaixo: ['⬇ Abaixo', '#2b6cb0', '#ebf8ff'] };
+
+  async function load(unidade) {
+    const qs = unidade ? '?unidade=' + encodeURIComponent(unidade) : '';
+    const res = await fetch('/api/data/financeiro' + qs, { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { document.getElementById('fin-tbody').innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:#c53030">Erro ao carregar o Financeiro.</td></tr>'; return; }
+    _dados = await res.json();
+    const sel = document.getElementById('fin-unidade');
+    sel.innerHTML = (_dados.unidades || []).map(u => `<option value="${_esc(u.unidade)}"${u.unidade === _dados.unidade ? ' selected' : ''}>${_esc(u.unidade)}</option>`).join('') || '<option>Sem dados importados</option>';
+    _render();
+  }
+  const trocarUnidade = () => load(document.getElementById('fin-unidade').value);
+
+  function _kpi(rot, valor, sub, cor) {
+    return `<div style="background:#fff;border:1px solid var(--gray-200);border-radius:14px;padding:14px 16px"><div style="font-size:11px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.04em">${rot}</div><div style="font-size:24px;font-weight:800;margin-top:6px;color:${cor || 'var(--gray-800)'}">${valor}</div><div style="font-size:11px;color:var(--gray-400);margin-top:2px">${sub || ''}</div></div>`;
+  }
+
+  function _render() {
+    const r = _dados && _dados.resumo;
+    if (!r) { document.getElementById('fin-kpis').innerHTML = ''; document.getElementById('fin-tbody').innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--gray-400)">Nenhum dado importado ainda.</td></tr>'; return; }
+    document.getElementById('fin-banda').textContent = r.banda;
+    document.getElementById('fin-importado').textContent = r.importado_em ? 'Importado do Omie em ' + new Date(r.importado_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+    document.getElementById('fin-kpis').innerHTML =
+      _kpi('Ticket médio', _rs(r.ticket_medio), `${r.clientes_com_honorario} clientes com honorário`) +
+      _kpi('Receita mensal de honorários', _rs(r.receita_mensal), 'soma dos honorários atuais') +
+      _kpi('Inadimplentes', String(r.inadimplentes), `${_rs(r.valor_atrasado)} em atraso`, r.inadimplentes ? '#c53030' : null) +
+      _kpi('Acima / Na média / Abaixo', `${r.acima} / ${r.na_media} / ${r.abaixo}`, `média ± R$ ${r.banda}`);
+    const chip = (id, rotulo, n, ativo, onclick, cor) => `<button onclick="${onclick}" style="cursor:pointer;padding:7px 14px;border-radius:999px;font-size:12.5px;font-weight:700;border:1px solid ${ativo ? (cor || 'var(--green)') : 'var(--gray-200)'};background:${ativo ? (cor || 'var(--green)') : '#fff'};color:${ativo ? '#fff' : 'var(--gray-700)'}">${rotulo} <span style="opacity:.8">(${n})</span></button>`;
+    const todos = _dados.clientes.filter(c => c.ativo_omie).length;
+    document.getElementById('fin-chips').innerHTML =
+      chip('todos', 'Todos', todos, _faixa === 'todos', "Financeiro.setFaixa('todos')") +
+      chip('acima', '⬆ Acima do ticket', r.acima, _faixa === 'acima', "Financeiro.setFaixa('acima')", '#c05621') +
+      chip('na_media', '● Na média', r.na_media, _faixa === 'na_media', "Financeiro.setFaixa('na_media')", '#276749') +
+      chip('abaixo', '⬇ Abaixo do ticket', r.abaixo, _faixa === 'abaixo', "Financeiro.setFaixa('abaixo')", '#2b6cb0') +
+      chip('inad', '⛔ Inadimplentes', r.inadimplentes, _soInad, 'Financeiro.toggleInad()', '#c53030');
+    document.getElementById('fin-thead').innerHTML = ['Cliente', 'Honorário atual', 'Ticket', 'Faixa', 'Em atraso', 'Situação'].map((t, i) => `<th style="text-align:${i === 1 || i === 2 || i === 4 ? 'right' : 'left'};font-size:11px;text-transform:uppercase;color:var(--gray-500);padding:8px 10px;border-bottom:2px solid var(--gray-100);white-space:nowrap">${t}</th>`).join('');
+    filtrar();
+  }
+
+  function _lista() {
+    const busca = (document.getElementById('fin-busca')?.value || '').toLowerCase().trim();
+    const ordem = document.getElementById('fin-ordem')?.value || 'hon_desc';
+    let l = (_dados?.clientes || []).filter(c => {
+      if (_faixa !== 'todos' && c.faixa !== _faixa) return false;
+      if (_soInad && !c.inadimplente) return false;
+      if (busca && !((c.nome || '').toLowerCase().includes(busca) || (c.cnpj || '').includes(busca))) return false;
+      return true;
+    });
+    const cmp = {
+      hon_desc: (a, b) => (b.honorario_atual ?? -1) - (a.honorario_atual ?? -1), hon_asc: (a, b) => (a.honorario_atual ?? 1e12) - (b.honorario_atual ?? 1e12),
+      atraso_desc: (a, b) => b.atrasado - a.atrasado, dias_desc: (a, b) => (b.dias_atraso ?? -1) - (a.dias_atraso ?? -1), nome: (a, b) => (a.nome || '').localeCompare(b.nome || ''),
+    }[ordem];
+    return l.sort(cmp);
+  }
+
+  function filtrar() {
+    if (!_dados) return;
+    const l = _lista();
+    document.getElementById('fin-tbody').innerHTML = l.map(c => {
+      const f = FAIXA[c.faixa];
+      const dif = c.diferenca_ticket;
+      return `<tr style="border-bottom:1px solid var(--gray-100)">
+        <td style="padding:9px 10px"><b>${_esc(c.nome)}</b><div style="font-size:11px;color:var(--gray-400)">${_esc(c.cnpj)}${c.na_carteira ? '' : ' · <span style="color:#b7791f">Não há cadastro no Acessórias</span>'}</div></td>
+        <td style="padding:9px 10px;text-align:right;font-weight:700">${c.honorario_atual != null ? _rs(c.honorario_atual) : '<span style="color:var(--gray-300)">—</span>'}${c.vigencia ? `<div style="font-size:10.5px;color:var(--gray-400);font-weight:400">desde ${_data(c.vigencia).slice(3)}</div>` : ''}</td>
+        <td style="padding:9px 10px;text-align:right;font-size:12px;color:${dif == null ? 'var(--gray-300)' : dif > 0 ? '#c05621' : dif < 0 ? '#2b6cb0' : '#276749'}">${dif == null ? '—' : (dif > 0 ? '+' : '') + _rs(dif)}</td>
+        <td style="padding:9px 10px">${f ? `<span style="background:${f[2]};color:${f[1]};font-weight:800;font-size:11.5px;padding:3px 10px;border-radius:999px">${f[0]}</span>` : '<span style="color:var(--gray-300)">—</span>'}</td>
+        <td style="padding:9px 10px;text-align:right">${c.inadimplente ? `<b style="color:#c53030">${_rs(c.atrasado)}</b><div style="font-size:10.5px;color:var(--gray-500)">${c.qtd_atrasados} título(s) · ${c.dias_atraso} dias (desde ${_data(c.atrasado_desde)})</div>` : '<span style="color:#276749;font-size:12px">em dia</span>'}</td>
+        <td style="padding:9px 10px;font-size:12px">${c.ativo_omie ? '' : '<span style="background:#f7fafc;color:#718096;padding:2px 8px;border-radius:999px">sem honorário ativo no Omie</span> '}${c.status_carteira && c.status_carteira !== 'ativo' ? `<span style="background:#fff5f5;color:#c53030;padding:2px 8px;border-radius:999px">${_esc(c.status_carteira)} na Carteira</span>` : ''}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--gray-400)">Nenhum cliente nesse filtro.</td></tr>';
+    const tot = l.reduce((s, c) => s + (c.honorario_atual || 0), 0), atr = l.reduce((s, c) => s + c.atrasado, 0);
+    document.getElementById('fin-rodape').textContent = `${l.length} cliente(s) · honorários somados ${_rs(tot)} · em atraso ${_rs(atr)}`;
+  }
+
+  const setFaixa = (f) => { _faixa = f; _render(); };
+  const toggleInad = () => { _soInad = !_soInad; _render(); };
+
+  function exportCSV() {
+    const l = _lista();
+    const linhas = [['Cliente', 'CNPJ/CPF', 'Honorário atual', 'Diferença p/ ticket', 'Faixa', 'Em atraso (R$)', 'Títulos em atraso', 'Dias em atraso', 'Cadastro no Acessórias']];
+    l.forEach(c => linhas.push([c.nome, c.cnpj, c.honorario_atual ?? '', c.diferenca_ticket ?? '', c.faixa || '', c.atrasado || 0, c.qtd_atrasados || 0, c.dias_atraso ?? '', c.na_carteira ? 'Sim' : 'Não há cadastro no Acessórias']));
+    const csv = '﻿' + linhas.map(r => r.map(x => '"' + String(x).replace(/"/g, '""') + '"').join(';')).join('\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = 'financeiro.csv'; a.click();
+  }
+
+  return { load, trocarUnidade, filtrar, setFaixa, toggleInad, exportCSV };
+})();
+window.Financeiro = Financeiro;
 
 
 

@@ -143,6 +143,54 @@ router.post('/gestao/honorarios-omie', async (req, res) => {
   } catch (err) { console.error('[Honorários Omie]', err); res.status(500).json({ error: 'Erro ao processar os honorários do Omie.' }); }
 });
 
+/**
+ * MÓDULO FINANCEIRO (Reysner, 21/09/2026): honorário atual por cliente e por UNIDADE (Soluções Escritorial agora; Escritorial depois),
+ * ticket médio, faixa (acima/na média/abaixo) e inadimplência, a partir do Omie.
+ *   POST /financeiro/importar (X-Sync-Token) → { unidade, fonte, clientes:[{cnpj,nome,valor,vigencia}], abertos:[{cnpj,nome,qtd,aberto,atrasado,qtdAtrasados,maisAntigo}] }
+ *        substitui os dados daquela unidade (snapshot do Omie).
+ *   GET  /financeiro?unidade=  (admin) → resumo (ticket médio etc.) + lista de clientes com faixa e inadimplência.
+ */
+async function ensureFinanceiroSchema() {
+  await pool.query(`CREATE TABLE IF NOT EXISTS financeiro_clientes (
+    unidade TEXT NOT NULL, cnpj TEXT NOT NULL, nome TEXT, honorario_atual NUMERIC(14,2) NOT NULL, vigencia DATE,
+    PRIMARY KEY (unidade, cnpj))`).catch(() => {});
+  await pool.query(`CREATE TABLE IF NOT EXISTS financeiro_aberto (
+    unidade TEXT NOT NULL, cnpj TEXT NOT NULL, nome TEXT, qtd INT NOT NULL DEFAULT 0, valor_aberto NUMERIC(14,2) NOT NULL DEFAULT 0,
+    valor_atrasado NUMERIC(14,2) NOT NULL DEFAULT 0, qtd_atrasados INT NOT NULL DEFAULT 0, mais_antigo DATE,
+    PRIMARY KEY (unidade, cnpj))`).catch(() => {});
+  await pool.query(`CREATE TABLE IF NOT EXISTS financeiro_importacoes (
+    id SERIAL PRIMARY KEY, unidade TEXT NOT NULL, fonte TEXT, importado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(), total_clientes INT, total_abertos INT)`).catch(() => {});
+}
+
+router.post('/financeiro/importar', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    const { unidade, fonte, clientes, abertos } = req.body || {};
+    if (!unidade || !Array.isArray(clientes) || !Array.isArray(abertos)) return res.status(400).json({ error: 'Informe unidade, clientes e abertos.' });
+    await ensureFinanceiroSchema();
+    const so = (s) => String(s || '').replace(/\D/g, '');
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM financeiro_clientes WHERE unidade = $1`, [unidade]);
+    await client.query(`DELETE FROM financeiro_aberto WHERE unidade = $1`, [unidade]);
+    for (const c of clientes) {
+      const doc = so(c.cnpj); const v = Math.round((+c.valor || 0) * 100) / 100;
+      if (![11, 14].includes(doc.length) || v <= 0) continue;
+      await client.query(`INSERT INTO financeiro_clientes (unidade, cnpj, nome, honorario_atual, vigencia) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (unidade, cnpj) DO UPDATE SET nome = $3, honorario_atual = $4, vigencia = $5`,
+        [unidade, doc, String(c.nome || '').slice(0, 200), v, /^\d{4}-\d{2}(-\d{2})?$/.test(c.vigencia || '') ? (c.vigencia.length === 7 ? c.vigencia + '-01' : c.vigencia) : null]);
+    }
+    for (const a of abertos) {
+      const doc = so(a.cnpj); if (![11, 14].includes(doc.length)) continue;
+      await client.query(`INSERT INTO financeiro_aberto (unidade, cnpj, nome, qtd, valor_aberto, valor_atrasado, qtd_atrasados, mais_antigo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (unidade, cnpj) DO UPDATE SET nome=$3, qtd=$4, valor_aberto=$5, valor_atrasado=$6, qtd_atrasados=$7, mais_antigo=$8`,
+        [unidade, doc, String(a.nome || '').slice(0, 200), parseInt(a.qtd, 10) || 0, +a.aberto || 0, +a.atrasado || 0, parseInt(a.qtdAtrasados, 10) || 0, /^\d{4}-\d{2}-\d{2}$/.test(a.maisAntigo || '') ? a.maisAntigo : null]);
+    }
+    await client.query(`INSERT INTO financeiro_importacoes (unidade, fonte, total_clientes, total_abertos) VALUES ($1,$2,$3,$4)`, [unidade, fonte || 'Omie', clientes.length, abertos.length]);
+    await client.query('COMMIT');
+    res.json({ ok: true, unidade, clientes: clientes.length, abertos: abertos.length });
+  } catch (err) { await client.query('ROLLBACK').catch(() => {}); console.error('[Financeiro] importar:', err); res.status(500).json({ error: 'Erro ao importar o financeiro.' }); }
+  finally { client.release(); }
+});
+
 // (rota de máquina: fica ANTES do requireAuth, autenticada só pelo X-Sync-Token)
 router.post('/legalizacao/saude-rotina', async (req, res) => {
   try {
@@ -650,6 +698,57 @@ function classificarFaixa(valor, media) {
   if (valor < media - FAIXA_BANDA_RS) return 'abaixo';
   return 'na_media';
 }
+
+router.get('/financeiro', requireAdmin, async (req, res) => {
+  try {
+    await ensureFinanceiroSchema();
+    const { rows: unis } = await pool.query(`SELECT unidade, MAX(importado_em) AS importado_em FROM financeiro_importacoes GROUP BY unidade ORDER BY unidade`);
+    const unidade = req.query.unidade || (unis[0] && unis[0].unidade);
+    if (!unidade) return res.json({ unidades: [], resumo: null, clientes: [] });
+    const { rows } = await pool.query(
+      `WITH docs AS (
+         SELECT cnpj, nome FROM financeiro_clientes WHERE unidade = $1
+         UNION SELECT cnpj, nome FROM financeiro_aberto WHERE unidade = $1
+       )
+       SELECT d.cnpj, COALESCE(NULLIF(cc.nome_empresa, ''), d.nome) AS nome, cc.status AS status_carteira, cc.id AS cliente_id,
+              fc.honorario_atual, fc.vigencia, fa.qtd, fa.valor_aberto, fa.valor_atrasado, fa.qtd_atrasados, fa.mais_antigo
+         FROM docs d
+         LEFT JOIN financeiro_clientes fc ON fc.unidade = $1 AND fc.cnpj = d.cnpj
+         LEFT JOIN financeiro_aberto fa ON fa.unidade = $1 AND fa.cnpj = d.cnpj
+         LEFT JOIN LATERAL (SELECT nome_empresa, status, id FROM clientes c WHERE regexp_replace(c.cnpj, '\\D', '', 'g') = d.cnpj
+                             ORDER BY (c.status = 'ativo') DESC, c.created_at DESC LIMIT 1) cc ON true
+        ORDER BY fc.honorario_atual DESC NULLS LAST, nome`, [unidade]);
+    const hon = rows.filter(r => r.honorario_atual != null).map(r => parseFloat(r.honorario_atual));
+    const ticket = hon.length ? Math.round((hon.reduce((s, v) => s + v, 0) / hon.length) * 100) / 100 : 0;
+    const hoje = Date.now();
+    const clientes = rows.map(r => {
+      const h = r.honorario_atual != null ? parseFloat(r.honorario_atual) : null;
+      const atrasado = parseFloat(r.valor_atrasado || 0);
+      const doc = r.cnpj;
+      return {
+        cnpj: doc.length === 14 ? doc.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : doc.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4'),
+        nome: r.nome, status_carteira: r.status_carteira || null, na_carteira: !!r.cliente_id,
+        honorario_atual: h, vigencia: r.vigencia, faixa: classificarFaixa(h, ticket), diferenca_ticket: h != null ? Math.round((h - ticket) * 100) / 100 : null,
+        ativo_omie: h != null, em_aberto: parseFloat(r.valor_aberto || 0), atrasado, qtd_atrasados: r.qtd_atrasados || 0,
+        atrasado_desde: r.mais_antigo, dias_atraso: r.mais_antigo && atrasado > 0 ? Math.max(0, Math.floor((hoje - new Date(r.mais_antigo).getTime()) / 86400000)) : null,
+        inadimplente: atrasado > 0,
+      };
+    });
+    const ativos = clientes.filter(c => c.ativo_omie);
+    const inad = clientes.filter(c => c.inadimplente);
+    res.json({
+      unidades: unis, unidade,
+      resumo: {
+        ticket_medio: ticket, banda: FAIXA_BANDA_RS, clientes_com_honorario: ativos.length,
+        receita_mensal: Math.round(ativos.reduce((s, c) => s + c.honorario_atual, 0) * 100) / 100,
+        acima: ativos.filter(c => c.faixa === 'acima').length, na_media: ativos.filter(c => c.faixa === 'na_media').length, abaixo: ativos.filter(c => c.faixa === 'abaixo').length,
+        inadimplentes: inad.length, valor_atrasado: Math.round(inad.reduce((s, c) => s + c.atrasado, 0) * 100) / 100,
+        importado_em: (unis.find(u => u.unidade === unidade) || {}).importado_em || null,
+      },
+      clientes,
+    });
+  } catch (err) { console.error('[Financeiro]', err); res.status(500).json({ error: 'Erro ao carregar o financeiro.' }); }
+});
 
 router.get('/gestao', async (req, res) => {
   try {
