@@ -1301,7 +1301,7 @@ async function detectarPossiveisChurns(empresasAtivasNaAcessorias) {
 
   const nossosAtivos = await pool.query(
     `SELECT id, nome_empresa, cnpj, acessorias_id FROM clientes
-      WHERE status = 'ativo' AND acessorias_id IS NOT NULL AND alerta_baixa_notificado_em IS NULL`
+      WHERE status = 'ativo' AND acessorias_id IS NOT NULL`
   );
   if (!nossosAtivos.rows.length) return 0;
 
@@ -1314,6 +1314,15 @@ async function detectarPossiveisChurns(empresasAtivasNaAcessorias) {
   let notificados = 0;
   for (const cliente of nossosAtivos.rows) {
     if (idsAtivosNaAcessorias.has(cliente.acessorias_id)) continue;
+    // Inativou no Acessórias → baixa automática aqui (pedido do Reysner: não decidir mais baixa x saída à mão).
+    // Se a consulta da empresa falhar, cai no aviso antigo pelo sininho (nunca perde o caso).
+    try {
+      await encerrarClientePorAcessorias(cliente, null);
+      notificados++;
+      continue;
+    } catch (e) {
+      console.error('[churn-auto] falhou, notificando:', cliente.nome_empresa, e.message);
+    }
     await pool.query(
       `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id)
        VALUES ('churn_acessorias', 'Possível baixa/saída no Acessórias', $1, 'carteira', $2)`,
@@ -1323,6 +1332,37 @@ async function detectarPossiveisChurns(empresasAtivasNaAcessorias) {
     notificados++;
   }
   return notificados;
+}
+
+/**
+ * Encerra o cliente sozinho quando ele fica inativo no Acessórias: status 'encerrado' (some da Carteira ativa, de
+ * Gestão de Clientes e da Legalização), evento de saída e registro em Gestão de Clientes. Tipo pelo motivo do
+ * Acessórias: "Baixada" → Baixa de empresa; "Transferência…" → Saída de empresa (churn); sem motivo → Baixa.
+ */
+async function encerrarClientePorAcessorias(cliente, empresaAcessorias) {
+  await pool.query(`ALTER TABLE gestao_clientes ALTER COLUMN data_sol DROP NOT NULL`).catch(() => {});
+  await pool.query(`ALTER TABLE gestao_clientes ALTER COLUMN competencia DROP NOT NULL`).catch(() => {});
+  let emp = empresaAcessorias;
+  const token = process.env.ACESSORIAS_API_TOKEN;
+  if (!emp && token && cliente.cnpj) emp = await acessoriasClient.buscarEmpresaPorCnpj(cliente.cnpj, token).catch(() => null);
+  const hoje = new Date().toISOString().slice(0, 10);
+  const dataSaida = (emp && emp.clienteAte) || hoje;
+  const tipo = palpiteTipoChurn(emp && emp.motivoCancelamentoBruto) === 'saida' ? 'saida' : 'baixa';
+  const solicitacao = tipo === 'saida' ? 'Saída de empresa' : 'Baixa de empresa';
+  const motivo = tipo === 'saida' ? 'Transferência por conveniência (automático — Acessórias)' : 'Baixa de empresa';
+  const upd = await pool.query(
+    `UPDATE clientes SET status='encerrado', data_saida=$1, motivo_saida=$2 WHERE id=$3 AND status='ativo'`,
+    [dataSaida, motivo, cliente.id]
+  );
+  if (!upd.rowCount) return;
+  await pool.query(`INSERT INTO eventos_clientes (cliente_id, tipo, descricao, data_evento) VALUES ($1,'saida',$2,$3)`, [cliente.id, motivo, dataSaida]);
+  await pool.query(
+    `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario)
+     VALUES ($1,$2,'Automático (Acessórias)',$3,$4,$5,$6,$7,'Outro',$8,$9,$10)`,
+    [uuidv4(), cliente.user_id, solicitacao, cliente.cnpj, cliente.nome_empresa, dataSaida, dataSaida.slice(0, 7), motivo, cliente.codigo || null, cliente.regime_tributario || null]
+  );
+  await pool.query(`UPDATE clientes SET alerta_baixa_notificado_em = NOW() WHERE id = $1`, [cliente.id]);
+  await pool.query(`UPDATE notificacoes SET lida = true WHERE cliente_id = $1 AND tipo = 'churn_acessorias' AND lida = false`, [cliente.id]).catch(() => {});
 }
 
 /** POST /api/data/clientes/importar-acessorias — dispara a sincronização manualmente (botão "Atualizar agora"). */
