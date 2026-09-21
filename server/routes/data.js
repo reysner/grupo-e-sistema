@@ -81,6 +81,68 @@ router.post('/legalizacao/inscricao-municipal-arquivo', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao gravar a inscrição municipal.' }); }
 });
 
+/**
+ * HONORÁRIOS DO OMIE → Gestão de Clientes (Reysner, 21/09/2026). Recebe, por CNPJ/CPF, o honorário atual da categoria
+ * "SERVIÇOS HONORÁRIOS CONTÁBEIS" do Omie (já descontada a fração de outras categorias do mesmo título) e grava em `honorarios`
+ * (histórico — nunca sobrescreve). Cliente do Omie sem cadastro na Carteira é criado com a observação "Não há cadastro no Acessórias".
+ *   POST /gestao/honorarios-omie  (X-Sync-Token) → { itens:[{cnpj, nome, valor, mes, desde}], aplicar:false, aplicarDiferentes:false }
+ * Sem `aplicar` só simula e devolve o que faria. Honorário diferente do já cadastrado só é trocado com `aplicarDiferentes`.
+ */
+const formatarDocumento = (d) => d.length === 14 ? d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+router.post('/gestao/honorarios-omie', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    const { itens, aplicar, aplicarDiferentes } = req.body || {};
+    if (!Array.isArray(itens) || !itens.length) return res.status(400).json({ error: 'Envie os itens.' });
+    const admin = (await pool.query(`SELECT id FROM users WHERE role = 'administrador' ORDER BY created_at ASC LIMIT 1`)).rows[0];
+    const r = { total: itens.length, preencher: [], igual: 0, diferente: [], inativoNaCarteira: [], semCadastro: [], erros: [] };
+    for (const it of itens) {
+      try {
+        const doc = String(it.cnpj || '').replace(/\D/g, '');
+        const valor = Math.round((+it.valor || 0) * 100) / 100;
+        if (![11, 14].includes(doc.length) || valor <= 0 || !/^\d{4}-\d{2}$/.test(String(it.mes || ''))) { r.erros.push({ doc, motivo: 'dado inválido' }); continue; }
+        const vig = it.mes + '-01';
+        const obsHon = `Omie — SERVIÇOS HONORÁRIOS CONTÁBEIS (${it.mes.split('-').reverse().join('/')})`;
+        const { rows } = await pool.query(
+          `SELECT c.id, c.nome_empresa, c.status,
+                  (SELECT valor FROM honorarios h WHERE h.cliente_id = c.id ORDER BY data_vigencia DESC LIMIT 1) AS atual
+             FROM clientes c WHERE regexp_replace(c.cnpj, '\\D', '', 'g') = $1
+            ORDER BY (c.status = 'ativo') DESC, c.created_at DESC LIMIT 1`, [doc]);
+        const c = rows[0];
+        if (c && c.status !== 'ativo') { r.inativoNaCarteira.push({ doc, nome: it.nome, carteira: c.nome_empresa, status: c.status, valor }); continue; }
+        if (c) {
+          const atual = c.atual != null ? parseFloat(c.atual) : null;
+          if (atual != null && atual > 0 && Math.abs(atual - valor) < 0.005) { r.igual++; continue; }
+          const registro = { doc, nome: c.nome_empresa, atual, valor, mes: it.mes };
+          if (atual != null && atual > 0) {
+            r.diferente.push(registro);
+            if (!(aplicar && aplicarDiferentes)) continue;
+          } else r.preencher.push(registro);
+          if (aplicar) {
+            await pool.query(`INSERT INTO honorarios (cliente_id, valor, data_vigencia, obs) VALUES ($1,$2,$3,$4)`, [c.id, valor, vig, obsHon]);
+            if (atual != null && atual > 0) await pool.query(`INSERT INTO eventos_clientes (cliente_id, tipo, descricao, valor_anterior, valor_novo, data_evento) VALUES ($1,'reajuste','Honorário atualizado a partir do Omie',$2,$3,$4)`, [c.id, atual, valor, vig]);
+          }
+          continue;
+        }
+        r.semCadastro.push({ doc, nome: it.nome, valor, mes: it.mes });
+        if (aplicar) {
+          const id = uuidv4(); const docF = formatarDocumento(doc);
+          const desde = /^\d{4}-\d{2}$/.test(String(it.desde || '')) ? it.desde + '-01' : vig;
+          await pool.query(
+            `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, data_entrada, origem, obs, status) VALUES ($1,$2,$3,$4,$5,'Omie (sem Acessórias)','Não há cadastro no Acessórias','ativo')`,
+            [id, admin.id, docF, it.nome, desde]);
+          await pool.query(`INSERT INTO honorarios (cliente_id, valor, data_vigencia, obs) VALUES ($1,$2,$3,$4)`, [id, valor, vig, obsHon]);
+          await pool.query(
+            `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo)
+             VALUES ($1,$2,'Importação Omie','Cliente vindo de outro contador',$3,$4,$5,$6,'Outro','Não há cadastro no Acessórias')`,
+            [uuidv4(), admin.id, docF, it.nome, null, null]);
+        }
+      } catch (e) { r.erros.push({ doc: it.cnpj, motivo: e.message }); }
+    }
+    res.json({ aplicado: !!aplicar, ...r, contagem: { preencher: r.preencher.length, igual: r.igual, diferente: r.diferente.length, inativoNaCarteira: r.inativoNaCarteira.length, semCadastro: r.semCadastro.length, erros: r.erros.length } });
+  } catch (err) { console.error('[Honorários Omie]', err); res.status(500).json({ error: 'Erro ao processar os honorários do Omie.' }); }
+});
+
 // (rota de máquina: fica ANTES do requireAuth, autenticada só pelo X-Sync-Token)
 router.post('/legalizacao/saude-rotina', async (req, res) => {
   try {
