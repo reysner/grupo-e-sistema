@@ -93,7 +93,8 @@ function requireAuth(req, res, next) {
     // Só LEITURA + enviar solicitação de inativação: quem tem a flag mas não é
     // admin nunca edita datas/certificados pela API (PUT/POST/PATCH/DELETE).
     const isLegalizacaoRoute = req.path && req.path.includes('/legalizacao')
-      && (req.method === 'GET' || req.path.includes('/solicitar-inativacao') || req.path.includes('/notificacoes/lidas'));
+      && (req.method === 'GET' || req.path.includes('/solicitar-inativacao') || req.path.includes('/notificacoes/lidas')
+          || (req.method === 'PATCH' && req.path.includes('/inscricao-municipal'))); // cadastrar a inscrição municipal da empresa
 
     // Usuário contábil só pode acessar rotas de tickets (+ Minha Nota/Legalização, se as flags estiverem ligadas) — bloqueia o resto.
     if (payload.role === 'contabil') {

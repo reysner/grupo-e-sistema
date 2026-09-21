@@ -77,6 +77,22 @@
     .btn-inativar{white-space:nowrap;padding:6px 12px;border-radius:999px;border:1.5px solid #e5484d;background:#fff5f5;color:#b42318;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s}
     .btn-inativar:hover{background:#e5484d;color:#fff}
     /* MODAL */
+    /* menu do usuário (nome + perfil, Editar perfil, Sair) — mesmo padrão da tela interna e do portal contábil */
+    .user-menu-wrap{position:relative}
+    .user-menu-btn{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.15);color:#fff;border:none;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px}
+    .user-menu-btn:hover{background:rgba(255,255,255,.25)}
+    .role-pill{background:#f5c518;color:#1a4233;font-size:10.5px;font-weight:800;letter-spacing:.4px;padding:3px 9px;border-radius:999px;text-transform:uppercase}
+    .user-menu-dropdown{position:absolute;right:0;top:calc(100% + 8px);background:#fff;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.18);min-width:230px;overflow:hidden;z-index:200;display:none}
+    .user-menu-dropdown.open{display:block}
+    .user-menu-head{padding:14px 16px;border-bottom:1px solid #eef2f7}
+    .user-menu-head .nm{font-weight:700;color:var(--green);font-size:14px}
+    .user-menu-head .em{color:#94a3b8;font-size:12px;margin-top:2px}
+    .user-menu-item{display:flex;align-items:center;gap:8px;padding:11px 16px;cursor:pointer;font-size:13px;color:#334155;background:none;border:none;width:100%;text-align:left}
+    .user-menu-item:hover{background:#f8fafc}
+    .user-menu-item.danger{color:#e53e3e}
+    .pf-field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+    .pf-field label{font-size:12px;font-weight:600;color:#64748b}
+    .pf-field input{padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px}
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:500;padding:20px}
     .modal-box{background:var(--white);border-radius:16px;box-shadow:0 8px 40px rgba(0,0,0,.2);width:100%;max-width:460px;max-height:90vh;overflow-y:auto}
     .modal-header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--gray-100)}
@@ -144,8 +160,21 @@
           <div id="sino-lista"><div class="sino-vazio">Carregando...</div></div>
         </div>
       </div>
-      <span class="topbar-user" id="app-nome"></span>
-      <button class="btn-sair" onclick="sair()">Sair</button>
+      <div class="user-menu-wrap">
+        <button class="user-menu-btn" onclick="toggleUserMenu(event)">
+          <span id="app-nome"></span>
+          <span class="role-pill" id="app-role"></span>
+          <span style="font-size:10px">▼</span>
+        </button>
+        <div class="user-menu-dropdown" id="user-menu">
+          <div class="user-menu-head">
+            <div class="nm" id="menu-nome"></div>
+            <div class="em" id="menu-email"></div>
+          </div>
+          <button class="user-menu-item" onclick="abrirEditarPerfil()">✏️ Editar perfil</button>
+          <button class="user-menu-item danger" onclick="sair()">⏻ Sair</button>
+        </div>
+      </div>
     </div>
   </div>
   <div class="container">
@@ -193,6 +222,13 @@
       </div>
       <div class="pagination" id="pagination"></div>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-perfil" style="display:none" onclick="if(event.target===this)fecharPerfil()">
+  <div class="modal-box">
+    <div class="modal-header"><h2>Editar perfil</h2><button class="modal-close" onclick="fecharPerfil()">×</button></div>
+    <div class="modal-body" id="perfil-conteudo"></div>
   </div>
 </div>
 
@@ -262,10 +298,61 @@ function sair() {
   document.getElementById('app-screen').style.display = 'none';
 }
 
+const ROTULO_PERFIL = { administrador: 'Administrador', usuario: 'Usuário', contabil: 'Contábil', colaborador: 'Legalização' };
+function preencherMenuUsuario() {
+  document.getElementById('app-nome').textContent = _user.name;
+  document.getElementById('menu-nome').textContent = _user.name;
+  document.getElementById('menu-email').textContent = _user.email || '';
+  document.getElementById('app-role').textContent = ROTULO_PERFIL[_user.role] || 'Legalização';
+}
+function toggleUserMenu(e) { if (e) e.stopPropagation(); document.getElementById('user-menu').classList.toggle('open'); }
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('user-menu');
+  if (menu && menu.classList.contains('open') && !e.target.closest('.user-menu-wrap')) menu.classList.remove('open');
+});
+
+function abrirEditarPerfil() {
+  document.getElementById('user-menu').classList.remove('open');
+  const aspas = (s) => String(s || '').replace(/"/g, '&quot;');
+  document.getElementById('perfil-conteudo').innerHTML =
+    '<div class="pf-field"><label>Nome</label><input id="pf-nome" type="text" value="' + aspas(_user.name) + '" /></div>' +
+    '<div class="pf-field"><label>E-mail</label><input id="pf-email" type="email" value="' + aspas(_user.email) + '" /></div>' +
+    '<hr style="border:none;border-top:1px solid #eef2f7;margin:14px 0" />' +
+    '<div style="font-size:12px;color:#94a3b8;margin-bottom:10px">Deixe os campos de senha em branco para não alterá-la.</div>' +
+    '<div class="pf-field"><label>Senha atual</label><input id="pf-senha-atual" type="password" placeholder="Necessária para salvar" /></div>' +
+    '<div class="pf-field"><label>Nova senha</label><input id="pf-senha-nova" type="password" placeholder="Mínimo 6 caracteres (opcional)" /></div>' +
+    '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">' +
+      '<button class="btn" onclick="fecharPerfil()">Cancelar</button>' +
+      '<button class="btn-login" style="width:auto;padding:9px 18px;margin:0" onclick="salvarPerfil()">Salvar</button>' +
+    '</div>';
+  document.getElementById('modal-perfil').style.display = 'flex';
+}
+function fecharPerfil() { document.getElementById('modal-perfil').style.display = 'none'; }
+async function salvarPerfil() {
+  const nome = document.getElementById('pf-nome')?.value?.trim();
+  const email = document.getElementById('pf-email')?.value?.trim();
+  const senhaAtual = document.getElementById('pf-senha-atual')?.value;
+  const senhaNova = document.getElementById('pf-senha-nova')?.value;
+  if (!nome || !email) { alert('Nome e e-mail são obrigatórios.'); return; }
+  if (!senhaAtual) { alert('Informe sua senha atual para salvar as alterações.'); return; }
+  if (senhaNova && senhaNova.length < 6) { alert('A nova senha deve ter ao menos 6 caracteres.'); return; }
+  const res = await api('/api/data/perfil', {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nome, email, senhaAtual, senhaNova: senhaNova || undefined })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { alert(data.error || 'Erro ao atualizar perfil.'); return; }
+  _user.name = nome; _user.email = email;
+  localStorage.setItem('lg_user', JSON.stringify(_user));
+  preencherMenuUsuario();
+  fecharPerfil();
+  alert('Perfil atualizado com sucesso!');
+}
+
 function mostrarApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-screen').style.display = 'block';
-  document.getElementById('app-nome').textContent = _user.name;
+  preencherMenuUsuario();
   carregar();
   carregarSino();
   if (!window._sinoTimer) window._sinoTimer = setInterval(carregarSino, 5 * 60 * 1000);
