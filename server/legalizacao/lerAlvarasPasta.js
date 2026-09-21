@@ -132,13 +132,35 @@ function acharNumero(texto) {
   return m ? m[1] : null;
 }
 
+/**
+ * Inscrição municipal impressa no alvará (pra o painel não depender de digitação): "C.M.C.:601.290-00" (Uberlândia),
+ * "INSC. MUNICIPAL: 1464" (Gouvelândia), "Inscrição Municipal ... Vencimento 659.153-00" (Uberlândia, layout em colunas),
+ * "Cod. Mobiliário/Inscriçao: 003669" (Prata). Devolve null se não achar.
+ */
+function acharInscricao(texto) {
+  const t = String(texto || '').replace(/\s+/g, ' ');
+  const valida = (v) => (v && v.length >= 3 && v.length <= 20 ? v : null);
+  const padroes = [
+    /C\.?\s?M\.?\s?C\.?\s*[:.]?\s*(\d[\d.\-\/]{1,18}\d)/i,
+    /Inscri[çc][ãa]o\s+Municipal\s+N[ºo°]?\s*Alvar[áa]\/Ano\s+Vencimento\s*(\d[\d.\-]{1,16}\d)/i,
+    /Mobili[áa]rio\s*\/?\s*Inscri[çc][ãa]o\s*[:.]?\s*(\d[\d.\-\/]{1,18}\d|\d{3,})/i,
+    /(?:INSC\.?|Inscri[çc][ãa]o)\s*(?:Municipal|Mobili[áa]ria)[^0-9A-Za-z]{0,6}(\d[\d.\-\/]{1,18}\d|\d{3,})/i,
+  ];
+  for (const re of padroes) { const m = re.exec(t); if (m && valida(m[1])) return m[1]; }
+  return null;
+}
+
 async function lerPdf(arquivo, cnpj, nomeEmpresa, permitirFuncionamento) {
   const st = fs.statSync(arquivo);
   if (st.size > MAX_PDF_BYTES) return { ignorado: 'grande demais' };
   const nome = path.basename(arquivo);
-  if (!permitirFuncionamento && /funcion|localiz/i.test(nome) && !/sanit|visa|vigil/i.test(nome)) return { ignorado: 'funcionamento' };
+  const soInscricao = !permitirFuncionamento && /funcion|localiz/i.test(nome) && !/sanit|visa|vigil/i.test(nome);
   let texto = '';
   try { texto = (await pdfParse(fs.readFileSync(arquivo))).text || ""; } catch (e) { texto = ""; } // ilegível pro pdf-parse: tenta o OCR
+  if (soInscricao) { // funcionamento de cidade integrada: a data vem da prefeitura, mas a inscrição municipal impressa no alvará serve
+    const dig = soDigitos(texto);
+    return dig.includes(cnpj) ? { ignorado: 'funcionamento', inscricao: acharInscricao(texto) } : { ignorado: 'funcionamento' };
+  }
   let usouOcr = false;
   if (texto.replace(/\s+/g, '').length < 80) {
     if (/bombeir|avcb/i.test(nome)) return { ignorado: 'bombeiros' };
@@ -161,8 +183,9 @@ async function lerPdf(arquivo, cnpj, nomeEmpresa, permitirFuncionamento) {
   if (cnpjOk && cnpjsNoDoc.length && !cnpjsNoDoc.some((c) => c.slice(0, 12) === cnpj.slice(0, 12))) return { cnpjDiferente: true };
   if (!cnpjOk) return { cnpjDiferente: true };
   const tipo = acharTipo(texto, nome);
-  if (tipo !== 'sanitario' && !(permitirFuncionamento && tipo === 'funcionamento')) return { ignorado: 'não é sanitário' };
-  return { tipo, vencimento: acharVencimento(texto, nome), numero: acharNumero(texto), arquivo: usouOcr ? nome + ' (lido por OCR — conferir)' : nome };
+  const inscricao = acharInscricao(texto);
+  if (tipo !== 'sanitario' && !(permitirFuncionamento && tipo === 'funcionamento')) return { ignorado: 'não é sanitário', inscricao };
+  return { inscricao, tipo, vencimento: acharVencimento(texto, nome), numero: acharNumero(texto), arquivo: usouOcr ? nome + ' (lido por OCR — conferir)' : nome };
 }
 
 async function main() {
@@ -188,15 +211,23 @@ async function main() {
     if (!alvs.length) { rel.semAlvaras.push(e.nome_empresa); continue; }
 
     const melhor = {}; // tipo -> {vencimento, numero, arquivo}
+    let imAchada = null; // inscrição municipal impressa em algum PDF da empresa (CNPJ conferido)
     for (const pdf of alvs.flatMap((d) => listarPdfs(d, 2))) {
       let r;
       try { r = await lerPdf(pdf, cnpj, e.nome_empresa, funcionamentoPelaPasta(e.municipio_ibge)); } catch (err) { r = { erro: err.message }; } if (process.env.DBG) console.log("DBG", e.cnpj, pdf.slice(-70), JSON.stringify(r));
+      if (r.inscricao && !imAchada) imAchada = r.inscricao;
       if (r.semTexto) rel.semTexto.push(`${e.nome_empresa} — ${path.basename(pdf)}`);
       else if (r.cnpjDiferente) rel.cnpjDiferente.push(`${e.nome_empresa} — ${path.basename(pdf)}`);
       else if (r.tipo) {
         if (!r.vencimento) rel.semVencimento.push(`${e.nome_empresa} — ${r.arquivo}`);
         else if (!melhor[r.tipo] || r.vencimento > melhor[r.tipo].vencimento) melhor[r.tipo] = r;
       }
+    }
+    if (imAchada && !e.inscricao_municipal) {
+      let g = '(simulação)';
+      if (!SIMULAR) { try { const r = await api('POST', 'inscricao-municipal-arquivo', { cliente_id: e.cliente_id, inscricao_municipal: imAchada, arquivo: 'PDF da pasta' }); g = r.gravou ? 'gravada' : 'já tinha'; } catch (err) { g = 'FALHOU ' + err.message; } }
+      if (/gravada|simula/.test(g)) rel.inscricoes = (rel.inscricoes || 0) + 1;
+      console.log(`[${hora()}] ${i + 1}/${empresas.length} ${e.nome_empresa}: inscrição municipal ${imAchada} (lida do PDF) → ${g}`);
     }
     for (const tipo of Object.keys(melhor)) {
       const m = melhor[tipo];
@@ -217,6 +248,7 @@ async function main() {
   }
   const mostra = (t, l) => console.log(`\n${t}: ${l.length}${l.length ? '\n  ' + l.slice(0, 25).join('\n  ') + (l.length > 25 ? `\n  … (+${l.length - 25})` : '') : ''}`);
   console.log(`\n=== RESUMO ===\nalvarás sanitários gravados: ${rel.gravados.sanitario} | funcionamento (só São Paulo) gravados: ${rel.gravados.funcionamento}`);
+  console.log(`inscrições municipais lidas dos PDFs e gravadas: ${rel.inscricoes || 0}`);
   mostra('Empresas sem pasta no servidor', rel.semPasta);
   mostra('Empresas sem subpasta Alvaras', rel.semAlvaras);
   mostra('PDFs ESCANEADOS que o OCR não conseguiu ler', rel.semTexto);

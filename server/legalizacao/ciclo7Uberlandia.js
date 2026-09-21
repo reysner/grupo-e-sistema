@@ -134,6 +134,7 @@ function parseBloco(bloco) {
   const statusMatch = /#AA0000[^"]*"[^>]*>\s*([^<]+?)\s*<\/div>/.exec(bloco);
   return {
     encontrado: !!identificacao,
+    identificacao: identificacao || null, // "CMC/CNPJ" da linha — o CMC é a inscrição municipal
     solicitacao: solicitacao || null,
     numeroPlanilha: numeroPlanilha || null,
     servico: servico || null,
@@ -190,7 +191,9 @@ async function gerarCertidaoUrl({ base, filial, dv }, ano, cookie) {
 }
 
 /** Baixa o relatório em PDF e tenta achar "Vencimento: DD/MM/AAAA" no texto extraído. Devolve AAAA-MM-DD ou null. */
+let ultimaInscricao = null; // inscrição (C.M.C.) lida no último PDF de certidão — lida logo após extrairVencimentoDoPdf
 async function extrairVencimentoDoPdf(urlRelatorio, cookie) {
+  ultimaInscricao = null;
   const url = urlRelatorio.includes('__format=') ? urlRelatorio : urlRelatorio + '&__format=pdf';
   const resp = await fetch(url, {
     headers: { Cookie: cookie },
@@ -223,6 +226,9 @@ async function extrairVencimentoDoPdf(urlRelatorio, cookie) {
     const isolada = /(?:^|\n)\s*(\d{2})\/(\d{2})\/(\d{4})\s*(?:\n|$)/.exec(janela);
     if (isolada) { match = isolada; break; }
   }
+  // C.M.C. (Cadastro Mobiliário do Contribuinte) = inscrição municipal; sai no cabeçalho do PDF ("C.M.C.:601.290-00")
+  const cmc = /C\.M\.C\.\s*:?\s*(\d[\d.\-]{2,18}\d)/i.exec(text);
+  ultimaInscricao = cmc ? cmc[1] : null;
   if (!match) return null;
   const [, dia, mes, anoV] = match;
   return `${anoV}-${mes}-${dia}`;
@@ -275,6 +281,7 @@ async function consultarAlvaraUberlandia(cnpj, { anos = 5 } = {}) {
           const vencimento = await extrairVencimentoDoPdf(urlCertidao, cookie);
           if (process.env.DEBUG_CICLO7) console.error('[ciclo7] vencimento extraido:', vencimento);
           if (vencimento) ultimoResultado.vencimentoEncontrado = vencimento;
+          if (ultimaInscricao) ultimoResultado.inscricaoMunicipal = ultimaInscricao;
         }
       } catch (e) { if (process.env.DEBUG_CICLO7) console.error('[ciclo7] certidão falhou:', e); }
       return { ...ultimoResultado, cnpj, anosVarridos: i + 1 };

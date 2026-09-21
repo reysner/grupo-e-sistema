@@ -59,6 +59,28 @@ router.get('/legalizacao/alvaras-a-consultar', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar empresas.' }); }
 });
 
+/**
+ * Grava a inscrição municipal lida de uma fonte automática (PDF de alvará, certidão da prefeitura) SÓ se o campo estiver vazio
+ * — o que alguém digitou à mão nunca é sobrescrito. Devolve true se gravou.
+ */
+async function guardarInscricaoSeVazia(clienteId, valor) {
+  const v = String(valor || '').trim();
+  if (!v || v.length < 3 || v.length > 30 || /[^0-9A-Za-z.\-\/ ]/.test(v)) return false;
+  await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS inscricao_municipal TEXT`).catch(() => {});
+  const r = await pool.query(`UPDATE clientes SET inscricao_municipal = $1 WHERE id::text = $2 AND (inscricao_municipal IS NULL OR inscricao_municipal = '')`, [v, clienteId]);
+  return r.rowCount > 0;
+}
+
+/** POST /legalizacao/inscricao-municipal-arquivo → { cliente_id, inscricao_municipal } — leitor de pastas (X-Sync-Token); só grava se vazio. */
+router.post('/legalizacao/inscricao-municipal-arquivo', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    const { cliente_id, inscricao_municipal } = req.body || {};
+    if (!cliente_id || !inscricao_municipal) return res.status(400).json({ error: 'cliente_id e inscricao_municipal são obrigatórios.' });
+    res.json({ ok: true, gravou: await guardarInscricaoSeVazia(String(cliente_id), inscricao_municipal) });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao gravar a inscrição municipal.' }); }
+});
+
 router.post('/legalizacao/alvaras-consulta-local', async (req, res) => {
   try {
     if (!tokenSyncOk(req, res)) return;
@@ -68,6 +90,7 @@ router.post('/legalizacao/alvaras-consulta-local', async (req, res) => {
     const { rows } = await pool.query(`SELECT 1 FROM clientes WHERE id::text = $1`, [String(cliente_id)]);
     if (!rows.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
     const r = await gravarResultadoConsultaAlvara(String(cliente_id), 'funcionamento', resultado, 'Consulta local (escritório)');
+    if (resultado.inscricaoMunicipal) await guardarInscricaoSeVazia(String(cliente_id), resultado.inscricaoMunicipal); // ex.: C.M.C. do PDF de Uberlândia
     res.json(r);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao gravar a consulta.' }); }
 });
