@@ -1383,13 +1383,24 @@ async function encerrarClientePorAcessorias(cliente, empresaAcessorias) {
   );
   if (!upd.rowCount) return;
   await pool.query(`INSERT INTO eventos_clientes (cliente_id, tipo, descricao, data_evento) VALUES ($1,'saida',$2,$3)`, [cliente.id, motivo, dataSaida]);
+  const gestaoId = uuidv4();
   await pool.query(
     `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario)
      VALUES ($1,$2,'Automático (Acessórias)',$3,$4,$5,$6,$7,'Outro',$8,$9,$10)`,
-    [uuidv4(), cliente.user_id, solicitacao, cliente.cnpj, cliente.nome_empresa, dataSaida, dataSaida.slice(0, 7), motivo, cliente.codigo || null, cliente.regime_tributario || null]
+    [gestaoId, cliente.user_id, solicitacao, cliente.cnpj, cliente.nome_empresa, dataSaida, dataSaida.slice(0, 7), motivo, cliente.codigo || null, cliente.regime_tributario || null]
   );
   await pool.query(`UPDATE clientes SET alerta_baixa_notificado_em = NOW() WHERE id = $1`, [cliente.id]);
   await pool.query(`UPDATE notificacoes SET lida = true WHERE cliente_id = $1 AND tipo = 'churn_acessorias' AND lida = false`, [cliente.id]).catch(() => {});
+  // Pedido do Reysner (22/09/2026): toda baixa/saída detectada no Acessórias abre ticket pro Contábil sozinha,
+  // já roteado pro time do regime da empresa — ver criarTicketInterno().
+  try {
+    await criarTicketInterno({
+      gestaoId, empresa: cliente.nome_empresa, cnpj: cliente.cnpj, regime: cliente.regime_tributario,
+      tipoMovimentacao: solicitacao,
+      observacoes: `Empresa inativada no Acessórias em ${dataSaida} — ${motivo}.`,
+      dadosGestao: { codigo: cliente.codigo || null }, criadoPor: 'Automático (Acessórias)',
+    });
+  } catch (e) { console.error('[baixa-automatica] falhou ao abrir ticket:', cliente.nome_empresa, e.message); }
 }
 
 /** POST /api/data/clientes/importar-acessorias — dispara a sincronização manualmente (botão "Atualizar agora"). */
@@ -5001,40 +5012,66 @@ router.get('/tickets', requireAuth, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar tickets.' }); }
 });
 
+/**
+ * Cria o ticket + menciona quem deve ver (pedido do Reysner, 22/09/2026): sempre os administradores, mais os
+ * Contábeis marcados em Administração de Usuários pra atender aquele REGIME (campo `regimes_atendidos` do
+ * usuário — Simples Nacional / Lucro Presumido / Lucro Real). Ninguém marcado pro regime do cliente (ou regime
+ * fora dessas 3 opções, ex. MEI) → menciona todos os Contábeis ativos, pra nunca perder o aviso. Cada mencionado
+ * já enxerga o ticket no Portal Contábil (link público /contabil.html) e recebe o sininho — é o MESMO mecanismo
+ * do botão manual "Abrir Ticket", só que disparado sozinho.
+ */
+async function criarTicketInterno({ gestaoId, empresa, cnpj, regime, tipoMovimentacao, observacoes, mencoesExtra, dadosGestao, criadoPor }) {
+  await ensureTicketTables();
+  const checklist = buildChecklist(tipoMovimentacao, regime);
+  const { rows } = await pool.query(
+    `INSERT INTO tickets (gestao_id, empresa, cnpj, regime, tipo_movimentacao, checklist, observacoes, criado_por, dados_gestao)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [gestaoId || null, empresa, cnpj, regime || null, tipoMovimentacao, JSON.stringify(checklist), observacoes || null, criadoPor, JSON.stringify(dadosGestao || {})]
+  );
+  const ticket = rows[0];
+  const adminsRes = await pool.query(`SELECT id FROM users WHERE role='administrador' AND active=1`);
+  let responsaveis = [];
+  if (regime) {
+    const porRegime = await pool.query(
+      `SELECT id FROM users WHERE role='contabil' AND active=1 AND regimes_atendidos @> $1::jsonb`,
+      [JSON.stringify([regime])]
+    ).catch(() => ({ rows: [] }));
+    responsaveis = porRegime.rows.map(r => r.id.toString());
+  }
+  if (!responsaveis.length) {
+    const todosContabeis = await pool.query(`SELECT id FROM users WHERE role='contabil' AND active=1`);
+    responsaveis = todosContabeis.rows.map(r => r.id.toString());
+  }
+  const adminIds = adminsRes.rows.map(r => r.id.toString());
+  const todasMencoes = [...new Set([...(mencoesExtra || []), ...responsaveis, ...adminIds])];
+
+  for (const uid of todasMencoes) {
+    await pool.query(`INSERT INTO ticket_mencoes (ticket_id, usuario_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [ticket.id, uid]);
+    await pool.query(
+      `INSERT INTO notificacoes (user_id, tipo, mensagem, referencia_id)
+       VALUES ($1,'ticket','Novo ticket aberto: '||$2,$3)`,
+      [uid, empresa, ticket.id]
+    ).catch(()=>{});
+  }
+  if (observacoes) {
+    await pool.query(
+      `INSERT INTO ticket_interacoes (ticket_id, autor_nome, comentario) VALUES ($1,$2,$3)`,
+      [ticket.id, criadoPor, observacoes]
+    );
+  }
+  return ticket;
+}
+
 // Criar ticket
 router.post('/tickets', requireAdmin, async (req, res) => {
   try {
-    await ensureTicketTables();
     const { gestao_id, empresa, cnpj, regime, tipo_movimentacao, observacoes, mencoes, dados_gestao } = req.body;
     if (!empresa || !cnpj || !regime || !tipo_movimentacao)
       return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
-    const checklist = buildChecklist(tipo_movimentacao, regime);
-    const { rows } = await pool.query(
-      `INSERT INTO tickets (gestao_id, empresa, cnpj, regime, tipo_movimentacao, checklist, observacoes, criado_por, dados_gestao)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [gestao_id||null, empresa, cnpj, regime, tipo_movimentacao, JSON.stringify(checklist), observacoes||null, req.user.name, JSON.stringify(dados_gestao||{})]
-    );
-    const ticket = rows[0];
-    // Admins são incluídos automaticamente em todos os tickets
-    const adminsRes = await pool.query(`SELECT id FROM users WHERE role='administrador' AND active=1`);
-    const adminIds = adminsRes.rows.map(r => r.id.toString());
-    const todasMencoes = [...new Set([...(mencoes||[]), ...adminIds])];
-
-    for (const uid of todasMencoes) {
-      await pool.query(`INSERT INTO ticket_mencoes (ticket_id, usuario_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [ticket.id, uid]);
-      await pool.query(
-        `INSERT INTO notificacoes (user_id, tipo, mensagem, referencia_id)
-         VALUES ($1,'ticket','Novo ticket aberto: '||$2,$3)`,
-        [uid, empresa, ticket.id]
-      ).catch(()=>{});
-    }
-    // Interação de abertura
-    if (observacoes) {
-      await pool.query(
-        `INSERT INTO ticket_interacoes (ticket_id, autor_nome, comentario) VALUES ($1,$2,$3)`,
-        [ticket.id, req.user.name, observacoes]
-      );
-    }
+    const ticket = await criarTicketInterno({
+      gestaoId: gestao_id, empresa, cnpj, regime, tipoMovimentacao: tipo_movimentacao,
+      observacoes, mencoesExtra: mencoes, dadosGestao: dados_gestao, criadoPor: req.user.name,
+    });
     res.status(201).json({ ok: true, data: ticket });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao criar ticket.' }); }
 });
