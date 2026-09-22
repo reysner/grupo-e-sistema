@@ -1374,9 +1374,13 @@ async function encerrarClientePorAcessorias(cliente, empresaAcessorias) {
   if (!emp && token && cliente.cnpj) emp = await acessoriasClient.buscarEmpresaPorCnpj(cliente.cnpj, token).catch(() => null);
   const hoje = new Date().toISOString().slice(0, 10);
   const dataSaida = (emp && emp.clienteAte) || hoje;
-  const tipo = palpiteTipoChurn(emp && emp.motivoCancelamentoBruto) === 'saida' ? 'saida' : 'baixa';
+  const motivoBruto = emp && emp.motivoCancelamentoBruto;
+  const tipo = palpiteTipoChurn(motivoBruto) === 'saida' ? 'saida' : 'baixa';
   const solicitacao = tipo === 'saida' ? 'Saída de empresa' : 'Baixa de empresa';
-  const motivo = tipo === 'saida' ? 'Transferência por conveniência (automático — Acessórias)' : 'Baixa de empresa';
+  // Usa o motivo real do Acessórias quando veio (ex.: "Transferida por preço"), senão o rótulo genérico.
+  const motivo = tipo === 'saida'
+    ? (motivoBruto ? `${motivoBruto} (automático — Acessórias)` : 'Transferida para outro contador (automático — Acessórias)')
+    : 'Baixa de empresa';
   const upd = await pool.query(
     `UPDATE clientes SET status='encerrado', data_saida=$1, motivo_saida=$2 WHERE id=$3 AND status='ativo'`,
     [dataSaida, motivo, cliente.id]
@@ -1419,16 +1423,19 @@ router.post('/clientes/importar-acessorias', requireAdmin, async (req, res) => {
 });
 
 /**
- * Palpite (baixa|saida|null) a partir do motivo de cancelamento BRUTO do
- * Acessórias — achado do Reysner: lá só existem 2 valores, "Baixada" (não
- * é churn de verdade) e "Transferência por conveniência" (churn de verdade
- * — foi pra outro contador). Só entra no TEXTO da notificação como dica;
- * quem confirma de vez é sempre humano, ver PATCH /clientes/:id/resolver-churn.
+ * Palpite (baixa|saida|null) a partir do motivo de cancelamento BRUTO do Acessórias — corrigido 22/09/2026
+ * (Reysner): o combo "Motivo de cancelamento" lá tem "Baixada" (empresa fechou o CNPJ de verdade — modelo de
+ * BAIXA no contábil) e três variações de "Transferida por..." (conveniência / mau atendimento / preço — cliente
+ * foi pra outro contador, churn de verdade — modelo de SAÍDA no contábil). A checagem antiga procurava
+ * "transferência" (substantivo) e nunca batia com "Transferida" (particípio, o texto real do combo) — todo
+ * "Transferida por X" caía silenciosamente em "baixa". Determina o tipo do ticket automático (checklist e
+ * mencionados mudam entre Baixa/Saída — ver criarTicketInterno) e, no fluxo manual, só entra como dica no
+ * TEXTO da notificação; quem confirma de vez é sempre humano, ver PATCH /clientes/:id/resolver-churn.
  */
 function palpiteTipoChurn(motivoBruto) {
   const m = String(motivoBruto || '').toLowerCase();
   if (!m) return null;
-  if (m.includes('transferencia') || m.includes('transferência')) return 'saida';
+  if (m.includes('transferida') || m.includes('transferência') || m.includes('transferencia')) return 'saida';
   if (m.includes('baixa')) return 'baixa';
   return null;
 }
@@ -1516,7 +1523,7 @@ router.post('/clientes/importar-baixas-acessorias', requireAdmin, async (req, re
           const palpiteTexto = palpite === 'baixa'
             ? ' (Acessórias registrou como Baixada.)'
             : palpite === 'saida'
-            ? ' (Acessórias registrou como Transferência por conveniência — provável Saída/churn real.)'
+            ? ` (Acessórias registrou como "${emp.motivoCancelamentoBruto}" — provável Saída/churn real.)`
             : '';
           await pool.query(
             `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id)
