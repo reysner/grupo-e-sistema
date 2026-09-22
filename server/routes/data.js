@@ -593,75 +593,99 @@ router.post('/legalizacao/certificados/importar-certiseguro', async (req, res) =
  *   - só clientes ATIVOS da Carteira (casa pelo CPF/CNPJ, só dígitos);
  *   - vários registros pro mesmo CNPJ: vale a Ativa de maior validade.
  */
+/**
+ * Núcleo do import de procurações (e-CAC/FGTS Digital), reaproveitado por duas portas de entrada:
+ *   - a máquina-a-máquina (token compartilhado) que o script do Tampermonkey chama sozinho;
+ *   - a manual (JWT de admin), abaixo do requireAuth, pra quando alguém guia a leitura na hora (ex.: pedido do
+ *     Reysner 22/09/2026, depois que o e-CAC passou a redirecionar "Minhas Autorizações de Acesso" para o SPE
+ *     — spe.sistema.gov.br — e o script antigo, que decide e-CAC×FGTS pelo hostname, deixou de bater sozinho).
+ */
+async function importarProcuracoesCore(tipo, listaBruta, completo, quemChamou) {
+  if (!['ecac', 'fgts'].includes(tipo)) throw Object.assign(new Error("Informe tipo: 'ecac' ou 'fgts'."), { status: 400 });
+  await ensureLegalizacaoSchema();
+  const lista = Array.isArray(listaBruta) ? listaBruta : [];
+  const melhor = new Map(); // documento -> { venc, rank }
+  for (const p of lista) {
+    const doc = String(p.cnpj || '').replace(/\D/g, '');
+    const situacao = String(p.situacao || '').trim().toLowerCase();
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(p.validade || '').trim());
+    if (!doc || !m || !['ativa', 'expirada'].includes(situacao)) continue;
+    const venc = `${m[3]}-${m[2]}-${m[1]}`;
+    const rank = situacao === 'ativa' ? 1 : 0;
+    const atual = melhor.get(doc);
+    if (!atual || rank > atual.rank || (rank === atual.rank && venc > atual.venc)) melhor.set(doc, { venc, rank });
+  }
+
+  const { rows: clientes } = await pool.query(
+    `SELECT id::text AS id, regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g') AS doc FROM clientes WHERE status = 'ativo'`
+  );
+  const porDoc = new Map(clientes.map(c => [c.doc, c.id]));
+  const ids = [], vencs = [];
+  let semCliente = 0;
+  for (const [doc, { venc }] of melhor) {
+    const clienteId = porDoc.get(doc);
+    if (!clienteId) { semCliente++; continue; }
+    ids.push(clienteId); vencs.push(venc);
+  }
+  // Em lote (1 query) e só toca no que MUDOU — quem chama reenvia a lista inteira toda vez.
+  let atualizados = 0, limpos = 0;
+  if (ids.length) {
+    const r = await pool.query(
+      `INSERT INTO legalizacao_procuracoes (cliente_id, tipo, data_vencimento, fonte, criado_por)
+       SELECT u.cid, $3::text, u.venc, $3::text, 'Importação Receita/FGTS'
+         FROM unnest($1::text[], $2::date[]) AS u(cid, venc)
+       ON CONFLICT (cliente_id, tipo) DO UPDATE SET data_vencimento = EXCLUDED.data_vencimento, fonte = EXCLUDED.fonte, atualizado_em = NOW(), notificado_vencimento_em = NULL
+       WHERE legalizacao_procuracoes.data_vencimento IS DISTINCT FROM EXCLUDED.data_vencimento
+       RETURNING 1`,
+      [ids, vencs, tipo]
+    );
+    atualizados = r.rowCount;
+    // Lista COMPLETA do portal: quem tinha data importada mas não tem mais procuração
+    // Ativa/Expirada (cancelada, revogada...) volta pra "sem dados". Nunca mexe no que
+    // foi preenchido à mão (fonte diferente do tipo).
+    if (completo === true) {
+      const z = await pool.query(
+        `UPDATE legalizacao_procuracoes SET data_vencimento = NULL, atualizado_em = NOW(), notificado_vencimento_em = NULL
+          WHERE tipo = $1 AND fonte = $1 AND data_vencimento IS NOT NULL AND cliente_id <> ALL($2::text[])`,
+        [tipo, ids]
+      );
+      limpos = z.rowCount;
+    }
+  }
+  await registrarLog(quemChamou.id, quemChamou.name, 'importar', 'legalizacao',
+    `Procurações ${tipo === 'ecac' ? 'e-CAC' : 'FGTS Digital'}: ${atualizados} atualizada(s), ${limpos} zerada(s), ${semCliente} sem cliente ativo na Carteira, de ${lista.length} lida(s).`);
+  return { ok: true, tipo, recebidas: lista.length, consideradas: melhor.size, atualizados, limpos, semCliente };
+}
+
 router.post('/legalizacao/procuracoes/importar', async (req, res) => {
   try {
     const tokenEsperado = process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC_TOKEN;
     if (!tokenEsperado) return res.status(503).json({ error: 'Sincronização não configurada (falta LEGALIZACAO_SYNC_TOKEN/CERTISEGURO_SYNC_TOKEN no servidor).' });
     if (req.get('X-Sync-Token') !== tokenEsperado) return res.status(401).json({ error: 'Token de sincronização inválido.' });
-
-    const tipo = req.body.tipo;
-    if (!['ecac', 'fgts'].includes(tipo)) return res.status(400).json({ error: "Informe tipo: 'ecac' ou 'fgts'." });
-    await ensureLegalizacaoSchema();
-    const lista = Array.isArray(req.body.procuracoes) ? req.body.procuracoes : [];
-    const melhor = new Map(); // documento -> { venc, rank }
-    for (const p of lista) {
-      const doc = String(p.cnpj || '').replace(/\D/g, '');
-      const situacao = String(p.situacao || '').trim().toLowerCase();
-      const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(p.validade || '').trim());
-      if (!doc || !m || !['ativa', 'expirada'].includes(situacao)) continue;
-      const venc = `${m[3]}-${m[2]}-${m[1]}`;
-      const rank = situacao === 'ativa' ? 1 : 0;
-      const atual = melhor.get(doc);
-      if (!atual || rank > atual.rank || (rank === atual.rank && venc > atual.venc)) melhor.set(doc, { venc, rank });
-    }
-
-    const { rows: clientes } = await pool.query(
-      `SELECT id::text AS id, regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g') AS doc FROM clientes WHERE status = 'ativo'`
-    );
-    const porDoc = new Map(clientes.map(c => [c.doc, c.id]));
-    const ids = [], vencs = [];
-    let semCliente = 0;
-    for (const [doc, { venc }] of melhor) {
-      const clienteId = porDoc.get(doc);
-      if (!clienteId) { semCliente++; continue; }
-      ids.push(clienteId); vencs.push(venc);
-    }
-    // Em lote (1 query) e só toca no que MUDOU — o script do Chrome reenvia a lista
-    // inteira toda vez que o portal é aberto.
-    let atualizados = 0, limpos = 0;
-    if (ids.length) {
-      const r = await pool.query(
-        `INSERT INTO legalizacao_procuracoes (cliente_id, tipo, data_vencimento, fonte, criado_por)
-         SELECT u.cid, $3::text, u.venc, $3::text, 'Importação Receita/FGTS'
-           FROM unnest($1::text[], $2::date[]) AS u(cid, venc)
-         ON CONFLICT (cliente_id, tipo) DO UPDATE SET data_vencimento = EXCLUDED.data_vencimento, fonte = EXCLUDED.fonte, atualizado_em = NOW(), notificado_vencimento_em = NULL
-         WHERE legalizacao_procuracoes.data_vencimento IS DISTINCT FROM EXCLUDED.data_vencimento
-         RETURNING 1`,
-        [ids, vencs, tipo]
-      );
-      atualizados = r.rowCount;
-      // Lista COMPLETA do portal: quem tinha data importada mas não tem mais procuração
-      // Ativa/Expirada (cancelada, revogada...) volta pra "sem dados". Nunca mexe no que
-      // foi preenchido à mão (fonte diferente do tipo).
-      if (req.body.completo === true) {
-        const z = await pool.query(
-          `UPDATE legalizacao_procuracoes SET data_vencimento = NULL, atualizado_em = NOW(), notificado_vencimento_em = NULL
-            WHERE tipo = $1 AND fonte = $1 AND data_vencimento IS NOT NULL AND cliente_id <> ALL($2::text[])`,
-          [tipo, ids]
-        );
-        limpos = z.rowCount;
-      }
-    }
-    await registrarLog('sync', 'Procurações (importação)', 'importar', 'legalizacao',
-      `Procurações ${tipo === 'ecac' ? 'e-CAC' : 'FGTS Digital'}: ${atualizados} atualizada(s), ${limpos} zerada(s), ${semCliente} sem cliente ativo na Carteira, de ${lista.length} lida(s).`, req);
-    res.json({ ok: true, tipo, recebidas: lista.length, consideradas: melhor.size, atualizados, limpos, semCliente });
+    const resultado = await importarProcuracoesCore(req.body.tipo, req.body.procuracoes, req.body.completo, { id: 'sync', name: 'Procurações (importação)' });
+    res.json(resultado);
   } catch (err) {
     console.error('[legalizacao] importar procurações falhou:', err);
-    res.status(500).json({ error: err.message || 'Erro ao importar procurações.' });
+    res.status(err.status || 500).json({ error: err.message || 'Erro ao importar procurações.' });
   }
 });
 
 router.use(requireAuth);
+
+/**
+ * POST /api/data/legalizacao/procuracoes/importar-manual — mesma coisa que a rota máquina-a-máquina acima, só
+ * que autenticada pelo login (admin), pra rodar a leitura guiada na hora em vez de esperar o Tampermonkey.
+ * Mesmo formato de corpo: { tipo: 'ecac'|'fgts', procuracoes: [{cnpj, validade, situacao}], completo }.
+ */
+router.post('/legalizacao/procuracoes/importar-manual', requireAdmin, async (req, res) => {
+  try {
+    const resultado = await importarProcuracoesCore(req.body.tipo, req.body.procuracoes, req.body.completo, { id: req.user.id, name: req.user.name });
+    res.json(resultado);
+  } catch (err) {
+    console.error('[legalizacao] importar procurações (manual) falhou:', err);
+    res.status(err.status || 500).json({ error: err.message || 'Erro ao importar procurações.' });
+  }
+});
 
 async function registrarLog(userId, userName, acao, modulo, descricao, req) {
   try {
