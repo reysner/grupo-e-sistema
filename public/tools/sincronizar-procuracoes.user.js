@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Grupo-E · Sincronizar procurações (e-CAC + FGTS Digital)
 // @namespace    https://grupo-e-sistema-uc2w.onrender.com/
-// @version      1.3.0
+// @version      1.4.0
 // @description  Ao abrir as procurações recebidas no e-CAC ou no SPE (FGTS Digital), lê a lista completa e envia pro sistema Grupo-E (módulo Legalização).
 // @match        https://servicos.receitafederal.gov.br/servico/autorizacoes/*
 // @match        https://spe.sistema.gov.br/*
@@ -26,7 +26,9 @@
  * envia pro sistema Grupo-E, que grava só o que mudou. Roda sozinho quando você abre:
  *   - e-CAC → Autorizações de Acesso → Minhas Autorizações de Acesso
  *   - FGTS Digital → Procurações (SPE)
- * No máximo 1x por semana por portal (ou pelo menu do Tampermonkey: "Sincronizar agora").
+ * SÓ na rodada semanal: segunda-feira, das 09:30 às 10:30 (pedido do Reysner, 23/09/2026). Fora dessa janela, abrir o e-CAC ou o
+ * FGTS Digital NÃO busca nada. Único jeito de rodar fora dela: o menu do Tampermonkey "Sincronizar procurações agora" (clique explícito).
+ * O e-CAC e o FGTS Digital hoje usam o mesmo sistema de procurações (SPE) e mostram a mesma lista — o script grava nas duas colunas.
  * FGTS Digital também atualiza sozinho: (a) logo depois do e-CAC sincronizar, numa aba em segundo plano
  * (usa o login gov.br já feito); (b) quando você mesmo abre o FGTS Digital e chega na tela inicial.
  * Nesses dois casos o script só clica em "Entrar com GOV.BR", "Definir" (perfil) e no card "Procurações".
@@ -38,6 +40,8 @@
   const SISTEMA = 'https://grupo-e-sistema-uc2w.onrender.com';
   const CNPJ_ESCRITORIO = '25549775000141'; // Escritorial — só sincroniza logado como o escritório
   const INTERVALO_MS = 6 * 24 * 60 * 60 * 1000; // 1x por semana (rodada de segunda-feira; 6 dias evita pular a semana seguinte por minutos)
+  // Janela da rodada semanal: segunda-feira, 09:30–10:30 (hora do computador, Brasília).
+  const dentroDaJanela = () => { const d = new Date(); const min = d.getHours() * 60 + d.getMinutes(); return d.getDay() === 1 && min >= 9 * 60 + 30 && min < 10 * 60 + 30; };
 
   const ehEcac = location.hostname === 'servicos.receitafederal.gov.br';
   const tipo = ehEcac ? 'ecac' : 'fgts';
@@ -151,7 +155,7 @@
     });
   }
 
-  async function enviar(dados) {
+  async function enviar(dados, tipoEnvio) {
     const token = GM_getValue('token', '') || (aviso('aguardando o token de sincronização…'), await pedirToken());
     return new Promise((resolve, reject) => {
       aviso('enviando pro sistema Grupo-E…');
@@ -159,7 +163,7 @@
         method: 'POST',
         url: SISTEMA + '/api/data/legalizacao/procuracoes/importar',
         headers: { 'Content-Type': 'application/json', 'X-Sync-Token': token },
-        data: JSON.stringify(Object.assign({ tipo }, dados)),
+        data: JSON.stringify(Object.assign({ tipo: tipoEnvio || tipo }, dados)),
         timeout: 180000,
         onload: (r) => {
           let j = {};
@@ -181,12 +185,17 @@
   let rodando = false;
   async function sincronizar(forcar) {
     if (rodando) return;
+    if (!forcar && !dentroDaJanela() && !recente('spe_auto') && !recente('auto_fgts')) return; // fora da rodada semanal: não busca
     if (!forcar && !vencido(chaveUltimo)) return;
     rodando = true;
     try {
       aviso('sincronizando procurações ' + rotulo + '…');
       const dados = ehEcac ? await lerEcac() : await lerSpe();
-      const r = await enviar(dados);
+      let r = await enviar(dados);
+      if (!ehEcac) { // SPE: mesma lista serve para as duas colunas (e-CAC e FGTS Digital)
+        await enviar(dados, 'ecac');
+        GM_setValue('ultimo_ecac', Date.now());
+      }
       GM_setValue(chaveUltimo, Date.now());
       aviso('procurações ' + rotulo + ' em dia: ' + r.atualizados + ' atualizada(s)' + (r.limpos ? ', ' + r.limpos + ' zerada(s)' : '') + '.', 'ok');
       if (ehEcac) abrirFgtsEmSegundoPlano(forcar);
@@ -212,7 +221,7 @@
 
   async function cadeiaFgts() {
     const auto = recente('auto_fgts'); // aberta pela automação do e-CAC (login e perfil também são clicados)
-    if (!auto && !vencido('ultimo_fgts')) return;
+    if (!auto && (!dentroDaJanela() || !vencido('ultimo_fgts'))) return;
     const feito = {};
     for (let i = 0; i < 180; i++) {
       const p = location.pathname;
