@@ -5943,7 +5943,7 @@ const Legalizacao = (() => {
   async function consultarTodosPrefeitura() {
     const alvos = _linhasFiltradas().filter(l => l.func && l.cliente_id && l.cnpj);
     if (!alvos.length) { App.Toast.err('Nenhum alvará de Funcionamento pra consultar nesse filtro.'); return; }
-    if (!confirm(`Isso vai consultar ${alvos.length} empresa(s) no portal da Prefeitura, uma de cada vez (só funciona pras de Uberlândia-MG — as outras voltam "nada encontrado"). Com 4s entre cada uma, pode levar mais de 40 minutos (mantenha a janela aberta) — a rotina noturna já faz isso sozinha todo dia às 02:00. Continuar?`)) return;
+    if (!confirm(`Isso vai consultar ${alvos.length} empresa(s) no portal da Prefeitura, uma de cada vez (só funciona pras de Uberlândia-MG — as outras voltam "nada encontrado"). Com 4s entre cada uma, pode levar mais de 40 minutos (mantenha a janela aberta) — a rotina semanal já faz isso sozinha, toda segunda às 08:30. Continuar?`)) return;
 
     const win = window.open('', '_blank');
     const setStatus = (msg) => {

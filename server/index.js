@@ -266,6 +266,9 @@ initDB().then(async () => {
     // rodarConsultaNoturnaAlvaras em routes/data.js pras regras.
     const consultasAlvaraPorDia = new Set();
     const checarConsultaNoturnaAlvaras = async () => {
+      // Desligada por padrão (23/09/2026): a consulta agora é semanal (segunda 08:30) e roda na estação do escritório —
+      // o IP do Render é bloqueado pela prefeitura. Só liga com LEGALIZACAO_CONSULTA_NO_SERVIDOR=1.
+      if (process.env.LEGALIZACAO_CONSULTA_NO_SERVIDOR !== '1') return;
       const agora = agoraBrasilia();
       if (agora.hora !== 2) return;
       const chaveDia = `${agora.ano}-${agora.mes}-${agora.dia}`;

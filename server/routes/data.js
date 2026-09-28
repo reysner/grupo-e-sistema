@@ -42,7 +42,7 @@ router.get('/legalizacao/alvaras-a-consultar', async (req, res) => {
                 a.ultima_consulta_em IS NULL
              OR ((a.data_vencimento IS NOT NULL OR a.ultima_consulta_status = 'solicitacao_andamento')
                  AND a.ultima_consulta_em < NOW() - INTERVAL '20 hours')
-             OR a.ultima_consulta_em < NOW() - INTERVAL '7 days'
+             OR a.ultima_consulta_em < NOW() - INTERVAL '6 days'
           )`;
     const { rows } = await pool.query(
       `SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj, c.municipio_ibge
@@ -5452,7 +5452,10 @@ router.get('/churn', requireAdmin, async (req, res) => {
 // diferentes porque um certificado se renova rápido, um alvará não.
 // ═══════════════════════════════════════════════════════════════════════════
 
-const LEGAL_DIAS_ALERTA_ALVARA = 60;
+// Prazos de "vencendo" (pedido do Reysner, 23/09/2026): Funcionamento 30 dias, Sanitário 120 dias (renova mais devagar).
+const LEGAL_DIAS_ALERTA_FUNCIONAMENTO = 30;
+const LEGAL_DIAS_ALERTA_SANITARIO = 120;
+const LEGAL_DIAS_ALERTA_ALVARA = LEGAL_DIAS_ALERTA_FUNCIONAMENTO; // compat: chave antiga 'alvara' da resposta
 const LEGAL_DIAS_ALERTA_CERTIFICADO = 10;
 
 // Diagnóstico rodado em 17/09/2026 (removido depois de confirmar): a API do
@@ -5636,9 +5639,9 @@ END`;
 const LEGAL_PAINEL_SQL = `
 SELECT x.cliente_id, x.nome_empresa, x.cnpj, x.codigo, x.sem_cadastro_acessorias,
   x.func_id, x.func_venc::text AS func_venc, x.func_numero, x.func_obs, x.func_cr, x.func_cd,
-  ${_legalStatusSql('x.func_venc', LEGAL_DIAS_ALERTA_ALVARA, "WHEN x.func_cs = 'solicitacao_andamento' THEN 'solicitacao'")} AS func_status,
+  ${_legalStatusSql('x.func_venc', LEGAL_DIAS_ALERTA_FUNCIONAMENTO, "WHEN x.func_cs = 'solicitacao_andamento' THEN 'solicitacao'")} AS func_status,
   x.sanit_id, x.sanit_venc::text AS sanit_venc, x.sanit_numero, x.sanit_obs, x.sanit_cr, x.sanit_cd,
-  ${_legalStatusSql('x.sanit_venc', LEGAL_DIAS_ALERTA_ALVARA, "WHEN x.sanit_cs = 'solicitacao_andamento' THEN 'solicitacao'")} AS sanit_status,
+  ${_legalStatusSql('x.sanit_venc', LEGAL_DIAS_ALERTA_SANITARIO, "WHEN x.sanit_cs = 'solicitacao_andamento' THEN 'solicitacao'")} AS sanit_status,
   x.cert_id, x.cert_tipo, x.cert_venc::text AS cert_venc, x.cert_obs,
   ${_legalStatusSql('x.cert_venc', LEGAL_DIAS_ALERTA_CERTIFICADO)} AS cert_status,
   x.ecac_id, x.ecac_venc::text AS ecac_venc, x.ecac_obs,
@@ -5734,7 +5737,7 @@ router.get('/legalizacao/painel', async (req, res) => {
         }
         return l;
       }),
-      diasAlerta: { alvara: LEGAL_DIAS_ALERTA_ALVARA, certificado: LEGAL_DIAS_ALERTA_CERTIFICADO, procuracao: LEGAL_DIAS_ALERTA_PROCURACAO },
+      diasAlerta: { alvara: LEGAL_DIAS_ALERTA_ALVARA, funcionamento: LEGAL_DIAS_ALERTA_FUNCIONAMENTO, sanitario: LEGAL_DIAS_ALERTA_SANITARIO, certificado: LEGAL_DIAS_ALERTA_CERTIFICADO, procuracao: LEGAL_DIAS_ALERTA_PROCURACAO },
     });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar legalização.' }); }
 });
@@ -5746,8 +5749,8 @@ router.get('/legalizacao/painel', async (req, res) => {
  *   GET  /legalizacao/saude         (admin)        → rotinas + cidades
  */
 const ROTINAS_LEGALIZACAO = {
-  consulta_prefeituras: { nome: 'Consulta às prefeituras', horario: 'todo dia às 03:00', horasMax: 30 },
-  leitura_pastas: { nome: 'Leitura das pastas da Legalização', horario: 'todo dia às 05:00', horasMax: 30 },
+  consulta_prefeituras: { nome: 'Consulta às prefeituras', horario: 'toda segunda às 08:30', horasMax: 200 },
+  leitura_pastas: { nome: 'Leitura das pastas da Legalização', horario: 'toda segunda às 08:30', horasMax: 200 },
 };
 
 /** Situação de cada rotina: última rodada, se está atrasada e se houve muitas falhas. */
@@ -6079,7 +6082,7 @@ async function rodarConsultaNoturnaAlvaras() {
                 a.ultima_consulta_em IS NULL
              OR ((a.data_vencimento IS NOT NULL OR a.ultima_consulta_status = 'solicitacao_andamento')
                  AND a.ultima_consulta_em < NOW() - INTERVAL '20 hours')
-             OR a.ultima_consulta_em < NOW() - INTERVAL '7 days'
+             OR a.ultima_consulta_em < NOW() - INTERVAL '6 days'
           )
         ORDER BY a.ultima_consulta_em ASC NULLS FIRST
         LIMIT $1`,
@@ -6220,7 +6223,7 @@ async function verificarNotificacoesLegalizacao() {
        FROM legalizacao_alvaras a
        JOIN clientes c ON c.id::text = a.cliente_id
       WHERE a.data_vencimento IS NOT NULL
-        AND a.data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA_ALVARA} days'
+        AND a.data_vencimento <= CURRENT_DATE + (CASE WHEN a.tipo = 'sanitario' THEN ${LEGAL_DIAS_ALERTA_SANITARIO} ELSE ${LEGAL_DIAS_ALERTA_FUNCIONAMENTO} END) * INTERVAL '1 day'
         AND a.notificado_vencimento_em IS NULL
         AND a.desativado_em IS NULL`
   );

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Grupo-E · Sincronizar procurações (e-CAC + FGTS Digital)
 // @namespace    https://grupo-e-sistema-uc2w.onrender.com/
-// @version      1.2.3
+// @version      1.3.0
 // @description  Ao abrir as procurações recebidas no e-CAC ou no SPE (FGTS Digital), lê a lista completa e envia pro sistema Grupo-E (módulo Legalização).
 // @match        https://servicos.receitafederal.gov.br/servico/autorizacoes/*
 // @match        https://spe.sistema.gov.br/*
@@ -26,7 +26,7 @@
  * envia pro sistema Grupo-E, que grava só o que mudou. Roda sozinho quando você abre:
  *   - e-CAC → Autorizações de Acesso → Minhas Autorizações de Acesso
  *   - FGTS Digital → Procurações (SPE)
- * No máximo 1x a cada 6 horas por portal (ou pelo menu do Tampermonkey: "Sincronizar agora").
+ * No máximo 1x por semana por portal (ou pelo menu do Tampermonkey: "Sincronizar agora").
  * FGTS Digital também atualiza sozinho: (a) logo depois do e-CAC sincronizar, numa aba em segundo plano
  * (usa o login gov.br já feito); (b) quando você mesmo abre o FGTS Digital e chega na tela inicial.
  * Nesses dois casos o script só clica em "Entrar com GOV.BR", "Definir" (perfil) e no card "Procurações".
@@ -37,7 +37,7 @@
 
   const SISTEMA = 'https://grupo-e-sistema-uc2w.onrender.com';
   const CNPJ_ESCRITORIO = '25549775000141'; // Escritorial — só sincroniza logado como o escritório
-  const INTERVALO_MS = 6 * 60 * 60 * 1000;
+  const INTERVALO_MS = 6 * 24 * 60 * 60 * 1000; // 1x por semana (rodada de segunda-feira; 6 dias evita pular a semana seguinte por minutos)
 
   const ehEcac = location.hostname === 'servicos.receitafederal.gov.br';
   const tipo = ehEcac ? 'ecac' : 'fgts';
