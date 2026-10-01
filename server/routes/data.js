@@ -170,17 +170,27 @@ router.post('/financeiro/importar', async (req, res) => {
     if (!unidade || !Array.isArray(clientes) || !Array.isArray(abertos)) return res.status(400).json({ error: 'Informe unidade, clientes e abertos.' });
     await ensureFinanceiroSchema();
     const so = (s) => String(s || '').replace(/\D/g, '');
+    // Pedido do Reysner, 01/10/2026: "se parou de faturar não pode contar faturamento aqui no Grupo-E, pra não
+    // alterar os indicadores — e depois, quando autorizado, eu inativo no Acessórias". Cliente já ENCERRADO na
+    // Carteira (Acessórias deu baixa) não entra no Financeiro nem no "em aberto", mesmo que o Omie ainda traga
+    // um título dele (o Acessórias costuma demorar a atualizar) — fica só no relatório `encerradosFaturando`
+    // abaixo, como lembrete, sem contar em ticket médio/receita mensal/inadimplência. Cliente sem cadastro no
+    // Acessórias (status null) não é "encerrado" — continua contando normalmente.
+    const { rows: encerradosRows } = await pool.query(
+      `SELECT regexp_replace(cnpj, '\\D', '', 'g') AS doc FROM clientes WHERE status = 'encerrado'`
+    );
+    const docsEncerrados = new Set(encerradosRows.map(r => r.doc));
     await client.query('BEGIN');
     await client.query(`DELETE FROM financeiro_clientes WHERE unidade = $1`, [unidade]);
     await client.query(`DELETE FROM financeiro_aberto WHERE unidade = $1`, [unidade]);
     for (const c of clientes) {
       const doc = so(c.cnpj); const v = Math.round((+c.valor || 0) * 100) / 100;
-      if (![11, 14].includes(doc.length) || v <= 0) continue;
+      if (![11, 14].includes(doc.length) || v <= 0 || docsEncerrados.has(doc)) continue;
       await client.query(`INSERT INTO financeiro_clientes (unidade, cnpj, nome, honorario_atual, vigencia) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (unidade, cnpj) DO UPDATE SET nome = $3, honorario_atual = $4, vigencia = $5`,
         [unidade, doc, String(c.nome || '').slice(0, 200), v, /^\d{4}-\d{2}(-\d{2})?$/.test(c.vigencia || '') ? (c.vigencia.length === 7 ? c.vigencia + '-01' : c.vigencia) : null]);
     }
     for (const a of abertos) {
-      const doc = so(a.cnpj); if (![11, 14].includes(doc.length)) continue;
+      const doc = so(a.cnpj); if (![11, 14].includes(doc.length) || docsEncerrados.has(doc)) continue;
       await client.query(`INSERT INTO financeiro_aberto (unidade, cnpj, nome, qtd, valor_aberto, valor_atrasado, qtd_atrasados, mais_antigo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (unidade, cnpj) DO UPDATE SET nome=$3, qtd=$4, valor_aberto=$5, valor_atrasado=$6, qtd_atrasados=$7, mais_antigo=$8`,
         [unidade, doc, String(a.nome || '').slice(0, 200), parseInt(a.qtd, 10) || 0, +a.aberto || 0, +a.atrasado || 0, parseInt(a.qtdAtrasados, 10) || 0, /^\d{4}-\d{2}-\d{2}$/.test(a.maisAntigo || '') ? a.maisAntigo : null]);
     }
