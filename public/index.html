@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/app.css?v=202606271920" />
+  <link rel="stylesheet" href="/css/app.css?v=202610011" />
 </head>
 <body>
 
@@ -140,6 +140,7 @@
             onblur="if(!this.value){this.style.background='rgba(255,255,255,.1)';this.style.color='#fff'}" />
           <div id="busca-global-panel" hidden style="position:absolute;top:38px;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.15);z-index:600;max-height:400px;overflow-y:auto"></div>
         </div>
+        <button id="btn-ocultar-valores" class="admin-only" onclick="Sigilo.toggle()" style="background:none;border:1px solid var(--gray-200);border-radius:8px;cursor:pointer;padding:6px 12px;font-size:12.5px;font-weight:700;color:var(--g800);margin-right:8px;white-space:nowrap" title="Esconde todo valor em R$ do sistema — útil antes de compartilhar a tela">👁️ Ocultar valores</button>
         <div style="position:relative">
           <button id="notif-btn" onclick="Notificacoes.toggle()" style="position:relative;background:none;border:none;cursor:pointer;padding:6px;color:var(--g800);display:flex;align-items:center;margin-right:8px" title="Notificações">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
@@ -788,12 +789,12 @@
           <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:12px">
             <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:20px 18px 16px;border-top:3px solid var(--g500)">
               <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">MRR</div>
-              <div id="cart-mrr" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
+              <div id="cart-mrr" class="valor-rs" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
               <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Receita mensal recorrente</div>
             </div>
             <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:20px 18px 16px;border-top:3px solid var(--g500)">
               <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">ARR</div>
-              <div id="cart-arr" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
+              <div id="cart-arr" class="valor-rs" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
               <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Receita anual recorrente</div>
             </div>
             <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:20px 18px 16px;border-top:3px solid var(--g500)">
@@ -803,7 +804,7 @@
             </div>
             <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:20px 18px 16px;border-top:3px solid var(--g500)">
               <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Ticket médio</div>
-              <div id="cart-ticket" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
+              <div id="cart-ticket" class="valor-rs" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
               <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Honorário médio ativo</div>
             </div>
           </div>
@@ -814,14 +815,14 @@
               <div style="width:40px;height:40px;border-radius:8px;background:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">💰</div>
               <div style="min-width:0">
                 <div style="font-size:11px;font-weight:700;color:var(--g600);text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Receita acumulada total</div>
-                <div id="cart-receita-total" style="font-size:18px;font-weight:800;color:var(--g800)">—</div>
+                <div id="cart-receita-total" class="valor-rs" style="font-size:18px;font-weight:800;color:var(--g800)">—</div>
               </div>
             </div>
             <div style="background:var(--g100);border:1px solid var(--g200);border-radius:12px;padding:16px 18px;display:flex;align-items:center;gap:12px">
               <div style="width:40px;height:40px;border-radius:8px;background:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📈</div>
               <div style="min-width:0">
                 <div style="font-size:11px;font-weight:700;color:var(--g600);text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">LTV médio projetado</div>
-                <div id="cart-ltv-medio" style="font-size:18px;font-weight:800;color:var(--g800)">—</div>
+                <div id="cart-ltv-medio" class="valor-rs" style="font-size:18px;font-weight:800;color:var(--g800)">—</div>
               </div>
             </div>
             <div style="background:var(--g100);border:1px solid var(--g200);border-radius:12px;padding:16px 18px;display:flex;align-items:center;gap:12px">
@@ -899,7 +900,7 @@
           <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:12px">
             <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:20px 18px 16px;border-top:3px solid var(--g500)">
               <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Investimento total</div>
-              <div id="cac-total-inv" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
+              <div id="cac-total-inv" class="valor-rs" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
               <div style="font-size:11px;color:var(--gray-400);margin-top:4px">No período selecionado</div>
             </div>
             <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:20px 18px 16px;border-top:3px solid var(--g500)">
@@ -909,7 +910,7 @@
             </div>
             <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:20px 18px 16px;border-top:3px solid var(--g500)">
               <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">CAC médio</div>
-              <div id="cac-medio" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
+              <div id="cac-medio" class="valor-rs" style="font-size:24px;font-weight:800;color:var(--g700)">—</div>
               <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Investimento ÷ clientes</div>
             </div>
             <div style="background:#fff;border:1px solid var(--gray-100);border-radius:12px;padding:20px 18px 16px;border-top:3px solid var(--g500)">
@@ -932,14 +933,14 @@
               <div style="width:40px;height:40px;border-radius:8px;background:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">💰</div>
               <div style="min-width:0">
                 <div style="font-size:11px;font-weight:700;color:var(--g600);text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Maior investimento</div>
-                <div id="cac-maior-inv" style="font-size:18px;font-weight:800;color:var(--g800)">—</div>
+                <div id="cac-maior-inv" class="valor-rs" style="font-size:18px;font-weight:800;color:var(--g800)">—</div>
               </div>
             </div>
             <div style="background:var(--g100);border:1px solid var(--g200);border-radius:12px;padding:16px 18px;display:flex;align-items:center;gap:12px">
               <div style="width:40px;height:40px;border-radius:8px;background:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📈</div>
               <div style="min-width:0">
                 <div style="font-size:11px;font-weight:700;color:var(--g600);text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">LTV médio da carteira</div>
-                <div id="cac-ltv-medio" style="font-size:18px;font-weight:800;color:var(--g800)">—</div>
+                <div id="cac-ltv-medio" class="valor-rs" style="font-size:18px;font-weight:800;color:var(--g800)">—</div>
               </div>
             </div>
           </div>
@@ -1013,6 +1014,7 @@
             <div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" onclick="Financeiro.exportCSV()">⬇ CSV</button></div>
           </div>
           <p style="font-size:12px;color:var(--gray-400);margin:0 0 12px">Honorário atual = valor mensal de <b>SERVIÇOS HONORÁRIOS CONTÁBEIS</b> lido do Omie (serviços extras e outras categorias ficam de fora). Ticket médio = média dos honorários atuais da unidade; "na média" é a média ± R$ <span id="fin-banda">50</span>.</p>
+          <button id="fin-btn-liberar-ticket" hidden onclick="Sigilo.toggleTicketFin()" style="background:none;border:1px solid var(--gray-200);border-radius:8px;cursor:pointer;padding:6px 12px;font-size:12px;font-weight:700;color:var(--g800);margin-bottom:8px" title="Com 'Ocultar valores' ligado, mostra só o Ticket Médio — o resto continua escondido">🔓 Liberar só o Ticket Médio</button>
           <div id="fin-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:14px"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
             <div id="fin-chips" style="display:flex;gap:6px;flex-wrap:wrap"></div>

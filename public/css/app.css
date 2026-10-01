@@ -640,3 +640,11 @@ body.dark-mode .dark-toggle-switch::after      { transform:translateX(15px); }
 .lg-vazio { font-size: 12.5px; line-height: 1.4; color: var(--gray-400, #94a3b8); }
 @media (max-width: 1000px) { .lg-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .lg-kpi-num { font-size: 36px; } .lg-card { flex-direction: column; text-align: center; } .lg-leg { text-align: left; } }
+
+/* ── Ocultar valores (pedido do Reysner, 01/10/2026): botão global no topo esconde todo R$ visível
+   (Financeiro, Gestão de Clientes, Carteira, CAC/Investimentos) antes de compartilhar a tela — ver
+   window.Sigilo em app.js. Marca cada elemento de valor com a classe .valor-rs; o botão só liga/desliga
+   classes no <body>, então cobre automaticamente qualquer linha de tabela renderizada depois também.
+   Botão separado no Financeiro libera só o Ticket Médio (.rs-ticket-fin) sem abrir o resto. */
+body.sigilo-on .valor-rs { filter: blur(7px); user-select: none; }
+body.sigilo-on.sigilo-ticket-fin-on .valor-rs.rs-ticket-fin { filter: none; user-select: text; }

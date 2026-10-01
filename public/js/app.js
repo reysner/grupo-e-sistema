@@ -3044,8 +3044,8 @@ const Carteira = (() => {
         <td style="font-weight:600">${c.nome_empresa}${reajusteAlert}</td>
         <td style="font-size:12px;color:var(--gray-500)">${c.cnpj}</td>
         <td style="font-size:12px">${c.regime_tributario || '—'}</td>
-        <td style="font-weight:600;color:var(--g700)">${_fmt(hon)}${c.honorario_desde ? `<div title="${(c.honorario_obs||'').replace(/"/g,'')}" style="font-size:10.5px;color:var(--gray-400);font-weight:400">desde ${c.honorario_desde.slice(5,7)}/${c.honorario_desde.slice(0,4)}</div>` : ''}</td>
-        <td>${_fmt(rec)}</td>
+        <td class="valor-rs" style="font-weight:600;color:var(--g700)">${_fmt(hon)}${c.honorario_desde ? `<div title="${(c.honorario_obs||'').replace(/"/g,'')}" style="font-size:10.5px;color:var(--gray-400);font-weight:400">desde ${c.honorario_desde.slice(5,7)}/${c.honorario_desde.slice(0,4)}</div>` : ''}</td>
+        <td class="valor-rs">${_fmt(rec)}</td>
         <td style="font-size:12px;color:var(--gray-500)">${_tempo(c.data_entrada, c.data_saida)}</td>
         <td><span style="background:${healthColor}20;color:${healthColor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${healthLabel}</span></td>
         <td>${statusBadge}</td>
@@ -4105,7 +4105,7 @@ const Gestao = (() => {
         <td>${r.solicitacao}</td>
         <td style="font-size:12px">${r.grupo_empresas || '—'}</td>
         <td style="font-size:12px">${r.unidade || '—'}</td>
-        <td style="font-size:12px">${r.honorario_atual != null ? 'R$ ' + Number(r.honorario_atual).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—'}</td>
+        <td class="valor-rs" style="font-size:12px">${r.honorario_atual != null ? 'R$ ' + Number(r.honorario_atual).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—'}</td>
         <td>${faixaTag}</td>
         <td style="white-space:nowrap">
           <button class="btn btn-ghost btn-sm" onclick="Gestao.verFicha('${r.id}')">Ver ficha</button>
@@ -5305,13 +5305,13 @@ const CAC = (() => {
     const paged = App.Util.paginate(_data, _page);
     tbody.innerHTML = paged.items.map(r => {
       const recBadge = r.recorrente ? '<span style="background:#ebf8ff;color:#2b6cb0;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;margin-left:4px">↩ Recorrente</span>' : '';
-      const valorOrig = (r.valor_original && parseFloat(r.valor_original) !== parseFloat(r.valor)) ? '<div style="font-size:10px;color:var(--gray-400);text-decoration:line-through">' + _fmt(r.valor_original) + '</div>' : '';
+      const valorOrig = (r.valor_original && parseFloat(r.valor_original) !== parseFloat(r.valor)) ? '<div class="valor-rs" style="font-size:10px;color:var(--gray-400);text-decoration:line-through">' + _fmt(r.valor_original) + '</div>' : '';
       const editBtn = App.Auth.isAdmin() ? '<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px" data-id="' + r.id + '" data-valor="' + r.valor + '" data-desc="' + (r.descricao||'').replace(/'/g,'') + '" onclick="CAC.editarValor(this.dataset.id,this.dataset.valor,this.dataset.desc)">✏️</button>' : '';
       const delBtn = App.Auth.isAdmin() ? '<button class="btn btn-sm" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:16px;padding:2px 4px" data-id="' + r.id + '" onclick="CAC.excluir(this.dataset.id)">🗑</button>' : '';
       return '<tr>' +
         '<td style="font-weight:600">' + _mesLabel(r.mes, true) + '</td>' +
         '<td><span style="background:var(--g100);color:var(--g700);padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600">' + r.canal + '</span>' + recBadge + '</td>' +
-        '<td>' + valorOrig + '<span style="font-weight:600;color:var(--g700)">' + _fmt(r.valor) + '</span></td>' +
+        '<td>' + valorOrig + '<span class="valor-rs" style="font-weight:600;color:var(--g700)">' + _fmt(r.valor) + '</span></td>' +
         '<td style="font-size:12px;color:var(--gray-500)">' + (r.descricao||'—') + '</td>' +
         '<td style="font-size:12px;color:var(--gray-400)">' + (r.lancado_por||'—') + '</td>' +
         '<td style="white-space:nowrap">' + editBtn + ' ' + delBtn + '</td>' +
@@ -6154,8 +6154,8 @@ const Financeiro = (() => {
   }
   const trocarUnidade = () => load(document.getElementById('fin-unidade').value);
 
-  function _kpi(rot, valor, sub, cor) {
-    return `<div style="background:#fff;border:1px solid var(--gray-200);border-radius:14px;padding:14px 16px"><div style="font-size:11px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.04em">${rot}</div><div style="font-size:24px;font-weight:800;margin-top:6px;color:${cor || 'var(--gray-800)'}">${valor}</div><div style="font-size:11px;color:var(--gray-400);margin-top:2px">${sub || ''}</div></div>`;
+  function _kpi(rot, valor, sub, cor, classeValor, classeSub) {
+    return `<div style="background:#fff;border:1px solid var(--gray-200);border-radius:14px;padding:14px 16px"><div style="font-size:11px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.04em">${rot}</div><div class="${classeValor||''}" style="font-size:24px;font-weight:800;margin-top:6px;color:${cor || 'var(--gray-800)'}">${valor}</div><div class="${classeSub||''}" style="font-size:11px;color:var(--gray-400);margin-top:2px">${sub || ''}</div></div>`;
   }
 
   function _render() {
@@ -6164,9 +6164,9 @@ const Financeiro = (() => {
     document.getElementById('fin-banda').textContent = r.banda;
     document.getElementById('fin-importado').textContent = r.importado_em ? 'Importado do Omie em ' + new Date(r.importado_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
     document.getElementById('fin-kpis').innerHTML =
-      _kpi('Ticket médio', _rs(r.ticket_medio), `${r.clientes_com_honorario} clientes com honorário`) +
-      _kpi('Receita mensal de honorários', _rs(r.receita_mensal), 'soma dos honorários atuais') +
-      _kpi('Inadimplentes', String(r.inadimplentes), `${_rs(r.valor_atrasado)} em atraso`, r.inadimplentes ? '#c53030' : null) +
+      _kpi('Ticket médio', _rs(r.ticket_medio), `${r.clientes_com_honorario} clientes com honorário`, null, 'valor-rs rs-ticket-fin') +
+      _kpi('Receita mensal de honorários', _rs(r.receita_mensal), 'soma dos honorários atuais', null, 'valor-rs') +
+      _kpi('Inadimplentes', String(r.inadimplentes), `${_rs(r.valor_atrasado)} em atraso`, r.inadimplentes ? '#c53030' : null, '', 'valor-rs') +
       _kpi('Acima / Na média / Abaixo', `${r.acima} / ${r.na_media} / ${r.abaixo}`, `média ± R$ ${r.banda}`);
     const chip = (id, rotulo, n, ativo, onclick, cor) => `<button onclick="${onclick}" style="cursor:pointer;padding:7px 14px;border-radius:999px;font-size:12.5px;font-weight:700;border:1px solid ${ativo ? (cor || 'var(--green)') : 'var(--gray-200)'};background:${ativo ? (cor || 'var(--green)') : '#fff'};color:${ativo ? '#fff' : 'var(--gray-700)'}">${rotulo} <span style="opacity:.8">(${n})</span></button>`;
     const todos = _dados.clientes.filter(c => c.ativo_omie).length;
@@ -6204,15 +6204,15 @@ const Financeiro = (() => {
       const dif = c.diferenca_ticket;
       return `<tr style="border-bottom:1px solid var(--gray-100)">
         <td style="padding:9px 10px"><b>${_esc(c.nome)}</b><div style="font-size:11px;color:var(--gray-400)">${_esc(c.cnpj)}${c.na_carteira ? '' : ' · <span style="color:#b7791f">Não há cadastro no Acessórias</span>'}</div></td>
-        <td style="padding:9px 10px;text-align:right;font-weight:700">${c.honorario_atual != null ? _rs(c.honorario_atual) : '<span style="color:var(--gray-300)">—</span>'}${c.vigencia ? `<div style="font-size:10.5px;color:var(--gray-400);font-weight:400">desde ${_data(c.vigencia).slice(3)}</div>` : ''}</td>
-        <td style="padding:9px 10px;text-align:right;font-size:12px;color:${dif == null ? 'var(--gray-300)' : dif > 0 ? '#c05621' : dif < 0 ? '#2b6cb0' : '#276749'}">${dif == null ? '—' : (dif > 0 ? '+' : '') + _rs(dif)}</td>
+        <td class="valor-rs" style="padding:9px 10px;text-align:right;font-weight:700">${c.honorario_atual != null ? _rs(c.honorario_atual) : '<span style="color:var(--gray-300)">—</span>'}${c.vigencia ? `<div style="font-size:10.5px;color:var(--gray-400);font-weight:400">desde ${_data(c.vigencia).slice(3)}</div>` : ''}</td>
+        <td class="valor-rs" style="padding:9px 10px;text-align:right;font-size:12px;color:${dif == null ? 'var(--gray-300)' : dif > 0 ? '#c05621' : dif < 0 ? '#2b6cb0' : '#276749'}">${dif == null ? '—' : (dif > 0 ? '+' : '') + _rs(dif)}</td>
         <td style="padding:9px 10px">${f ? `<span style="background:${f[2]};color:${f[1]};font-weight:800;font-size:11.5px;padding:3px 10px;border-radius:999px">${f[0]}</span>` : '<span style="color:var(--gray-300)">—</span>'}</td>
-        <td style="padding:9px 10px;text-align:right">${c.inadimplente ? `<b style="color:#c53030">${_rs(c.atrasado)}</b><div style="font-size:10.5px;color:var(--gray-500)">${c.qtd_atrasados} título(s) · ${c.dias_atraso} dias (desde ${_data(c.atrasado_desde)})</div>` : '<span style="color:#276749;font-size:12px">em dia</span>'}</td>
+        <td class="valor-rs" style="padding:9px 10px;text-align:right">${c.inadimplente ? `<b style="color:#c53030">${_rs(c.atrasado)}</b><div style="font-size:10.5px;color:var(--gray-500)">${c.qtd_atrasados} título(s) · ${c.dias_atraso} dias (desde ${_data(c.atrasado_desde)})</div>` : '<span style="color:#276749;font-size:12px">em dia</span>'}</td>
         <td style="padding:9px 10px;font-size:12px">${c.ativo_omie ? '' : '<span style="background:#f7fafc;color:#718096;padding:2px 8px;border-radius:999px">sem honorário ativo no Omie</span> '}${c.status_carteira && c.status_carteira !== 'ativo' ? `<span style="background:#fff5f5;color:#c53030;padding:2px 8px;border-radius:999px">${_esc(c.status_carteira)} na Carteira</span>` : ''}</td>
       </tr>`;
     }).join('') || '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--gray-400)">Nenhum cliente nesse filtro.</td></tr>';
     const tot = l.reduce((s, c) => s + (c.honorario_atual || 0), 0), atr = l.reduce((s, c) => s + c.atrasado, 0);
-    document.getElementById('fin-rodape').textContent = `${l.length} cliente(s) · honorários somados ${_rs(tot)} · em atraso ${_rs(atr)}`;
+    document.getElementById('fin-rodape').innerHTML = `${l.length} cliente(s) · honorários somados <span class="valor-rs">${_rs(tot)}</span> · em atraso <span class="valor-rs">${_rs(atr)}</span>`;
   }
 
   const setFaixa = (f) => { _faixa = f; _render(); };
@@ -6229,6 +6229,44 @@ const Financeiro = (() => {
   return { load, trocarUnidade, filtrar, setFaixa, toggleInad, exportCSV };
 })();
 window.Financeiro = Financeiro;
+
+// ── Ocultar valores (pedido do Reysner, 01/10/2026): botão no topo esconde todo R$ visível no sistema
+// (Financeiro, Gestão de Clientes, Carteira, CAC/Investimentos — qualquer elemento marcado com a classe
+// "valor-rs") antes de compartilhar a tela. Guarda a escolha só neste navegador (localStorage), não é
+// config do servidor — cada admin liga/desliga o próprio sigilo, sem afetar o que os outros veem. É pura
+// classe CSS (ver app.css): nunca precisa reaplicar depois de uma tabela recarregar, porque o seletor
+// ".valor-rs" já pega qualquer linha nova renderizada enquanto o modo estiver ligado. O botão "Liberar só
+// o Ticket Médio" (acima do card no módulo Financeiro) é a única exceção — some automaticamente quando o
+// sigilo geral é desligado, pra nunca ficar "preso" liberado sem o usuário perceber.
+const Sigilo = (() => {
+  const CH_ATIVO = 'ge_sigilo_valores', CH_TICKET = 'ge_sigilo_liberar_ticket_fin';
+  let ativo = localStorage.getItem(CH_ATIVO) === '1';
+  let liberarTicketFin = ativo && localStorage.getItem(CH_TICKET) === '1';
+
+  function aplicar() {
+    document.body.classList.toggle('sigilo-on', ativo);
+    document.body.classList.toggle('sigilo-ticket-fin-on', liberarTicketFin);
+    const b = document.getElementById('btn-ocultar-valores');
+    if (b) { b.textContent = ativo ? '🙈 Valores ocultos' : '👁️ Ocultar valores'; b.style.color = ativo ? '#e53e3e' : ''; b.title = ativo ? 'Clique para voltar a mostrar os valores em R$' : 'Esconde todo valor em R$ do sistema (Financeiro, Gestão de Clientes, Carteira, CAC/Investimentos) — útil antes de compartilhar a tela'; }
+    const bt = document.getElementById('fin-btn-liberar-ticket');
+    if (bt) { bt.hidden = !ativo; bt.textContent = liberarTicketFin ? '👁️ Ticket médio liberado' : '🔓 Liberar só o Ticket Médio'; bt.style.color = liberarTicketFin ? '#276749' : ''; }
+  }
+  function toggle() {
+    ativo = !ativo;
+    localStorage.setItem(CH_ATIVO, ativo ? '1' : '0');
+    if (!ativo && liberarTicketFin) { liberarTicketFin = false; localStorage.setItem(CH_TICKET, '0'); }
+    aplicar();
+  }
+  function toggleTicketFin() {
+    if (!ativo) return;
+    liberarTicketFin = !liberarTicketFin;
+    localStorage.setItem(CH_TICKET, liberarTicketFin ? '1' : '0');
+    aplicar();
+  }
+  return { aplicar, toggle, toggleTicketFin };
+})();
+window.Sigilo = Sigilo;
+document.addEventListener('DOMContentLoaded', Sigilo.aplicar);
 
 
 
