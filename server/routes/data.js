@@ -3252,6 +3252,12 @@ publicRouter.get('/gamificacao', async (req, res) => {
         `, [mes]);
 
         const comAvalC = dadosMesC.rows.filter(r => parseInt(r.avaliacoes) > 0);
+        // Mês sem NENHUMA avaliação de ninguém ainda (ex.: dia 1 de um mês novo) fica de fora do Consolidado —
+        // pedido do Reysner, 01/10/2026: incluir um mês em branco zerava a nota de todo mundo (ninguém avaliado
+        // -> média geral do mês = 0 -> "menor nota final" = 0 -> todo colaborador ativo levava um 0 na temporada),
+        // só porque o mês tinha acabado de começar. Assim que o mês tiver pelo menos 1 avaliação real, entra
+        // normalmente (inclusive pra quem ainda está zerado nele, igual já era).
+        if (!comAvalC.length) continue;
         const mediasC = comAvalC.map(r => parseFloat(r.media_individual));
         const mediaGeralC = mediasC.length ? mediasC.reduce((s,m) => s+m, 0) / mediasC.length : 0;
 
