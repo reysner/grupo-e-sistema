@@ -16,6 +16,13 @@
 // Fases: (1) atrasados [filtro Situação "Atras"], (2) parciais ["Parc"], (3) a vencer / vence hoje ["venc"], (4) vencimento recente:
 // limpa o filtro, ordena por Vencimento decrescente e lê páginas até passar de 7 meses atrás (cutoff).
 // Consultar: ({ fase: window.__om2.fase, pagina: window.__om2.pagina, n: window.__om2.rows.length, contagem: window.__om2.contagem, done: window.__om2.done, err: window.__om2.err })
+//
+// FASE "recentes" — achado real (01/10/2026, leitura da Soluções Escritorial): a ordenação por Vencimento da grade
+// NÃO é um sort global confiável — uma mesma página pode misturar datas de 2023 com datas de 2026. A checagem antiga
+// (só olhar a ÚLTIMA linha de UMA página) achou uma data velha logo na página 1 e parou ali, perdendo ~1800 títulos
+// recentes — "clientes ativos" saiu 49 em vez de ~157. Agora só para depois de 3 PÁGINAS SEGUIDAS 100% abaixo do
+// cutoff (bem mais difícil de "página mal ordenada" enganar 3 vezes seguidas), com um teto de 150 páginas (7500
+// títulos) — nunca lê o histórico inteiro (a Escritorial sozinha tem ~16.850 títulos no total).
 /*
 const $ = window.jQuery; const g = $('#' + $('[id$="g_container"]').toArray()[0].id.replace('_container', '')); const ds = () => g.data('igGrid').dataSource;
 const ev = (el) => { const r = el.getBoundingClientRect(); const o = { bubbles: true, cancelable: true, view: window, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, button: 0 }; ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(t => el.dispatchEvent(t.startsWith('pointer') ? new PointerEvent(t, o) : new MouseEvent(t, o))); };
@@ -29,15 +36,20 @@ const guardar = (fase) => { for (const r of ds().data() || []) { if (window.__om
 const setFiltro = async (txt) => { const inp = $('#' + g.attr('id') + '_container input.ui-iggrid-filtereditor').toArray()[0]; const antes = ds().totalRecordsCount(); inp.focus(); inp.value = txt; ['input', 'keyup'].forEach(t => inp.dispatchEvent(new Event(t, { bubbles: true }))); ['keydown', 'keypress', 'keyup'].forEach(t => inp.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))); for (let i = 0; i < 30; i++) { await espera(500); if (ds().totalRecordsCount() !== antes) break; } await espera(2500); };
 const ordenarVencDesc = async () => { const th = $('#' + g.attr('id') + '_headers th').toArray().find(t => /^Vencimento$/.test(t.innerText.replace(/[«\s]+$/, '').trim())); for (let i = 0; i < 3; i++) { clicar('.ui-iggrid-firstpage'); await espera(3500); const d = ds().data(); if (d.length > 1 && iso(d[0].DATA_VENC) >= iso(d[d.length - 1].DATA_VENC) && iso(d[0].DATA_VENC) >= '2026-01-01') return true; ev(th.querySelector('a') || th); await espera(8000); } return false; };
 const percorrer = async (fase, parar) => { clicar('.ui-iggrid-firstpage'); await espera(4000); const total = ds().totalRecordsCount(); const paginas = Math.ceil(total / 50); window.__om2.fase = fase; for (let p = 1; p <= paginas; p++) { guardar(fase); window.__om2.pagina = p; const d = ds().data(); if (parar && d.length && parar(d[d.length - 1])) break; if (p === paginas) break; const antes = primeiro(); clicar('.ui-iggrid-nextpage'); let t = 0; while (t < 60) { await espera(400); if (primeiro() !== antes) break; t++; } await espera(250); } };
+// Recentes com checagem robusta: só para quando 3 páginas SEGUIDAS ficam totalmente abaixo do cutoff (não confia
+// numa página só); teto de 150 páginas como válvula de segurança (nunca lê o histórico inteiro da empresa).
+const percorrerRecentes = async () => { clicar('.ui-iggrid-firstpage'); await espera(4000); const total = ds().totalRecordsCount(); const paginas = Math.min(Math.ceil(total / 50), 150); window.__om2.fase = 'recentes'; let seguidasAbaixo = 0; for (let p = 1; p <= paginas; p++) { guardar('recentes'); window.__om2.pagina = p; const d = ds().data(); const todasAbaixo = d.length && d.every(r => (iso(r.DATA_VENC) || '9') < cutoff); seguidasAbaixo = todasAbaixo ? seguidasAbaixo + 1 : 0; if (seguidasAbaixo >= 3) break; if (p === paginas) break; const antes = primeiro(); clicar('.ui-iggrid-nextpage'); let t = 0; while (t < 60) { await espera(400); if (primeiro() !== antes) break; t++; } await espera(250); } };
 (async () => { try {
   for (const [fase, txt] of [['atrasados', 'Atras'], ['parciais', 'Parc'], ['avencer', 'venc']]) { await setFiltro(txt); await percorrer(fase, null); }
   await setFiltro(''); window.__om2.ordenou = await ordenarVencDesc();
-  await percorrer('recentes', (u) => (iso(u.DATA_VENC) || '9') < cutoff);
+  await percorrerRecentes();
   window.__om2.done = true;
 } catch (e) { window.__om2.err = String(e); } })();
 'iniciado cutoff=' + cutoff
 */
 // Ao terminar (done=true): ordenou deve ser true; contagem.recentes > 0. A Soluções Escritorial (3,4 mil títulos) também roda assim.
+// Desconfie se "clientes ativos" sair bem abaixo da leitura anterior (ex.: Soluções ~157, Escritorial ~356) — pode ser
+// sinal de que a fase "recentes" parou cedo demais; confira window.__om2.pagina (se parou na página 1 ou 2, é suspeito).
 
 // ═══════════ SCRIPT 2 — RESUMO (rápido) → listas COMPACTAS pro importarOmie.js ═══════════
 /*
