@@ -168,7 +168,13 @@ async function persistirTicket(pool, linha, mensagens) {
   );
   const ticketId = rows[0].id;
 
+  // A ingestão roda a cada 5 min e reprocessa todo ticket com atividade no dia; reenviar o texto de
+  // todas as mensagens (ON CONFLICT DO NOTHING) gastava a banda "Service-Initiated" do Render (02/10/2026).
+  // Ler os ids já salvos é entrada (não conta); só as mensagens novas saem.
+  const { rows: jaSalvas } = await pool.query(`SELECT zappy_msg_id FROM cs_mensagens WHERE ticket_id = $1`, [ticketId]);
+  const idsSalvos = new Set(jaSalvas.map(r => String(r.zappy_msg_id)));
   for (const m of mensagens) {
+    if (m.zappy_msg_id != null && idsSalvos.has(String(m.zappy_msg_id))) continue;
     await pool.query(
       `INSERT INTO cs_mensagens (ticket_id, zappy_msg_id, remetente, autor, hora, texto)
        VALUES ($1,$2,$3,$4,$5,$6)

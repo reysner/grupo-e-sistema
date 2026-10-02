@@ -70,6 +70,9 @@ function criarPoolFake({ clientesSeed = [], configSeed = {} } = {}) {
       });
       return { rows: [{ id }] };
     }
+    if (s.startsWith('SELECT zappy_msg_id FROM cs_mensagens')) {
+      return { rows: db.cs_mensagens.filter(m => m.ticket_id === params[0]).map(m => ({ zappy_msg_id: m.zappy_msg_id })) };
+    }
     if (s.startsWith('INSERT INTO cs_mensagens')) {
       const [ticket_id, zappy_msg_id, remetente, autor, hora, texto] = params;
       const duplicada = zappy_msg_id != null && db.cs_mensagens.some(
