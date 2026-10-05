@@ -7456,6 +7456,24 @@ const Gamificacao = (() => {
   // aceite, então uma linha já marcada "indevida" em "Revisar velocidade"
   // continuava aparecendo como "pendente" aqui (achado do Reysner, 04/09/2026).
   // Prioridade: mostra o status do desconto que de fato está ativo na linha.
+  // Desconto que ainda pesa na nota: negativo e NÃO marcado "indevida" na revisão da própria métrica.
+  function _descAtivo(valor, status) { return parseFloat(valor) < 0 && status !== 'indevida'; }
+  // Mostra o valor; se o desconto foi marcado indevida, aparece riscado e cinza (não conta mais).
+  function _ajusteCelula(valor, status) {
+    if (parseFloat(valor) < 0 && status === 'indevida') {
+      return '<span title="Marcado como indevida — não conta na nota" style="color:var(--gray-400);text-decoration:line-through">' + valor + '</span>';
+    }
+    return valor;
+  }
+  // Status de revisão de CADA métrica que tem desconto (a coluna única antiga só mostrava a primeira).
+  function _revisaoResumo(t) {
+    const partes = [];
+    if (parseFloat(t.ajuste_velocidade) < 0) partes.push('vel.: ' + (t.vel_revisao_status || 'pendente'));
+    if (parseFloat(t.ajuste_aceite) < 0) partes.push('aceite: ' + (t.aceite_revisao_status || 'pendente'));
+    if (parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0) partes.push('/finalizar: ' + (t.finalizar_revisao_status || 'pendente'));
+    return partes.length ? partes.join(' · ') : (t.revisao_nota_status || 'pendente');
+  }
+
   function _statusRevisaoLinha(t) {
     if (parseFloat(t.ajuste_velocidade) < 0) return t.vel_revisao_status || 'pendente';
     if (parseFloat(t.ajuste_aceite) < 0) return t.aceite_revisao_status || 'pendente';
@@ -7513,28 +7531,28 @@ const Gamificacao = (() => {
       '<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">' +
       '<thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Nota Cliente</th><th>Vel.</th><th>Aceite</th><th>/Finalizar</th><th>Reabertura</th><th>Nota Final</th><th>Revisão</th></tr></thead><tbody>' +
       tickets.map(t => {
-        const temDesconto = parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0 || parseFloat(t.ajuste_aceite) < 0;
+        const temDesconto = _descAtivo(t.ajuste_velocidade, t.vel_revisao_status) || _descAtivo(t.ajuste_finalizar, t.finalizar_revisao_status) || _descAtivo(t.ajuste_reabertura, t.finalizar_revisao_status) || _descAtivo(t.ajuste_aceite, t.aceite_revisao_status);
         // O ajuste de velocidade só existe nos tiers +2/+1/-1 — um 0.0 aqui
         // nunca é "neutro calculado", é sempre "não tinha relógio de SLA pra
         // medir" (ex.: ticket aberto pelo próprio escritório). Deixa isso
         // explícito em vez de mostrar "0.0" (que parece um resultado normal).
         const velTexto = parseFloat(t.ajuste_velocidade) === 0
           ? '<span style="color:var(--gray-400);font-style:italic">sem dado</span>'
-          : t.ajuste_velocidade;
+          : _ajusteCelula(t.ajuste_velocidade, t.vel_revisao_status);
         const aceiteTexto = t.ajuste_aceite == null
           ? '<span style="color:var(--gray-400);font-style:italic">n/a</span>'
-          : t.ajuste_aceite;
+          : _ajusteCelula(t.ajuste_aceite, t.aceite_revisao_status);
         return `<tr style="${temDesconto ? 'background:#fff5f5' : ''}">` +
           `<td>#${t.zappy_id}</td>` +
           `<td>${t.empresa_texto || '—'}</td>` +
           `<td>${t.papel}</td>` +
           `<td>${t.nota_cliente ?? '—'}</td>` +
-          `<td style="${parseFloat(t.ajuste_velocidade) < 0 ? 'color:#c0362c;font-weight:700' : ''}">${velTexto}</td>` +
-          `<td style="${parseFloat(t.ajuste_aceite) < 0 ? 'color:#c0362c;font-weight:700' : ''}">${aceiteTexto}</td>` +
-          `<td>${t.ajuste_finalizar}</td>` +
-          `<td style="${parseFloat(t.ajuste_reabertura) < 0 ? 'color:#c0362c;font-weight:700' : ''}">${t.ajuste_reabertura}</td>` +
+          `<td style="${_descAtivo(t.ajuste_velocidade, t.vel_revisao_status) ? 'color:#c0362c;font-weight:700' : ''}">${velTexto}</td>` +
+          `<td style="${_descAtivo(t.ajuste_aceite, t.aceite_revisao_status) ? 'color:#c0362c;font-weight:700' : ''}">${aceiteTexto}</td>` +
+          `<td>${_ajusteCelula(t.ajuste_finalizar, t.finalizar_revisao_status)}</td>` +
+          `<td style="${_descAtivo(t.ajuste_reabertura, t.finalizar_revisao_status) ? 'color:#c0362c;font-weight:700' : ''}">${_ajusteCelula(t.ajuste_reabertura, t.finalizar_revisao_status)}</td>` +
           `<td style="font-weight:700">${t.nota_final}</td>` +
-          `<td style="font-size:11px;color:var(--gray-400)">${_statusRevisaoLinha(t)}</td>` +
+          `<td style="font-size:11px;color:var(--gray-400)">${_revisaoResumo(t)}</td>` +
         `</tr>`;
       }).join('') + '</tbody></table></div>';
   }
@@ -7644,7 +7662,7 @@ const Gamificacao = (() => {
     // "indevida" (em Revisar velocidade/Aceite/Finalizar) some daqui igual ao
     // abandono já fazia, em vez de continuar listado (pedido do Reysner,
     // 04/09/2026: "precisa apagar dali também").
-    const temDesconto = t => (parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0 || parseFloat(t.ajuste_aceite) < 0) && _statusRevisaoLinha(t) !== 'indevida';
+    const temDesconto = t => _descAtivo(t.ajuste_velocidade, t.vel_revisao_status) || _descAtivo(t.ajuste_finalizar, t.finalizar_revisao_status) || _descAtivo(t.ajuste_reabertura, t.finalizar_revisao_status) || _descAtivo(t.ajuste_aceite, t.aceite_revisao_status);
     const ticketsComDesconto = (tickets || []).filter(temDesconto);
     const abandonoValidos = (abandono || []).filter(a => a.status !== 'indevida');
 
@@ -7654,11 +7672,11 @@ const Gamificacao = (() => {
         '<thead><tr><th>Ticket</th><th>Cliente</th><th>Papel</th><th>Vel.</th><th>Aceite</th><th>/Finalizar</th><th>Nota Final</th><th>Revisão</th></tr></thead><tbody>' +
         ticketsComDesconto.map(t =>
           '<tr><td>#' + t.zappy_id + '</td><td>' + (t.empresa_texto || '—') + '</td><td>' + t.papel + '</td>' +
-          '<td style="' + (parseFloat(t.ajuste_velocidade) < 0 ? 'color:#c0362c;font-weight:700' : '') + '">' + t.ajuste_velocidade + '</td>' +
-          '<td style="' + (parseFloat(t.ajuste_aceite) < 0 ? 'color:#c0362c;font-weight:700' : '') + '">' + (t.ajuste_aceite ?? '—') + '</td>' +
-          '<td style="' + (parseFloat(t.ajuste_finalizar) < 0 ? 'color:#c0362c;font-weight:700' : '') + '">' + t.ajuste_finalizar + '</td>' +
+          '<td style="' + (_descAtivo(t.ajuste_velocidade, t.vel_revisao_status) ? 'color:#c0362c;font-weight:700' : '') + '">' + _ajusteCelula(t.ajuste_velocidade, t.vel_revisao_status) + '</td>' +
+          '<td style="' + (_descAtivo(t.ajuste_aceite, t.aceite_revisao_status) ? 'color:#c0362c;font-weight:700' : '') + '">' + (t.ajuste_aceite == null ? '—' : _ajusteCelula(t.ajuste_aceite, t.aceite_revisao_status)) + '</td>' +
+          '<td style="' + (_descAtivo(t.ajuste_finalizar, t.finalizar_revisao_status) ? 'color:#c0362c;font-weight:700' : '') + '">' + _ajusteCelula(t.ajuste_finalizar, t.finalizar_revisao_status) + '</td>' +
           '<td><b>' + t.nota_final + '</b></td>' +
-          '<td style="font-size:11px;color:var(--gray-400)">' + _statusRevisaoLinha(t) + '</td></tr>'
+          '<td style="font-size:11px;color:var(--gray-400)">' + _revisaoResumo(t) + '</td></tr>'
         ).join('') + '</tbody></table></div>';
     }
     if (abandonoValidos.length) {
@@ -7726,7 +7744,7 @@ const Gamificacao = (() => {
     const mes = document.getElementById('gam-rel-mes')?.value || '';
     const token = _tk();
     // Mesmo critério do toggle na tela: exclui o que já foi marcado indevida.
-    const temDesconto = t => (parseFloat(t.ajuste_velocidade) < 0 || parseFloat(t.ajuste_finalizar) < 0 || parseFloat(t.ajuste_reabertura) < 0 || parseFloat(t.ajuste_aceite) < 0) && _statusRevisaoLinha(t) !== 'indevida';
+    const temDesconto = t => _descAtivo(t.ajuste_velocidade, t.vel_revisao_status) || _descAtivo(t.ajuste_finalizar, t.finalizar_revisao_status) || _descAtivo(t.ajuste_reabertura, t.finalizar_revisao_status) || _descAtivo(t.ajuste_aceite, t.aceite_revisao_status);
     const detalhes = await Promise.all(_relatorioTodosData.map(async r => {
       const res = await fetch('/api/data/gam/relatorio-descontos?mes=' + mes + '&colaborador_id=' + r.colaboradorId, { headers: { Authorization: 'Bearer ' + token } });
       const j = res && res.ok ? await res.json() : { tickets: [], abandono: [] };
