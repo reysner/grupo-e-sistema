@@ -60,6 +60,7 @@ app.use('/api/auth',   resetRoutes);               // recuperação de senha (fo
 app.use('/api/auth',   authRoutes);
 app.use('/api/data',   dataRoutes);
 app.use('/api/users',  usersRoutes);
+app.use('/api/cs/categorias', require('./cs/categorias').router);  // Categorias Diamante/Ouro/Prata/Bronze (antes de /api/cs)
 app.use('/api/cs',     require('./cs/routes'));    // Sucesso do Cliente — radar de SLA
 app.use('/api/analistas', require('./routes/analistas'));  // lista de analistas p/ dropdowns
 app.use('/api/grupos-empresas', require('./routes/grupos-empresas'));  // lista de grupos de empresas p/ dropdown
@@ -301,6 +302,13 @@ initDB().then(async () => {
         console.log('[Acessórias] Sincronização automática:', resultado);
       } catch (e) {
         console.error('[Acessórias] Falha na sincronização automática:', e.message);
+      }
+      // TAGs (Categorias de cliente): mesmo ciclo diário; falha aqui não afeta a sincronização acima.
+      try {
+        const r = await require('./cs/categorias').sincronizarTags();
+        console.log('[Categorias] TAGs sincronizadas:', r);
+      } catch (e) {
+        console.error('[Categorias] Falha ao sincronizar TAGs:', e.message);
       }
     };
     setInterval(rodarSyncAcessorias, 24 * 60 * 60 * 1000); // 1x por dia

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/app.css?v=202610011" />
+  <link rel="stylesheet" href="/css/app.css?v=202610051" />
 </head>
 <body>
 
@@ -779,6 +779,7 @@
             </select>
             <div style="margin-left:auto;display:flex;gap:8px">
               <button class="btn btn-ghost btn-sm admin-only" onclick="Carteira.abrirReajusteEmMassa()">📊 Reajuste em Massa</button>
+              <button class="btn btn-ghost btn-sm admin-only" onclick="Carteira.abrirCategorias()" title="Faixas de Diamante/Ouro/Prata/Bronze e TAGs do Acessórias">🏅 Categorias</button>
               <button class="btn btn-ghost btn-sm" onclick="Carteira.exportCSV()">⬇ Exportar CSV</button>
               <button class="btn btn-ghost btn-sm" onclick="Carteira.exportPDF()">🖨 Exportar PDF</button>
               <button class="btn btn-sm admin-only" onclick="Carteira.limpar()" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7">🗑 Limpar Registros</button>
@@ -846,9 +847,9 @@
                 <table class="data-table" id="cart-grid">
                   <thead><tr>
                     <th>Cód.</th><th>Empresa</th><th>CNPJ</th><th>Regime</th><th>Honorário</th>
-                    <th>Rec. acumulada</th><th>Tempo</th><th>Health</th><th>Status</th><th></th>
+                    <th>Rec. acumulada</th><th>Tempo</th><th>Categoria</th><th>Health</th><th>Status</th><th></th>
                   </tr></thead>
-                  <tbody id="cart-tbody"><tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
+                  <tbody id="cart-tbody"><tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
                 </table>
               </div>
               <div id="cart-pagination"></div>
@@ -1462,6 +1463,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="/js/app.js?v=202610052"></script>
+  <script src="/js/app.js?v=202610053"></script>
 </body>
 </html>

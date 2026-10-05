@@ -258,8 +258,55 @@ function empresaParaCliente(empresa) {
   };
 }
 
+async function getJson(caminho, token) {
+  const resp = await fetch(`${BASE_URL}${caminho}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+  if (resp.status === 429) {
+    await new Promise(r => setTimeout(r, 5000));
+    return getJson(caminho, token);
+  }
+  if (!resp.ok) throw new Error(`Acessórias respondeu ${resp.status} em ${caminho.split('?')[0]}`);
+  return resp.json();
+}
+
+/**
+ * TAGs do Acessórias (GET /tags/ListAll, 20 por página). Usadas pras Categorias de cliente:
+ * TAGs de empresas do Grupo-E (Hands, Devia, Talentos...) dão piso Ouro; TAGs de grupos de clientes somam honorário.
+ */
+async function listarTags({ token, limitePaginas = 100 } = {}) {
+  if (!token) throw new Error('ACESSORIAS_API_TOKEN não configurado.');
+  const todas = [];
+  for (let pagina = 1; pagina <= limitePaginas; pagina++) {
+    const lote = await getJson(`/tags/ListAll?Pagina=${pagina}`, token);
+    const lista = Array.isArray(lote) ? lote : [];
+    if (!lista.length) break;
+    todas.push(...lista);
+    if (lista.length < 20) break;
+    await new Promise(r => setTimeout(r, ESPACAMENTO_MS));
+  }
+  return todas
+    .map(t => ({ id: String(t.id ?? t.ID ?? ''), nome: String(t.nome ?? t.Nome ?? '').trim(), status: String(t.status ?? t.Status ?? '') }))
+    .filter(t => t.id && t.nome);
+}
+
+/** CNPJs/CPFs das empresas vinculadas a uma TAG (GET /tags/{id}?companies=1). Formato da lista é lido de forma tolerante. */
+async function listarEmpresasDaTag(tagId, { token, limitePaginas = 100 } = {}) {
+  const achados = new Set();
+  for (let pagina = 1; pagina <= limitePaginas; pagina++) {
+    const dados = await getJson(`/tags/${encodeURIComponent(tagId)}?companies=1&Pagina=${pagina}`, token);
+    const lista = Array.isArray(dados?.companies) ? dados.companies
+      : Array.isArray(dados?.empresas) ? dados.empresas
+      : Array.isArray(dados) ? dados : [];
+    const antes = achados.size;
+    lista.forEach(e => { const c = e?.cnpj || e?.Identificador || e?.identificador; if (c) achados.add(String(c)); });
+    if (lista.length < 20 || achados.size === antes) break;
+    await new Promise(r => setTimeout(r, ESPACAMENTO_MS));
+  }
+  return [...achados];
+}
+
 module.exports = {
   listarEmpresasAtivas, buscarEmpresaPorCnpj, normalizarRegime, normalizarRegimeComFallback,
   normalizarData, fantasiaUtilizavel, derivarApelido, empresaParaCliente,
   listarEmpresasInativasDesde, empresaInativaParaCandidato,
+  listarTags, listarEmpresasDaTag,
 };

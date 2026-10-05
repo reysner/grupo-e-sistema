@@ -2968,6 +2968,7 @@ window.Pesquisas = Pesquisas;
 // ── Módulo Carteira ──────────────────────────────────────────────────────────
 const Carteira = (() => {
   let _clientes = [];
+  let _categorias = {}; // cliente_id -> { categoria, motivo } (GET /api/cs/categorias)
   let _page = 1;
   let _shown = 20; // rolagem infinita: quantas linhas já estão renderizadas
   function _token() { return localStorage.getItem('ge_token') || ''; }
@@ -3013,7 +3014,7 @@ const Carteira = (() => {
     const tbody = document.getElementById('cart-tbody');
     if (!tbody) return;
     if (!data.length) {
-      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum cliente encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:32px">Nenhum cliente encontrado.</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(c => {
@@ -3047,6 +3048,7 @@ const Carteira = (() => {
         <td class="valor-rs" style="font-weight:600;color:var(--g700)">${_fmt(hon)}${c.honorario_desde ? `<div title="${(c.honorario_obs||'').replace(/"/g,'')}" style="font-size:10.5px;color:var(--gray-400);font-weight:400">desde ${c.honorario_desde.slice(5,7)}/${c.honorario_desde.slice(0,4)}</div>` : ''}</td>
         <td class="valor-rs">${_fmt(rec)}</td>
         <td style="font-size:12px;color:var(--gray-500)">${_tempo(c.data_entrada, c.data_saida)}</td>
+        <td>${_categoriaCelula(c)}</td>
         <td><span style="background:${healthColor}20;color:${healthColor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${healthLabel}</span></td>
         <td>${statusBadge}</td>
         <td style="white-space:nowrap">
@@ -3061,6 +3063,88 @@ const Carteira = (() => {
 
   async function load() {
     await Promise.all([loadDashboard(), loadGrid()]);
+  }
+
+  // Categoria (Diamante/Ouro/Prata/Bronze) sempre com o motivo escrito embaixo — o motivo traz valores em R$, então entra no "Ocultar valores".
+  function _categoriaCelula(c) {
+    if (c.status !== 'ativo') return '<span style="color:var(--gray-400)">—</span>';
+    const cat = _categorias[c.id];
+    if (!cat) return '<span style="font-size:11px;color:var(--gray-400)">—</span>';
+    if (!cat.categoria) return `<span style="font-size:11px;color:var(--gray-400)">${_esc(cat.motivo)}</span>`;
+    return `<span class="cat-pill cat-${cat.categoria.toLowerCase()}">${cat.categoria}</span><div class="cat-motivo valor-rs" title="${_esc(cat.motivo)}">${_esc(cat.motivo)}</div>`;
+  }
+
+  const _TRATAMENTOS = [['ignorar', 'Ignorar'], ['piso_ouro', 'Piso Ouro (empresa do Grupo-E)'], ['grupo', 'Grupo de clientes (soma honorários)']];
+
+  async function abrirCategorias() {
+    const res = await fetch('/api/cs/categorias/config', { headers: { Authorization: `Bearer ${_token()}` } });
+    if (!res || !res.ok) { App.Toast.err('Erro ao carregar a configuração de categorias.'); return; }
+    const cfg = await res.json();
+    const sync = cfg.ultima_sincronizacao_tags ? new Date(cfg.ultima_sincronizacao_tags).toLocaleString('pt-BR') : 'nunca';
+    const tagsHtml = cfg.tags.length ? cfg.tags.map(t => `
+      <tr>
+        <td style="font-weight:600">${_esc(t.nome)}</td>
+        <td style="text-align:center">${t.empresas_ativas}</td>
+        <td><select data-tag-id="${_esc(t.id)}" class="cat-tag-sel" style="padding:4px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:12px">
+          ${_TRATAMENTOS.map(([v, r]) => `<option value="${v}" ${t.tratamento === v ? 'selected' : ''}>${r}</option>`).join('')}
+        </select></td>
+      </tr>`).join('') : '<tr><td colspan="3" style="text-align:center;color:var(--gray-400);padding:14px">Nenhuma TAG sincronizada ainda. Clique em "Sincronizar TAGs agora".</td></tr>';
+    const gruposHtml = cfg.grupos.filter(g => g.qtd >= 2).slice(0, 15).map(g =>
+      `<tr><td>${_esc(g.nome)}</td><td style="text-align:center">${g.qtd}</td><td class="valor-rs" style="text-align:right">${_fmt(g.soma)}</td></tr>`).join('')
+      || '<tr><td colspan="3" style="text-align:center;color:var(--gray-400);padding:10px">Nenhum grupo com 2 ou mais empresas ativas.</td></tr>';
+    App.Modal.open('🏅 Categorias de cliente', `
+      <div style="display:grid;gap:16px">
+        <p style="margin:0;font-size:13px;color:var(--gray-600);line-height:1.5">A categoria vale a <strong>maior</strong> entre: honorário da empresa, soma do grupo e piso Ouro das empresas do Grupo-E. O motivo aparece sempre ao lado da categoria.</p>
+        <div>
+          <strong style="font-size:13px">Faixas de honorário mensal (R$)</strong>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:8px">
+            <div class="field"><label>Prata a partir de</label><input id="cat-prata" type="number" min="1" step="1" value="${cfg.cortes.prata}" /></div>
+            <div class="field"><label>Ouro a partir de</label><input id="cat-ouro" type="number" min="1" step="1" value="${cfg.cortes.ouro}" /></div>
+            <div class="field"><label>Diamante a partir de</label><input id="cat-diamante" type="number" min="1" step="1" value="${cfg.cortes.diamante}" /></div>
+          </div>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Abaixo do valor de Prata = Bronze.</div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+            <strong style="font-size:13px">TAGs do Acessórias</strong>
+            <span style="font-size:11px;color:var(--gray-400)">Última sincronização: ${sync}${cfg.sincronizando ? ' (em andamento)' : ''}</span>
+            <button class="btn btn-ghost btn-sm" onclick="Carteira.sincronizarTagsAgora(this)">🔄 Sincronizar TAGs agora</button>
+          </div>
+          <div style="font-size:11px;color:var(--gray-400);margin:4px 0 6px">Hands, Devia e Talentos já nascem como Piso Ouro. TAGs de grupos de clientes devem ser marcadas como "Grupo".</div>
+          <div style="max-height:220px;overflow-y:auto;border:1px solid var(--gray-100);border-radius:8px">
+            <table class="data-table"><thead><tr><th>TAG</th><th style="text-align:center">Empresas ativas</th><th>Tratamento</th></tr></thead><tbody>${tagsHtml}</tbody></table>
+          </div>
+        </div>
+        <div>
+          <strong style="font-size:13px">Grupos de Gestão de Clientes (soma automática)</strong>
+          <div style="max-height:160px;overflow-y:auto;border:1px solid var(--gray-100);border-radius:8px;margin-top:6px">
+            <table class="data-table"><thead><tr><th>Grupo</th><th style="text-align:center">Empresas</th><th style="text-align:right">Soma dos honorários</th></tr></thead><tbody>${gruposHtml}</tbody></table>
+          </div>
+        </div>
+      </div>
+    `, () => salvarCategorias());
+  }
+
+  async function salvarCategorias() {
+    const cortes = { prata: Number(document.getElementById('cat-prata').value), ouro: Number(document.getElementById('cat-ouro').value), diamante: Number(document.getElementById('cat-diamante').value) };
+    const tags = [...document.querySelectorAll('.cat-tag-sel')].map(s => ({ id: s.dataset.tagId, tratamento: s.value }));
+    const res = await fetch('/api/cs/categorias/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${_token()}` },
+      body: JSON.stringify({ cortes, tags }),
+    });
+    if (!res || !res.ok) { App.Toast.err((await res?.json().catch(() => ({})))?.error || 'Erro ao salvar categorias.'); return; }
+    App.Toast.ok('Categorias salvas.');
+    App.Modal.close();
+    loadGrid();
+  }
+
+  async function sincronizarTagsAgora(btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Iniciando...'; }
+    const res = await fetch('/api/cs/categorias/sincronizar-tags', { method: 'POST', headers: { Authorization: `Bearer ${_token()}` } });
+    const corpo = await res.json().catch(() => ({}));
+    if (res.ok) App.Toast.ok(corpo.mensagem || 'Sincronização iniciada.'); else App.Toast.err(corpo.error || 'Erro ao sincronizar TAGs.');
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Sincronizar TAGs agora'; }
   }
 
   async function loadDashboard() {
@@ -3086,16 +3170,18 @@ const Carteira = (() => {
   async function loadGrid() {
     const tbody = document.getElementById('cart-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr>';
-    const res = await fetch('/api/data/clientes?status=todos', {
-      headers: { 'Authorization': `Bearer ${_token()}` }
-    });
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr>';
+    const [res, resCat] = await Promise.all([
+      fetch('/api/data/clientes?status=todos', { headers: { 'Authorization': `Bearer ${_token()}` } }),
+      fetch('/api/cs/categorias', { headers: { 'Authorization': `Bearer ${_token()}` } }).catch(() => null),
+    ]);
     if (!res || !res.ok) {
-      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#e53e3e;padding:32px">Erro ao carregar.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#e53e3e;padding:32px">Erro ao carregar.</td></tr>';
       return;
     }
     const { data } = await res.json();
     _clientes = data || [];
+    _categorias = (resCat && resCat.ok) ? ((await resCat.json()).data || {}) : {};
     _populateYearFilter(_clientes);
     const receitaTotal = _clientes.reduce((s,c) => s + parseFloat(c.receita_acumulada||0), 0);
     const el = document.getElementById('cart-receita-total');
@@ -3345,6 +3431,7 @@ const Carteira = (() => {
           <div><strong>CAC:</strong> ${_fmt(c.cac)}</div>
           <div><strong>Regime:</strong> ${c.regime_tributario||'—'}</div>
           <div><strong>Status:</strong> ${c.status}</div>
+          ${_categorias[c.id] ? `<div style="grid-column:1/-1"><strong>Categoria:</strong> ${_categorias[c.id].categoria ? `<span class="cat-pill cat-${_categorias[c.id].categoria.toLowerCase()}">${_categorias[c.id].categoria}</span>` : '—'} <span class="valor-rs" style="color:var(--gray-500)">${_esc(_categorias[c.id].motivo)}</span></div>` : ''}
         </div>
         <div><strong style="font-size:13px">Histórico de honorários</strong>
           <div style="margin-top:6px">
@@ -3445,6 +3532,7 @@ const Carteira = (() => {
     load, loadDashboard, loadGrid, filtrar, goPage, _onScroll, atualizarHonorario, salvarHonorario,
     verFicha, editarCliente, salvarEdicaoCliente, exportCSV, exportPDF, limpar, excluir,
     abrirReajusteEmMassa, _atualizarPreviewReajuste, _aplicarReajusteEmMassa,
+    abrirCategorias, sincronizarTagsAgora,
   };
 })();
 

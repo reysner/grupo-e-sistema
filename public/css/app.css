@@ -648,3 +648,11 @@ body.dark-mode .dark-toggle-switch::after      { transform:translateX(15px); }
    Botão separado no Financeiro libera só o Ticket Médio (.rs-ticket-fin) sem abrir o resto. */
 body.sigilo-on .valor-rs { filter: blur(7px); user-select: none; }
 body.sigilo-on.sigilo-ticket-fin-on .valor-rs.rs-ticket-fin { filter: none; user-select: text; }
+
+/* Categorias de cliente (Diamante/Ouro/Prata/Bronze) — Carteira */
+.cat-pill{display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap}
+.cat-diamante{background:#cffafe;color:#0e7490}
+.cat-ouro{background:#fef3c7;color:#a16207}
+.cat-prata{background:#e2e8f0;color:#475569}
+.cat-bronze{background:#ffedd5;color:#9a3412}
+.cat-motivo{font-size:10.5px;color:var(--gray-400);max-width:230px;line-height:1.3;margin-top:3px;white-space:normal}
