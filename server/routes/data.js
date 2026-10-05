@@ -5625,7 +5625,7 @@ async function ensureLegalizacaoSchema() {
   await pool.query(`ALTER TABLE legalizacao_procuracoes ADD COLUMN IF NOT EXISTS notificado_vencimento_em TIMESTAMPTZ`).catch(()=>{});
 }
 
-const LEGAL_DIAS_ALERTA_PROCURACAO = 5;
+const LEGAL_DIAS_ALERTA_PROCURACAO = 10;
 
 /**
  * CASE de status por coluna de data — mesmo critério em todo o módulo.
