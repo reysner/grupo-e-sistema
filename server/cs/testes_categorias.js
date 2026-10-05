@@ -90,5 +90,16 @@ teste('montarEntradas: TAG "grupo" soma e TAG "piso_ouro" vira piso', () => {
   assert.ok(c.motivo.includes('TAG "Talentos"'), c.motivo);
 });
 
+teste('rotas de admin passam por requireAuth ANTES de requireAdmin (requireAdmin sozinho sempre dá 403)', () => {
+  const { router } = require('./categorias');
+  const { requireAuth, requireAdmin } = require('../auth');
+  for (const camada of router.stack.filter((l) => l.route)) {
+    const nomes = camada.route.stack.map((s) => s.handle);
+    const iAdmin = nomes.indexOf(requireAdmin);
+    if (iAdmin === -1) continue;
+    assert.ok(nomes.indexOf(requireAuth) !== -1 && nomes.indexOf(requireAuth) < iAdmin, `rota ${camada.route.path} usa requireAdmin sem requireAuth antes`);
+  }
+});
+
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);

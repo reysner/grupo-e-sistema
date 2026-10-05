@@ -238,7 +238,7 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
-router.get('/config', requireAdmin, async (req, res) => {
+router.get('/config', requireAuth, requireAdmin, async (req, res) => {
   try {
     const cortes = await lerCortes();
     const { clientes, vinculos } = await carregarClientesEVinculos();
@@ -269,7 +269,7 @@ router.get('/config', requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/config', requireAdmin, async (req, res) => {
+router.put('/config', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { cortes, tags } = req.body || {};
     if (cortes) {
@@ -297,7 +297,7 @@ router.put('/config', requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/sincronizar-tags', requireAdmin, (req, res) => {
+router.post('/sincronizar-tags', requireAuth, requireAdmin, (req, res) => {
   if (_sincronizando) return res.status(409).json({ error: 'Já existe uma sincronização de TAGs em andamento.' });
   if (!process.env.ACESSORIAS_API_TOKEN) return res.status(400).json({ error: 'ACESSORIAS_API_TOKEN não configurado.' });
   sincronizarTags()
