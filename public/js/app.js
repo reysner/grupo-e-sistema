@@ -6382,7 +6382,25 @@ const Gamificacao = (() => {
     sel.innerHTML = meses.map(m => '<option value="' + m + '" ' + (m===cur?'selected':'') + '>' + _mesLabel(m) + '</option>').join('');
   }
 
+  async function loadConsolidado() {
+    const tbody = document.getElementById('gam-consolidado-tbody');
+    if (!tbody) return;
+    const res = await fetch('/api/data/gam/consolidado', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar o consolidado.</td></tr>'; return; }
+    const { data, primeiro_mes, ultimo_mes } = await res.json();
+    const sub = document.getElementById('gam-consolidado-sub');
+    if (sub && primeiro_mes) sub.textContent = 'Média simples das notas finais mensais de cada colaborador, de ' + _mesLabel(primeiro_mes) + ' a ' + _mesLabel(ultimo_mes) + '. Mês sem nenhuma avaliação ainda não entra.';
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:24px">Sem notas lançadas ainda.</td></tr>'; return; }
+    tbody.innerHTML = data.map((c, i) =>
+      '<tr><td style="font-weight:700;color:var(--g700)">' + (i + 1) + 'º</td>' +
+      '<td style="font-weight:600">' + c.nome + '</td>' +
+      '<td>' + c.meses_avaliados + '</td>' +
+      '<td><span style="background:var(--g100);color:var(--g700);padding:3px 10px;border-radius:10px;font-weight:700">' + parseFloat(c.media_geral).toFixed(2) + '</span></td></tr>'
+    ).join('');
+  }
+
   async function loadNotas() {
+    loadConsolidado();
     const tbody = document.getElementById('gam-tbody');
     if (!tbody) return;
     const mes = document.getElementById('gam-mes-filter')?.value || _mesAtual();

@@ -3100,6 +3100,88 @@ publicRouter.post('/pesquisa', async (req, res) => {
   }
 });
 
+// Consolidado Geral da temporada (média das notas finais mensais). Usado pela rota pública e pelo painel admin.
+async function calcularConsolidadoGamificacao(pesoMinimo) {
+  let consolidado = [];
+    // Busca todos os meses disponíveis
+    const mesesDisp = await pool.query(`SELECT DISTINCT mes FROM gam_notas ORDER BY mes ASC`);
+    const todosMeses = mesesDisp.rows.map(r => r.mes);
+
+    // Todos os colaboradores ativos HOJE — usado pra garantir que todo
+    // mundo entra em TODOS os meses do consolidado, mesmo quem ainda nem
+    // tinha sido cadastrado num mês anterior (pega a menor nota do grupo
+    // naquele mês, igual quem já existia mas não teve avaliação).
+    const colabsAtivos = await pool.query(`SELECT id, nome FROM gam_colaboradores WHERE ativo = true`);
+
+    // Para cada mês, calcula a nota final de cada colaborador (mesma lógica do ranking mensal)
+    const notasFinalPorMes = {}; // { colaborador_id: [nota_final_mes1, nota_final_mes2, ...] }
+    const nomesPorId = {};
+    colabsAtivos.rows.forEach(c => { nomesPorId[c.id] = c.nome; });
+
+    for (const mes of todosMeses) {
+      const dadosMesC = await pool.query(`
+        SELECT c.id, c.nome, n.media_individual, n.avaliacoes
+        FROM gam_notas n
+        JOIN gam_colaboradores c ON c.id = n.colaborador_id
+        WHERE n.mes = $1 AND c.ativo = true
+      `, [mes]);
+
+      const comAvalC = dadosMesC.rows.filter(r => parseInt(r.avaliacoes) > 0);
+      // Mês sem NENHUMA avaliação de ninguém ainda (ex.: dia 1 de um mês novo) fica de fora do Consolidado —
+      // pedido do Reysner, 01/10/2026: incluir um mês em branco zerava a nota de todo mundo (ninguém avaliado
+      // -> média geral do mês = 0 -> "menor nota final" = 0 -> todo colaborador ativo levava um 0 na temporada),
+      // só porque o mês tinha acabado de começar. Assim que o mês tiver pelo menos 1 avaliação real, entra
+      // normalmente (inclusive pra quem ainda está zerado nele, igual já era).
+      if (!comAvalC.length) continue;
+      const mediasC = comAvalC.map(r => parseFloat(r.media_individual));
+      const mediaGeralC = mediasC.length ? mediasC.reduce((s,m) => s+m, 0) / mediasC.length : 0;
+
+      // Calcula nota final de quem tem avaliações
+      const notasC = comAvalC.map(r => {
+        const mi = parseFloat(r.media_individual);
+        const av = parseInt(r.avaliacoes);
+        return { id: r.id, nome: r.nome, nf: ((mi*av)+(mediaGeralC*pesoMinimo))/(av+pesoMinimo) };
+      });
+      const menorC = notasC.length ? Math.min(...notasC.map(r => r.nf)) : 0;
+
+      // Atribui nota a TODO colaborador ativo — quem não tem avaliação
+      // nesse mês (seja porque ficou sem ticket avaliado, seja porque
+      // ainda nem tinha entrado no time) recebe a menor nota final do mês.
+      colabsAtivos.rows.forEach(c => {
+        if (!notasFinalPorMes[c.id]) notasFinalPorMes[c.id] = [];
+        const encontrado = notasC.find(n => n.id === c.id);
+        notasFinalPorMes[c.id].push(encontrado ? encontrado.nf : menorC);
+      });
+    }
+
+    // Consolidado = média simples das notas finais mensais ao longo de
+    // TODOS os meses do jogo (desde o primeiro mês lançado) — sem peso
+    // mínimo por tempo de casa. Pedido do Reysner: mais simples de
+    // explicar pra equipe do que uma fórmula bayesiana de meses.
+    consolidado = Object.entries(notasFinalPorMes).map(([id, notas]) => {
+      const media = notas.reduce((s,n) => s+n, 0) / notas.length;
+      return {
+        nome: nomesPorId[id],
+        // 4 casas decimais (pedido do Reysner, 05/09/2026) — com só 2, o
+        // pódio da temporada pode empatar (ex.: Guilherme/João/Max todos
+        // em 4,94) sem dar pra mostrar quem realmente ganhou. A página
+        // pública re-arredonda pra 2 na exibição, então isso só aumenta
+        // a precisão nos relatórios (Relatório da Temporada etc.).
+        media_geral: media.toFixed(4),
+        meses_avaliados: notas.length,
+        total_avaliacoes: 0
+      };
+    }).sort((a,b) => {
+      // Decidido pela média real (4 casas), sem faixa de empate — só cai
+      // pro alfabético em empate exato até a 4ª casa. Ver comentário no
+      // sort do ranking mensal acima (mesma mudança, 10/09/2026).
+      const diff = parseFloat(b.media_geral) - parseFloat(a.media_geral);
+      if (Math.abs(diff) >= 0.00005) return diff;
+      return a.nome.localeCompare(b.nome, 'pt-BR');
+    });
+  return consolidado;
+}
+
 // ── GAMIFICAÇÃO — rota pública (ranking sem login) ──────────────────────────
 publicRouter.get('/gamificacao', async (req, res) => {
   try {
@@ -3236,85 +3318,7 @@ publicRouter.get('/gamificacao', async (req, res) => {
     // e depois tira a média simples dessas notas finais ao longo dos meses.
     // Pulado inteiro quando `mostrar_consolidado` está desligado (painel interno
     // da Gamificação) — nem faz sentido gastar as N queries por mês à toa.
-    let consolidado = [];
-    if (mostrarConsolidado) {
-      // Busca todos os meses disponíveis
-      const mesesDisp = await pool.query(`SELECT DISTINCT mes FROM gam_notas ORDER BY mes ASC`);
-      const todosMeses = mesesDisp.rows.map(r => r.mes);
-
-      // Todos os colaboradores ativos HOJE — usado pra garantir que todo
-      // mundo entra em TODOS os meses do consolidado, mesmo quem ainda nem
-      // tinha sido cadastrado num mês anterior (pega a menor nota do grupo
-      // naquele mês, igual quem já existia mas não teve avaliação).
-      const colabsAtivos = await pool.query(`SELECT id, nome FROM gam_colaboradores WHERE ativo = true`);
-
-      // Para cada mês, calcula a nota final de cada colaborador (mesma lógica do ranking mensal)
-      const notasFinalPorMes = {}; // { colaborador_id: [nota_final_mes1, nota_final_mes2, ...] }
-      const nomesPorId = {};
-      colabsAtivos.rows.forEach(c => { nomesPorId[c.id] = c.nome; });
-
-      for (const mes of todosMeses) {
-        const dadosMesC = await pool.query(`
-          SELECT c.id, c.nome, n.media_individual, n.avaliacoes
-          FROM gam_notas n
-          JOIN gam_colaboradores c ON c.id = n.colaborador_id
-          WHERE n.mes = $1 AND c.ativo = true
-        `, [mes]);
-
-        const comAvalC = dadosMesC.rows.filter(r => parseInt(r.avaliacoes) > 0);
-        // Mês sem NENHUMA avaliação de ninguém ainda (ex.: dia 1 de um mês novo) fica de fora do Consolidado —
-        // pedido do Reysner, 01/10/2026: incluir um mês em branco zerava a nota de todo mundo (ninguém avaliado
-        // -> média geral do mês = 0 -> "menor nota final" = 0 -> todo colaborador ativo levava um 0 na temporada),
-        // só porque o mês tinha acabado de começar. Assim que o mês tiver pelo menos 1 avaliação real, entra
-        // normalmente (inclusive pra quem ainda está zerado nele, igual já era).
-        if (!comAvalC.length) continue;
-        const mediasC = comAvalC.map(r => parseFloat(r.media_individual));
-        const mediaGeralC = mediasC.length ? mediasC.reduce((s,m) => s+m, 0) / mediasC.length : 0;
-
-        // Calcula nota final de quem tem avaliações
-        const notasC = comAvalC.map(r => {
-          const mi = parseFloat(r.media_individual);
-          const av = parseInt(r.avaliacoes);
-          return { id: r.id, nome: r.nome, nf: ((mi*av)+(mediaGeralC*pesoMinimo))/(av+pesoMinimo) };
-        });
-        const menorC = notasC.length ? Math.min(...notasC.map(r => r.nf)) : 0;
-
-        // Atribui nota a TODO colaborador ativo — quem não tem avaliação
-        // nesse mês (seja porque ficou sem ticket avaliado, seja porque
-        // ainda nem tinha entrado no time) recebe a menor nota final do mês.
-        colabsAtivos.rows.forEach(c => {
-          if (!notasFinalPorMes[c.id]) notasFinalPorMes[c.id] = [];
-          const encontrado = notasC.find(n => n.id === c.id);
-          notasFinalPorMes[c.id].push(encontrado ? encontrado.nf : menorC);
-        });
-      }
-
-      // Consolidado = média simples das notas finais mensais ao longo de
-      // TODOS os meses do jogo (desde o primeiro mês lançado) — sem peso
-      // mínimo por tempo de casa. Pedido do Reysner: mais simples de
-      // explicar pra equipe do que uma fórmula bayesiana de meses.
-      consolidado = Object.entries(notasFinalPorMes).map(([id, notas]) => {
-        const media = notas.reduce((s,n) => s+n, 0) / notas.length;
-        return {
-          nome: nomesPorId[id],
-          // 4 casas decimais (pedido do Reysner, 05/09/2026) — com só 2, o
-          // pódio da temporada pode empatar (ex.: Guilherme/João/Max todos
-          // em 4,94) sem dar pra mostrar quem realmente ganhou. A página
-          // pública re-arredonda pra 2 na exibição, então isso só aumenta
-          // a precisão nos relatórios (Relatório da Temporada etc.).
-          media_geral: media.toFixed(4),
-          meses_avaliados: notas.length,
-          total_avaliacoes: 0
-        };
-      }).sort((a,b) => {
-        // Decidido pela média real (4 casas), sem faixa de empate — só cai
-        // pro alfabético em empate exato até a 4ª casa. Ver comentário no
-        // sort do ranking mensal acima (mesma mudança, 10/09/2026).
-        const diff = parseFloat(b.media_geral) - parseFloat(a.media_geral);
-        if (Math.abs(diff) >= 0.00005) return diff;
-        return a.nome.localeCompare(b.nome, 'pt-BR');
-      });
-    }
+    const consolidado = mostrarConsolidado ? await calcularConsolidadoGamificacao(pesoMinimo) : [];
 
     const meses = await pool.query(`SELECT DISTINCT mes FROM gam_notas ORDER BY mes DESC`);
     const inicio = await pool.query(`SELECT MIN(mes) as primeiro_mes FROM gam_notas`);
@@ -3549,6 +3553,19 @@ function notaFinal(mediaIndividual, avaliacoes, mediaGeral, pesoMinimo) {
   if (avaliacoes === 0) return null;
   return ((mediaIndividual * avaliacoes) + (mediaGeral * pesoMinimo)) / (avaliacoes + pesoMinimo);
 }
+
+// Consolidado Geral pro painel do admin — sempre calculado, mesmo com o card oculto na página pública.
+router.get('/gam/consolidado', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const consolidado = await calcularConsolidadoGamificacao(await getPesoMinimo());
+    const { rows } = await pool.query(`SELECT MIN(mes) AS primeiro_mes, MAX(mes) AS ultimo_mes FROM gam_notas`);
+    res.json({ data: consolidado, primeiro_mes: rows[0]?.primeiro_mes || null, ultimo_mes: rows[0]?.ultimo_mes || null });
+  } catch (err) {
+    console.error('[gam] consolidado falhou:', err);
+    res.status(500).json({ error: 'Erro ao calcular o Consolidado Geral.' });
+  }
+});
 
 // ── Configuração — Peso Mínimo (admin) ───────────────────────────────────────
 router.get('/gam/config', requireAdmin, async (req, res) => {

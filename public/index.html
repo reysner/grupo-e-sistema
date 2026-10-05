@@ -1156,6 +1156,19 @@
             </div>
           </div>
 
+          <!-- CONSOLIDADO GERAL (visão do admin — independe do botão que oculta o card na página pública) -->
+          <div class="form-card" style="margin-top:20px">
+            <h2 class="form-title">Consolidado Geral da Temporada</h2>
+            <div class="form-accent"></div>
+            <p id="gam-consolidado-sub" style="font-size:12px;color:var(--gray-400);margin:10px 0 0">Média simples das notas finais mensais de cada colaborador.</p>
+            <div class="table-wrap" style="margin-top:14px">
+              <table class="data-table">
+                <thead><tr><th>Pos.</th><th>Colaborador</th><th>Meses</th><th>Média Geral</th></tr></thead>
+                <tbody id="gam-consolidado-tbody"><tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
         </section>
 
         <!-- TICKETS CONTÁBEIS -->
@@ -1449,6 +1462,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="/js/app.js?v=202610051"></script>
+  <script src="/js/app.js?v=202610052"></script>
 </body>
 </html>
