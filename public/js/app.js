@@ -3073,7 +3073,7 @@ const Carteira = (() => {
     transferida: ['Conta no churn', '#c53030', '#fff5f5'],
     baixa: ['Baixa (não conta)', '#718096', '#edf2f7'],
     outra_saida: ['Outra saída (não conta)', '#b7791f', '#fffbeb'],
-    pendente: ['Motivo pendente', '#2b6cb0', '#ebf8ff'],
+    a_confirmar: ['A confirmar no Acessórias', '#2b6cb0', '#ebf8ff'],
   };
 
   async function loadChurn() {
@@ -3087,17 +3087,18 @@ const Carteira = (() => {
         <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.6px">${_esc(p.rotulo)}</div>
         <div style="font-size:24px;font-weight:800;color:${p.saidas_contadas ? '#c53030' : 'var(--g700)'};margin-top:4px">${_pct(p.taxa)}</div>
         <div style="font-size:12px;color:var(--gray-600);margin-top:2px">${p.saidas_contadas} de ${p.base} clientes</div>
-        <div style="font-size:10.5px;color:var(--gray-400);margin-top:4px">fora do churn: ${p.fora_do_churn.baixas} baixas · ${p.fora_do_churn.outras_saidas} outras saídas${p.fora_do_churn.pendentes ? ' · ' + p.fora_do_churn.pendentes + ' pendentes' : ''}</div>
+        <div style="font-size:10.5px;color:var(--gray-400);margin-top:4px">fora do churn: ${p.fora_do_churn.baixas} baixas · ${p.fora_do_churn.outras_saidas} outras saídas</div>
+        ${p.fora_do_churn.a_confirmar ? '<div style="font-size:10.5px;color:#2b6cb0;font-weight:600;margin-top:3px">' + p.fora_do_churn.a_confirmar + ' saída(s) a confirmar no Acessórias — a taxa pode estar subestimada</div>' : ''}
       </div>`).join('');
   }
 
   function _churnTabela(p) {
     if (!p.saidas.length) return '<div style="text-align:center;color:var(--gray-400);padding:18px;font-size:13px">Nenhuma saída neste período.</div>';
     return `<div style="max-height:300px;overflow-y:auto;border:1px solid var(--gray-100);border-radius:8px"><table class="data-table">
-      <thead><tr><th>Empresa</th><th>Saída</th><th>Motivo</th><th>Situação</th></tr></thead><tbody>
+      <thead><tr><th>Empresa</th><th>Saída</th><th>Motivo (Acessórias)</th><th>Situação</th></tr></thead><tbody>
       ${p.saidas.map(s => { const [rot, cor, bg] = _CHURN_TIPOS[s.tipo]; return `<tr>
         <td style="font-weight:600">${_esc(s.nome)}</td><td style="white-space:nowrap">${_dataBr(s.data_saida)}</td>
-        <td style="font-size:12px;color:var(--gray-600)">${_esc(s.motivo_saida || '—')}</td>
+        <td style="font-size:12px;color:var(--gray-600)">${s.motivo_acessorias ? _esc(s.motivo_acessorias) : '<span style="color:var(--gray-400);font-style:italic">não lido do Acessórias</span>'}</td>
         <td><span style="background:${bg};color:${cor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap">${rot}</span>${s.tipo === 'transferida' && !s.na_base ? '<div style="font-size:10.5px;color:var(--gray-400)">entrou no período: fora da base</div>' : ''}</td></tr>`; }).join('')}
       </tbody></table></div>`;
   }
@@ -3115,6 +3116,7 @@ const Carteira = (() => {
         </div>
         <div id="churn-resumo"></div>
         <div id="churn-tabela"></div>
+${isAdmin ? _churnLeituraHtml() : ''}
         <div style="border-top:1px solid var(--gray-100);padding-top:12px">
           <strong style="font-size:13px">Regra: motivos que contam como churn</strong>
           <div style="font-size:11.5px;color:var(--gray-400);margin:3px 0 6px">Um texto por linha (sem diferenciar maiúsculas ou acentos). A saída conta se o motivo contiver o texto. Padrão: as três "Transferida por…" (conveniência, mau atendimento e preço). Baixadas nunca contam.</div>
@@ -3126,12 +3128,42 @@ const Carteira = (() => {
     _churnPintar(primeiro ? _churn.periodos[primeiro] : null);
   }
 
+  // O motivo de cancelamento vem DIRETO do Acessórias (o motivo gravado pelo sistema não é confiável).
+  function _churnLeituraHtml() {
+    const l = _churn.leitura_motivos;
+    const status = l
+      ? 'Última leitura: ' + new Date(l.em).toLocaleString('pt-BR') + ' — ' + l.inativas + ' empresas inativas desde ' + _dataBr(l.desde) + ', ' + l.com_motivo + ' com motivo, ' + l.sem_motivo + ' sem motivo' + (l.exemplos_de_motivo && l.exemplos_de_motivo.length ? '. Exemplos: ' + l.exemplos_de_motivo.map(_esc).join(' · ') : '')
+      : 'Nenhuma leitura feita ainda — todas as saídas aparecem como "a confirmar".';
+    return '<div style="border-top:1px solid var(--gray-100);padding-top:12px"><strong style="font-size:13px">Motivo de cancelamento lido do Acessórias</strong>'
+      + '<div style="font-size:11.5px;color:var(--gray-500);margin:4px 0 8px;line-height:1.5">' + status + (_churn.lendo_motivos ? ' (leitura em andamento)' : '') + '</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="Carteira._churnLerMotivos(this)">🔄 Ler motivos do Acessórias</button>'
+      + '<button class="btn btn-ghost btn-sm" onclick="Carteira._churnTestarLeitura(this)">🔎 Testar leitura de uma empresa</button></div>'
+      + '<pre id="churn-diag" style="display:none;margin:8px 0 0;padding:8px 10px;background:var(--gray-50);border:1px solid var(--gray-100);border-radius:8px;font-size:11px;white-space:pre-wrap;max-height:180px;overflow:auto"></pre></div>';
+  }
+
+  async function _churnLerMotivos(btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Iniciando...'; }
+    const res = await fetch('/api/cs/churn/sincronizar-motivos', { method: 'POST', headers: { Authorization: 'Bearer ' + _token() } });
+    const corpo = await res.json().catch(() => ({}));
+    if (res.ok) App.Toast.ok(corpo.mensagem || 'Leitura iniciada.'); else App.Toast.err(corpo.error || 'Erro ao iniciar a leitura.');
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Ler motivos do Acessórias'; }
+  }
+
+  async function _churnTestarLeitura(btn) {
+    const pre = document.getElementById('churn-diag');
+    if (btn) { btn.disabled = true; btn.textContent = 'Consultando...'; }
+    const res = await fetch('/api/cs/churn/diagnostico', { headers: { Authorization: 'Bearer ' + _token() } });
+    const corpo = await res.json().catch(() => ({}));
+    if (pre) { pre.style.display = 'block'; pre.textContent = res.ok ? JSON.stringify(corpo, null, 2) : (corpo.error || 'Erro ao consultar o Acessórias.'); }
+    if (btn) { btn.disabled = false; btn.textContent = '🔎 Testar leitura de uma empresa'; }
+  }
+
   function _churnPintar(p) {
     const r = document.getElementById('churn-resumo'), t = document.getElementById('churn-tabela');
     if (!r || !t || !p) return;
     r.innerHTML = `<div style="background:var(--g100);border:1px solid var(--g200);border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.6">
       Base no início (${_dataBr(p.ini)}): <strong>${p.base}</strong> clientes · saídas que contam: <strong>${p.saidas_contadas}</strong> · taxa: <strong>${_pct(p.taxa)}</strong><br>
-      <span style="color:var(--gray-500)">Fora do churn: ${p.fora_do_churn.baixas} baixas · ${p.fora_do_churn.outras_saidas} outras saídas · ${p.fora_do_churn.pendentes} com motivo pendente</span></div>`;
+      <span style="color:var(--gray-500)">Fora do churn: ${p.fora_do_churn.baixas} baixas · ${p.fora_do_churn.outras_saidas} outras saídas · ${p.fora_do_churn.a_confirmar} a confirmar no Acessórias</span></div>`;
     t.innerHTML = _churnTabela(p);
   }
 
@@ -3629,7 +3661,7 @@ const Carteira = (() => {
     verFicha, editarCliente, salvarEdicaoCliente, exportCSV, exportPDF, limpar, excluir,
     abrirReajusteEmMassa, _atualizarPreviewReajuste, _aplicarReajusteEmMassa,
     abrirCategorias, sincronizarTagsAgora,
-    abrirChurn, _churnTrocarPeriodo, _churnCalcularLivre,
+    abrirChurn, _churnTrocarPeriodo, _churnCalcularLivre, _churnLerMotivos, _churnTestarLeitura,
   };
 })();
 

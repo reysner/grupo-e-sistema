@@ -176,11 +176,33 @@ async function buscarPaginaInativas(pagina, token) {
  * notificação — quem decide Baixa/Saída e o motivo de churn daqui é
  * sempre humano, ver PATCH /clientes/:id/resolver-churn).
  */
+/**
+ * Motivo de cancelamento BRUTO da empresa. A documentação da API não lista esse campo (a tela do Acessórias tem o combo
+ * "Motivo de cancelamento"), então o nome é procurado de forma tolerante: nomes conhecidos primeiro, depois qualquer
+ * chave que contenha "motivo" (e, de preferência, "cancel"). Devolve null se nenhuma chave trouxer texto.
+ */
+function extrairMotivoCancelamento(empresa) {
+  if (!empresa || typeof empresa !== 'object') return null;
+  const texto = (v) => (typeof v === 'string' && v.trim() && !/^\*+$/.test(v.trim()) ? v.trim() : null);
+  for (const k of ['MotivoDeCancelamento', 'MotivoCancelamento', 'Motivo', 'MotivoDoCancelamento', 'MotivoCancelamentoCliente']) {
+    const t = texto(empresa[k]); if (t) return t;
+  }
+  const chaves = Object.keys(empresa);
+  const preferida = chaves.find(k => /motivo/i.test(k) && /cancel/i.test(k)) || chaves.find(k => /motivo/i.test(k));
+  return preferida ? texto(empresa[preferida]) : null;
+}
+
+/** Empresa crua (sem tradução) — usado só no diagnóstico de quais campos a API devolve. */
+async function buscarEmpresaBruta(cnpj, token) {
+  if (!cnpj || !token) return null;
+  return getJson(`/companies/${cnpj}`, token);
+}
+
 function empresaInativaParaCandidato(empresa) {
   return {
     ...empresaParaCliente(empresa),
     clienteAte: normalizarData(empresa.ClienteAte),
-    motivoCancelamentoBruto: empresa.MotivoDeCancelamento || empresa.MotivoCancelamento || empresa.Motivo || null,
+    motivoCancelamentoBruto: extrairMotivoCancelamento(empresa),
   };
 }
 
@@ -308,5 +330,5 @@ module.exports = {
   listarEmpresasAtivas, buscarEmpresaPorCnpj, normalizarRegime, normalizarRegimeComFallback,
   normalizarData, fantasiaUtilizavel, derivarApelido, empresaParaCliente,
   listarEmpresasInativasDesde, empresaInativaParaCandidato,
-  listarTags, listarEmpresasDaTag,
+  listarTags, listarEmpresasDaTag, extrairMotivoCancelamento, buscarEmpresaBruta,
 };

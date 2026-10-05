@@ -3,43 +3,56 @@
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@127.0.0.1:1/x';
 const { classificarSaida, calcularChurn, presets, somarDias } = require('./churnSaidas');
+const { extrairMotivoCancelamento } = require('../acessoriasClient');
 const { requireAuth, requireAdmin } = require('../auth');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
 
-teste('classifica o motivo: as três "Transferida por…" contam, baixada não', () => {
-  assert.strictEqual(classificarSaida('Transferida por conveniência'), 'transferida');
-  assert.strictEqual(classificarSaida('Transferida por conveniência (automático — Acessórias)'), 'transferida');
-  assert.strictEqual(classificarSaida('TRANSFERIDA POR CONVENIENCIA'), 'transferida');
-  assert.strictEqual(classificarSaida('Baixa de empresa'), 'baixa');
-  assert.strictEqual(classificarSaida('Baixada'), 'baixa');
-  assert.strictEqual(classificarSaida('Transferida por preço (automático — Acessórias)'), 'transferida');
-  assert.strictEqual(classificarSaida('Transferida por mau atendimento'), 'transferida');
-  assert.strictEqual(classificarSaida('Cliente encerrou por conta própria'), 'outra_saida');
-  assert.strictEqual(classificarSaida('Pendente de revisão — baixa/saída detectada no Acessórias'), 'pendente');
-  assert.strictEqual(classificarSaida(null), 'pendente');
+teste('motivo do Acessórias manda: as três "Transferida por…" contam, baixada não', () => {
+  assert.strictEqual(classificarSaida('Transferida por conveniência', null), 'transferida');
+  assert.strictEqual(classificarSaida('TRANSFERIDA POR CONVENIENCIA', null), 'transferida');
+  assert.strictEqual(classificarSaida('Transferida por mau atendimento', null), 'transferida');
+  assert.strictEqual(classificarSaida('Transferida por preço', null), 'transferida');
+  assert.strictEqual(classificarSaida('Baixada', null), 'baixa');
+  assert.strictEqual(classificarSaida('Cliente encerrou por conta própria', null), 'outra_saida');
 });
 
-const C = (id, entrada, saida, motivo) => ({ id, nome: id, data_entrada: entrada, data_saida: saida, motivo_saida: motivo });
+teste('o motivo do Acessórias vence o que o sistema gravou', () => {
+  assert.strictEqual(classificarSaida('Transferida por preço', 'Baixa de empresa'), 'transferida');
+  assert.strictEqual(classificarSaida('Baixada', 'Transferida por preço (automático — Acessórias)'), 'baixa');
+});
+
+teste('"Baixa de empresa" e "Pendente de revisão" do sistema NÃO são prova: ficam a confirmar', () => {
+  assert.strictEqual(classificarSaida(null, 'Baixa de empresa'), 'a_confirmar');
+  assert.strictEqual(classificarSaida('', 'Pendente de revisão — baixa/saída detectada no Acessórias'), 'a_confirmar');
+  assert.strictEqual(classificarSaida(null, null), 'a_confirmar');
+});
+
+teste('sem leitura do Acessórias, motivo real gravado pelo sistema ainda serve de apoio', () => {
+  assert.strictEqual(classificarSaida(null, 'Transferida por preço (automático — Acessórias)'), 'transferida');
+});
+
+const C = (id, entrada, saida, motivoAcess, motivoSis = null) => ({ id, nome: id, data_entrada: entrada, data_saida: saida, motivo_acessorias: motivoAcess, motivo_saida: motivoSis });
 
 teste('taxa = saídas por transferência da base ÷ base ativa no início do período', () => {
   const clientes = [
-    C('a', '2024-01-10', null, null),                                   // base, fica
-    C('b', '2024-02-10', null, null),                                   // base, fica
-    C('c', '2024-03-10', '2026-10-03', 'Transferida por conveniência'), // base, sai (conta)
-    C('d', '2024-04-10', '2026-10-04', 'Baixa de empresa'),             // base, baixa (não conta)
-    C('e', '2024-05-10', '2026-10-05', 'Transferida por preço'),        // base, transferida (conta)
-    C('h', '2024-06-10', '2026-10-07', 'Cliente encerrou por conta própria'), // base, outra saída (não conta)
-    C('f', '2026-10-02', '2026-10-06', 'Transferida por conveniência'), // entrou no período: fora da base
-    C('g', '2025-01-01', '2026-09-20', 'Transferida por conveniência'), // saiu ANTES do período: nem na base
+    C('a', '2024-01-10', null, null),                                      // base, fica
+    C('b', '2024-02-10', null, null),                                      // base, fica
+    C('c', '2024-03-10', '2026-10-03', 'Transferida por conveniência'),    // base, conta
+    C('d', '2024-04-10', '2026-10-04', 'Baixada'),                         // base, baixa (não conta)
+    C('e', '2024-05-10', '2026-10-05', 'Transferida por preço'),           // base, conta
+    C('h', '2024-06-10', '2026-10-07', 'Outro motivo qualquer'),           // base, outra saída (não conta)
+    C('i', '2024-07-10', '2026-10-08', null, 'Baixa de empresa'),          // base, a confirmar (não conta)
+    C('f', '2026-10-02', '2026-10-06', 'Transferida por conveniência'),    // entrou no período: fora da base
+    C('g', '2025-01-01', '2026-09-20', 'Transferida por conveniência'),    // saiu ANTES do período: nem na base
   ];
   const r = calcularChurn(clientes, '2026-10-01', '2026-10-31');
-  assert.strictEqual(r.base, 6);                 // a, b, c, d, e, h
-  assert.strictEqual(r.saidas_contadas, 2);      // c (conveniência) e e (preço)
-  assert.strictEqual(r.taxa, 33.33);
+  assert.strictEqual(r.base, 7);                 // a, b, c, d, e, h, i
+  assert.strictEqual(r.saidas_contadas, 2);      // c e e
+  assert.strictEqual(r.taxa, 28.57);
   assert.strictEqual(r.transferidas_fora_da_base, 1); // f
-  assert.deepStrictEqual(r.fora_do_churn, { baixas: 1, outras_saidas: 1, pendentes: 0 });
+  assert.deepStrictEqual(r.fora_do_churn, { baixas: 1, outras_saidas: 1, a_confirmar: 1 });
 });
 
 teste('sem base, a taxa é nula (não divide por zero)', () => {
@@ -62,13 +75,25 @@ teste('períodos prontos (mês atual, anterior, 12 meses, ano)', () => {
   assert.strictEqual(somarDias('2026-03-01', -1), '2026-02-28');
 });
 
-teste('rota PUT /config exige requireAuth antes de requireAdmin', () => {
+teste('extrai o motivo de cancelamento do Acessórias mesmo com nome de campo diferente', () => {
+  assert.strictEqual(extrairMotivoCancelamento({ MotivoDeCancelamento: 'Baixada' }), 'Baixada');
+  assert.strictEqual(extrairMotivoCancelamento({ Razao: 'X', MotivoCancel: ' Transferida por preço ' }), 'Transferida por preço');
+  assert.strictEqual(extrairMotivoCancelamento({ Razao: 'X', Motivo: '********' }), null);
+  assert.strictEqual(extrairMotivoCancelamento({ Razao: 'X', ClienteAte: '2026-01-01' }), null);
+  assert.strictEqual(extrairMotivoCancelamento(null), null);
+});
+
+teste('rotas de admin passam por requireAuth ANTES de requireAdmin', () => {
   const { router } = require('./churnSaidas');
+  let achouAdmin = 0;
   for (const camada of router.stack.filter((l) => l.route)) {
     const h = camada.route.stack.map((s) => s.handle);
     const iAdmin = h.indexOf(requireAdmin);
-    if (iAdmin !== -1) assert.ok(h.indexOf(requireAuth) !== -1 && h.indexOf(requireAuth) < iAdmin, camada.route.path);
+    if (iAdmin === -1) continue;
+    achouAdmin++;
+    assert.ok(h.indexOf(requireAuth) !== -1 && h.indexOf(requireAuth) < iAdmin, camada.route.path);
   }
+  assert.ok(achouAdmin >= 3, 'esperava as 3 rotas de admin (config, sincronizar-motivos, diagnostico)');
 });
 
 console.log(`\n${ok} testes passaram.`);

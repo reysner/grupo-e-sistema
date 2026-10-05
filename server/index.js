@@ -311,6 +311,13 @@ initDB().then(async () => {
       } catch (e) {
         console.error('[Categorias] Falha ao sincronizar TAGs:', e.message);
       }
+      // Motivo de cancelamento direto do Acessórias (Churn): mesmo ciclo diário.
+      try {
+        const r = await require('./cs/churnSaidas').sincronizarMotivos();
+        console.log('[Churn] Motivos lidos do Acessórias:', r);
+      } catch (e) {
+        console.error('[Churn] Falha ao ler motivos do Acessórias:', e.message);
+      }
     };
     setInterval(rodarSyncAcessorias, 24 * 60 * 60 * 1000); // 1x por dia
     rodarSyncAcessorias(); // já roda uma vez ao subir
