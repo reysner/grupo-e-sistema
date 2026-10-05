@@ -61,7 +61,7 @@ app.use('/api/auth',   authRoutes);
 app.use('/api/data',   dataRoutes);
 app.use('/api/users',  usersRoutes);
 app.use('/api/cs/categorias', require('./cs/categorias').router);  // Categorias Diamante/Ouro/Prata/Bronze (antes de /api/cs)
-app.use('/api/cs/churn', require('./cs/churnSaidas').router);  // Churn por saídas (só 'Transferida por conveniência')
+app.use('/api/cs/churn', require('./cs/churnSaidas').router);  // Churn por saídas (as três 'Transferida por…')
 app.use('/api/cs',     require('./cs/routes'));    // Sucesso do Cliente — radar de SLA
 app.use('/api/analistas', require('./routes/analistas'));  // lista de analistas p/ dropdowns
 app.use('/api/grupos-empresas', require('./routes/grupos-empresas'));  // lista de grupos de empresas p/ dropdown

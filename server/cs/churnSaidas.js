@@ -2,9 +2,8 @@
 /**
  * Taxa de churn por SAÍDAS (Etapa 2 do painel de Risco, alinhamento de 05/10/2026 Reysner × Larissa).
  *
- * Regra do Reysner: só conta como churn a saída com motivo "Transferida por conveniência".
- * "Baixada" (empresa fechou o CNPJ) NÃO conta. As demais saídas (ex.: "Transferida por preço" ou "por mau atendimento")
- * não contam pela regra atual, mas aparecem separadas pra decisão — os padrões de motivo que contam são editáveis.
+ * Regra do Reysner (06/10/2026): contam como churn as TRÊS saídas "Transferida por…" do Acessórias (conveniência, mau atendimento
+ * e preço). "Baixada" (empresa fechou o CNPJ) NÃO conta. Saídas com outro motivo aparecem separadas — os padrões que contam são editáveis.
  *
  * Taxa = saídas contadas ÷ base ativa no início do período (quem já era cliente antes do início e ainda não tinha saído).
  *
@@ -17,18 +16,18 @@ const { pool } = require('../db');
 const { requireAuth, requireAdmin } = require('../auth');
 
 const CHAVE_PADROES = 'churn_padroes_motivo';
-const PADROES_PADRAO = ['transferida por conveniencia', 'transferencia por conveniencia', 'transferido por conveniencia'];
+const PADROES_PADRAO = ['transferida por', 'transferido por', 'transferencia por'];
 
 /** minúsculas, sem acento, espaços normalizados. */
 function normalizar(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-/** 'conveniencia' (conta) | 'baixa' | 'outra_saida' | 'pendente' (ainda sem motivo definido). */
+/** 'transferida' (conta) | 'baixa' | 'outra_saida' | 'pendente' (ainda sem motivo definido). */
 function classificarSaida(motivo, padroes = PADROES_PADRAO) {
   const m = normalizar(motivo);
   if (!m || m.startsWith('pendente de revisao')) return 'pendente';
-  if (padroes.some((p) => p && m.includes(normalizar(p)))) return 'conveniencia';
+  if (padroes.some((p) => p && m.includes(normalizar(p)))) return 'transferida';
   if (m.includes('baixa')) return 'baixa';
   return 'outra_saida';
 }
@@ -45,15 +44,15 @@ function calcularChurn(clientes, ini, fim, padroes = PADROES_PADRAO) {
     .map((c) => ({ ...c, tipo: classificarSaida(c.motivo_saida, padroes), na_base: baseIds.has(c.id) }))
     .sort((a, b) => (a.data_saida < b.data_saida ? 1 : -1));
 
-  const contadas = saidas.filter((s) => s.tipo === 'conveniencia' && s.na_base);
+  const contadas = saidas.filter((s) => s.tipo === 'transferida' && s.na_base);
   const contagem = (tipo) => saidas.filter((s) => s.tipo === tipo).length;
   return {
     ini, fim,
     base: base.length,
     saidas_contadas: contadas.length,
     taxa: base.length ? +(100 * contadas.length / base.length).toFixed(2) : null,
-    // saídas de conveniência de quem entrou DENTRO do período: fora do cálculo, mas mostradas
-    conveniencia_fora_da_base: saidas.filter((s) => s.tipo === 'conveniencia' && !s.na_base).length,
+    // saídas por transferência de quem entrou DENTRO do período: fora do cálculo, mas mostradas
+    transferidas_fora_da_base: saidas.filter((s) => s.tipo === 'transferida' && !s.na_base).length,
     fora_do_churn: { baixas: contagem('baixa'), outras_saidas: contagem('outra_saida'), pendentes: contagem('pendente') },
     saidas,
   };

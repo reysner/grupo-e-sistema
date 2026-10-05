@@ -3065,12 +3065,12 @@ const Carteira = (() => {
     await Promise.all([loadDashboard(), loadGrid(), loadChurn()]);
   }
 
-  // ── Churn: só saídas por "Transferida por conveniência"; baixadas não contam (GET /api/cs/churn) ──
+  // ── Churn: saídas "Transferida por…" (conveniência, mau atendimento, preço); baixadas não contam (GET /api/cs/churn) ──
   let _churn = null;
   const _dataBr = (iso) => (iso ? iso.split('-').reverse().join('/') : '—');
   const _pct = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%');
   const _CHURN_TIPOS = {
-    conveniencia: ['Conta no churn', '#c53030', '#fff5f5'],
+    transferida: ['Conta no churn', '#c53030', '#fff5f5'],
     baixa: ['Baixa (não conta)', '#718096', '#edf2f7'],
     outra_saida: ['Outra saída (não conta)', '#b7791f', '#fffbeb'],
     pendente: ['Motivo pendente', '#2b6cb0', '#ebf8ff'],
@@ -3098,7 +3098,7 @@ const Carteira = (() => {
       ${p.saidas.map(s => { const [rot, cor, bg] = _CHURN_TIPOS[s.tipo]; return `<tr>
         <td style="font-weight:600">${_esc(s.nome)}</td><td style="white-space:nowrap">${_dataBr(s.data_saida)}</td>
         <td style="font-size:12px;color:var(--gray-600)">${_esc(s.motivo_saida || '—')}</td>
-        <td><span style="background:${bg};color:${cor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap">${rot}</span>${s.tipo === 'conveniencia' && !s.na_base ? '<div style="font-size:10.5px;color:var(--gray-400)">entrou no período: fora da base</div>' : ''}</td></tr>`; }).join('')}
+        <td><span style="background:${bg};color:${cor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap">${rot}</span>${s.tipo === 'transferida' && !s.na_base ? '<div style="font-size:10.5px;color:var(--gray-400)">entrou no período: fora da base</div>' : ''}</td></tr>`; }).join('')}
       </tbody></table></div>`;
   }
 
@@ -3117,7 +3117,7 @@ const Carteira = (() => {
         <div id="churn-tabela"></div>
         <div style="border-top:1px solid var(--gray-100);padding-top:12px">
           <strong style="font-size:13px">Regra: motivos que contam como churn</strong>
-          <div style="font-size:11.5px;color:var(--gray-400);margin:3px 0 6px">Um texto por linha (sem diferenciar maiúsculas ou acentos). A saída conta se o motivo contiver o texto. Padrão: Transferida por conveniência. Baixadas nunca contam.</div>
+          <div style="font-size:11.5px;color:var(--gray-400);margin:3px 0 6px">Um texto por linha (sem diferenciar maiúsculas ou acentos). A saída conta se o motivo contiver o texto. Padrão: as três "Transferida por…" (conveniência, mau atendimento e preço). Baixadas nunca contam.</div>
           <textarea id="churn-padroes" rows="3" ${isAdmin ? '' : 'disabled'} style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--gray-200);border-radius:8px;font:inherit;font-size:13px">${_esc(_churn.padroes.join('\n'))}</textarea>
         </div>
       </div>
