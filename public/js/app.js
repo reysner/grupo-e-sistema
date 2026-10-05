@@ -3062,7 +3062,103 @@ const Carteira = (() => {
   }
 
   async function load() {
-    await Promise.all([loadDashboard(), loadGrid()]);
+    await Promise.all([loadDashboard(), loadGrid(), loadChurn()]);
+  }
+
+  // ── Churn: só saídas por "Transferida por conveniência"; baixadas não contam (GET /api/cs/churn) ──
+  let _churn = null;
+  const _dataBr = (iso) => (iso ? iso.split('-').reverse().join('/') : '—');
+  const _pct = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%');
+  const _CHURN_TIPOS = {
+    conveniencia: ['Conta no churn', '#c53030', '#fff5f5'],
+    baixa: ['Baixa (não conta)', '#718096', '#edf2f7'],
+    outra_saida: ['Outra saída (não conta)', '#b7791f', '#fffbeb'],
+    pendente: ['Motivo pendente', '#2b6cb0', '#ebf8ff'],
+  };
+
+  async function loadChurn() {
+    const grid = document.getElementById('cart-churn-grid');
+    if (!grid) return;
+    const res = await fetch('/api/cs/churn', { headers: { Authorization: `Bearer ${_token()}` } }).catch(() => null);
+    if (!res || !res.ok) { grid.innerHTML = '<div style="color:#e53e3e;font-size:12px">Erro ao carregar o churn.</div>'; return; }
+    _churn = await res.json();
+    grid.innerHTML = Object.values(_churn.periodos).map(p => `
+      <div style="border:1px solid var(--gray-100);border-radius:10px;padding:12px 14px">
+        <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.6px">${_esc(p.rotulo)}</div>
+        <div style="font-size:24px;font-weight:800;color:${p.saidas_contadas ? '#c53030' : 'var(--g700)'};margin-top:4px">${_pct(p.taxa)}</div>
+        <div style="font-size:12px;color:var(--gray-600);margin-top:2px">${p.saidas_contadas} de ${p.base} clientes</div>
+        <div style="font-size:10.5px;color:var(--gray-400);margin-top:4px">fora do churn: ${p.fora_do_churn.baixas} baixas · ${p.fora_do_churn.outras_saidas} outras saídas${p.fora_do_churn.pendentes ? ' · ' + p.fora_do_churn.pendentes + ' pendentes' : ''}</div>
+      </div>`).join('');
+  }
+
+  function _churnTabela(p) {
+    if (!p.saidas.length) return '<div style="text-align:center;color:var(--gray-400);padding:18px;font-size:13px">Nenhuma saída neste período.</div>';
+    return `<div style="max-height:300px;overflow-y:auto;border:1px solid var(--gray-100);border-radius:8px"><table class="data-table">
+      <thead><tr><th>Empresa</th><th>Saída</th><th>Motivo</th><th>Situação</th></tr></thead><tbody>
+      ${p.saidas.map(s => { const [rot, cor, bg] = _CHURN_TIPOS[s.tipo]; return `<tr>
+        <td style="font-weight:600">${_esc(s.nome)}</td><td style="white-space:nowrap">${_dataBr(s.data_saida)}</td>
+        <td style="font-size:12px;color:var(--gray-600)">${_esc(s.motivo_saida || '—')}</td>
+        <td><span style="background:${bg};color:${cor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap">${rot}</span>${s.tipo === 'conveniencia' && !s.na_base ? '<div style="font-size:10.5px;color:var(--gray-400)">entrou no período: fora da base</div>' : ''}</td></tr>`; }).join('')}
+      </tbody></table></div>`;
+  }
+
+  async function abrirChurn() {
+    if (!_churn) await loadChurn();
+    if (!_churn) { App.Toast.err('Churn indisponível.'); return; }
+    const isAdmin = App.Auth.isAdmin();
+    const opcoes = Object.entries(_churn.periodos).map(([k, p]) => `<option value="${k}">${_esc(p.rotulo)} (${_dataBr(p.ini)} a ${_dataBr(p.fim)})</option>`).join('');
+    App.Modal.open('Churn — saídas e regra', `
+      <div style="display:grid;gap:14px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div class="field" style="min-width:230px"><label>Período</label><select id="churn-periodo" onchange="Carteira._churnTrocarPeriodo()">${opcoes}<option value="livre">Período livre...</option></select></div>
+          <div class="field" id="churn-livre" style="display:none;flex-direction:row;gap:6px;align-items:flex-end"><input id="churn-ini" type="date" /><input id="churn-fim" type="date" /><button class="btn btn-ghost btn-sm" onclick="Carteira._churnCalcularLivre()">Calcular</button></div>
+        </div>
+        <div id="churn-resumo"></div>
+        <div id="churn-tabela"></div>
+        <div style="border-top:1px solid var(--gray-100);padding-top:12px">
+          <strong style="font-size:13px">Regra: motivos que contam como churn</strong>
+          <div style="font-size:11.5px;color:var(--gray-400);margin:3px 0 6px">Um texto por linha (sem diferenciar maiúsculas ou acentos). A saída conta se o motivo contiver o texto. Padrão: Transferida por conveniência. Baixadas nunca contam.</div>
+          <textarea id="churn-padroes" rows="3" ${isAdmin ? '' : 'disabled'} style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--gray-200);border-radius:8px;font:inherit;font-size:13px">${_esc(_churn.padroes.join('\n'))}</textarea>
+        </div>
+      </div>
+    `, isAdmin ? () => _churnSalvarRegra() : undefined, { wide: true });
+    const primeiro = Object.keys(_churn.periodos)[0];
+    _churnPintar(primeiro ? _churn.periodos[primeiro] : null);
+  }
+
+  function _churnPintar(p) {
+    const r = document.getElementById('churn-resumo'), t = document.getElementById('churn-tabela');
+    if (!r || !t || !p) return;
+    r.innerHTML = `<div style="background:var(--g100);border:1px solid var(--g200);border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.6">
+      Base no início (${_dataBr(p.ini)}): <strong>${p.base}</strong> clientes · saídas que contam: <strong>${p.saidas_contadas}</strong> · taxa: <strong>${_pct(p.taxa)}</strong><br>
+      <span style="color:var(--gray-500)">Fora do churn: ${p.fora_do_churn.baixas} baixas · ${p.fora_do_churn.outras_saidas} outras saídas · ${p.fora_do_churn.pendentes} com motivo pendente</span></div>`;
+    t.innerHTML = _churnTabela(p);
+  }
+
+  function _churnTrocarPeriodo() {
+    const k = document.getElementById('churn-periodo').value;
+    document.getElementById('churn-livre').style.display = k === 'livre' ? 'flex' : 'none';
+    if (k !== 'livre') _churnPintar(_churn.periodos[k]);
+  }
+
+  async function _churnCalcularLivre() {
+    const ini = document.getElementById('churn-ini').value, fim = document.getElementById('churn-fim').value;
+    if (!ini || !fim || ini > fim) { App.Toast.err('Informe as duas datas (início antes do fim).'); return; }
+    const res = await fetch(`/api/cs/churn?ini=${ini}&fim=${fim}`, { headers: { Authorization: `Bearer ${_token()}` } });
+    if (!res || !res.ok) { App.Toast.err('Erro ao calcular o período.'); return; }
+    _churnPintar((await res.json()).periodo);
+  }
+
+  async function _churnSalvarRegra() {
+    const padroes = document.getElementById('churn-padroes').value.split('\n').map(x => x.trim()).filter(Boolean);
+    if (!padroes.length) { App.Toast.err('Informe ao menos um motivo.'); return; }
+    const res = await fetch('/api/cs/churn/config', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${_token()}` }, body: JSON.stringify({ padroes }),
+    });
+    if (!res || !res.ok) { App.Toast.err((await res?.json().catch(() => ({})))?.error || 'Erro ao salvar a regra.'); return; }
+    App.Toast.ok('Regra de churn salva.');
+    App.Modal.close();
+    loadChurn();
   }
 
   // Categoria (Diamante/Ouro/Prata/Bronze) sempre com o motivo escrito embaixo — o motivo traz valores em R$, então entra no "Ocultar valores".
@@ -3122,7 +3218,7 @@ const Carteira = (() => {
           </div>
         </div>
       </div>
-    `, () => salvarCategorias());
+    `, () => salvarCategorias(), { wide: true });
   }
 
   async function salvarCategorias() {
@@ -3533,6 +3629,7 @@ const Carteira = (() => {
     verFicha, editarCliente, salvarEdicaoCliente, exportCSV, exportPDF, limpar, excluir,
     abrirReajusteEmMassa, _atualizarPreviewReajuste, _aplicarReajusteEmMassa,
     abrirCategorias, sincronizarTagsAgora,
+    abrirChurn, _churnTrocarPeriodo, _churnCalcularLivre,
   };
 })();
 
