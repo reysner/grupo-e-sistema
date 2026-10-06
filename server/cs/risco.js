@@ -17,6 +17,7 @@ const { pool } = require('../db');
 const { requireAuth, requireAdmin } = require('../auth');
 const acessorias = require('../acessoriasClient');
 const calc = require('./riscoCalculo');
+const { ehPessoaJuridica } = require('./churnSaidas');
 
 const CHAVE_CONFIG = 'risco_config';
 const CHAVE_SYNC_ENTREGAS = 'risco_entregas_sync';
@@ -65,6 +66,10 @@ async function calcularTodos() {
 
   let clientes = await consultar(`SELECT c.id, c.nome_empresa AS nome, c.cnpj, COALESCE(c.inadimplente_cronico, false) AS cronico FROM clientes c WHERE c.status = 'ativo'`, [], 'clientes');
   if (!clientes) clientes = await consultar(`SELECT c.id, c.nome_empresa AS nome, c.cnpj, false AS cronico FROM clientes c WHERE c.status = 'ativo'`, [], 'clientes (sem crônico)') || [];
+  // Só CNPJ entra no Risco (06/10/2026, Reysner): CPF, CAEPF, CNO e cadastro sem documento ficam de fora.
+  const totalAtivos = clientes.length;
+  clientes = clientes.filter((c) => ehPessoaJuridica(c.cnpj));
+  const desconsiderados = totalAtivos - clientes.length;
 
   const aberto = new Map(((await consultar(
     `SELECT regexp_replace(cnpj, '\\D', '', 'g') AS doc, SUM(qtd_atrasados)::int AS qtd, SUM(valor_atrasado)::float AS valor,
@@ -130,7 +135,7 @@ async function calcularTodos() {
       termometros: Object.fromEntries(calc.TERMOMETROS.map((t) => [t, termometros[t].pontos])),
     };
   }
-  return { config, data, resumo, operacional_lido: entregas.size };
+  return { config, data, resumo, operacional_lido: entregas.size, desconsiderados_nao_cnpj: desconsiderados };
 }
 
 // ── Entregas do Acessórias (Operacional) ─────────────────────────────────────
@@ -146,7 +151,8 @@ async function sincronizarEntregas({ limite = 200 } = {}) {
     const { rows } = await pool.query(
       `SELECT c.cnpj FROM clientes c
          LEFT JOIN cliente_entregas_resumo r ON r.doc = regexp_replace(c.cnpj, '\\D', '', 'g')
-        WHERE c.status = 'ativo' AND c.cnpj IS NOT NULL AND length(regexp_replace(c.cnpj, '\\D', '', 'g')) >= 11
+        WHERE c.status = 'ativo' AND c.cnpj IS NOT NULL AND length(regexp_replace(c.cnpj, '\\D', '', 'g')) = 14
+          AND c.cnpj !~ '^[0-9]{3}[.][0-9]{3}[.][0-9]{3}/[0-9]{3}-[0-9]{2}$'
           AND (r.atualizado_em IS NULL OR r.atualizado_em < NOW() - INTERVAL '6 days')
         ORDER BY r.atualizado_em NULLS FIRST LIMIT $1`, [limite]
     );

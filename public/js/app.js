@@ -3177,7 +3177,7 @@ ${isAdmin ? _churnLeituraHtml() : ''}
   function _riscoCelula(c) {
     if (c.status !== 'ativo') return '<span style="color:var(--gray-400)">—</span>';
     const r = _riscos[c.id];
-    if (!r) return '<span style="font-size:11px;color:var(--gray-400)">—</span>';
+    if (!r) return '<span title="O Risco só considera empresas com CNPJ (CPF, CAEPF e CNO ficam de fora)" style="font-size:11px;color:var(--gray-400)">—</span>';
     const [cor, bg] = _RISCO_COR[r.nivel] || _RISCO_COR.Incompleto;
     const titulo = [r.nivel + (r.pontos != null ? ' (' + r.pontos + ' pontos)' : ''), _riscoTermometros(r)].concat(r.motivos || []).concat(r.parcial ? ['Parcial: sem dado de ' + (r.sem_dado || []).join(', ')] : []).join('\n');
     const motivo = (r.motivos && r.motivos[0]) ? _esc(r.motivos[0]) : (r.nivel === 'Incompleto' ? 'sem dados' : 'sem ocorrências');
@@ -3194,7 +3194,7 @@ ${isAdmin ? _churnLeituraHtml() : ''}
     const statusEntregas = e ? 'Última leitura: ' + new Date(e.em).toLocaleString('pt-BR') + ' — ' + e.lidas + ' empresas lidas (' + e.com_entregas + ' com entregas, ' + e.erros + ' com erro)' : 'Ainda não leu as entregas do Acessórias: o termômetro Operacional fica sem dado.';
     App.Modal.open('⚠️ Risco de perda', `
       <div style="display:grid;gap:16px">
-        <p style="margin:0;font-size:13px;color:var(--gray-600);line-height:1.5">O risco é a média ponderada de três termômetros de 0 a 100 (quanto maior, pior): <strong>Financeiro</strong> (títulos em atraso), <strong>Atendimento</strong> (insatisfações, notas baixas, SLA vermelho e abandonos — já depois da revisão da Gamificação) e <strong>Operacional</strong> (entregas do Acessórias). Termômetro sem dado fica de fora e o risco aparece como parcial.</p>
+        <p style="margin:0;font-size:13px;color:var(--gray-600);line-height:1.5">O risco é a média ponderada de três termômetros de 0 a 100 (quanto maior, pior): <strong>Financeiro</strong> (títulos em atraso), <strong>Atendimento</strong> (insatisfações, notas baixas, SLA vermelho e abandonos — já depois da revisão da Gamificação) e <strong>Operacional</strong> (entregas do Acessórias). Termômetro sem dado fica de fora e o risco aparece como parcial. Só empresas com <strong>CNPJ</strong> entram (CPF, CAEPF e CNO ficam de fora).</p>
         <div>
           <strong style="font-size:13px">Pesos de cada termômetro</strong>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:8px">
