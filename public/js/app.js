@@ -1885,17 +1885,6 @@ const Notificacoes = (() => {
     const id = el.dataset.id;
     const tipo = el.dataset.tipo;
     const clienteId = el.dataset.clienteId;
-    // Notificação de churn abre o resolvedor (Baixa/Saída) em vez de só
-    // navegar — pedido do Reysner: resolver ali mesmo, sem procurar o
-    // cliente na mão. Se não tiver cliente_id (notificação antiga, de
-    // antes dessa mudança), cai no comportamento padrão (navega).
-    if (tipo === 'churn_acessorias' && clienteId) {
-      const panel = document.getElementById('notif-panel');
-      if (panel) panel.hidden = true;
-      _open = false;
-      abrirResolverChurn(clienteId, id, el.querySelector('.notif-msg')?.textContent || '');
-      return;
-    }
     // Notificação de cliente novo abre o resolvedor de entrada — mesmo
     // espírito: nem todo cliente novo vem completo do Acessórias (falta
     // classificar Constituição/Cliente vindo de outro contador/
@@ -1909,80 +1898,6 @@ const Notificacoes = (() => {
     }
     if (modulo) irPara(modulo, id);
     else marcarLida(id);
-  }
-
-  /** Modal "resolver churn": Baixa (encerra direto) ou Saída (pede motivo do dropdown gerenciável). */
-  async function abrirResolverChurn(clienteId, notifId, mensagem) {
-    App.Modal.open('📉 Possível baixa/saída no Acessórias',
-      `<div style="display:grid;gap:14px">
-        <p style="font-size:13px;color:var(--gray-600);margin:0">${mensagem || 'Essa empresa não aparece mais como ativa no Acessórias.'}</p>
-        <p style="font-size:13px;font-weight:600;margin:0">O que aconteceu?</p>
-        <div style="display:flex;gap:10px">
-          <button class="btn btn-ghost" style="flex:1" onclick="Notificacoes._resolverBaixa('${clienteId}','${notifId}')">Foi baixa de empresa</button>
-          <button class="btn btn-primary" style="flex:1" onclick="Notificacoes._mostrarMotivoSaida('${clienteId}','${notifId}')">Foi saída (churn)</button>
-        </div>
-        <div id="churn-motivo-wrap" hidden>
-          <label style="font-size:12px;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px">Motivo do Churn</label>
-          <select id="churn-motivo-select" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;margin-top:6px"><option value="">Carregando...</option></select>
-          <button class="btn btn-primary" style="width:100%;margin-top:10px" onclick="Notificacoes._resolverSaida('${clienteId}','${notifId}')">Confirmar saída</button>
-        </div>
-      </div>`,
-      () => App.Modal.close(), { noFooter: true });
-  }
-
-  async function _mostrarMotivoSaida(clienteId, notifId) {
-    const wrap = document.getElementById('churn-motivo-wrap');
-    if (wrap) { wrap.hidden = false; wrap.style.display = 'block'; }
-    const sel = document.getElementById('churn-motivo-select');
-    if (!sel) return;
-    try {
-      const res = await fetch('/api/motivos-churn?ativo=true', { headers: { Authorization: 'Bearer ' + _tk() } });
-      const { motivos } = await res.json();
-      sel.innerHTML = '<option value="">Selecione</option>' + (motivos || []).map(m => `<option value="${m.nome}">${m.nome}</option>`).join('');
-    } catch (e) {
-      sel.innerHTML = '<option value="">Erro ao carregar</option>';
-    }
-  }
-
-  async function _resolverBaixa(clienteId, notifId) {
-    await _resolverChurn(clienteId, notifId, 'baixa', null);
-  }
-
-  async function _resolverSaida(clienteId, notifId) {
-    const motivo = document.getElementById('churn-motivo-select')?.value;
-    if (!motivo) { App.Toast.err('Selecione o Motivo do Churn.'); return; }
-    await _resolverChurn(clienteId, notifId, 'saida', motivo);
-  }
-
-  async function _resolverChurn(clienteId, notifId, tipo, motivoChurn) {
-    try {
-      const res = await fetch(`/api/data/clientes/${clienteId}/resolver-churn`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
-        body: JSON.stringify({ tipo, motivoChurn, notificacaoId: notifId }),
-      });
-      const dados = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(dados.error || 'Erro ao resolver.');
-      App.Modal.close();
-      App.Toast.ok('Cliente encerrado — registro atualizado na Carteira e em Gestão de Clientes.');
-      await checar();
-      // Se as telas de Carteira/Gestão estiverem carregadas, atualiza a grade também.
-      window.Carteira?.loadGrid?.();
-      window.Gestao?.loadGrid?.();
-      // Pedido do Reysner: mesmo convite de "Abrir Ticket Contábil" que já
-      // existe no fluxo manual (Forms.gestao()) — antes só acontecia lá,
-      // não aqui pela notificação. resolver-churn já é admin-only no
-      // backend, então quem chega até aqui sempre pode abrir ticket.
-      if (App.Auth.isAdmin()) {
-        setTimeout(() => window.Tickets?.perguntarAbrirTicket(
-          dados.solicitacao, dados.regime, dados.empresa, dados.cnpj,
-          { analista: '', codigo: dados.codigo || '', motivo: dados.motivo || '', data_encerramento: dados.dataSaida || '' },
-          dados.gestaoId || null
-        ), 400);
-      }
-    } catch (e) {
-      App.Toast.err(e.message);
-    }
   }
 
   const _ORIGENS_CLIENTE = ['Indicação', 'Google', 'Instagram', 'LinkedIn', 'WhatsApp', 'Parceiro', 'Evento', 'Site', 'Tráfego Pago', 'Prospecção Ativa', 'Outro'];
@@ -2043,7 +1958,6 @@ const Notificacoes = (() => {
 
   return {
     checar, toggle, marcarLida, marcarTodasLidas, irPara, clicar, criar, iniciar,
-    _resolverBaixa, _resolverSaida, _mostrarMotivoSaida,
     _salvarCompletarEntrada,
   };
 })();
@@ -3099,7 +3013,7 @@ const Carteira = (() => {
       ${p.saidas.map(s => { const [rot, cor, bg] = _CHURN_TIPOS[s.tipo]; return `<tr>
         <td style="font-weight:600">${_esc(s.nome)}</td><td style="white-space:nowrap">${_dataBr(s.data_saida)}</td>
         <td style="font-size:12px;color:var(--gray-600)">${s.motivo_acessorias ? _esc(s.motivo_acessorias) : '<span style="color:var(--gray-400);font-style:italic">não lido do Acessórias</span>'}</td>
-        <td><span style="background:${bg};color:${cor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap">${rot}</span>${s.tipo === 'transferida' && !s.na_base ? '<div style="font-size:10.5px;color:var(--gray-400)">entrou no período: fora da base</div>' : ''}</td></tr>`; }).join('')}
+        <td><span style="background:${bg};color:${cor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap">${rot}</span>${s.origem === 'receita' ? '<div style="font-size:10.5px;color:var(--gray-400)">automático: CNPJ ' + (s.tipo === 'baixa' ? 'baixado' : 'ativo') + ' na Receita</div>' : ''}${s.tipo === 'transferida' && !s.na_base ? '<div style="font-size:10.5px;color:var(--gray-400)">entrou no período: fora da base</div>' : ''}</td></tr>`; }).join('')}
       </tbody></table></div>`;
   }
 
@@ -3136,9 +3050,25 @@ ${isAdmin ? _churnLeituraHtml() : ''}
       : 'Nenhuma leitura feita ainda — todas as saídas aparecem como "a confirmar".';
     return '<div style="border-top:1px solid var(--gray-100);padding-top:12px"><strong style="font-size:13px">Motivo de cancelamento lido do Acessórias</strong>'
       + '<div style="font-size:11.5px;color:var(--gray-500);margin:4px 0 8px;line-height:1.5">' + status + (_churn.lendo_motivos ? ' (leitura em andamento)' : '') + '</div>'
-      + '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="Carteira._churnLerMotivos(this)">🔄 Ler motivos do Acessórias</button>'
+      + '<div style="font-size:11.5px;color:var(--gray-500);margin:0 0 8px;line-height:1.5">' + _churnClassificacaoTexto() + '</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="Carteira._churnClassificar(this)">⚙️ Classificar saídas agora (Receita)</button><button class="btn btn-ghost btn-sm" onclick="Carteira._churnLerMotivos(this)">🔄 Ler motivos do Acessórias</button>'
       + '<button class="btn btn-ghost btn-sm" onclick="Carteira._churnTestarLeitura(this)">🔎 Testar leitura de uma empresa</button></div>'
       + '<pre id="churn-diag" style="display:none;margin:8px 0 0;padding:8px 10px;background:var(--gray-50);border:1px solid var(--gray-100);border-radius:8px;font-size:11px;white-space:pre-wrap;max-height:180px;overflow:auto"></pre></div>';
+  }
+
+  function _churnClassificacaoTexto() {
+    const c = _churn.classificacao_receita;
+    return 'Sem o motivo do Acessórias, a classificação é automática pela situação do CNPJ na Receita (baixado = baixa; ativo = transferida). '
+      + (c ? 'Última classificação: ' + new Date(c.em).toLocaleString('pt-BR') + ' — ' + c.consultadas + ' consultadas: ' + c.baixadas + ' baixadas, ' + c.ativas + ' ativas, ' + c.outras + ' outras situações, ' + c.indisponiveis + ' indisponíveis.' : 'Ainda não rodou.')
+      + (_churn.classificando ? ' (em andamento)' : '');
+  }
+
+  async function _churnClassificar(btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Iniciando...'; }
+    const res = await fetch('/api/cs/churn/classificar-saidas', { method: 'POST', headers: { Authorization: 'Bearer ' + _token() } });
+    const corpo = await res.json().catch(() => ({}));
+    if (res.ok) App.Toast.ok(corpo.mensagem || 'Classificação iniciada.'); else App.Toast.err(corpo.error || 'Erro ao iniciar a classificação.');
+    if (btn) { btn.disabled = false; btn.textContent = '⚙️ Classificar saídas agora (Receita)'; }
   }
 
   async function _churnLerMotivos(btn) {
@@ -3661,7 +3591,7 @@ ${isAdmin ? _churnLeituraHtml() : ''}
     verFicha, editarCliente, salvarEdicaoCliente, exportCSV, exportPDF, limpar, excluir,
     abrirReajusteEmMassa, _atualizarPreviewReajuste, _aplicarReajusteEmMassa,
     abrirCategorias, sincronizarTagsAgora,
-    abrirChurn, _churnTrocarPeriodo, _churnCalcularLivre, _churnLerMotivos, _churnTestarLeitura,
+    abrirChurn, _churnTrocarPeriodo, _churnCalcularLivre, _churnLerMotivos, _churnTestarLeitura, _churnClassificar,
   };
 })();
 
@@ -4691,94 +4621,12 @@ const Gestao = (() => {
     }
   }
 
-  /**
-   * "📉 Buscar Baixas do Acessórias" — pedido do Reysner: trazer todas as
-   * empresas INATIVAS no Acessórias desde uma data (Cliente até) como
-   * notificação de baixa/saída, pra revisar uma por uma (mesmo sininho e
-   * mesmo fluxo de resolver-churn já usados pro drift-detection
-   * automático). Fluxo em 2 passos no mesmo modal: 1) "Buscar prévia"
-   * (dryRun, não escreve nada) mostra os números; 2) "Aplicar" cria de
-   * verdade as notificações (e os clientes que faltarem).
-   */
-  function buscarBaixasAcessorias() {
-    if (!App.Auth.isAdmin()) { App.Toast.err('Restrito a administradores.'); return; }
-    App.Modal.open('📉 Buscar Baixas do Acessórias', `
-      <div style="display:grid;gap:14px">
-        <p style="color:var(--gray-600);font-size:13px;margin:0">
-          Busca no Acessórias todas as empresas <strong>inativas</strong> com "Cliente até" a partir da data abaixo e cria uma notificação de baixa/saída pra cada uma — mesmo sininho e mesmo fluxo já usado hoje (clique na notificação pra decidir Baixa ou Saída e o motivo do churn). Empresas já encerradas aqui ou já notificadas antes são puladas automaticamente.
-        </p>
-        <div class="field"><label>Cliente até (a partir de) <span class="req">*</span></label><input id="baixas-desde" type="date" value="2024-11-01" /></div>
-        <div id="baixas-preview" style="background:var(--g100);border:1px solid var(--g200);border-radius:8px;padding:12px 16px;font-size:13px;color:var(--g800)">
-          Clique em "Buscar prévia" pra ver quantas notificações seriam criadas — nada é aplicado ainda.
-        </div>
-      </div>
-    `, () => Gestao._buscarPreviaBaixasAcessorias());
-    const btn = document.getElementById('modal-confirm');
-    if (btn) btn.textContent = 'Buscar prévia';
-  }
-
-  async function _buscarPreviaBaixasAcessorias() {
-    const desde = document.getElementById('baixas-desde')?.value;
-    if (!desde) { App.Toast.err('Informe a data.'); return; }
-    const preview = document.getElementById('baixas-preview');
-    const btn = document.getElementById('modal-confirm');
-    if (btn) { btn.disabled = true; btn.textContent = 'Buscando...'; }
-    if (preview) preview.textContent = 'Consultando o Acessórias — pode levar um tempo dependendo do histórico...';
-    try {
-      const res = await fetch('/api/data/clientes/importar-baixas-acessorias', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_token()}` },
-        body: JSON.stringify({ desde, dryRun: true }),
-      });
-      const r = await res.json();
-      if (!res.ok) throw new Error(r?.error || 'Erro ao buscar prévia.');
-      if (preview) {
-        preview.innerHTML = `
-          <strong>${r.totalInativasDesde}</strong> empresa(s) inativa(s) no Acessórias desde ${new Date(desde+'T00:00:00').toLocaleDateString('pt-BR')}.<br/>
-          <strong style="color:#38a169">${r.novasNotificacoes}</strong> notificação(ões) nova(s) seriam criadas
-          (${r.novosClientes} empresa(s) ainda não estavam na Carteira).<br/>
-          <span style="color:var(--gray-500)">${r.jaEncerrados} já encerrada(s) aqui, ${r.jaNotificados} já notificada(s) antes — ignoradas.</span>
-          ${r.semCnpj ? `<br/><span style="color:#d69e2e">${r.semCnpj} sem CNPJ no Acessórias — ignoradas.</span>` : ''}
-        `;
-      }
-      if (btn) {
-        btn.disabled = r.novasNotificacoes === 0;
-        btn.textContent = r.novasNotificacoes > 0 ? `Aplicar — criar ${r.novasNotificacoes} notificação(ões)` : 'Nada a aplicar';
-        btn.onclick = () => Gestao._aplicarBaixasAcessorias();
-      }
-    } catch (e) {
-      if (preview) preview.innerHTML = `<span style="color:#e53e3e">${_esc(e.message)}</span>`;
-      if (btn) { btn.disabled = false; btn.textContent = 'Tentar de novo'; }
-    }
-  }
-
-  async function _aplicarBaixasAcessorias() {
-    const desde = document.getElementById('baixas-desde')?.value;
-    const btn = document.getElementById('modal-confirm');
-    if (btn) { btn.disabled = true; btn.textContent = 'Aplicando...'; }
-    try {
-      const res = await fetch('/api/data/clientes/importar-baixas-acessorias', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_token()}` },
-        body: JSON.stringify({ desde, dryRun: false }),
-      });
-      const r = await res.json();
-      if (!res.ok) throw new Error(r?.error || 'Erro ao aplicar.');
-      App.Modal.close();
-      App.Toast.ok(`${r.novasNotificacoes} notificação(ões) de baixa/saída criada(s) — confira o sininho.`);
-      if (window.Notificacoes) Notificacoes.checar();
-    } catch (e) {
-      App.Toast.err('Erro ao aplicar: ' + e.message);
-      if (btn) { btn.disabled = false; btn.textContent = 'Tentar de novo'; }
-    }
-  }
-
   return {
     loadGrid, exportCSV, exportPDF, limpar, excluir, _onScroll, importarPlanilha, verFicha,
     gerenciarGrupos, _criarGrupo, _toggleGrupo, _excluirGrupo,
     gerenciarUnidades, _criarUnidade, _toggleUnidade, _excluirUnidade,
     gerenciarMotivosChurn, _criarMotivoChurn, _toggleMotivoChurn, _excluirMotivoChurn,
-    sincronizarAcessorias, buscarBaixasAcessorias, _buscarPreviaBaixasAcessorias, _aplicarBaixasAcessorias,
+    sincronizarAcessorias,
   };
 })();
 

@@ -84,6 +84,34 @@ teste('extrai o motivo de cancelamento do Acessórias mesmo com nome de campo di
   assert.strictEqual(extrairMotivoCancelamento(null), null);
 });
 
+teste('sem motivo, a situação do CNPJ na Receita decide: baixado = baixa, ativo = transferida', () => {
+  const { classificarSaidaDetalhe, inferirPelaReceita } = require('./churnSaidas');
+  assert.strictEqual(inferirPelaReceita('ATIVA', null, '2026-05-10'), 'transferida');
+  assert.strictEqual(inferirPelaReceita('BAIXADA', '2026-05-02', '2026-05-10'), 'baixa');
+  assert.strictEqual(inferirPelaReceita('BAIXADA', '2026-01-10', '2026-05-10'), 'baixa'); // fechou antes de sair do escritório
+  assert.strictEqual(inferirPelaReceita('BAIXADA', '2027-03-01', '2026-05-10'), 'transferida'); // saiu vivo, CNPJ só baixou muito depois
+  assert.strictEqual(inferirPelaReceita('SUSPENSA', null, '2026-05-10'), null);
+  assert.strictEqual(inferirPelaReceita(null, null, '2026-05-10'), null);
+  const sem = classificarSaidaDetalhe(null, 'Baixa de empresa', undefined, { situacao: 'ATIVA', data: null }, '2026-05-10');
+  assert.deepStrictEqual(sem, { tipo: 'transferida', origem: 'receita' });
+  assert.strictEqual(classificarSaidaDetalhe('Baixada', null, undefined, { situacao: 'ATIVA' }, '2026-05-10').origem, 'acessorias');
+  assert.strictEqual(classificarSaidaDetalhe(null, 'Transferida por preço (automático — Acessórias)').origem, 'sistema');
+  assert.deepStrictEqual(classificarSaidaDetalhe(null, null, undefined, { situacao: 'INDISPONIVEL' }, '2026-05-10'), { tipo: 'a_confirmar', origem: null });
+});
+
+teste('calcularChurn usa a Receita e informa quantas saídas foram inferidas', () => {
+  const clientes = [
+    { id: 'a', nome: 'a', data_entrada: '2024-01-01', data_saida: null, motivo_saida: null, motivo_acessorias: null },
+    { id: 'b', nome: 'b', data_entrada: '2024-01-01', data_saida: '2026-10-03', motivo_saida: 'Baixa de empresa', motivo_acessorias: null, situacao_receita: 'ATIVA', data_situacao_receita: null },
+    { id: 'c', nome: 'c', data_entrada: '2024-01-01', data_saida: '2026-10-04', motivo_saida: 'Baixa de empresa', motivo_acessorias: null, situacao_receita: 'BAIXADA', data_situacao_receita: '2026-10-01' },
+  ];
+  const r = calcularChurn(clientes, '2026-10-01', '2026-10-31');
+  assert.strictEqual(r.saidas_contadas, 1);   // b (CNPJ ativo = transferida)
+  assert.strictEqual(r.fora_do_churn.baixas, 1); // c (CNPJ baixado)
+  assert.strictEqual(r.inferidas_pela_receita, 2);
+  assert.strictEqual(r.fora_do_churn.a_confirmar, 0);
+});
+
 teste('rotas de admin passam por requireAuth ANTES de requireAdmin', () => {
   const { router } = require('./churnSaidas');
   let achouAdmin = 0;
@@ -94,7 +122,7 @@ teste('rotas de admin passam por requireAuth ANTES de requireAdmin', () => {
     achouAdmin++;
     assert.ok(h.indexOf(requireAuth) !== -1 && h.indexOf(requireAuth) < iAdmin, camada.route.path);
   }
-  assert.ok(achouAdmin >= 3, 'esperava as 3 rotas de admin (config, sincronizar-motivos, diagnostico)');
+  assert.ok(achouAdmin >= 4, 'esperava as 4 rotas de admin (config, classificar-saidas, sincronizar-motivos, diagnostico)');
 });
 
 console.log(`\n${ok} testes passaram.`);

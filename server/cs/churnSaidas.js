@@ -5,10 +5,13 @@
  * Regra do Reysner (06/10/2026): contam como churn as TRÊS saídas "Transferida por…" do Acessórias (conveniência, mau
  * atendimento e preço). "Baixada" (empresa fechou o CNPJ) NÃO conta.
  *
- * FONTE DA VERDADE = o motivo de cancelamento lido DIRETO do Acessórias (clientes.motivo_cancelamento_acessorias). O
- * motivo gravado pelo sistema (motivo_saida) não é confiável: o fluxo antigo, que dependia de alguém decidir "baixa ou
- * saída", nunca funcionou — o sistema gravou "Baixa de empresa" por padrão e ficou "Pendente de revisão". Sem o motivo do
- * Acessórias a saída fica "A confirmar" (não entra na conta e aparece destacada).
+ * NINGUÉM decide "baixa ou saída" à mão (fluxo antigo, que nunca funcionou: o sistema gravava "Baixa de empresa" por padrão).
+ * A classificação é automática, nesta ordem:
+ *   1) motivo de cancelamento lido do Acessórias (clientes.motivo_cancelamento_acessorias) — se a API entregar o campo;
+ *   2) motivo real gravado pelo sistema (ignora o padrão "Baixa de empresa" e "Pendente de revisão");
+ *   3) situação do CNPJ na Receita (BrasilAPI/Minha Receita): BAIXADO = baixa; ATIVO = transferida (o Acessórias só tem 4
+ *      motivos — Baixada e três "Transferida por…" — e as três transferências contam, então basta saber se a empresa fechou);
+ *   4) sem nada disso: "A confirmar" (não entra na conta e aparece destacada).
  *
  * Taxa = saídas contadas ÷ base ativa no início do período (quem já era cliente antes do início e ainda não tinha saído).
  *
@@ -25,6 +28,11 @@ const acessorias = require('../acessoriasClient');
 
 const CHAVE_PADROES = 'churn_padroes_motivo';
 const CHAVE_SYNC_MOTIVOS = 'churn_motivos_sync';
+const CHAVE_SYNC_RECEITA = 'churn_receita_sync';
+const FONTES_CNPJ = [
+  (d) => `https://brasilapi.com.br/api/cnpj/v1/${d}`,
+  (d) => `https://minhareceita.org/${d}`,
+];
 const PADROES_PADRAO = ['transferida por', 'transferido por', 'transferencia por'];
 
 /** minúsculas, sem acento, espaços normalizados. */
@@ -39,13 +47,35 @@ function motivoDoSistemaConfiavel(m) {
   return n;
 }
 
-/** 'transferida' (conta) | 'baixa' | 'outra_saida' | 'a_confirmar' (sem motivo lido do Acessórias). */
-function classificarSaida(motivoAcessorias, motivoSistema, padroes = PADROES_PADRAO) {
-  const texto = normalizar(motivoAcessorias) || motivoDoSistemaConfiavel(motivoSistema);
-  if (!texto) return 'a_confirmar';
-  if (padroes.some((p) => p && texto.includes(normalizar(p)))) return 'transferida';
-  if (texto.includes('baixa')) return 'baixa';
-  return 'outra_saida';
+const DIAS_BAIXA_RECEITA_APOS_SAIDA = 120;
+
+/** Situação do CNPJ na Receita → 'transferida' | 'baixa' | null (não dá pra inferir: suspensa, inapta, nula...). */
+function inferirPelaReceita(situacao, dataSituacao, dataSaida) {
+  const s = normalizar(situacao);
+  if (s === 'ativa') return 'transferida';
+  if (s === 'baixada') {
+    // o CNPJ só foi baixado bem DEPOIS de a empresa sair do escritório: ela saiu viva (foi pra outro contador)
+    if (dataSituacao && dataSaida && dataSituacao > somarDias(dataSaida, DIAS_BAIXA_RECEITA_APOS_SAIDA)) return 'transferida';
+    return 'baixa';
+  }
+  return null;
+}
+
+/** { tipo: 'transferida'|'baixa'|'outra_saida'|'a_confirmar', origem: 'acessorias'|'sistema'|'receita'|null } */
+function classificarSaidaDetalhe(motivoAcessorias, motivoSistema, padroes = PADROES_PADRAO, receita = null, dataSaida = null) {
+  const doTexto = (texto) => (padroes.some((p) => p && texto.includes(normalizar(p))) ? 'transferida' : texto.includes('baixa') ? 'baixa' : 'outra_saida');
+  const bruto = normalizar(motivoAcessorias);
+  if (bruto) return { tipo: doTexto(bruto), origem: 'acessorias' };
+  const doSistema = motivoDoSistemaConfiavel(motivoSistema);
+  if (doSistema) return { tipo: doTexto(doSistema), origem: 'sistema' };
+  const inf = receita ? inferirPelaReceita(receita.situacao, receita.data, dataSaida) : null;
+  if (inf) return { tipo: inf, origem: 'receita' };
+  return { tipo: 'a_confirmar', origem: null };
+}
+
+/** 'transferida' (conta) | 'baixa' | 'outra_saida' | 'a_confirmar'. */
+function classificarSaida(motivoAcessorias, motivoSistema, padroes = PADROES_PADRAO, receita = null, dataSaida = null) {
+  return classificarSaidaDetalhe(motivoAcessorias, motivoSistema, padroes, receita, dataSaida).tipo;
 }
 
 /**
@@ -57,7 +87,11 @@ function calcularChurn(clientes, ini, fim, padroes = PADROES_PADRAO) {
   const baseIds = new Set(base.map((c) => c.id));
   const saidas = clientes
     .filter((c) => c.data_saida && c.data_saida >= ini && c.data_saida <= fim)
-    .map((c) => ({ ...c, tipo: classificarSaida(c.motivo_acessorias, c.motivo_saida, padroes), na_base: baseIds.has(c.id) }))
+    .map((c) => ({
+      ...c,
+      ...classificarSaidaDetalhe(c.motivo_acessorias, c.motivo_saida, padroes, c.situacao_receita ? { situacao: c.situacao_receita, data: c.data_situacao_receita } : null, c.data_saida),
+      na_base: baseIds.has(c.id),
+    }))
     .sort((a, b) => (a.data_saida < b.data_saida ? 1 : -1));
 
   const contadas = saidas.filter((s) => s.tipo === 'transferida' && s.na_base);
@@ -73,6 +107,7 @@ function calcularChurn(clientes, ini, fim, padroes = PADROES_PADRAO) {
     // saídas por transferência de quem entrou DENTRO do período: fora do cálculo, mas mostradas
     transferidas_fora_da_base: saidas.filter((s) => s.tipo === 'transferida' && !s.na_base).length,
     fora_do_churn: { baixas: contagem('baixa'), outras_saidas: contagem('outra_saida'), a_confirmar: contagem('a_confirmar') },
+    inferidas_pela_receita: saidas.filter((s) => s.origem === 'receita').length,
     saidas,
   };
 }
@@ -102,8 +137,14 @@ function presets(hoje) {
 let _colunaPronta = null;
 function garantirColuna() {
   if (!_colunaPronta) {
-    _colunaPronta = pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS motivo_cancelamento_acessorias TEXT`)
-      .catch((e) => { _colunaPronta = null; throw e; });
+    _colunaPronta = (async () => {
+      await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS motivo_cancelamento_acessorias TEXT`);
+      await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS situacao_receita TEXT`);
+      await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS data_situacao_receita DATE`);
+      await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS situacao_receita_em TIMESTAMPTZ`);
+      // O fluxo manual "foi baixa ou saída?" acabou (06/10/2026): limpa do sino os avisos antigos que pediam essa decisão.
+      await pool.query(`UPDATE notificacoes SET lida = true WHERE tipo = 'churn_acessorias' AND lida = false`).catch(() => {});
+    })().catch((e) => { _colunaPronta = null; throw e; });
   }
   return _colunaPronta;
 }
@@ -123,15 +164,81 @@ async function lerUltimaLeituraMotivos() {
   try { return rows.length ? JSON.parse(rows[0].valor) : null; } catch (e) { return null; }
 }
 
+async function lerUltimaClassificacao() {
+  const { rows } = await pool.query(`SELECT valor FROM cs_config WHERE chave = $1`, [CHAVE_SYNC_RECEITA]);
+  try { return rows.length ? JSON.parse(rows[0].valor) : null; } catch (e) { return null; }
+}
+
 async function carregarClientes() {
   await garantirColuna();
   const { rows } = await pool.query(
     `SELECT id, nome_empresa AS nome, cnpj, to_char(data_entrada, 'YYYY-MM-DD') AS data_entrada,
             to_char(data_saida, 'YYYY-MM-DD') AS data_saida, motivo_saida,
-            motivo_cancelamento_acessorias AS motivo_acessorias
+            motivo_cancelamento_acessorias AS motivo_acessorias, situacao_receita,
+            to_char(data_situacao_receita, 'YYYY-MM-DD') AS data_situacao_receita
        FROM clientes`
   );
   return rows;
+}
+
+// ── Situação do CNPJ na Receita (fontes abertas: BrasilAPI e, se falhar, Minha Receita) ──
+async function consultarSituacaoCnpj(cnpj) {
+  const d = String(cnpj || '').replace(/\D/g, '');
+  if (d.length !== 14) return null; // CPF: não existe baixa na Receita
+  let ultimoErro = null;
+  for (const url of FONTES_CNPJ) {
+    try {
+      const res = await fetch(url(d), { signal: AbortSignal.timeout(15000), headers: { Accept: 'application/json' } });
+      if (!res.ok) { ultimoErro = new Error(res.status + ' em ' + new URL(url(d)).hostname); continue; }
+      const j = await res.json();
+      const situacao = String(j.descricao_situacao_cadastral || '').trim().toUpperCase();
+      if (!situacao) { ultimoErro = new Error('resposta sem situação cadastral'); continue; }
+      const data = /^\d{4}-\d{2}-\d{2}/.test(String(j.data_situacao_cadastral || '')) ? String(j.data_situacao_cadastral).slice(0, 10) : null;
+      return { situacao, data };
+    } catch (e) { ultimoErro = e; }
+  }
+  throw ultimoErro || new Error('nenhuma fonte respondeu');
+}
+
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+let _classificando = false;
+/** Consulta a Receita pras saídas dos últimos ~15 meses que ainda não têm motivo (do Acessórias ou real do sistema). */
+async function classificarSaidasPelaReceita({ limite = 150 } = {}) {
+  if (_classificando) throw new Error('Já existe uma classificação em andamento.');
+  _classificando = true;
+  try {
+    await garantirColuna();
+    const { rows } = await pool.query(
+      `SELECT id, cnpj FROM clientes
+        WHERE status = 'encerrado' AND data_saida IS NOT NULL AND data_saida >= CURRENT_DATE - INTERVAL '460 days'
+          AND motivo_cancelamento_acessorias IS NULL
+          AND (motivo_saida IS NULL OR lower(motivo_saida) = 'baixa de empresa' OR lower(motivo_saida) LIKE 'pendente de revis%')
+          AND length(regexp_replace(cnpj, '\\D', '', 'g')) = 14
+          AND (situacao_receita_em IS NULL
+               OR situacao_receita_em < NOW() - (CASE WHEN situacao_receita = 'INDISPONIVEL' THEN INTERVAL '7 days' ELSE INTERVAL '90 days' END))
+        ORDER BY data_saida DESC LIMIT $1`, [limite]
+    );
+    const r = { em: new Date().toISOString(), consultadas: 0, baixadas: 0, ativas: 0, outras: 0, indisponiveis: 0 };
+    for (const c of rows) {
+      let achado = null;
+      try { achado = await consultarSituacaoCnpj(c.cnpj); } catch (e) { achado = null; }
+      r.consultadas++;
+      if (!achado) {
+        r.indisponiveis++;
+        await pool.query(`UPDATE clientes SET situacao_receita = 'INDISPONIVEL', data_situacao_receita = NULL, situacao_receita_em = NOW() WHERE id = $1`, [c.id]);
+      } else {
+        if (achado.situacao === 'BAIXADA') r.baixadas++; else if (achado.situacao === 'ATIVA') r.ativas++; else r.outras++;
+        await pool.query(`UPDATE clientes SET situacao_receita = $1, data_situacao_receita = $2, situacao_receita_em = NOW() WHERE id = $3`, [achado.situacao, achado.data, c.id]);
+      }
+      await esperar(800);
+    }
+    await pool.query(
+      `INSERT INTO cs_config (chave, valor, updated_at) VALUES ($1,$2,NOW())
+       ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`,
+      [CHAVE_SYNC_RECEITA, JSON.stringify(r)]
+    );
+    return r;
+  } finally { _classificando = false; }
 }
 
 // ── Leitura do motivo de cancelamento direto do Acessórias ───────────────────
@@ -175,8 +282,8 @@ const router = express.Router();
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const [clientes, padroes, leitura] = await Promise.all([carregarClientes(), lerPadroes(), lerUltimaLeituraMotivos()]);
-    const base = { padroes, leitura_motivos: leitura, lendo_motivos: _sincronizando };
+    const [clientes, padroes, leitura, classificacao] = await Promise.all([carregarClientes(), lerPadroes(), lerUltimaLeituraMotivos(), lerUltimaClassificacao()]);
+    const base = { padroes, leitura_motivos: leitura, lendo_motivos: _sincronizando, classificacao_receita: classificacao, classificando: _classificando };
     const hoje = hojeBrasilia();
     const { ini, fim } = req.query;
     if (ini || fim) {
@@ -208,6 +315,14 @@ router.put('/config', requireAuth, requireAdmin, async (req, res) => {
     console.error('[churn] PUT /config falhou:', err);
     res.status(500).json({ error: 'Erro ao salvar a regra de churn.' });
   }
+});
+
+router.post('/classificar-saidas', requireAuth, requireAdmin, (req, res) => {
+  if (_classificando) return res.status(409).json({ error: 'Já existe uma classificação em andamento.' });
+  classificarSaidasPelaReceita()
+    .then((r) => console.log('[churn] Saídas classificadas pela Receita:', r))
+    .catch((e) => console.error('[churn] Falha ao classificar saídas pela Receita:', e.message));
+  res.json({ ok: true, mensagem: 'Classificação automática iniciada em segundo plano (alguns minutos). Reabra esta janela depois.' });
 });
 
 router.post('/sincronizar-motivos', requireAuth, requireAdmin, (req, res) => {
@@ -247,5 +362,6 @@ router.get('/diagnostico', requireAuth, requireAdmin, async (req, res) => {
 });
 
 module.exports = {
-  router, classificarSaida, calcularChurn, presets, somarDias, normalizar, sincronizarMotivos, PADROES_PADRAO,
+  router, classificarSaida, classificarSaidaDetalhe, inferirPelaReceita, calcularChurn, presets, somarDias, normalizar,
+  sincronizarMotivos, classificarSaidasPelaReceita, consultarSituacaoCnpj, garantirColuna, PADROES_PADRAO,
 };

@@ -1336,13 +1336,11 @@ async function sincronizarAcessorias({ userId = null } = {}) {
 
 /**
  * Detecta cliente que estava ATIVO aqui e sumiu da lista de ativos do
- * Acessórias (baixa/saída registrada lá) — notifica pelo sininho, mas NÃO
- * encerra o cliente sozinho: quem decide o motivo do churn e confirma o
- * encerramento é humano (pedido do Reysner: "eu incluo o motivo dos
- * churns"). Notifica só 1x por cliente (marca `alerta_baixa_notificado_em`)
- * — enquanto ele continuar "ativo" aqui sem ser tratado, não repete o
- * aviso todo dia; assim que alguém encerra o cliente (status vira
- * 'encerrado'), ele simplesmente sai da comparação.
+ * Acessórias (baixa/saída registrada lá) e o ENCERRA sozinho, com a data
+ * real de saída do Acessórias. Baixa x transferência é classificada
+ * automaticamente (motivo do Acessórias, quando a API entrega; senão a
+ * situação do CNPJ na Receita) — ver cs/churnSaidas.js. Não há mais
+ * notificação nem decisão manual.
  *
  * Guarda de segurança: se a lista vinda da Acessórias vier bem menor que o
  * esperado (ex.: paginação falhou no meio), NÃO dispara nada — evita um
@@ -1375,22 +1373,15 @@ async function detectarPossiveisChurns(empresasAtivasNaAcessorias) {
   let notificados = 0;
   for (const cliente of nossosAtivos.rows) {
     if (idsAtivosNaAcessorias.has(cliente.acessorias_id)) continue;
-    // Inativou no Acessórias → baixa automática aqui (pedido do Reysner: não decidir mais baixa x saída à mão).
-    // Se a consulta da empresa falhar, cai no aviso antigo pelo sininho (nunca perde o caso).
+    // Inativou no Acessórias → encerra sozinho aqui. NINGUÉM decide baixa x saída à mão (06/10/2026, Reysner: "interrompa
+    // essa questão de eu definir a saída ou baixa"): a classificação é automática (ver cs/churnSaidas.js). Se a consulta
+    // falhar agora, o cliente continua ativo e a próxima sincronização tenta de novo — sem notificação pra decidir.
     try {
       await encerrarClientePorAcessorias(cliente, null);
       notificados++;
-      continue;
     } catch (e) {
-      console.error('[churn-auto] falhou, notificando:', cliente.nome_empresa, e.message);
+      console.error('[churn-auto] não consegui encerrar agora, tenta na próxima sincronização:', cliente.nome_empresa, e.message);
     }
-    await pool.query(
-      `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id)
-       VALUES ('churn_acessorias', 'Possível baixa/saída no Acessórias', $1, 'carteira', $2)`,
-      [`${cliente.nome_empresa} (CNPJ ${cliente.cnpj}) não aparece mais como ativa no Acessórias — clique pra confirmar se foi baixa ou saída.`, cliente.id]
-    );
-    await pool.query(`UPDATE clientes SET alerta_baixa_notificado_em = NOW() WHERE id = $1`, [cliente.id]);
-    notificados++;
   }
   return notificados;
 }
@@ -1409,15 +1400,32 @@ async function encerrarClientePorAcessorias(cliente, empresaAcessorias) {
   const hoje = new Date().toISOString().slice(0, 10);
   const dataSaida = (emp && emp.clienteAte) || hoje;
   const motivoBruto = emp && emp.motivoCancelamentoBruto;
-  const tipo = palpiteTipoChurn(motivoBruto) === 'saida' ? 'saida' : 'baixa';
+  // Classificação 100% automática: 1) motivo do Acessórias (se a API entregar); 2) situação do CNPJ na Receita
+  // (baixado = baixa; ativo = transferida — o Acessórias só tem "Baixada" e três "Transferida por…").
+  const churnSaidas = require('../cs/churnSaidas');
+  await churnSaidas.garantirColuna().catch(() => {});
+  let tipoAuto = palpiteTipoChurn(motivoBruto);
+  let viaReceita = false, receita = null;
+  if (!tipoAuto) {
+    try {
+      receita = await churnSaidas.consultarSituacaoCnpj(cliente.cnpj);
+      const inf = receita ? churnSaidas.inferirPelaReceita(receita.situacao, receita.data, dataSaida) : null;
+      if (inf) { tipoAuto = inf === 'transferida' ? 'saida' : 'baixa'; viaReceita = true; }
+    } catch (e) { /* sem consulta agora: o job diário de classificação tenta de novo */ }
+  }
+  const tipo = tipoAuto === 'saida' ? 'saida' : 'baixa';
   const solicitacao = tipo === 'saida' ? 'Saída de empresa' : 'Baixa de empresa';
-  // Usa o motivo real do Acessórias quando veio (ex.: "Transferida por preço"), senão o rótulo genérico.
-  const motivo = tipo === 'saida'
-    ? (motivoBruto ? `${motivoBruto} (automático — Acessórias)` : 'Transferida para outro contador (automático — Acessórias)')
-    : 'Baixa de empresa';
+  const motivo = motivoBruto
+    ? `${motivoBruto} (automático — Acessórias)`
+    : viaReceita
+      ? (tipo === 'saida' ? 'Transferida para outro contador (automático — CNPJ ativo na Receita)' : 'Baixa de empresa (automático — CNPJ baixado na Receita)')
+      : 'Baixa de empresa'; // sem evidência ainda: o texto padrão não conta como prova, o job de classificação resolve
   const upd = await pool.query(
-    `UPDATE clientes SET status='encerrado', data_saida=$1, motivo_saida=$2 WHERE id=$3 AND status='ativo'`,
-    [dataSaida, motivo, cliente.id]
+    `UPDATE clientes SET status='encerrado', data_saida=$1, motivo_saida=$2, motivo_cancelamento_acessorias = COALESCE($4, motivo_cancelamento_acessorias),
+            situacao_receita = COALESCE($5, situacao_receita), data_situacao_receita = COALESCE($6, data_situacao_receita),
+            situacao_receita_em = CASE WHEN $5 IS NULL THEN situacao_receita_em ELSE NOW() END
+      WHERE id=$3 AND status='ativo'`,
+    [dataSaida, motivo, cliente.id, motivoBruto || null, receita ? receita.situacao : null, receita ? receita.data : null]
   );
   if (!upd.rowCount) return;
   await pool.query(`INSERT INTO eventos_clientes (cliente_id, tipo, descricao, data_evento) VALUES ($1,'saida',$2,$3)`, [cliente.id, motivo, dataSaida]);
@@ -1463,8 +1471,8 @@ router.post('/clientes/importar-acessorias', requireAdmin, async (req, res) => {
  * foi pra outro contador, churn de verdade — modelo de SAÍDA no contábil). A checagem antiga procurava
  * "transferência" (substantivo) e nunca batia com "Transferida" (particípio, o texto real do combo) — todo
  * "Transferida por X" caía silenciosamente em "baixa". Determina o tipo do ticket automático (checklist e
- * mencionados mudam entre Baixa/Saída — ver criarTicketInterno) e, no fluxo manual, só entra como dica no
- * TEXTO da notificação; quem confirma de vez é sempre humano, ver PATCH /clientes/:id/resolver-churn.
+ * mencionados mudam entre Baixa/Saída — ver criarTicketInterno). Desde 06/10/2026 não existe mais decisão manual
+ * de baixa x saída: sem motivo vindo do Acessórias, a classificação usa a situação do CNPJ na Receita (cs/churnSaidas.js).
  */
 function palpiteTipoChurn(motivoBruto) {
   const m = String(motivoBruto || '').toLowerCase();
@@ -1473,170 +1481,6 @@ function palpiteTipoChurn(motivoBruto) {
   if (m.includes('baixa')) return 'baixa';
   return null;
 }
-
-/**
- * POST /api/data/clientes/importar-baixas-acessorias — pedido do Reysner:
- * "trazer todas as empresas inativas do Acessórias desde 01/11/2024
- * (Cliente até) como notificação pra lançar como baixa ou saída e ter
- * ideia dos principais motivos dos churns". Reaproveita o MESMO tipo de
- * notificação ('churn_acessorias') e o MESMO fluxo de resolução já
- * existente (PATCH /clientes/:id/resolver-churn, aberto pelo sininho) —
- * nada novo no front pra resolver, só pra disparar a busca.
- *
- * Diferente do drift-detection automático de sincronizarAcessorias() (que
- * só pega quem JÁ era 'ativo' aqui e sumiu de lá), isso também traz
- * empresas que NUNCA chegaram a entrar na Carteira — já estavam inativas
- * no Acessórias antes dessa integração existir. Pra essas, cria o cliente
- * como 'ativo' (mesmo já não sendo, de fato) só como placeholder pendente
- * de resolução — assim que a notificação é resolvida, vira 'encerrado' com
- * a data e o motivo reais, igual qualquer outro fluxo de churn.
- *
- * `dryRun: true` só calcula os números, sem escrever nada — usado pelo
- * botão pra mostrar uma prévia antes de aplicar de verdade.
- */
-router.post('/clientes/importar-baixas-acessorias', requireAdmin, async (req, res) => {
-  try {
-    const token = process.env.ACESSORIAS_API_TOKEN;
-    if (!token) return res.status(500).json({ error: 'ACESSORIAS_API_TOKEN não configurado.' });
-    const desde = (req.body && req.body.desde) || '2024-11-01';
-    const dryRun = !!(req.body && req.body.dryRun);
-
-    const inativas = await acessoriasClient.listarEmpresasInativasDesde({ token, desde });
-
-    let jaEncerrados = 0, jaNotificados = 0, novosClientes = 0, novasNotificacoes = 0, semCnpj = 0;
-    const erros = [];
-
-    for (const emp of inativas) {
-      if (!emp.cnpj) { semCnpj++; continue; }
-      try {
-        const existente = await pool.query(
-          `SELECT id, status FROM clientes WHERE acessorias_id = $1 OR cnpj = $2 LIMIT 1`,
-          [emp.acessorias_id, emp.cnpj]
-        );
-
-        let clienteId, jaEraAtivo;
-        if (existente.rows.length) {
-          if (existente.rows[0].status === 'encerrado') { jaEncerrados++; continue; }
-          clienteId = existente.rows[0].id;
-          jaEraAtivo = true;
-        } else {
-          jaEraAtivo = false;
-          if (!dryRun) {
-            clienteId = uuidv4();
-            // status='encerrado' direto, não 'ativo' — achado do Reysner:
-            // diferente do drift-detection (onde o cliente ERA ativo até
-            // agora, cabe deixar 'ativo' pendente de resolução), aqui já
-            // SABEMOS que a empresa está inativa desde `clienteAte` — contar
-            // como ativa infla "Clientes ativos" à toa (622 virou 756 na
-            // 1ª rodada). motivo_saida fica um placeholder óbvio; quem
-            // resolve a notificação sobrescreve com o valor real escolhido
-            // (resolver-churn não checa status antes de sobrescrever).
-            await pool.query(
-              `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada, acessorias_id, codigo, status, data_saida, motivo_saida)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'encerrado',$9,$10)`,
-              [clienteId, req.user.id, emp.cnpj, emp.nome_empresa, emp.regime_tributario, emp.data_entrada, emp.acessorias_id, emp.codigo,
-               emp.clienteAte, 'Pendente de revisão — baixa/saída detectada no Acessórias']
-            );
-          }
-          novosClientes++;
-        }
-
-        // Evita duplicar notificação — só checa quando o cliente já existia
-        // (cliente novo nunca teve notificação antes).
-        const jaTemNotif = jaEraAtivo
-          ? await pool.query(
-              `SELECT 1 FROM notificacoes WHERE cliente_id = $1 AND tipo = 'churn_acessorias' AND lida = false LIMIT 1`,
-              [clienteId]
-            )
-          : { rows: [] };
-        if (jaTemNotif.rows.length) { jaNotificados++; continue; }
-
-        novasNotificacoes++;
-        if (!dryRun) {
-          const palpite = palpiteTipoChurn(emp.motivoCancelamentoBruto);
-          const palpiteTexto = palpite === 'baixa'
-            ? ' (Acessórias registrou como Baixada.)'
-            : palpite === 'saida'
-            ? ` (Acessórias registrou como "${emp.motivoCancelamentoBruto}" — provável Saída/churn real.)`
-            : '';
-          await pool.query(
-            `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id)
-             VALUES ('churn_acessorias', 'Baixa/saída no Acessórias', $1, 'carteira', $2)`,
-            [`${emp.nome_empresa} (CNPJ ${emp.cnpj}) está inativa no Acessórias desde ${emp.clienteAte} — clique pra confirmar se foi baixa ou saída.${palpiteTexto}`, clienteId]
-          );
-          await pool.query(`UPDATE clientes SET alerta_baixa_notificado_em = NOW() WHERE id = $1`, [clienteId]);
-        }
-      } catch (e) {
-        erros.push({ empresa: emp.nome_empresa, motivo: e.message });
-      }
-    }
-
-    if (!dryRun) {
-      await registrarLog(
-        req.user.id, req.user.name, 'importar', 'carteira',
-        `Baixas do Acessórias desde ${desde}: ${novasNotificacoes} notificação(ões), ${novosClientes} cliente(s) novo(s) criado(s)`, req
-      );
-    }
-
-    res.json({
-      desde, totalInativasDesde: inativas.length, semCnpj,
-      jaEncerrados, jaNotificados, novosClientes, novasNotificacoes, erros, dryRun,
-    });
-  } catch (e) {
-    console.error('[importar-baixas-acessorias] falhou:', e);
-    res.status(500).json({ error: 'Falha ao buscar baixas no Acessórias: ' + e.message });
-  }
-});
-
-/**
- * POST /api/data/clientes/corrigir-baixas-acessorias-status — correção
- * pontual: a 1ª rodada de importar-baixas-acessorias (antes do fix acima)
- * criou os 134 clientes novos como status='ativo', inflando "Clientes
- * Ativos" de 622 pra 756 (achado do Reysner, comparando Dashboard x
- * Carteira). Acha esses 134 pela notificação que só ELES têm (tipo +
- * título exclusivos desse fluxo, ainda não lida) e corrige pra
- * 'encerrado', com a data real (extraída do texto da própria notificação)
- * — nunca mexe em quem já foi resolvido (status != 'ativo' fica de fora).
- * Idempotente: rodar de novo não faz nada se já não sobrar ninguém 'ativo'
- * nesse grupo.
- */
-router.post('/clientes/corrigir-baixas-acessorias-status', requireAdmin, async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT n.cliente_id, n.mensagem
-        FROM notificacoes n
-        JOIN clientes c ON c.id = n.cliente_id
-       WHERE n.tipo = 'churn_acessorias'
-         AND n.titulo = 'Baixa/saída no Acessórias'
-         AND n.lida = false
-         AND c.status = 'ativo'
-    `);
-
-    let corrigidos = 0;
-    const semData = [];
-    for (const r of rows) {
-      const m = r.mensagem.match(/está inativa no Acessórias desde (\d{4}-\d{2}-\d{2})/);
-      const dataSaida = m ? m[1] : null;
-      if (!dataSaida) { semData.push(r.cliente_id); continue; }
-      await pool.query(
-        `UPDATE clientes SET status = 'encerrado', data_saida = $1,
-           motivo_saida = COALESCE(motivo_saida, 'Pendente de revisão — baixa/saída detectada no Acessórias')
-         WHERE id = $2 AND status = 'ativo'`,
-        [dataSaida, r.cliente_id]
-      );
-      corrigidos++;
-    }
-
-    await registrarLog(
-      req.user.id, req.user.name, 'editar', 'carteira',
-      `Corrigiu status de ${corrigidos} cliente(s) de baixa/saída do Acessórias (ativo → encerrado)`, req
-    );
-    res.json({ encontrados: rows.length, corrigidos, semData });
-  } catch (e) {
-    console.error('[corrigir-baixas-acessorias-status] falhou:', e);
-    res.status(500).json({ error: e.message });
-  }
-});
 
 // ── INSATISFAÇÕES ─────────────────────────────────────────────────────────────
 router.get('/insatisfacoes', async (req, res) => {
@@ -2116,94 +1960,6 @@ router.patch('/clientes/:id/encerrar', requireAdmin, async (req, res) => {
     );
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Erro ao encerrar cliente.' }); }
-});
-
-/**
- * PATCH /api/data/clientes/:id/resolver-churn — resolve a notificação de
- * "possível baixa/saída no Acessórias" (pedido do Reysner, fluxo completo):
- * clica na notificação, escolhe se foi Baixa ou Saída, confirma:
- *   - Baixa: encerra o cliente com motivo_saida = "Baixa de empresa" — não
- *     pede motivo do churn (não é churn de verdade, empresário fechou o
- *     CNPJ por motivo diverso).
- *   - Saída: exige `motivoChurn` (vindo da lista gerenciável de Motivos de
- *     Churn) e encerra o cliente com esse motivo.
- * Nos dois casos: encerra o cliente (sai de "ativas" na Carteira e em
- * Gestão de Clientes, que reflete o status via o mesmo cliente), cria um
- * registro em Gestão de Clientes documentando o evento (mesmo padrão de
- * quando alguém preenche isso manualmente) e marca a notificação como lida.
- */
-router.patch('/clientes/:id/resolver-churn', requireAdmin, async (req, res) => {
-  try {
-    const { tipo, motivoChurn, notificacaoId } = req.body;
-    if (tipo !== 'baixa' && tipo !== 'saida') {
-      return res.status(400).json({ error: 'tipo precisa ser "baixa" ou "saida".' });
-    }
-    if (tipo === 'saida' && !motivoChurn) {
-      return res.status(400).json({ error: 'Motivo do Churn é obrigatório para Saída de empresa.' });
-    }
-    // Idempotente — já roda em sincronizarAcessorias(), mas garante aqui
-    // também pro caso desse endpoint ser chamado antes de qualquer sync.
-    await pool.query(`ALTER TABLE gestao_clientes ALTER COLUMN data_sol DROP NOT NULL`).catch(() => {});
-    await pool.query(`ALTER TABLE gestao_clientes ALTER COLUMN competencia DROP NOT NULL`).catch(() => {});
-
-    const { rows } = await pool.query(`SELECT * FROM clientes WHERE id = $1`, [req.params.id]);
-    if (!rows.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
-    const cliente = rows[0];
-
-    const solicitacao = tipo === 'baixa' ? 'Baixa de empresa' : 'Saída de empresa';
-    const motivo = tipo === 'baixa' ? 'Baixa de empresa' : motivoChurn;
-    const hoje = new Date().toISOString().slice(0, 10);
-
-    // Pedido do Reysner: pegar a data real de saída ("Cliente até") direto
-    // do Acessórias em vez de usar "hoje" — a Acessórias já sabe quando o
-    // cliente saiu de verdade. Se a busca falhar por qualquer motivo (token
-    // não configurado, empresa não encontrada, API fora do ar), cai pra
-    // "hoje" — nunca trava a resolução do churn por causa disso.
-    let dataSaida = hoje;
-    const token = process.env.ACESSORIAS_API_TOKEN;
-    if (token && cliente.cnpj) {
-      const empresaAcessorias = await acessoriasClient.buscarEmpresaPorCnpj(cliente.cnpj, token);
-      if (empresaAcessorias?.clienteAte) dataSaida = empresaAcessorias.clienteAte;
-    }
-
-    await pool.query(
-      `UPDATE clientes SET status='encerrado', data_saida=$1, motivo_saida=$2 WHERE id=$3`,
-      [dataSaida, motivo, cliente.id]
-    );
-    await pool.query(
-      `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, data_evento)
-       VALUES ($1,'saida',$2,$3)`,
-      [cliente.id, motivo, dataSaida]
-    );
-    // Espelha em Gestão de Clientes, mesmo padrão de quando isso é
-    // preenchido manualmente pelo formulário. Diferente da ENTRADA (onde o
-    // Reysner pediu pra tirar Data da Solicitação/Competência), o
-    // formulário EXIGE esses dois campos pra Saída/Baixa de empresa — usa
-    // a data real de saída (já buscada acima) em vez de deixar null, senão
-    // esse registro fica "incompleto" comparado ao que o formulário exige.
-    const gestaoId = uuidv4();
-    await pool.query(
-      `INSERT INTO gestao_clientes (id, user_id, analista, solicitacao, cnpj, empresa, data_sol, competencia, canal, motivo, codigo, regime_tributario)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Outro',$9,$10,$11)`,
-      [gestaoId, req.user.id, req.user.name, solicitacao, cliente.cnpj, cliente.nome_empresa,
-       dataSaida, dataSaida.slice(0, 7), motivo, cliente.codigo, cliente.regime_tributario]
-    );
-    if (notificacaoId) {
-      await pool.query(`UPDATE notificacoes SET lida = true WHERE id = $1`, [notificacaoId]);
-    }
-    await registrarLog(req.user.id, req.user.name, 'encerrar', 'carteira', `Resolveu churn (${solicitacao}): ${cliente.nome_empresa} — ${motivo}`, req);
-    // Devolve os dados que o front precisa pra oferecer "Abrir Ticket
-    // Contábil" também aqui — pedido do Reysner: o fluxo manual (Forms.
-    // gestao()) já faz esse convite, o fluxo pela notificação não fazia.
-    res.json({
-      ok: true,
-      empresa: cliente.nome_empresa, cnpj: cliente.cnpj, regime: cliente.regime_tributario,
-      codigo: cliente.codigo, solicitacao, motivo, dataSaida, gestaoId,
-    });
-  } catch (err) {
-    console.error('[resolver-churn] falhou:', err);
-    res.status(500).json({ error: 'Erro ao resolver churn.' });
-  }
 });
 
 /**

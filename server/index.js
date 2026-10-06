@@ -318,6 +318,13 @@ initDB().then(async () => {
       } catch (e) {
         console.error('[Churn] Falha ao ler motivos do Acessórias:', e.message);
       }
+      // Saídas sem motivo do Acessórias: classifica sozinho pela situação do CNPJ na Receita (baixado = baixa; ativo = transferida).
+      try {
+        const r = await require('./cs/churnSaidas').classificarSaidasPelaReceita();
+        console.log('[Churn] Saídas classificadas pela Receita:', r);
+      } catch (e) {
+        console.error('[Churn] Falha ao classificar saídas pela Receita:', e.message);
+      }
     };
     setInterval(rodarSyncAcessorias, 24 * 60 * 60 * 1000); // 1x por dia
     rodarSyncAcessorias(); // já roda uma vez ao subir
