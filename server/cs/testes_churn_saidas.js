@@ -112,6 +112,41 @@ teste('calcularChurn usa a Receita e informa quantas saídas foram inferidas', (
   assert.strictEqual(r.fora_do_churn.a_confirmar, 0);
 });
 
+teste('tipo do documento: CNPJ, CPF, CAEPF e CNO', () => {
+  const { tipoDocumento, ehPessoaJuridica } = require('./churnSaidas');
+  assert.strictEqual(tipoDocumento('45.459.079/0001-51'), 'CNPJ');
+  assert.strictEqual(tipoDocumento('45459079000151'), 'CNPJ');
+  assert.strictEqual(tipoDocumento('014.158.526-93'), 'CPF');
+  assert.strictEqual(tipoDocumento('01415852693'), 'CPF');
+  assert.strictEqual(tipoDocumento('123.456.789/001-12'), 'CAEPF');
+  assert.strictEqual(tipoDocumento('12.345.67890/12'), 'CNO');
+  assert.strictEqual(tipoDocumento('123456789012'), 'CNO');
+  assert.strictEqual(tipoDocumento(''), null);
+  assert.strictEqual(tipoDocumento(null), null);
+  assert.strictEqual(ehPessoaJuridica('45.459.079/0001-51'), true);
+  assert.strictEqual(ehPessoaJuridica('014.158.526-93'), false);
+  assert.strictEqual(ehPessoaJuridica('123.456.789/001-12'), false);
+  assert.strictEqual(ehPessoaJuridica('12.345.67890/12'), false);
+  assert.strictEqual(ehPessoaJuridica(null), true); // sem documento: não dá pra afirmar que é CPF
+});
+
+teste('CPF, CAEPF e CNO ficam fora da base e das saídas do churn', () => {
+  const mk = (id, doc, saida, motivo) => ({ id, nome: id, cnpj: doc, data_entrada: '2024-01-01', data_saida: saida, motivo_saida: null, motivo_acessorias: motivo });
+  const clientes = [
+    mk('pj1', '45.459.079/0001-51', null, null),
+    mk('pj2', '11.222.333/0001-81', '2026-10-05', 'Transferida por preço'),
+    mk('cpf', '014.158.526-93', '2026-10-06', 'Transferida por preço'),
+    mk('caepf', '123.456.789/001-12', '2026-10-07', 'Transferida por preço'),
+    mk('cno', '12.345.67890/12', '2026-10-08', 'Transferida por preço'),
+  ];
+  const r = calcularChurn(clientes, '2026-10-01', '2026-10-31');
+  assert.strictEqual(r.base, 2);               // só pj1 e pj2
+  assert.strictEqual(r.saidas_contadas, 1);    // só pj2
+  assert.strictEqual(r.taxa, 50);
+  assert.deepStrictEqual(r.desconsiderados_cpf_caepf_cno, { base: 3, saidas: 3 });
+  assert.ok(!r.saidas.some((s) => ['cpf', 'caepf', 'cno'].includes(s.id)));
+});
+
 teste('rotas de admin passam por requireAuth ANTES de requireAdmin', () => {
   const { router } = require('./churnSaidas');
   let achouAdmin = 0;

@@ -47,6 +47,27 @@ function motivoDoSistemaConfiavel(m) {
   return n;
 }
 
+/**
+ * Tipo do documento da empresa: 'CNPJ' | 'CPF' | 'CAEPF' | 'CNO' | null (vazio/desconhecido).
+ * CPF = 11 dígitos; CNO = 12; CNPJ e CAEPF têm 14 e se distinguem pela máscara do Acessórias
+ * (CNPJ 00.000.000/0000-00; CAEPF 000.000.000/000-00).
+ */
+function tipoDocumento(bruto) {
+  const texto = String(bruto || '').trim();
+  const digitos = texto.replace(/\D/g, '');
+  if (!digitos) return null;
+  if (digitos.length === 11) return 'CPF';
+  if (digitos.length === 12) return 'CNO';
+  if (digitos.length === 14) return /^\d{3}\.\d{3}\.\d{3}\/\d{3}-\d{2}$/.test(texto) ? 'CAEPF' : 'CNPJ';
+  return null;
+}
+
+/** Só pessoa jurídica (CNPJ) entra no churn; sem documento informado também fica (não dá pra afirmar que é CPF). */
+function ehPessoaJuridica(bruto) {
+  const t = tipoDocumento(bruto);
+  return t === 'CNPJ' || t === null;
+}
+
 const DIAS_BAIXA_RECEITA_APOS_SAIDA = 120;
 
 /** Situação do CNPJ na Receita → 'transferida' | 'baixa' | null (não dá pra inferir: suspensa, inapta, nula...). */
@@ -82,7 +103,13 @@ function classificarSaida(motivoAcessorias, motivoSistema, padroes = PADROES_PAD
  * clientes: [{ id, nome, cnpj, data_entrada:'AAAA-MM-DD'|null, data_saida:'AAAA-MM-DD'|null, motivo_saida, motivo_acessorias }]
  * Datas como texto ISO (comparação lexicográfica vale).
  */
-function calcularChurn(clientes, ini, fim, padroes = PADROES_PADRAO) {
+function calcularChurn(todosClientes, ini, fim, padroes = PADROES_PADRAO) {
+  // CPF, CAEPF e CNO não entram no churn (06/10/2026, Reysner): saem da base e das saídas.
+  const clientes = todosClientes.filter((c) => ehPessoaJuridica(c.cnpj));
+  const desconsiderados = {
+    base: todosClientes.filter((c) => !ehPessoaJuridica(c.cnpj) && (!c.data_entrada || c.data_entrada < ini) && (!c.data_saida || c.data_saida >= ini)).length,
+    saidas: todosClientes.filter((c) => !ehPessoaJuridica(c.cnpj) && c.data_saida && c.data_saida >= ini && c.data_saida <= fim).length,
+  };
   const base = clientes.filter((c) => (!c.data_entrada || c.data_entrada < ini) && (!c.data_saida || c.data_saida >= ini));
   const baseIds = new Set(base.map((c) => c.id));
   const saidas = clientes
@@ -108,6 +135,7 @@ function calcularChurn(clientes, ini, fim, padroes = PADROES_PADRAO) {
     transferidas_fora_da_base: saidas.filter((s) => s.tipo === 'transferida' && !s.na_base).length,
     fora_do_churn: { baixas: contagem('baixa'), outras_saidas: contagem('outra_saida'), a_confirmar: contagem('a_confirmar') },
     inferidas_pela_receita: saidas.filter((s) => s.origem === 'receita').length,
+    desconsiderados_cpf_caepf_cno: desconsiderados,
     saidas,
   };
 }
@@ -214,6 +242,7 @@ async function classificarSaidasPelaReceita({ limite = 150 } = {}) {
           AND motivo_cancelamento_acessorias IS NULL
           AND (motivo_saida IS NULL OR lower(motivo_saida) = 'baixa de empresa' OR lower(motivo_saida) LIKE 'pendente de revis%')
           AND length(regexp_replace(cnpj, '\\D', '', 'g')) = 14
+          AND cnpj !~ '^[0-9]{3}[.][0-9]{3}[.][0-9]{3}/[0-9]{3}-[0-9]{2}$'
           AND (situacao_receita_em IS NULL
                OR situacao_receita_em < NOW() - (CASE WHEN situacao_receita = 'INDISPONIVEL' THEN INTERVAL '7 days' ELSE INTERVAL '90 days' END))
         ORDER BY data_saida DESC LIMIT $1`, [limite]
@@ -363,5 +392,6 @@ router.get('/diagnostico', requireAuth, requireAdmin, async (req, res) => {
 
 module.exports = {
   router, classificarSaida, classificarSaidaDetalhe, inferirPelaReceita, calcularChurn, presets, somarDias, normalizar,
+  tipoDocumento, ehPessoaJuridica,
   sincronizarMotivos, classificarSaidasPelaReceita, consultarSituacaoCnpj, garantirColuna, PADROES_PADRAO,
 };
