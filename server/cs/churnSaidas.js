@@ -62,11 +62,14 @@ function calcularChurn(clientes, ini, fim, padroes = PADROES_PADRAO) {
 
   const contadas = saidas.filter((s) => s.tipo === 'transferida' && s.na_base);
   const contagem = (tipo) => saidas.filter((s) => s.tipo === tipo).length;
+  const aConfirmarNaBase = saidas.filter((s) => s.tipo === 'a_confirmar' && s.na_base).length;
   return {
     ini, fim,
     base: base.length,
     saidas_contadas: contadas.length,
     taxa: base.length ? +(100 * contadas.length / base.length).toFixed(2) : null,
+    // teto: se TODAS as saídas ainda sem motivo lido do Acessórias fossem transferências (só pra dar a ordem de grandeza)
+    taxa_teto: base.length ? +(100 * (contadas.length + aConfirmarNaBase) / base.length).toFixed(2) : null,
     // saídas por transferência de quem entrou DENTRO do período: fora do cálculo, mas mostradas
     transferidas_fora_da_base: saidas.filter((s) => s.tipo === 'transferida' && !s.na_base).length,
     fora_do_churn: { baixas: contagem('baixa'), outras_saidas: contagem('outra_saida'), a_confirmar: contagem('a_confirmar') },

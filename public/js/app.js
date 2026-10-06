@@ -3088,7 +3088,7 @@ const Carteira = (() => {
         <div style="font-size:24px;font-weight:800;color:${p.saidas_contadas ? '#c53030' : 'var(--g700)'};margin-top:4px">${_pct(p.taxa)}</div>
         <div style="font-size:12px;color:var(--gray-600);margin-top:2px">${p.saidas_contadas} de ${p.base} clientes</div>
         <div style="font-size:10.5px;color:var(--gray-400);margin-top:4px">fora do churn: ${p.fora_do_churn.baixas} baixas · ${p.fora_do_churn.outras_saidas} outras saídas</div>
-        ${p.fora_do_churn.a_confirmar ? '<div style="font-size:10.5px;color:#2b6cb0;font-weight:600;margin-top:3px">' + p.fora_do_churn.a_confirmar + ' saída(s) a confirmar no Acessórias — a taxa pode estar subestimada</div>' : ''}
+        ${p.fora_do_churn.a_confirmar ? '<div style="font-size:10.5px;color:#2b6cb0;font-weight:600;margin-top:3px">' + p.fora_do_churn.a_confirmar + ' saída(s) a confirmar no Acessórias — a taxa real fica entre ' + _pct(p.taxa) + ' e no máximo ' + _pct(p.taxa_teto) + '</div>' : ''}
       </div>`).join('');
   }
 

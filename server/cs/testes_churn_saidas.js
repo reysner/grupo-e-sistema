@@ -51,6 +51,7 @@ teste('taxa = saídas por transferência da base ÷ base ativa no início do per
   assert.strictEqual(r.base, 7);                 // a, b, c, d, e, h, i
   assert.strictEqual(r.saidas_contadas, 2);      // c e e
   assert.strictEqual(r.taxa, 28.57);
+  assert.strictEqual(r.taxa_teto, 42.86); // + 1 'a confirmar' (i) na base: 3/7
   assert.strictEqual(r.transferidas_fora_da_base, 1); // f
   assert.deepStrictEqual(r.fora_do_churn, { baixas: 1, outras_saidas: 1, a_confirmar: 1 });
 });
