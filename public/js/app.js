@@ -2883,6 +2883,7 @@ window.Pesquisas = Pesquisas;
 const Carteira = (() => {
   let _clientes = [];
   let _categorias = {}; // cliente_id -> { categoria, motivo } (GET /api/cs/categorias)
+  let _riscos = {};     // cliente_id -> { pontos, nivel, motivos, termometros... } (GET /api/cs/risco)
   let _page = 1;
   let _shown = 20; // rolagem infinita: quantas linhas já estão renderizadas
   function _token() { return localStorage.getItem('ge_token') || ''; }
@@ -2937,19 +2938,6 @@ const Carteira = (() => {
       const statusBadge = c.status==='ativo'
         ? '<span style="background:#f0fff4;color:#38a169;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Ativo</span>'
         : '<span style="background:#fff5f5;color:#e53e3e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Encerrado</span>';
-      // Health Score (0-100)
-      const _iniRel = new Date(c.data_entrada);
-      const _fimRel = c.data_saida ? new Date(c.data_saida) : new Date();
-      const mesesRel = c.data_entrada
-        ? Math.max(0, (_fimRel.getFullYear()-_iniRel.getFullYear())*12 + (_fimRel.getMonth()-_iniRel.getMonth()))
-        : 0;
-      const scoreRetencao = Math.min(40, Math.round(mesesRel/3));
-      const scoreReceita  = rec > 0 ? Math.min(30, Math.round(rec/1000)) : 0;
-      const scoreSem      = c.status==='ativo' ? 20 : 0;
-      const scoreReajuste = c.meses_sem_reajuste && c.meses_sem_reajuste > 12 ? 0 : 10;
-      const health = Math.min(100, scoreRetencao + scoreReceita + scoreSem + scoreReajuste);
-      const healthColor = health >= 70 ? '#38a169' : health >= 40 ? '#d69e2e' : '#e53e3e';
-      const healthLabel = health >= 70 ? 'Saudável' : health >= 40 ? 'Atenção' : 'Risco';
       // Reajuste alert
       const semReajuste = c.meses_sem_reajuste || 0;
       const reajusteAlert = semReajuste > 12 && c.status==='ativo'
@@ -2963,7 +2951,7 @@ const Carteira = (() => {
         <td class="valor-rs">${_fmt(rec)}</td>
         <td style="font-size:12px;color:var(--gray-500)">${_tempo(c.data_entrada, c.data_saida)}</td>
         <td>${_categoriaCelula(c)}</td>
-        <td><span style="background:${healthColor}20;color:${healthColor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${healthLabel}</span></td>
+        <td>${_riscoCelula(c)}</td>
         <td>${statusBadge}</td>
         <td style="white-space:nowrap">
           <button class="btn btn-ghost btn-sm" onclick="Carteira.verFicha('${c.id}')">Ver ficha</button>
@@ -3178,13 +3166,86 @@ ${isAdmin ? _churnLeituraHtml() : ''}
     loadChurn();
   }
 
+  // Risco de perda (3 termômetros: Financeiro, Atendimento e Operacional) — substitui o antigo "Health".
+  const _escAttr = (x) => _esc(x).replace(/"/g, '&quot;'); // _esc não escapa aspas; títulos (tooltips) têm aspas
+  const _RISCO_COR = { Alto: ['#c53030', '#fff5f5'], 'Médio': ['#b7791f', '#fffbeb'], Baixo: ['#2f855a', '#f0fff4'], Incompleto: ['#718096', '#edf2f7'] };
+  function _riscoTermometros(r) {
+    const t = r.termometros || {};
+    const v = (x) => (x == null ? '—' : x);
+    return 'Fin ' + v(t.financeiro) + ' · Atend ' + v(t.atendimento) + ' · Oper ' + v(t.operacional);
+  }
+  function _riscoCelula(c) {
+    if (c.status !== 'ativo') return '<span style="color:var(--gray-400)">—</span>';
+    const r = _riscos[c.id];
+    if (!r) return '<span style="font-size:11px;color:var(--gray-400)">—</span>';
+    const [cor, bg] = _RISCO_COR[r.nivel] || _RISCO_COR.Incompleto;
+    const titulo = [r.nivel + (r.pontos != null ? ' (' + r.pontos + ' pontos)' : ''), _riscoTermometros(r)].concat(r.motivos || []).concat(r.parcial ? ['Parcial: sem dado de ' + (r.sem_dado || []).join(', ')] : []).join('\n');
+    const motivo = (r.motivos && r.motivos[0]) ? _esc(r.motivos[0]) : (r.nivel === 'Incompleto' ? 'sem dados' : 'sem ocorrências');
+    return '<span title="' + _escAttr(titulo) + '" style="background:' + bg + ';color:' + cor + ';padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap">' + r.nivel + (r.pontos != null ? ' · ' + r.pontos : '') + (r.alerta ? ' ⚠' : '') + '</span>'
+      + '<div class="cat-motivo" title="' + _escAttr(titulo) + '">' + _esc(_riscoTermometros(r)) + (r.parcial ? ' (parcial)' : '') + '</div>'
+      + '<div class="cat-motivo" title="' + _escAttr(titulo) + '">' + motivo + '</div>';
+  }
+
+  async function abrirRisco() {
+    const res = await fetch('/api/cs/risco/config', { headers: { Authorization: `Bearer ${_token()}` } });
+    if (!res || !res.ok) { App.Toast.err('Erro ao carregar a configuração do risco.'); return; }
+    const cfg = await res.json();
+    const e = cfg.entregas_sincronizadas;
+    const statusEntregas = e ? 'Última leitura: ' + new Date(e.em).toLocaleString('pt-BR') + ' — ' + e.lidas + ' empresas lidas (' + e.com_entregas + ' com entregas, ' + e.erros + ' com erro)' : 'Ainda não leu as entregas do Acessórias: o termômetro Operacional fica sem dado.';
+    App.Modal.open('⚠️ Risco de perda', `
+      <div style="display:grid;gap:16px">
+        <p style="margin:0;font-size:13px;color:var(--gray-600);line-height:1.5">O risco é a média ponderada de três termômetros de 0 a 100 (quanto maior, pior): <strong>Financeiro</strong> (títulos em atraso), <strong>Atendimento</strong> (insatisfações, notas baixas, SLA vermelho e abandonos — já depois da revisão da Gamificação) e <strong>Operacional</strong> (entregas do Acessórias). Termômetro sem dado fica de fora e o risco aparece como parcial.</p>
+        <div>
+          <strong style="font-size:13px">Pesos de cada termômetro</strong>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:8px">
+            <div class="field"><label>Financeiro</label><input id="risco-p-fin" type="number" min="0" step="0.5" value="${cfg.pesos.financeiro}" /></div>
+            <div class="field"><label>Atendimento</label><input id="risco-p-ate" type="number" min="0" step="0.5" value="${cfg.pesos.atendimento}" /></div>
+            <div class="field"><label>Operacional</label><input id="risco-p-ope" type="number" min="0" step="0.5" value="${cfg.pesos.operacional}" /></div>
+          </div>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Só a proporção importa (1, 1, 1 = pesos iguais; 2, 1, 1 = Financeiro vale o dobro). Os pesos definitivos serão fixados mais adiante.</div>
+        </div>
+        <div>
+          <strong style="font-size:13px">Cortes dos níveis (pontos de 0 a 100)</strong>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:8px">
+            <div class="field"><label>Médio a partir de</label><input id="risco-c-med" type="number" min="1" max="99" step="1" value="${cfg.cortes.medio}" /></div>
+            <div class="field"><label>Alto a partir de</label><input id="risco-c-alt" type="number" min="2" max="100" step="1" value="${cfg.cortes.alto}" /></div>
+          </div>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:4px">Abaixo do corte Médio = Baixo. Um termômetro sozinho com 75 pontos ou mais já coloca o cliente em Médio, no mínimo (aparece com ⚠).</div>
+        </div>
+        <div>
+          <strong style="font-size:13px">Termômetro Operacional (entregas do Acessórias)</strong>
+          <div style="font-size:11.5px;color:var(--gray-500);margin:4px 0 8px;line-height:1.5">${statusEntregas}${cfg.sincronizando ? ' (leitura em andamento)' : ''}</div>
+          <button class="btn btn-ghost btn-sm" onclick="Carteira.lerEntregasAgora(this)">🔄 Ler entregas do Acessórias agora</button>
+        </div>
+      </div>
+    `, () => salvarRisco(), { wide: true });
+  }
+
+  async function salvarRisco() {
+    const n = (id) => Number(document.getElementById(id).value);
+    const body = { pesos: { financeiro: n('risco-p-fin'), atendimento: n('risco-p-ate'), operacional: n('risco-p-ope') }, cortes: { medio: n('risco-c-med'), alto: n('risco-c-alt') } };
+    const res = await fetch('/api/cs/risco/config', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${_token()}` }, body: JSON.stringify(body) });
+    if (!res || !res.ok) { App.Toast.err((await res?.json().catch(() => ({})))?.error || 'Erro ao salvar o risco.'); return; }
+    App.Toast.ok('Configuração do risco salva.');
+    App.Modal.close();
+    loadGrid();
+  }
+
+  async function lerEntregasAgora(btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Iniciando...'; }
+    const res = await fetch('/api/cs/risco/sincronizar-entregas', { method: 'POST', headers: { Authorization: `Bearer ${_token()}` } });
+    const corpo = await res.json().catch(() => ({}));
+    if (res.ok) App.Toast.ok(corpo.mensagem || 'Leitura iniciada.'); else App.Toast.err(corpo.error || 'Erro ao iniciar a leitura.');
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Ler entregas do Acessórias agora'; }
+  }
+
   // Categoria (Diamante/Ouro/Prata/Bronze) sempre com o motivo escrito embaixo — o motivo traz valores em R$, então entra no "Ocultar valores".
   function _categoriaCelula(c) {
     if (c.status !== 'ativo') return '<span style="color:var(--gray-400)">—</span>';
     const cat = _categorias[c.id];
     if (!cat) return '<span style="font-size:11px;color:var(--gray-400)">—</span>';
     if (!cat.categoria) return `<span style="font-size:11px;color:var(--gray-400)">${_esc(cat.motivo)}</span>`;
-    return `<span class="cat-pill cat-${cat.categoria.toLowerCase()}">${cat.categoria}</span><div class="cat-motivo valor-rs" title="${_esc(cat.motivo)}">${_esc(cat.motivo)}</div>`;
+    return `<span class="cat-pill cat-${cat.categoria.toLowerCase()}">${cat.categoria}</span><div class="cat-motivo valor-rs" title="${_escAttr(cat.motivo)}">${_esc(cat.motivo)}</div>`;
   }
 
   const _TRATAMENTOS = [['ignorar', 'Ignorar'], ['piso_ouro', 'Piso Ouro (empresa do Grupo-E)'], ['grupo', 'Grupo de clientes (soma honorários)']];
@@ -3284,9 +3345,10 @@ ${isAdmin ? _churnLeituraHtml() : ''}
     const tbody = document.getElementById('cart-tbody');
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr>';
-    const [res, resCat] = await Promise.all([
+    const [res, resCat, resRisco] = await Promise.all([
       fetch('/api/data/clientes?status=todos', { headers: { 'Authorization': `Bearer ${_token()}` } }),
       fetch('/api/cs/categorias', { headers: { 'Authorization': `Bearer ${_token()}` } }).catch(() => null),
+      fetch('/api/cs/risco', { headers: { 'Authorization': `Bearer ${_token()}` } }).catch(() => null),
     ]);
     if (!res || !res.ok) {
       tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#e53e3e;padding:32px">Erro ao carregar.</td></tr>';
@@ -3295,6 +3357,7 @@ ${isAdmin ? _churnLeituraHtml() : ''}
     const { data } = await res.json();
     _clientes = data || [];
     _categorias = (resCat && resCat.ok) ? ((await resCat.json()).data || {}) : {};
+    _riscos = (resRisco && resRisco.ok) ? ((await resRisco.json()).data || {}) : {};
     _populateYearFilter(_clientes);
     const receitaTotal = _clientes.reduce((s,c) => s + parseFloat(c.receita_acumulada||0), 0);
     const el = document.getElementById('cart-receita-total');
@@ -3544,6 +3607,7 @@ ${isAdmin ? _churnLeituraHtml() : ''}
           <div><strong>CAC:</strong> ${_fmt(c.cac)}</div>
           <div><strong>Regime:</strong> ${c.regime_tributario||'—'}</div>
           <div><strong>Status:</strong> ${c.status}</div>
+          ${_riscos[c.id] ? `<div style="grid-column:1/-1"><strong>Risco:</strong> ${_riscoCelula(c).split('<div')[0]} <span style="color:var(--gray-500)">${_esc(_riscoTermometros(_riscos[c.id]))}</span>${(_riscos[c.id].motivos || []).map(m => `<div style="font-size:12px;color:var(--gray-600);margin-top:2px">• ${_esc(m)}</div>`).join('')}</div>` : ''}
           ${_categorias[c.id] ? `<div style="grid-column:1/-1"><strong>Categoria:</strong> ${_categorias[c.id].categoria ? `<span class="cat-pill cat-${_categorias[c.id].categoria.toLowerCase()}">${_categorias[c.id].categoria}</span>` : '—'} <span class="valor-rs" style="color:var(--gray-500)">${_esc(_categorias[c.id].motivo)}</span></div>` : ''}
         </div>
         <div><strong style="font-size:13px">Histórico de honorários</strong>
@@ -3645,7 +3709,7 @@ ${isAdmin ? _churnLeituraHtml() : ''}
     load, loadDashboard, loadGrid, filtrar, goPage, _onScroll, atualizarHonorario, salvarHonorario,
     verFicha, editarCliente, salvarEdicaoCliente, exportCSV, exportPDF, limpar, excluir,
     abrirReajusteEmMassa, _atualizarPreviewReajuste, _aplicarReajusteEmMassa,
-    abrirCategorias, sincronizarTagsAgora,
+    abrirCategorias, sincronizarTagsAgora, abrirRisco, lerEntregasAgora,
     abrirChurn, _churnTrocarPeriodo, _churnCalcularLivre, _churnLerMotivos, _churnTestarLeitura, _churnClassificar, _churnDefinir, _churnSalvarDefinicao,
   };
 })();

@@ -774,6 +774,7 @@
             <div style="margin-left:auto;display:flex;gap:8px">
               <button class="btn btn-ghost btn-sm admin-only" onclick="Carteira.abrirReajusteEmMassa()">📊 Reajuste em Massa</button>
               <button class="btn btn-ghost btn-sm admin-only" onclick="Carteira.abrirCategorias()" title="Faixas de Diamante/Ouro/Prata/Bronze e TAGs do Acessórias">🏅 Categorias</button>
+              <button class="btn btn-ghost btn-sm admin-only" onclick="Carteira.abrirRisco()" title="Pesos dos termômetros e cortes do risco de perda">⚠️ Risco</button>
               <button class="btn btn-ghost btn-sm" onclick="Carteira.exportCSV()">⬇ Exportar CSV</button>
               <button class="btn btn-ghost btn-sm" onclick="Carteira.exportPDF()">🖨 Exportar PDF</button>
               <button class="btn btn-sm admin-only" onclick="Carteira.limpar()" style="background:#fff5f5;color:#e53e3e;border:1px solid #fed7d7">🗑 Limpar Registros</button>
@@ -853,7 +854,7 @@
                 <table class="data-table" id="cart-grid">
                   <thead><tr>
                     <th>Cód.</th><th>Empresa</th><th>CNPJ</th><th>Regime</th><th>Honorário</th>
-                    <th>Rec. acumulada</th><th>Tempo</th><th>Categoria</th><th>Health</th><th>Status</th><th></th>
+                    <th>Rec. acumulada</th><th>Tempo</th><th>Categoria</th><th>Risco</th><th>Status</th><th></th>
                   </tr></thead>
                   <tbody id="cart-tbody"><tr><td colspan="11" style="text-align:center;color:var(--gray-400);padding:32px">Carregando...</td></tr></tbody>
                 </table>
@@ -1469,6 +1470,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="/js/app.js?v=2026100512"></script>
+  <script src="/js/app.js?v=2026100513"></script>
 </body>
 </html>

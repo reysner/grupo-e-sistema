@@ -1,0 +1,220 @@
+'use strict';
+/**
+ * Risco de perda do cliente (Etapa 3 do painel de Risco) — leitura dos dados, rotas e sincronização das entregas.
+ * Regras de cálculo em riscoCalculo.js (puras, com testes).
+ *
+ * Atendimento usa os dados do Zappy DEPOIS da revisão da Gamificação (pedido do Reysner, 06/10/2026, "pra não ser
+ * injusto"): nota baixa marcada "indevida", SLA vermelho cuja revisão de velocidade foi "indevida" e abandono "indevida"
+ * não entram no risco do cliente.
+ *
+ * Endpoints (montados em /api/cs/risco):
+ *   GET  /                      -> risco, termômetros e motivos de cada cliente ativo (qualquer usuário logado)
+ *   GET  /config  PUT /config   -> pesos e cortes (admin)
+ *   POST /sincronizar-entregas  -> lê as entregas do Acessórias (Operacional), em segundo plano (admin)
+ */
+const express = require('express');
+const { pool } = require('../db');
+const { requireAuth, requireAdmin } = require('../auth');
+const acessorias = require('../acessoriasClient');
+const calc = require('./riscoCalculo');
+
+const CHAVE_CONFIG = 'risco_config';
+const CHAVE_SYNC_ENTREGAS = 'risco_entregas_sync';
+const soDigitos = (s) => String(s || '').replace(/\D/g, '');
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+const hojeBrasilia = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+const somarDias = (iso, n) => { const [y, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
+
+// ── Banco ────────────────────────────────────────────────────────────────────
+let _schema = null;
+function garantirSchema() {
+  if (!_schema) {
+    _schema = pool.query(`CREATE TABLE IF NOT EXISTS cliente_entregas_resumo (
+      doc TEXT PRIMARY KEY, total INT NOT NULL DEFAULT 0, atrasadas_entregues INT NOT NULL DEFAULT 0,
+      vencidas_pendentes INT NOT NULL DEFAULT 0, janela_ini DATE, janela_fim DATE, atualizado_em TIMESTAMPTZ DEFAULT NOW())`)
+      .catch((e) => { _schema = null; throw e; });
+  }
+  return _schema;
+}
+
+/** Consulta tolerante: se uma fonte opcional (ex.: tabela da Gamificação) não existir, o termômetro segue sem ela. */
+async function consultar(sql, params = [], rotulo = '') {
+  try { return (await pool.query(sql, params)).rows; }
+  catch (e) { console.warn(`[risco] consulta opcional falhou (${rotulo}):`, e.message); return null; }
+}
+
+async function lerConfig() {
+  const { rows } = await pool.query(`SELECT valor FROM cs_config WHERE chave = $1`, [CHAVE_CONFIG]);
+  const padrao = { pesos: { ...calc.PESOS_PADRAO }, cortes: { ...calc.CORTES_PADRAO } };
+  if (!rows.length) return padrao;
+  try {
+    const c = JSON.parse(rows[0].valor);
+    const pesos = {}; calc.TERMOMETROS.forEach((t) => { pesos[t] = Number(c.pesos && c.pesos[t]) >= 0 ? Number(c.pesos[t]) : 1; });
+    const cortes = { medio: Number(c.cortes && c.cortes.medio), alto: Number(c.cortes && c.cortes.alto) };
+    if (!(cortes.medio > 0 && cortes.alto > cortes.medio)) return padrao;
+    return { pesos, cortes };
+  } catch (e) { return padrao; }
+}
+
+const agrupar = (linhas, chave) => { const m = new Map(); (linhas || []).forEach((l) => { const k = l[chave]; if (!m.has(k)) m.set(k, []); m.get(k).push(l); }); return m; };
+
+async function calcularTodos() {
+  await garantirSchema();
+  const hoje = hojeBrasilia();
+  const config = await lerConfig();
+
+  let clientes = await consultar(`SELECT c.id, c.nome_empresa AS nome, c.cnpj, COALESCE(c.inadimplente_cronico, false) AS cronico FROM clientes c WHERE c.status = 'ativo'`, [], 'clientes');
+  if (!clientes) clientes = await consultar(`SELECT c.id, c.nome_empresa AS nome, c.cnpj, false AS cronico FROM clientes c WHERE c.status = 'ativo'`, [], 'clientes (sem crônico)') || [];
+
+  const aberto = new Map(((await consultar(
+    `SELECT regexp_replace(cnpj, '\\D', '', 'g') AS doc, SUM(qtd_atrasados)::int AS qtd, SUM(valor_atrasado)::float AS valor,
+            to_char(MIN(mais_antigo), 'YYYY-MM-DD') AS mais_antigo FROM financeiro_aberto GROUP BY 1`, [], 'financeiro_aberto')) || []).map((r) => [r.doc, r]));
+  const coberto = new Set(((await consultar(`SELECT DISTINCT regexp_replace(cnpj, '\\D', '', 'g') AS doc FROM financeiro_clientes`, [], 'financeiro_clientes')) || []).map((r) => r.doc));
+
+  const insat = agrupar(await consultar(
+    `SELECT regexp_replace(cnpj, '\\D', '', 'g') AS doc, gravidade, (CURRENT_DATE - created_at::date)::int AS dias FROM insatisfacoes WHERE created_at >= NOW() - INTERVAL '180 days'`, [], 'insatisfacoes'), 'doc');
+  const sensiveis = agrupar(await consultar(
+    `SELECT regexp_replace(cnpj, '\\D', '', 'g') AS doc, gravidade, (CURRENT_DATE - created_at::date)::int AS dias FROM clientes_sensiveis WHERE created_at >= NOW() - INTERVAL '90 days'`, [], 'clientes_sensiveis'), 'doc');
+  const detratores = new Map(((await consultar(
+    `SELECT doc, COUNT(*)::int AS n FROM (SELECT regexp_replace(cnpj, '\\D', '', 'g') AS doc FROM pesquisas WHERE nps <= 6 AND created_at >= NOW() - INTERVAL '180 days') x GROUP BY doc`, [], 'pesquisas')) || []).map((r) => [r.doc, r.n]));
+
+  // Zappy depois da revisão da Gamificação; se as colunas/tabelas de revisão não existirem, cai na versão sem exclusões.
+  const zappyComRevisao = `
+    SELECT v.cliente_id,
+           COUNT(*)::int AS tickets90,
+           COUNT(*) FILTER (WHERE t.nota_avaliacao <= 2 AND COALESCE(t.revisao_nota_status, 'pendente') <> 'indevida')::int AS notas_baixas,
+           COUNT(*) FILTER (WHERE t.pior_status = 'vermelho'
+             AND NOT (EXISTS (SELECT 1 FROM gam_velocidade_revisoes r WHERE r.ticket_id = t.id AND r.status = 'indevida')
+                      AND NOT EXISTS (SELECT 1 FROM gam_velocidade_revisoes r WHERE r.ticket_id = t.id AND r.status <> 'indevida')))::int AS sla_vermelho
+      FROM cs_tickets t JOIN cs_vinculos v ON v.id = t.vinculo_id
+     WHERE v.tipo = 'cliente' AND v.cliente_id IS NOT NULL AND t.abertura >= NOW() - INTERVAL '90 days'
+     GROUP BY v.cliente_id`;
+  const zappySemRevisao = `
+    SELECT v.cliente_id, COUNT(*)::int AS tickets90,
+           COUNT(*) FILTER (WHERE t.nota_avaliacao <= 2)::int AS notas_baixas,
+           COUNT(*) FILTER (WHERE t.pior_status = 'vermelho')::int AS sla_vermelho
+      FROM cs_tickets t JOIN cs_vinculos v ON v.id = t.vinculo_id
+     WHERE v.tipo = 'cliente' AND v.cliente_id IS NOT NULL AND t.abertura >= NOW() - INTERVAL '90 days'
+     GROUP BY v.cliente_id`;
+  let zappyRows = await consultar(zappyComRevisao, [], 'zappy com revisão');
+  if (!zappyRows) zappyRows = await consultar(zappySemRevisao, [], 'zappy sem revisão') || [];
+  const zappy = new Map(zappyRows.map((r) => [r.cliente_id, r]));
+
+  const abandonos = new Map(((await consultar(
+    `SELECT v.cliente_id, COUNT(*)::int AS n
+       FROM gam_abandono_incidentes a JOIN cs_tickets t ON t.id = a.ticket_id JOIN cs_vinculos v ON v.id = t.vinculo_id
+      WHERE v.tipo = 'cliente' AND v.cliente_id IS NOT NULL AND a.data >= CURRENT_DATE - 90 AND a.status <> 'indevida'
+      GROUP BY v.cliente_id`, [], 'abandonos')) || []).map((r) => [r.cliente_id, r.n]));
+
+  const entregas = new Map(((await consultar(`SELECT doc, total, atrasadas_entregues, vencidas_pendentes FROM cliente_entregas_resumo`, [], 'entregas')) || []).map((r) => [r.doc, r]));
+
+  const data = {};
+  const resumo = { Alto: 0, 'Médio': 0, Baixo: 0, Incompleto: 0 };
+  for (const c of clientes) {
+    const doc = soDigitos(c.cnpj);
+    const ab = aberto.get(doc);
+    const z = zappy.get(c.id) || {};
+    const e = entregas.get(doc);
+    const termometros = {
+      financeiro: calc.termometroFinanceiro({ temDado: coberto.has(doc) || !!ab, qtdAtrasados: ab ? ab.qtd : 0, valorAtrasado: ab ? ab.valor : 0, maisAntigo: ab ? ab.mais_antigo : null, cronico: c.cronico, hoje }),
+      atendimento: calc.termometroAtendimento({
+        insatisfacoes: insat.get(doc) || [], sensiveis: sensiveis.get(doc) || [], notasBaixas: z.notas_baixas || 0,
+        slaVermelho: z.sla_vermelho || 0, abandonos: abandonos.get(c.id) || 0, detratores: detratores.get(doc) || 0, tickets90: z.tickets90 || 0,
+      }),
+      operacional: calc.termometroOperacional({ temDado: !!e, total: e ? e.total : 0, atrasadasEntregues: e ? e.atrasadas_entregues : 0, vencidasPendentes: e ? e.vencidas_pendentes : 0 }),
+    };
+    const r = calc.calcularRisco(termometros, config.pesos, config.cortes);
+    resumo[r.nivel]++;
+    data[c.id] = {
+      pontos: r.pontos, nivel: r.nivel, parcial: r.parcial, sem_dado: r.sem_dado, alerta: r.alerta, motivos: r.motivos,
+      termometros: Object.fromEntries(calc.TERMOMETROS.map((t) => [t, termometros[t].pontos])),
+    };
+  }
+  return { config, data, resumo, operacional_lido: entregas.size };
+}
+
+// ── Entregas do Acessórias (Operacional) ─────────────────────────────────────
+let _sincronizando = false;
+async function sincronizarEntregas({ limite = 200 } = {}) {
+  const token = process.env.ACESSORIAS_API_TOKEN;
+  if (!token) throw new Error('ACESSORIAS_API_TOKEN não configurado.');
+  if (_sincronizando) throw new Error('Já existe uma leitura de entregas em andamento.');
+  _sincronizando = true;
+  try {
+    await garantirSchema();
+    const hoje = hojeBrasilia(), ini = somarDias(hoje, -90);
+    const { rows } = await pool.query(
+      `SELECT c.cnpj FROM clientes c
+         LEFT JOIN cliente_entregas_resumo r ON r.doc = regexp_replace(c.cnpj, '\\D', '', 'g')
+        WHERE c.status = 'ativo' AND c.cnpj IS NOT NULL AND length(regexp_replace(c.cnpj, '\\D', '', 'g')) >= 11
+          AND (r.atualizado_em IS NULL OR r.atualizado_em < NOW() - INTERVAL '6 days')
+        ORDER BY r.atualizado_em NULLS FIRST LIMIT $1`, [limite]
+    );
+    const resumo = { em: new Date().toISOString(), lidas: 0, com_entregas: 0, sem_entregas: 0, erros: 0 };
+    for (const c of rows) {
+      try {
+        const lista = await acessorias.listarEntregasEmpresa(c.cnpj, { token, ini, fim: hoje });
+        let atrasadasEntregues = 0, vencidasPendentes = 0;
+        for (const e of lista) {
+          if (e.entrega) { if (e.prazo && e.entrega > e.prazo) atrasadasEntregues++; }
+          else if (e.prazo && e.prazo < hoje) vencidasPendentes++;
+        }
+        await pool.query(
+          `INSERT INTO cliente_entregas_resumo (doc, total, atrasadas_entregues, vencidas_pendentes, janela_ini, janela_fim, atualizado_em)
+           VALUES ($1,$2,$3,$4,$5,$6,NOW())
+           ON CONFLICT (doc) DO UPDATE SET total = $2, atrasadas_entregues = $3, vencidas_pendentes = $4, janela_ini = $5, janela_fim = $6, atualizado_em = NOW()`,
+          [soDigitos(c.cnpj), lista.length, atrasadasEntregues, vencidasPendentes, ini, hoje]
+        );
+        resumo.lidas++; if (lista.length) resumo.com_entregas++; else resumo.sem_entregas++;
+      } catch (e) { resumo.erros++; }
+      await esperar(700);
+    }
+    await pool.query(
+      `INSERT INTO cs_config (chave, valor, updated_at) VALUES ($1,$2,NOW()) ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`,
+      [CHAVE_SYNC_ENTREGAS, JSON.stringify(resumo)]
+    );
+    return resumo;
+  } finally { _sincronizando = false; }
+}
+
+// ── Rotas ────────────────────────────────────────────────────────────────────
+const router = express.Router();
+
+router.get('/', requireAuth, async (req, res) => {
+  try { res.json(await calcularTodos()); }
+  catch (err) { console.error('[risco] GET / falhou:', err); res.status(500).json({ error: 'Erro ao calcular o risco.' }); }
+});
+
+router.get('/config', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT valor FROM cs_config WHERE chave = $1`, [CHAVE_SYNC_ENTREGAS]);
+    let sync = null; try { sync = rows.length ? JSON.parse(rows[0].valor) : null; } catch (e) { /* sem leitura */ }
+    res.json({ ...(await lerConfig()), entregas_sincronizadas: sync, sincronizando: _sincronizando });
+  } catch (err) { console.error('[risco] GET /config falhou:', err); res.status(500).json({ error: 'Erro ao carregar a configuração do risco.' }); }
+});
+
+router.put('/config', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { pesos, cortes } = req.body || {};
+    const p = {}; calc.TERMOMETROS.forEach((t) => { p[t] = Number(pesos && pesos[t]); });
+    if (!calc.TERMOMETROS.every((t) => p[t] >= 0) || calc.TERMOMETROS.every((t) => p[t] === 0)) return res.status(400).json({ error: 'Informe pesos de 0 em diante (ao menos um maior que zero).' });
+    const c = { medio: Number(cortes && cortes.medio), alto: Number(cortes && cortes.alto) };
+    if (!(c.medio > 0 && c.alto > c.medio && c.alto <= 100)) return res.status(400).json({ error: 'Os cortes precisam estar em ordem: Médio < Alto, até 100.' });
+    await pool.query(
+      `INSERT INTO cs_config (chave, valor, updated_at) VALUES ($1,$2,NOW()) ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`,
+      [CHAVE_CONFIG, JSON.stringify({ pesos: p, cortes: c })]
+    );
+    res.json({ ok: true });
+  } catch (err) { console.error('[risco] PUT /config falhou:', err); res.status(500).json({ error: 'Erro ao salvar a configuração do risco.' }); }
+});
+
+router.post('/sincronizar-entregas', requireAuth, requireAdmin, (req, res) => {
+  if (_sincronizando) return res.status(409).json({ error: 'Já existe uma leitura de entregas em andamento.' });
+  if (!process.env.ACESSORIAS_API_TOKEN) return res.status(400).json({ error: 'ACESSORIAS_API_TOKEN não configurado.' });
+  sincronizarEntregas()
+    .then((r) => console.log('[risco] Entregas lidas do Acessórias:', r))
+    .catch((e) => console.error('[risco] Falha ao ler entregas do Acessórias:', e.message));
+  res.json({ ok: true, mensagem: 'Leitura das entregas iniciada em segundo plano (200 empresas por rodada). Reabra a tela daqui a alguns minutos.' });
+});
+
+module.exports = { router, calcularTodos, sincronizarEntregas };

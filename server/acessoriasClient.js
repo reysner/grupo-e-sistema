@@ -326,7 +326,36 @@ async function listarEmpresasDaTag(tagId, { token, limitePaginas = 100 } = {}) {
   return [...achados];
 }
 
+/**
+ * Entregas (obrigações/tarefas) de UMA empresa com prazo entre `ini` e `fim` (AAAA-MM-DD) — GET /deliveries/{identificador}.
+ * 50 por página (parâmetro Pagina); o identificador vai com a máscara e sem encodar a barra (igual /companies/{cnpj}).
+ * Devolve só o que o Risco usa: { nome, prazo, entrega } (datas AAAA-MM-DD; entrega null = ainda sem entrega).
+ */
+async function listarEntregasEmpresa(identificador, { token, ini, fim, limitePaginas = 20 } = {}) {
+  if (!token) throw new Error('ACESSORIAS_API_TOKEN não configurado.');
+  const data = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) && !v.startsWith('0000') ? v.slice(0, 10) : null);
+  const vistos = new Set();
+  const saida = [];
+  for (let pagina = 1; pagina <= limitePaginas; pagina++) {
+    const dados = await getJson(`/deliveries/${identificador}/?DtInitial=${ini}&DtFinal=${fim}&Pagina=${pagina}`, token);
+    const empresas = Array.isArray(dados) ? dados : [];
+    let novas = 0;
+    for (const emp of empresas) {
+      for (const e of Array.isArray(emp && emp.Entregas) ? emp.Entregas : []) {
+        const chave = `${e.Nome}|${e.EntCompetencia || ''}|${e.EntDtPrazo}|${e.Config && e.Config.EntID ? e.Config.EntID : ''}`;
+        if (vistos.has(chave)) continue;
+        vistos.add(chave); novas++;
+        saida.push({ nome: String(e.Nome || ''), prazo: data(e.EntDtPrazo), entrega: data(e.EntDtEntrega) });
+      }
+    }
+    if (!novas) break; // página vazia ou repetida: acabou
+    await new Promise(r => setTimeout(r, ESPACAMENTO_MS));
+  }
+  return saida;
+}
+
 module.exports = {
+  listarEntregasEmpresa,
   listarEmpresasAtivas, buscarEmpresaPorCnpj, normalizarRegime, normalizarRegimeComFallback,
   normalizarData, fantasiaUtilizavel, derivarApelido, empresaParaCliente,
   listarEmpresasInativasDesde, empresaInativaParaCandidato,

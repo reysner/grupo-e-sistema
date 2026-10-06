@@ -62,6 +62,7 @@ app.use('/api/data',   dataRoutes);
 app.use('/api/users',  usersRoutes);
 app.use('/api/cs/categorias', require('./cs/categorias').router);  // Categorias Diamante/Ouro/Prata/Bronze (antes de /api/cs)
 app.use('/api/cs/churn', require('./cs/churnSaidas').router);  // Churn por saídas (as três 'Transferida por…')
+app.use('/api/cs/risco', require('./cs/risco').router);        // Risco de perda: termômetros Financeiro, Atendimento e Operacional
 app.use('/api/cs',     require('./cs/routes'));    // Sucesso do Cliente — radar de SLA
 app.use('/api/analistas', require('./routes/analistas'));  // lista de analistas p/ dropdowns
 app.use('/api/grupos-empresas', require('./routes/grupos-empresas'));  // lista de grupos de empresas p/ dropdown
@@ -324,6 +325,13 @@ initDB().then(async () => {
         console.log('[Churn] Saídas classificadas pela Receita:', r);
       } catch (e) {
         console.error('[Churn] Falha ao classificar saídas pela Receita:', e.message);
+      }
+      // Termômetro Operacional do Risco: entregas do Acessórias (200 empresas por rodada, as mais antigas primeiro).
+      try {
+        const r = await require('./cs/risco').sincronizarEntregas();
+        console.log('[Risco] Entregas lidas do Acessórias:', r);
+      } catch (e) {
+        console.error('[Risco] Falha ao ler entregas do Acessórias:', e.message);
       }
     };
     setInterval(rodarSyncAcessorias, 24 * 60 * 60 * 1000); // 1x por dia
