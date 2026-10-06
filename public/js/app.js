@@ -2994,9 +2994,51 @@ const Carteira = (() => {
   function _churnNomesAConfirmar(p) {
     const lista = p.saidas.filter(s => s.tipo === 'a_confirmar');
     if (!lista.length) return '';
-    const itens = lista.slice(0, 4).map(s => `<li>${_esc(s.nome)} <span style="color:var(--gray-400)">(saiu em ${_dataBr(s.data_saida)}${s.cnpj ? ' · ' + _esc(s.cnpj) : ''})</span></li>`).join('');
+    const admin = App.Auth.isAdmin();
+    const itens = lista.slice(0, 4).map(s => {
+      const nome = admin
+        ? `<a href="javascript:void(0)" onclick="Carteira._churnDefinir('${s.id}')" title="Clique para definir: transferida ou baixa" style="color:#2b6cb0;text-decoration:underline;cursor:pointer">${_esc(s.nome)}</a>`
+        : _esc(s.nome);
+      return `<li>${nome} <span style="color:var(--gray-400)">(saiu em ${_dataBr(s.data_saida)}${s.cnpj ? ' · ' + _esc(s.cnpj) : ''})</span></li>`;
+    }).join('');
     const resto = lista.length > 4 ? `<li style="list-style:none;color:var(--gray-400)">+ ${lista.length - 4} na lista de "Ver saídas e regra"</li>` : '';
     return `<ul style="margin:4px 0 0 16px;padding:0;font-size:10.5px;color:var(--gray-600);line-height:1.5">${itens}${resto}</ul>`;
+  }
+
+  // Exceção manual: só pras saídas que o automático não resolveu. Vale acima de qualquer classificação automática.
+  function _churnAcharSaida(id) {
+    for (const p of Object.values((_churn && _churn.periodos) || {})) {
+      const s = p.saidas.find(x => x.id === id);
+      if (s) return s;
+    }
+    return null;
+  }
+
+  function _churnDefinir(id) {
+    const s = _churnAcharSaida(id);
+    if (!s) { App.Toast.err('Saída não encontrada.'); return; }
+    App.Modal.open('Definir a saída', `
+      <div style="display:grid;gap:14px">
+        <div>
+          <div style="font-size:15px;font-weight:700">${_esc(s.nome)}</div>
+          <div style="font-size:12px;color:var(--gray-500);margin-top:2px">Saiu em ${_dataBr(s.data_saida)}${s.cnpj ? ' · CNPJ ' + _esc(s.cnpj) : ''}</div>
+        </div>
+        <p style="margin:0;font-size:13px;color:var(--gray-600);line-height:1.5">O sistema não conseguiu classificar esta saída sozinho. No Acessórias, abra a empresa e veja o campo <strong>Motivo de cancelamento</strong>. O que está lá?</p>
+        <div style="display:grid;gap:8px">
+          <button class="btn btn-primary" onclick="Carteira._churnSalvarDefinicao('${s.id}','transferida')">Transferida por… (conveniência, mau atendimento ou preço) — conta no churn</button>
+          <button class="btn btn-ghost" onclick="Carteira._churnSalvarDefinicao('${s.id}','baixa')">Baixada — não conta no churn</button>
+        </div>
+      </div>`, () => App.Modal.close(), { noFooter: true });
+  }
+
+  async function _churnSalvarDefinicao(id, tipo) {
+    const res = await fetch(`/api/cs/churn/saidas/${encodeURIComponent(id)}/classificacao`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _token() }, body: JSON.stringify({ tipo }),
+    });
+    if (!res || !res.ok) { App.Toast.err((await res?.json().catch(() => ({})))?.error || 'Erro ao salvar.'); return; }
+    App.Toast.ok(tipo === 'transferida' ? 'Definida como transferida — passa a contar no churn.' : 'Definida como baixa — não conta no churn.');
+    App.Modal.close();
+    loadChurn();
   }
 
   async function loadChurn() {
@@ -3023,7 +3065,7 @@ const Carteira = (() => {
       ${p.saidas.map(s => { const [rot, cor, bg] = _CHURN_TIPOS[s.tipo]; return `<tr>
         <td style="font-weight:600">${_esc(s.nome)}</td><td style="white-space:nowrap">${_dataBr(s.data_saida)}</td>
         <td style="font-size:12px;color:var(--gray-600)">${s.motivo_acessorias ? _esc(s.motivo_acessorias) : '<span style="color:var(--gray-400);font-style:italic">não lido do Acessórias</span>'}</td>
-        <td><span style="background:${bg};color:${cor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap">${rot}</span>${s.origem === 'receita' ? '<div style="font-size:10.5px;color:var(--gray-400)">automático: CNPJ ' + (s.tipo === 'baixa' ? 'baixado' : 'ativo') + ' na Receita</div>' : ''}${s.tipo === 'transferida' && !s.na_base ? '<div style="font-size:10.5px;color:var(--gray-400)">entrou no período: fora da base</div>' : ''}</td></tr>`; }).join('')}
+        <td><span style="background:${bg};color:${cor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap">${rot}</span>${s.origem === 'receita' ? '<div style="font-size:10.5px;color:var(--gray-400)">automático: CNPJ ' + (s.tipo === 'baixa' ? 'baixado' : 'ativo') + ' na Receita</div>' : ''}${s.origem === 'manual' ? '<div style="font-size:10.5px;color:var(--gray-400)">definido manualmente</div>' : ''}${s.tipo === 'a_confirmar' && App.Auth.isAdmin() ? '<div style="font-size:11px"><a href="javascript:void(0)" onclick="Carteira._churnDefinir(\'' + s.id + '\')" style="color:#2b6cb0;text-decoration:underline">definir</a></div>' : ''}${s.tipo === 'transferida' && !s.na_base ? '<div style="font-size:10.5px;color:var(--gray-400)">entrou no período: fora da base</div>' : ''}</td></tr>`; }).join('')}
       </tbody></table></div>`;
   }
 
@@ -3092,7 +3134,9 @@ ${isAdmin ? _churnLeituraHtml() : ''}
   async function _churnTestarLeitura(btn) {
     const pre = document.getElementById('churn-diag');
     if (btn) { btn.disabled = true; btn.textContent = 'Consultando...'; }
-    const res = await fetch('/api/cs/churn/diagnostico', { headers: { Authorization: 'Bearer ' + _token() } });
+    // testa de preferência uma empresa que ainda falta confirmar (é a que interessa saber se a API entrega o motivo)
+    const pendente = Object.values((_churn && _churn.periodos) || {}).flatMap(p => p.saidas).find(s => s.tipo === 'a_confirmar' && s.cnpj);
+    const res = await fetch('/api/cs/churn/diagnostico' + (pendente ? '?cnpj=' + encodeURIComponent(pendente.cnpj) : ''), { headers: { Authorization: 'Bearer ' + _token() } });
     const corpo = await res.json().catch(() => ({}));
     if (pre) { pre.style.display = 'block'; pre.textContent = res.ok ? JSON.stringify(corpo, null, 2) : (corpo.error || 'Erro ao consultar o Acessórias.'); }
     if (btn) { btn.disabled = false; btn.textContent = '🔎 Testar leitura de uma empresa'; }
@@ -3602,7 +3646,7 @@ ${isAdmin ? _churnLeituraHtml() : ''}
     verFicha, editarCliente, salvarEdicaoCliente, exportCSV, exportPDF, limpar, excluir,
     abrirReajusteEmMassa, _atualizarPreviewReajuste, _aplicarReajusteEmMassa,
     abrirCategorias, sincronizarTagsAgora,
-    abrirChurn, _churnTrocarPeriodo, _churnCalcularLivre, _churnLerMotivos, _churnTestarLeitura, _churnClassificar,
+    abrirChurn, _churnTrocarPeriodo, _churnCalcularLivre, _churnLerMotivos, _churnTestarLeitura, _churnClassificar, _churnDefinir, _churnSalvarDefinicao,
   };
 })();
 

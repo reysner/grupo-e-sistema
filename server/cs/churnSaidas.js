@@ -82,7 +82,8 @@ function inferirPelaReceita(situacao, dataSituacao, dataSaida) {
 }
 
 /** { tipo: 'transferida'|'baixa'|'outra_saida'|'a_confirmar', origem: 'acessorias'|'sistema'|'receita'|null } */
-function classificarSaidaDetalhe(motivoAcessorias, motivoSistema, padroes = PADROES_PADRAO, receita = null, dataSaida = null) {
+function classificarSaidaDetalhe(motivoAcessorias, motivoSistema, padroes = PADROES_PADRAO, receita = null, dataSaida = null, manual = null) {
+  if (manual === 'transferida' || manual === 'baixa') return { tipo: manual, origem: 'manual' };
   const doTexto = (texto) => (padroes.some((p) => p && texto.includes(normalizar(p))) ? 'transferida' : texto.includes('baixa') ? 'baixa' : 'outra_saida');
   const bruto = normalizar(motivoAcessorias);
   if (bruto) return { tipo: doTexto(bruto), origem: 'acessorias' };
@@ -115,7 +116,7 @@ function calcularChurn(todosClientes, ini, fim, padroes = PADROES_PADRAO) {
     .filter((c) => c.data_saida && c.data_saida >= ini && c.data_saida <= fim)
     .map((c) => ({
       ...c,
-      ...classificarSaidaDetalhe(c.motivo_acessorias, c.motivo_saida, padroes, c.situacao_receita ? { situacao: c.situacao_receita, data: c.data_situacao_receita } : null, c.data_saida),
+      ...classificarSaidaDetalhe(c.motivo_acessorias, c.motivo_saida, padroes, c.situacao_receita ? { situacao: c.situacao_receita, data: c.data_situacao_receita } : null, c.data_saida, c.classificacao_manual),
       na_base: baseIds.has(c.id),
     }))
     .sort((a, b) => (a.data_saida < b.data_saida ? 1 : -1));
@@ -169,6 +170,10 @@ function garantirColuna() {
       await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS situacao_receita TEXT`);
       await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS data_situacao_receita DATE`);
       await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS situacao_receita_em TIMESTAMPTZ`);
+      // Exceção manual (só pras saídas que o automático não resolveu): 'transferida' | 'baixa'. Vale acima de tudo.
+      await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS classificacao_manual TEXT`);
+      await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS classificacao_manual_por TEXT`);
+      await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS classificacao_manual_em TIMESTAMPTZ`);
       // O fluxo manual "foi baixa ou saída?" acabou (06/10/2026): limpa do sino os avisos antigos que pediam essa decisão.
       await pool.query(`UPDATE notificacoes SET lida = true WHERE tipo = 'churn_acessorias' AND lida = false`).catch(() => {});
     })().catch((e) => { _colunaPronta = null; throw e; });
@@ -201,7 +206,7 @@ async function carregarClientes() {
   const { rows } = await pool.query(
     `SELECT id, nome_empresa AS nome, cnpj, to_char(data_entrada, 'YYYY-MM-DD') AS data_entrada,
             to_char(data_saida, 'YYYY-MM-DD') AS data_saida, motivo_saida,
-            motivo_cancelamento_acessorias AS motivo_acessorias, situacao_receita,
+            motivo_cancelamento_acessorias AS motivo_acessorias, situacao_receita, classificacao_manual,
             to_char(data_situacao_receita, 'YYYY-MM-DD') AS data_situacao_receita
        FROM clientes`
   );
@@ -238,7 +243,7 @@ async function classificarSaidasPelaReceita({ limite = 150 } = {}) {
     const { rows } = await pool.query(
       `SELECT id, cnpj FROM clientes
         WHERE status = 'encerrado' AND data_saida IS NOT NULL AND data_saida >= CURRENT_DATE - INTERVAL '460 days'
-          AND motivo_cancelamento_acessorias IS NULL
+          AND motivo_cancelamento_acessorias IS NULL AND classificacao_manual IS NULL
           AND (motivo_saida IS NULL OR lower(motivo_saida) = 'baixa de empresa' OR lower(motivo_saida) LIKE 'pendente de revis%')
           AND length(regexp_replace(cnpj, '\\D', '', 'g')) = 14
           AND cnpj !~ '^[0-9]{3}[.][0-9]{3}[.][0-9]{3}/[0-9]{3}-[0-9]{2}$'
@@ -342,6 +347,25 @@ router.put('/config', requireAuth, requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[churn] PUT /config falhou:', err);
     res.status(500).json({ error: 'Erro ao salvar a regra de churn.' });
+  }
+});
+
+// Exceção manual: o admin define "transferida" ou "baixa" numa saída que o automático não conseguiu resolver.
+router.put('/saidas/:id/classificacao', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const tipo = req.body && req.body.tipo;
+    if (tipo !== 'transferida' && tipo !== 'baixa') return res.status(400).json({ error: 'tipo precisa ser "transferida" ou "baixa".' });
+    await garantirColuna();
+    const r = await pool.query(
+      `UPDATE clientes SET classificacao_manual = $1, classificacao_manual_por = $2, classificacao_manual_em = NOW()
+        WHERE id = $3 AND status = 'encerrado'`,
+      [tipo, req.user.name || null, req.params.id]
+    );
+    if (!r.rowCount) return res.status(404).json({ error: 'Saída não encontrada (o cliente precisa estar encerrado).' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[churn] PUT /saidas/:id/classificacao falhou:', err);
+    res.status(500).json({ error: 'Erro ao salvar a classificação.' });
   }
 });
 

@@ -112,6 +112,24 @@ teste('calcularChurn usa a Receita e informa quantas saídas foram inferidas', (
   assert.strictEqual(r.fora_do_churn.a_confirmar, 0);
 });
 
+teste('definição manual (exceção) vale acima de qualquer automático', () => {
+  const { classificarSaidaDetalhe } = require('./churnSaidas');
+  assert.deepStrictEqual(classificarSaidaDetalhe('Baixada', null, undefined, { situacao: 'BAIXADA' }, '2026-02-24', 'transferida'), { tipo: 'transferida', origem: 'manual' });
+  assert.deepStrictEqual(classificarSaidaDetalhe(null, null, undefined, null, '2026-02-24', 'baixa'), { tipo: 'baixa', origem: 'manual' });
+  assert.deepStrictEqual(classificarSaidaDetalhe(null, null, undefined, null, '2026-02-24', 'qualquer coisa'), { tipo: 'a_confirmar', origem: null });
+  // no cálculo: a saída "a confirmar" definida como transferida passa a contar
+  const clientes = [
+    { id: 'x', nome: 'x', cnpj: '05.832.066/0001-61', data_entrada: '2003-08-18', data_saida: '2026-02-24', motivo_saida: 'Baixa de empresa', motivo_acessorias: null, situacao_receita: 'INDISPONIVEL', classificacao_manual: null },
+    { id: 'y', nome: 'y', cnpj: '11.222.333/0001-81', data_entrada: '2003-08-18', data_saida: null, motivo_saida: null, motivo_acessorias: null },
+  ];
+  assert.strictEqual(calcularChurn(clientes, '2026-01-01', '2026-12-31').fora_do_churn.a_confirmar, 1);
+  clientes[0].classificacao_manual = 'transferida';
+  const r = calcularChurn(clientes, '2026-01-01', '2026-12-31');
+  assert.strictEqual(r.saidas_contadas, 1);
+  assert.strictEqual(r.fora_do_churn.a_confirmar, 0);
+  assert.strictEqual(r.saidas[0].origem, 'manual');
+});
+
 teste('tipo do documento: CNPJ, CPF, CAEPF e CNO', () => {
   const { tipoDocumento, ehPessoaJuridica } = require('./churnSaidas');
   assert.strictEqual(tipoDocumento('45.459.079/0001-51'), 'CNPJ');
@@ -158,7 +176,7 @@ teste('rotas de admin passam por requireAuth ANTES de requireAdmin', () => {
     achouAdmin++;
     assert.ok(h.indexOf(requireAuth) !== -1 && h.indexOf(requireAuth) < iAdmin, camada.route.path);
   }
-  assert.ok(achouAdmin >= 4, 'esperava as 4 rotas de admin (config, classificar-saidas, sincronizar-motivos, diagnostico)');
+  assert.ok(achouAdmin >= 5, 'esperava as 5 rotas de admin (config, saidas/:id/classificacao, classificar-saidas, sincronizar-motivos, diagnostico)');
 });
 
 console.log(`\n${ok} testes passaram.`);
