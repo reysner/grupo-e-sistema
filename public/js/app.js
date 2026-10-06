@@ -2990,6 +2990,15 @@ const Carteira = (() => {
     a_confirmar: ['A confirmar no Acessórias', '#2b6cb0', '#ebf8ff'],
   };
 
+  // Nome (e data de saída) das empresas que ainda não foram classificadas, direto no cartão — até 4; o resto fica na lista.
+  function _churnNomesAConfirmar(p) {
+    const lista = p.saidas.filter(s => s.tipo === 'a_confirmar');
+    if (!lista.length) return '';
+    const itens = lista.slice(0, 4).map(s => `<li>${_esc(s.nome)} <span style="color:var(--gray-400)">(saiu em ${_dataBr(s.data_saida)}${s.cnpj ? ' · ' + _esc(s.cnpj) : ''})</span></li>`).join('');
+    const resto = lista.length > 4 ? `<li style="list-style:none;color:var(--gray-400)">+ ${lista.length - 4} na lista de "Ver saídas e regra"</li>` : '';
+    return `<ul style="margin:4px 0 0 16px;padding:0;font-size:10.5px;color:var(--gray-600);line-height:1.5">${itens}${resto}</ul>`;
+  }
+
   async function loadChurn() {
     const grid = document.getElementById('cart-churn-grid');
     if (!grid) return;
@@ -3002,6 +3011,7 @@ const Carteira = (() => {
         <div style="font-size:24px;font-weight:800;color:${p.saidas_contadas ? '#c53030' : 'var(--g700)'};margin-top:4px">${_pct(p.taxa)}</div>
         <div style="font-size:12px;color:var(--gray-600);margin-top:2px">${p.saidas_contadas} de ${p.base} clientes</div>
         <div style="font-size:10.5px;color:var(--gray-400);margin-top:4px">fora do churn: ${p.fora_do_churn.baixas} baixas · ${p.fora_do_churn.outras_saidas} outras saídas</div>
+        ${_churnNomesAConfirmar(p)}
         ${p.fora_do_churn.a_confirmar ? '<div style="font-size:10.5px;color:#2b6cb0;font-weight:600;margin-top:3px">' + p.fora_do_churn.a_confirmar + ' saída(s) a confirmar no Acessórias — a taxa real fica entre ' + _pct(p.taxa) + ' e no máximo ' + _pct(p.taxa_teto) + '</div>' : ''}
       </div>`).join('');
   }
