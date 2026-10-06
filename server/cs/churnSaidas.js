@@ -62,10 +62,9 @@ function tipoDocumento(bruto) {
   return null;
 }
 
-/** Só pessoa jurídica (CNPJ) entra no churn; sem documento informado também fica (não dá pra afirmar que é CPF). */
+/** Só CNPJ entra no churn (06/10/2026, Reysner: "vamos tratar somente CNPJs"): CPF, CAEPF, CNO e cadastro sem documento ficam de fora. */
 function ehPessoaJuridica(bruto) {
-  const t = tipoDocumento(bruto);
-  return t === 'CNPJ' || t === null;
+  return tipoDocumento(bruto) === 'CNPJ';
 }
 
 const DIAS_BAIXA_RECEITA_APOS_SAIDA = 120;

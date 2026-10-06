@@ -33,7 +33,7 @@ teste('sem leitura do Acessórias, motivo real gravado pelo sistema ainda serve 
   assert.strictEqual(classificarSaida(null, 'Transferida por preço (automático — Acessórias)'), 'transferida');
 });
 
-const C = (id, entrada, saida, motivoAcess, motivoSis = null) => ({ id, nome: id, data_entrada: entrada, data_saida: saida, motivo_acessorias: motivoAcess, motivo_saida: motivoSis });
+const C = (id, entrada, saida, motivoAcess, motivoSis = null) => ({ id, nome: id, cnpj: '11.222.333/0001-81', data_entrada: entrada, data_saida: saida, motivo_acessorias: motivoAcess, motivo_saida: motivoSis });
 
 teste('taxa = saídas por transferência da base ÷ base ativa no início do período', () => {
   const clientes = [
@@ -101,9 +101,9 @@ teste('sem motivo, a situação do CNPJ na Receita decide: baixado = baixa, ativ
 
 teste('calcularChurn usa a Receita e informa quantas saídas foram inferidas', () => {
   const clientes = [
-    { id: 'a', nome: 'a', data_entrada: '2024-01-01', data_saida: null, motivo_saida: null, motivo_acessorias: null },
-    { id: 'b', nome: 'b', data_entrada: '2024-01-01', data_saida: '2026-10-03', motivo_saida: 'Baixa de empresa', motivo_acessorias: null, situacao_receita: 'ATIVA', data_situacao_receita: null },
-    { id: 'c', nome: 'c', data_entrada: '2024-01-01', data_saida: '2026-10-04', motivo_saida: 'Baixa de empresa', motivo_acessorias: null, situacao_receita: 'BAIXADA', data_situacao_receita: '2026-10-01' },
+    { id: 'a', nome: 'a', cnpj: '11.222.333/0001-81', data_entrada: '2024-01-01', data_saida: null, motivo_saida: null, motivo_acessorias: null },
+    { id: 'b', nome: 'b', cnpj: '11.222.333/0001-81', data_entrada: '2024-01-01', data_saida: '2026-10-03', motivo_saida: 'Baixa de empresa', motivo_acessorias: null, situacao_receita: 'ATIVA', data_situacao_receita: null },
+    { id: 'c', nome: 'c', cnpj: '11.222.333/0001-81', data_entrada: '2024-01-01', data_saida: '2026-10-04', motivo_saida: 'Baixa de empresa', motivo_acessorias: null, situacao_receita: 'BAIXADA', data_situacao_receita: '2026-10-01' },
   ];
   const r = calcularChurn(clientes, '2026-10-01', '2026-10-31');
   assert.strictEqual(r.saidas_contadas, 1);   // b (CNPJ ativo = transferida)
@@ -127,7 +127,8 @@ teste('tipo do documento: CNPJ, CPF, CAEPF e CNO', () => {
   assert.strictEqual(ehPessoaJuridica('014.158.526-93'), false);
   assert.strictEqual(ehPessoaJuridica('123.456.789/001-12'), false);
   assert.strictEqual(ehPessoaJuridica('12.345.67890/12'), false);
-  assert.strictEqual(ehPessoaJuridica(null), true); // sem documento: não dá pra afirmar que é CPF
+  assert.strictEqual(ehPessoaJuridica(null), false); // só CNPJ entra: sem documento também fica de fora
+  assert.strictEqual(ehPessoaJuridica(''), false);
 });
 
 teste('CPF, CAEPF e CNO ficam fora da base e das saídas do churn', () => {

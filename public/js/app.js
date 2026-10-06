@@ -3094,7 +3094,7 @@ ${isAdmin ? _churnLeituraHtml() : ''}
     r.innerHTML = `<div style="background:var(--g100);border:1px solid var(--g200);border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.6">
       Base no início (${_dataBr(p.ini)}): <strong>${p.base}</strong> clientes · saídas que contam: <strong>${p.saidas_contadas}</strong> · taxa: <strong>${_pct(p.taxa)}</strong><br>
       <span style="color:var(--gray-500)">Fora do churn: ${p.fora_do_churn.baixas} baixas · ${p.fora_do_churn.outras_saidas} outras saídas · ${p.fora_do_churn.a_confirmar} a confirmar no Acessórias</span><br>
-      <span style="color:var(--gray-400);font-size:12px">Desconsiderados (CPF, CAEPF e CNO): ${p.desconsiderados_cpf_caepf_cno.base} clientes na base e ${p.desconsiderados_cpf_caepf_cno.saidas} saídas</span></div>`;
+      <span style="color:var(--gray-400);font-size:12px">Desconsiderados (não são CNPJ: CPF, CAEPF, CNO ou sem documento): ${p.desconsiderados_cpf_caepf_cno.base} clientes na base e ${p.desconsiderados_cpf_caepf_cno.saidas} saídas</span></div>`;
     t.innerHTML = _churnTabela(p);
   }
 
