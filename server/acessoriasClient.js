@@ -349,7 +349,7 @@ async function listarEntregasEmpresa(identificador, { token, ini, fim, limitePag
         const chave = `${e.Nome}|${e.EntCompetencia || ''}|${e.EntDtPrazo}|${e.Config && e.Config.EntID ? e.Config.EntID : ''}`;
         if (vistos.has(chave)) continue;
         vistos.add(chave); novas++;
-        saida.push({ nome: String(e.Nome || ''), prazo: data(e.EntDtPrazo), atraso: data(e.EntDtAtraso), entrega: data(e.EntDtEntrega), status: String(e.Status || '') });
+        saida.push({ nome: String(e.Nome || ''), prazo: data(e.EntDtPrazo), atraso: data(e.EntDtAtraso), entrega: data(e.EntDtEntrega), status: String(e.Status || ''), multa: e.EntMulta === 'S' });
       }
     }
     if (!novas || brutas < 50) break; // página vazia, repetida ou incompleta (a API devolve 50 por página): acabou

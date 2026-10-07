@@ -21,7 +21,7 @@ const { ehPessoaJuridica } = require('./churnSaidas');
 
 const CHAVE_CONFIG = 'risco_config';
 const CHAVE_SYNC_ENTREGAS = 'risco_entregas_sync';
-const VERSAO_LEITURA = 2; // 2 = lê o objeto da empresa e usa o Status do Acessórias
+const VERSAO_LEITURA = 3; // 2 = lê o objeto da empresa e usa o Status do Acessórias; 3 = só entregas que chegam ao cliente
 const soDigitos = (s) => String(s || '').replace(/\D/g, '');
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 const hojeBrasilia = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
@@ -145,6 +145,21 @@ async function calcularTodos({ detalhes = false } = {}) {
 
 // ── Entregas do Acessórias (Operacional) ─────────────────────────────────────
 /**
+ * Só entra no Operacional o que CHEGA AO CLIENTE (decisão do Reysner, 07/10/2026: "só as entregas que chegam ao cliente").
+ * Levantamento em 55 empresas mostrou muito ruído de tarefas internas (BALANCETE 52 de 52 "atrasada", NIVER SOCIO,
+ * RENOVAR CERTIFICADO, CADASTRO..., relatórios de férias/consignado). Critério:
+ *  1) nunca: tarefas internas (EXCLUIR);  2) sempre: entrega com multa no Acessórias (guias e declarações);
+ *  3) também: folha, FGTS, DCTFWeb, INSS, EFD, PGDAS, DIRB e as "para o e-mail do cliente" (INCLUIR), que não têm multa cadastrada.
+ */
+const ENTREGA_EXCLUIR = /BALANCETE|NIVER|RENOVAR|CADASTRO|DUPLICAR|COMUNICAR|ALVAR[AÁ]|AO FISCAL/;
+const ENTREGA_INCLUIR = /FGTS|FOLHA|SAL[AÁ]RIO|DCTFWEB|INSS|EFD|PGDAS|DIRB|CLIENTE/;
+function entregaChegaAoCliente(e) {
+  const nome = String((e && e.nome) || '').toUpperCase();
+  if (ENTREGA_EXCLUIR.test(nome)) return false;
+  return !!(e && e.multa) || ENTREGA_INCLUIR.test(nome);
+}
+
+/**
  * Conta, a partir do Status que o próprio Acessórias informa (valores vistos: "Ent. antecipada", "Ent. PzTéc",
  * "Ent. atrasada", "Atrasada!", "Pendente", "Dispensada"). "Ent. PzTéc" = entregue depois do prazo técnico (interno)
  * mas dentro do prazo legal → NÃO é atraso. Dispensada não é entrega devida.
@@ -152,6 +167,7 @@ async function calcularTodos({ detalhes = false } = {}) {
 function classificarEntregas(lista, hoje) {
   let total = 0, atrasadasEntregues = 0, vencidasPendentes = 0;
   for (const e of lista || []) {
+    if (!entregaChegaAoCliente(e)) continue;
     const st = String(e.status || '').toLowerCase();
     if (st.includes('dispensada')) continue;
     total++;
@@ -242,4 +258,4 @@ router.post('/sincronizar-entregas', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true, mensagem: 'Leitura das entregas iniciada em segundo plano (200 empresas por rodada). Reabra a tela daqui a alguns minutos.' });
 });
 
-module.exports = { router, calcularTodos, sincronizarEntregas, classificarEntregas };
+module.exports = { router, calcularTodos, sincronizarEntregas, classificarEntregas, entregaChegaAoCliente };
