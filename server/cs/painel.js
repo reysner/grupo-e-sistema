@@ -36,8 +36,11 @@ async function consultar(sql, params = [], rotulo = '') {
 let _cache = null;
 const TTL_MS = 60 * 1000;
 
-async function montarBase(forcar) {
-  if (!forcar && _cache && Date.now() - _cache.t < TTL_MS) return _cache.v;
+// A ficha de um cliente aceita uma base mais velha (a lista já foi calculada ao abrir o painel); abrir a ficha não deve recalcular a carteira.
+const TTL_FICHA_MS = 10 * 60 * 1000;
+
+async function montarBase(forcar, ttl = TTL_MS) {
+  if (!forcar && _cache && Date.now() - _cache.t < ttl) return _cache.v;
 
   const [r, cat, clientes] = await Promise.all([
     risco.calcularTodos({ detalhes: true }),
@@ -170,7 +173,7 @@ function proximoPasso(c, extra) {
 
 router.get('/cliente/:id', async (req, res) => {
   try {
-    const base = await montarBase(false);
+    const base = await montarBase(false, TTL_FICHA_MS);
     const c = base.clientes.find((x) => x.id === req.params.id);
     if (!c) return res.status(404).json({ error: 'Cliente não encontrado (o painel só mostra CNPJ ativo).' });
     const doc = soDigitos(c.cnpj);

@@ -287,7 +287,9 @@ async function getJson(caminho, token) {
     return getJson(caminho, token);
   }
   if (!resp.ok) throw new Error(`Acessórias respondeu ${resp.status} em ${caminho.split('?')[0]}`);
-  return resp.json();
+  // Página além do fim (ex.: 2ª página de /deliveries) volta com corpo vazio, não com [] — vale como "sem dados".
+  const texto = await resp.text();
+  return texto.trim() ? JSON.parse(texto) : null;
 }
 
 /**
@@ -340,16 +342,17 @@ async function listarEntregasEmpresa(identificador, { token, ini, fim, limitePag
     const dados = await getJson(`/deliveries/${identificador}/?DtInitial=${ini}&DtFinal=${fim}&Pagina=${pagina}`, token);
     // /deliveries/{cnpj} devolve UM objeto da empresa ({..., Entregas:[...]}), não uma lista (confirmado em 07/10/2026).
     const empresas = Array.isArray(dados) ? dados : (dados && typeof dados === 'object' ? [dados] : []);
-    let novas = 0;
+    let novas = 0, brutas = 0;
     for (const emp of empresas) {
       for (const e of Array.isArray(emp && emp.Entregas) ? emp.Entregas : []) {
+        brutas++;
         const chave = `${e.Nome}|${e.EntCompetencia || ''}|${e.EntDtPrazo}|${e.Config && e.Config.EntID ? e.Config.EntID : ''}`;
         if (vistos.has(chave)) continue;
         vistos.add(chave); novas++;
         saida.push({ nome: String(e.Nome || ''), prazo: data(e.EntDtPrazo), atraso: data(e.EntDtAtraso), entrega: data(e.EntDtEntrega), status: String(e.Status || '') });
       }
     }
-    if (!novas) break; // página vazia ou repetida: acabou
+    if (!novas || brutas < 50) break; // página vazia, repetida ou incompleta (a API devolve 50 por página): acabou
     await new Promise(r => setTimeout(r, ESPACAMENTO_MS));
   }
   return saida;

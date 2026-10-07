@@ -191,7 +191,7 @@ async function sincronizarEntregas({ limite = 200 } = {}) {
           [soDigitos(c.cnpj), r.total, r.atrasadasEntregues, r.vencidasPendentes, ini, hoje, VERSAO_LEITURA]
         );
         resumo.lidas++; if (r.total) resumo.com_entregas++; else resumo.sem_entregas++;
-      } catch (e) { resumo.erros++; }
+      } catch (e) { resumo.erros++; if (!resumo.exemplo_de_erro) { resumo.exemplo_de_erro = String(e.message || e).slice(0, 200); console.warn('[risco] leitura de entregas falhou:', resumo.exemplo_de_erro); } }
       await esperar(700);
     }
     await pool.query(
