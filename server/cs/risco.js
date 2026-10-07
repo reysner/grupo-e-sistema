@@ -21,6 +21,7 @@ const { ehPessoaJuridica } = require('./churnSaidas');
 
 const CHAVE_CONFIG = 'risco_config';
 const CHAVE_SYNC_ENTREGAS = 'risco_entregas_sync';
+const VERSAO_LEITURA = 2; // 2 = lê o objeto da empresa e usa o Status do Acessórias
 const soDigitos = (s) => String(s || '').replace(/\D/g, '');
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 const hojeBrasilia = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
@@ -33,6 +34,8 @@ function garantirSchema() {
     _schema = pool.query(`CREATE TABLE IF NOT EXISTS cliente_entregas_resumo (
       doc TEXT PRIMARY KEY, total INT NOT NULL DEFAULT 0, atrasadas_entregues INT NOT NULL DEFAULT 0,
       vencidas_pendentes INT NOT NULL DEFAULT 0, janela_ini DATE, janela_fim DATE, atualizado_em TIMESTAMPTZ DEFAULT NOW())`)
+      // versao: leituras antigas (versão 1) gravaram total 0 por erro de leitura da resposta; são refeitas.
+      .then(() => pool.query(`ALTER TABLE cliente_entregas_resumo ADD COLUMN IF NOT EXISTS versao INT NOT NULL DEFAULT 1`))
       .catch((e) => { _schema = null; throw e; });
   }
   return _schema;
@@ -139,6 +142,24 @@ async function calcularTodos() {
 }
 
 // ── Entregas do Acessórias (Operacional) ─────────────────────────────────────
+/**
+ * Conta, a partir do Status que o próprio Acessórias informa (valores vistos: "Ent. antecipada", "Ent. PzTéc",
+ * "Ent. atrasada", "Atrasada!", "Pendente", "Dispensada"). "Ent. PzTéc" = entregue depois do prazo técnico (interno)
+ * mas dentro do prazo legal → NÃO é atraso. Dispensada não é entrega devida.
+ */
+function classificarEntregas(lista, hoje) {
+  let total = 0, atrasadasEntregues = 0, vencidasPendentes = 0;
+  for (const e of lista || []) {
+    const st = String(e.status || '').toLowerCase();
+    if (st.includes('dispensada')) continue;
+    total++;
+    if (st.includes('ent. atrasada')) atrasadasEntregues++;
+    else if (st.includes('atrasada!')) vencidasPendentes++;
+    else if (!e.entrega && (e.atraso || e.prazo) && (e.atraso || e.prazo) < hoje) vencidasPendentes++; // pendente já vencida
+  }
+  return { total, atrasadasEntregues, vencidasPendentes };
+}
+
 let _sincronizando = false;
 async function sincronizarEntregas({ limite = 200 } = {}) {
   const token = process.env.ACESSORIAS_API_TOKEN;
@@ -153,25 +174,21 @@ async function sincronizarEntregas({ limite = 200 } = {}) {
          LEFT JOIN cliente_entregas_resumo r ON r.doc = regexp_replace(c.cnpj, '\\D', '', 'g')
         WHERE c.status = 'ativo' AND c.cnpj IS NOT NULL AND length(regexp_replace(c.cnpj, '\\D', '', 'g')) = 14
           AND c.cnpj !~ '^[0-9]{3}[.][0-9]{3}[.][0-9]{3}/[0-9]{3}-[0-9]{2}$'
-          AND (r.atualizado_em IS NULL OR r.atualizado_em < NOW() - INTERVAL '6 days')
-        ORDER BY r.atualizado_em NULLS FIRST LIMIT $1`, [limite]
+          AND (r.atualizado_em IS NULL OR r.versao < $2 OR r.atualizado_em < NOW() - INTERVAL '6 days')
+        ORDER BY r.atualizado_em NULLS FIRST LIMIT $1`, [limite, VERSAO_LEITURA]
     );
     const resumo = { em: new Date().toISOString(), lidas: 0, com_entregas: 0, sem_entregas: 0, erros: 0 };
     for (const c of rows) {
       try {
         const lista = await acessorias.listarEntregasEmpresa(c.cnpj, { token, ini, fim: hoje });
-        let atrasadasEntregues = 0, vencidasPendentes = 0;
-        for (const e of lista) {
-          if (e.entrega) { if (e.prazo && e.entrega > e.prazo) atrasadasEntregues++; }
-          else if (e.prazo && e.prazo < hoje) vencidasPendentes++;
-        }
+        const r = classificarEntregas(lista, hoje);
         await pool.query(
-          `INSERT INTO cliente_entregas_resumo (doc, total, atrasadas_entregues, vencidas_pendentes, janela_ini, janela_fim, atualizado_em)
-           VALUES ($1,$2,$3,$4,$5,$6,NOW())
-           ON CONFLICT (doc) DO UPDATE SET total = $2, atrasadas_entregues = $3, vencidas_pendentes = $4, janela_ini = $5, janela_fim = $6, atualizado_em = NOW()`,
-          [soDigitos(c.cnpj), lista.length, atrasadasEntregues, vencidasPendentes, ini, hoje]
+          `INSERT INTO cliente_entregas_resumo (doc, total, atrasadas_entregues, vencidas_pendentes, janela_ini, janela_fim, atualizado_em, versao)
+           VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7)
+           ON CONFLICT (doc) DO UPDATE SET total = $2, atrasadas_entregues = $3, vencidas_pendentes = $4, janela_ini = $5, janela_fim = $6, atualizado_em = NOW(), versao = $7`,
+          [soDigitos(c.cnpj), r.total, r.atrasadasEntregues, r.vencidasPendentes, ini, hoje, VERSAO_LEITURA]
         );
-        resumo.lidas++; if (lista.length) resumo.com_entregas++; else resumo.sem_entregas++;
+        resumo.lidas++; if (r.total) resumo.com_entregas++; else resumo.sem_entregas++;
       } catch (e) { resumo.erros++; }
       await esperar(700);
     }
@@ -223,4 +240,4 @@ router.post('/sincronizar-entregas', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true, mensagem: 'Leitura das entregas iniciada em segundo plano (200 empresas por rodada). Reabra a tela daqui a alguns minutos.' });
 });
 
-module.exports = { router, calcularTodos, sincronizarEntregas };
+module.exports = { router, calcularTodos, sincronizarEntregas, classificarEntregas };

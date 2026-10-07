@@ -100,5 +100,20 @@ teste('risco: motivos vêm dos termômetros que pesam, do maior pro menor', () =
   assert.deepStrictEqual(r.motivos, ['atend1', 'atend2', 'fin']);
 });
 
+teste('entregas: usa o Status do Acessórias (PzTéc não é atraso; dispensada não conta; Atrasada! e pendente vencida são problema)', () => {
+  const { classificarEntregas } = require('./risco');
+  const lista = [
+    { status: 'Ent. antecipada', prazo: '2026-07-10', atraso: '2026-07-15', entrega: '2026-07-09' },
+    { status: 'Ent. PzTéc', prazo: '2026-08-09', atraso: '2026-08-14', entrega: '2026-08-11' },
+    { status: 'Ent. atrasada', prazo: '2026-08-09', atraso: '2026-08-14', entrega: '2026-08-20' },
+    { status: 'Atrasada!', prazo: '2026-07-26', atraso: '2026-07-31', entrega: null },
+    { status: 'Dispensada', prazo: '2026-08-07', atraso: '2026-08-14', entrega: null },
+    { status: 'Pendente', prazo: '2026-09-01', atraso: '2026-09-05', entrega: null },
+    { status: 'Pendente', prazo: '2026-10-20', atraso: '2026-10-25', entrega: null },
+  ];
+  assert.deepStrictEqual(classificarEntregas(lista, HOJE), { total: 6, atrasadasEntregues: 1, vencidasPendentes: 2 });
+  assert.deepStrictEqual(classificarEntregas([], HOJE), { total: 0, atrasadasEntregues: 0, vencidasPendentes: 0 });
+});
+
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);

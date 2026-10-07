@@ -338,14 +338,15 @@ async function listarEntregasEmpresa(identificador, { token, ini, fim, limitePag
   const saida = [];
   for (let pagina = 1; pagina <= limitePaginas; pagina++) {
     const dados = await getJson(`/deliveries/${identificador}/?DtInitial=${ini}&DtFinal=${fim}&Pagina=${pagina}`, token);
-    const empresas = Array.isArray(dados) ? dados : [];
+    // /deliveries/{cnpj} devolve UM objeto da empresa ({..., Entregas:[...]}), não uma lista (confirmado em 07/10/2026).
+    const empresas = Array.isArray(dados) ? dados : (dados && typeof dados === 'object' ? [dados] : []);
     let novas = 0;
     for (const emp of empresas) {
       for (const e of Array.isArray(emp && emp.Entregas) ? emp.Entregas : []) {
         const chave = `${e.Nome}|${e.EntCompetencia || ''}|${e.EntDtPrazo}|${e.Config && e.Config.EntID ? e.Config.EntID : ''}`;
         if (vistos.has(chave)) continue;
         vistos.add(chave); novas++;
-        saida.push({ nome: String(e.Nome || ''), prazo: data(e.EntDtPrazo), entrega: data(e.EntDtEntrega) });
+        saida.push({ nome: String(e.Nome || ''), prazo: data(e.EntDtPrazo), atraso: data(e.EntDtAtraso), entrega: data(e.EntDtEntrega), status: String(e.Status || '') });
       }
     }
     if (!novas) break; // página vazia ou repetida: acabou
