@@ -62,7 +62,8 @@ async function lerConfig() {
 
 const agrupar = (linhas, chave) => { const m = new Map(); (linhas || []).forEach((l) => { const k = l[chave]; if (!m.has(k)) m.set(k, []); m.get(k).push(l); }); return m; };
 
-async function calcularTodos() {
+/** detalhes:true acrescenta, em cada cliente, o texto de cada termômetro (usado pela página /cs). */
+async function calcularTodos({ detalhes = false } = {}) {
   await garantirSchema();
   const hoje = hojeBrasilia();
   const config = await lerConfig();
@@ -137,6 +138,7 @@ async function calcularTodos() {
       pontos: r.pontos, nivel: r.nivel, parcial: r.parcial, sem_dado: r.sem_dado, alerta: r.alerta, motivos: r.motivos,
       termometros: Object.fromEntries(calc.TERMOMETROS.map((t) => [t, termometros[t].pontos])),
     };
+    if (detalhes) data[c.id].detalhes = Object.fromEntries(calc.TERMOMETROS.map((t) => [t, termometros[t].detalhe || []]));
   }
   return { config, data, resumo, operacional_lido: entregas.size, desconsiderados_nao_cnpj: desconsiderados };
 }

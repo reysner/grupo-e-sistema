@@ -63,6 +63,7 @@ app.use('/api/users',  usersRoutes);
 app.use('/api/cs/categorias', require('./cs/categorias').router);  // Categorias Diamante/Ouro/Prata/Bronze (antes de /api/cs)
 app.use('/api/cs/churn', require('./cs/churnSaidas').router);  // Churn por saídas (as três 'Transferida por…')
 app.use('/api/cs/risco', require('./cs/risco').router);        // Risco de perda: termômetros Financeiro, Atendimento e Operacional
+app.use('/api/cs/painel', require('./cs/painel').router);      // Painel público /cs (só leitura; administrador e usuário)
 app.use('/api/cs',     require('./cs/routes'));    // Sucesso do Cliente — radar de SLA
 app.use('/api/analistas', require('./routes/analistas'));  // lista de analistas p/ dropdowns
 app.use('/api/grupos-empresas', require('./routes/grupos-empresas'));  // lista de grupos de empresas p/ dropdown
@@ -109,6 +110,11 @@ app.get('/legalizacao', (req, res) => {
 // ── De onde vêm os dados da Legalização (sem login, como /gamificacao/regras) ──
 app.get('/legalizacao/regras', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'legalizacao-regras.html'));
+});
+
+// ── Painel do Sucesso do Cliente (login próprio, contas do Grupo-E; reunião semanal das lideranças) ──
+app.get('/cs', (req, res) => {
+  res.sendFile(path.join(PUBLIC, 'cs-painel.html'));
 });
 
 // ── Arquivos estáticos com MIME correto ───────────────────────────────────────

@@ -417,4 +417,5 @@ module.exports = {
   router, classificarSaida, classificarSaidaDetalhe, inferirPelaReceita, calcularChurn, presets, somarDias, normalizar,
   tipoDocumento, ehPessoaJuridica,
   sincronizarMotivos, classificarSaidasPelaReceita, consultarSituacaoCnpj, garantirColuna, PADROES_PADRAO,
+  carregarClientes, lerPadroes, hojeBrasilia,
 };

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Painel do Sucesso do Cliente</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/cs-painel.css?v=1">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- LOGIN (contas do Grupo-E) -->
+<div id="login-screen">
+  <form class="login-box" id="login-form" autocomplete="on">
+    <div class="login-logo"><div class="login-dot"></div><h2>Sucesso do Cliente <span>/ Grupo-E</span></h2></div>
+    <span class="versao" id="login-versao"></span>
+    <div class="login-title">Bem-vindo 👋</div>
+    <div class="login-sub">Entre com o mesmo e-mail e senha do sistema Grupo-E.</div>
+    <label class="login-label" for="inp-email">E-mail</label>
+    <input class="login-input" type="email" id="inp-email" autocomplete="username" required>
+    <label class="login-label" for="inp-senha">Senha</label>
+    <input class="login-input" type="password" id="inp-senha" autocomplete="current-password" required>
+    <button class="login-btn" type="submit" id="login-btn">Entrar</button>
+    <div class="login-err" id="login-err" role="alert"></div>
+  </form>
+</div>
+
+<!-- APLICATIVO -->
+<div id="app">
+ <div class="gp-layout">
+  <aside class="gp-sidebar">
+    <div class="gp-sidebar-logo">
+      <div class="gp-sidebar-dot"></div>
+      <div>
+        <div class="gp-sidebar-title">Painel do Sucesso do Cliente</div>
+        <div class="gp-sidebar-sub">Reunião semanal das lideranças</div>
+        <span class="versao" id="app-versao"></span>
+      </div>
+    </div>
+    <nav class="gp-nav" id="nav">
+      <button class="gp-nav-item active" data-sec="visao"><span class="gp-nav-icon">🏠</span>Visão Geral</button>
+      <div class="gp-nav-divider">Indicadores</div>
+      <button class="gp-nav-item" data-sec="risco"><span class="gp-nav-icon">🎯</span>Gestão da Permanência<span class="gp-nav-badge" id="badge-risco"></span></button>
+      <button class="gp-nav-item" data-sec="churn"><span class="gp-nav-icon">📉</span>Churn<span class="gp-nav-badge gp-badge-ok" id="badge-churn"></span></button>
+      <button class="gp-nav-item" data-sec="categorias"><span class="gp-nav-icon">🏅</span>Categorias</button>
+      <div class="gp-nav-divider">Conferência</div>
+      <button class="gp-nav-item" data-sec="qualidade"><span class="gp-nav-icon">🔎</span>Qualidade dos Dados</button>
+    </nav>
+    <div class="gp-sidebar-footer">
+      <div class="gp-footer-user" id="usuario"></div>
+      <button class="gp-footer-btn" id="btn-sair">↩ Sair</button>
+    </div>
+  </aside>
+
+  <main class="gp-main">
+    <div class="gp-header">
+      <div>
+        <div class="gp-header-title" id="titulo">Visão Geral</div>
+        <div class="gp-header-sub" id="subtitulo"></div>
+      </div>
+      <div class="gp-header-right">
+        <div class="filter-group" id="filtro-periodo" style="display:none">
+          <span class="filter-label">Período</span>
+          <select class="gp-select" id="sel-periodo">
+            <option value="mes_atual">Mês atual</option>
+            <option value="mes_anterior">Mês anterior</option>
+            <option value="ultimos_12_meses" selected>Últimos 12 meses</option>
+            <option value="ano">Ano corrente</option>
+            <option value="livre">Datas livres…</option>
+          </select>
+          <span id="datas-livres" style="display:none;gap:6px;align-items:center">
+            <input class="gp-input" type="date" id="dt-ini"><span class="filter-label">a</span><input class="gp-input" type="date" id="dt-fim">
+            <button class="gp-footer-btn" style="width:auto;padding:6px 10px" id="btn-aplicar">Aplicar</button>
+          </span>
+        </div>
+        <div class="gp-live"><div class="gp-live-dot"></div> Ao vivo</div>
+        <div class="gp-update" id="atualizado"></div>
+      </div>
+    </div>
+
+    <section class="gp-section ativa" id="sec-visao"></section>
+    <section class="gp-section" id="sec-risco"></section>
+    <section class="gp-section" id="sec-churn"></section>
+    <section class="gp-section" id="sec-categorias"></section>
+    <section class="gp-section" id="sec-qualidade"></section>
+  </main>
+ </div>
+</div>
+
+<!-- FICHA DO CLIENTE (abre ao clicar no nome da empresa) -->
+<div id="ficha" role="dialog" aria-modal="true" aria-labelledby="ficha-nome">
+  <div class="ficha-box">
+    <div class="ficha-topo">
+      <div style="min-width:0">
+        <div class="ficha-nome" id="ficha-nome"></div>
+        <div class="ficha-sub" id="ficha-sub"></div>
+        <div class="ficha-passo" id="ficha-passo"></div>
+      </div>
+      <button class="ficha-x" id="ficha-fechar" aria-label="Fechar">✕</button>
+    </div>
+    <div id="ficha-corpo"></div>
+  </div>
+</div>
+
+<script src="/js/cs-painel.js?v=1"></script>
+</body>
+</html>
