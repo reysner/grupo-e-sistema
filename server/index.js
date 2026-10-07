@@ -339,6 +339,13 @@ initDB().then(async () => {
       } catch (e) {
         console.error('[Risco] Falha ao ler entregas do Acessórias:', e.message);
       }
+      // Foto diária do risco (lista Alto/Médio que alimenta os laudos mensais e o histórico).
+      try {
+        const f = await require('./cs/risco').salvarFoto();
+        console.log('[Risco] Foto do risco gravada:', f);
+      } catch (e) {
+        console.error('[Risco] Falha ao gravar a foto do risco:', e.message);
+      }
     };
     setInterval(rodarSyncAcessorias, 24 * 60 * 60 * 1000); // 1x por dia
     rodarSyncAcessorias(); // já roda uma vez ao subir

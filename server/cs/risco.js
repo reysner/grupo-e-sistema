@@ -218,8 +218,41 @@ async function sincronizarEntregas({ limite = 200 } = {}) {
   } finally { _sincronizando = false; }
 }
 
+// ── Foto diária do risco ─────────────────────────────────────────────────────
+/**
+ * Guarda em cs_config a lista de clientes em risco Alto ou Médio (a mesma que a página /cs mostra), uma vez por dia.
+ * Serve de fonte única para quem precisa dessa lista fora do sistema (laudos mensais de atendimento) e de histórico
+ * para ver a evolução do risco. 'risco_foto_ultima' = a mais recente; 'risco_foto_AAAA-MM-DD' = uma por dia (guarda 120 dias).
+ */
+async function salvarFoto() {
+  const r = await calcularTodos({ detalhes: false });
+  const { rows: cli } = await pool.query(`SELECT id, nome_empresa AS nome, cnpj FROM clientes WHERE status = 'ativo'`);
+  const porId = new Map(cli.map((c) => [c.id, c]));
+  const hoje = hojeBrasilia();
+  const clientes = [];
+  for (const [id, x] of Object.entries(r.data)) {
+    if (x.nivel !== 'Alto' && x.nivel !== 'Médio') continue;
+    const c = porId.get(id); if (!c) continue;
+    clientes.push({ id, nome: c.nome, cnpj: c.cnpj, nivel: x.nivel, pontos: x.pontos, alerta: x.alerta, termometros: x.termometros, motivos: x.motivos });
+  }
+  clientes.sort((a, b) => (b.pontos || 0) - (a.pontos || 0));
+  const foto = { data: hoje, gerado_em: new Date().toISOString(), config: r.config, resumo: r.resumo, clientes };
+  const json = JSON.stringify(foto);
+  const gravar = (chave) => pool.query(
+    `INSERT INTO cs_config (chave, valor, updated_at) VALUES ($1,$2,NOW()) ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`, [chave, json]);
+  await gravar('risco_foto_ultima');
+  await gravar('risco_foto_' + hoje);
+  await pool.query(`DELETE FROM cs_config WHERE chave ~ '^risco_foto_[0-9]{4}-[0-9]{2}-[0-9]{2}$' AND chave < $1`, ['risco_foto_' + somarDias(hoje, -120)]);
+  return { data: hoje, clientes: clientes.length, resumo: r.resumo };
+}
+
 // ── Rotas ────────────────────────────────────────────────────────────────────
 const router = express.Router();
+
+router.post('/foto', requireAuth, requireAdmin, async (req, res) => {
+  try { res.json({ ok: true, ...(await salvarFoto()) }); }
+  catch (err) { console.error('[risco] POST /foto falhou:', err); res.status(500).json({ error: 'Erro ao gravar a foto do risco.' }); }
+});
 
 router.get('/', requireAuth, async (req, res) => {
   try { res.json(await calcularTodos()); }
@@ -258,4 +291,4 @@ router.post('/sincronizar-entregas', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true, mensagem: 'Leitura das entregas iniciada em segundo plano (200 empresas por rodada). Reabra a tela daqui a alguns minutos.' });
 });
 
-module.exports = { router, calcularTodos, sincronizarEntregas, classificarEntregas, entregaChegaAoCliente };
+module.exports = { router, calcularTodos, sincronizarEntregas, classificarEntregas, entregaChegaAoCliente, salvarFoto };
