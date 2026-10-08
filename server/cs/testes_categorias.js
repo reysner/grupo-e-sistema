@@ -108,6 +108,15 @@ teste('montarEntradas: matriz e filiais (mesma raiz de CNPJ) somam o honorário;
   assert.strictEqual(e[4].entrada.grupos.length, 0);
 });
 
+teste('montarEntradas: CAEPF (produtor rural, 14 dígitos com máscara 000.000.000/000-00) não agrupa por raiz', () => {
+  const e = montarEntradas([
+    { id: 'a', cnpj: '240.270.736/001-79', grupo_empresas: null, honorario: 300 },
+    { id: 'b', cnpj: '240.270.736/002-60', grupo_empresas: null, honorario: 300 },
+  ], []);
+  assert.strictEqual(e[0].entrada.grupos.length, 0);
+  assert.strictEqual(categorizar(e[0].entrada).categoria, 'Prata'); // só o honorário próprio
+});
+
 teste('montarEntradas: filial sozinha (matriz fora da base) continua sem categoria', () => {
   const e = montarEntradas([{ id: 'f', cnpj: '19.111.937/0004-05', grupo_empresas: null, honorario: null }], []);
   assert.strictEqual(categorizar(e[0].entrada).categoria, null);

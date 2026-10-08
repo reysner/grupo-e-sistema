@@ -18,6 +18,7 @@ const express = require('express');
 const { pool } = require('../db');
 const { requireAuth, requireAdmin } = require('../auth');
 const acessorias = require('../acessoriasClient');
+const { ehPessoaJuridica } = require('./churnSaidas');
 
 const CHAVE_CORTES = 'categoria_cortes';
 const CHAVE_SYNC_TAGS = 'categoria_tags_sync';
@@ -91,7 +92,8 @@ function categorizar(entrada, cortes = CORTES_PADRAO) {
  * Raiz do CNPJ (8 primeiros dígitos) = mesma pessoa jurídica: matriz e filiais somam o honorário (decisão do Reysner, 08/10/2026:
  * o honorário costuma estar no contrato da matriz e a filial precisa entrar no mesmo grupo). Só CNPJ de 14 dígitos.
  */
-const raizCnpj = (cnpj) => { const d = soDigitos(cnpj); return d.length === 14 ? d.slice(0, 8) : null; };
+// CAEPF (CPF de produtor rural + 3 dígitos) também tem 14 dígitos mas NÃO é CNPJ: não agrupa por raiz (ehPessoaJuridica distingue pela máscara).
+const raizCnpj = (cnpj) => (ehPessoaJuridica(cnpj) ? soDigitos(cnpj).slice(0, 8) : null);
 const raizFormatada = (r) => `${r.slice(0, 2)}.${r.slice(2, 5)}.${r.slice(5, 8)}`;
 
 /** Monta, para cada cliente ativo, a entrada de `categorizar` (grupos por Gestão de Clientes, por TAG e por raiz do CNPJ). */
