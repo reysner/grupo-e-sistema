@@ -30,7 +30,13 @@
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
   function data(s) { return s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) + '/' + String(s).slice(0, 4) : '—'; }
-  function reais(v) { return v == null ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+  // Valores em R$: o perfil "Usuário" recebe tudo oculto do servidor (dados.valores_ocultos); o administrador pode ocultar na tela (botão "Valores ocultos").
+  function valoresOcultos() { return !!(estado.ocultar || (estado.dados && estado.dados.valores_ocultos)); }
+  function reais(v) {
+    if (valoresOcultos()) return '<span class="oculto" title="Valor oculto">R$ ••••</span>';
+    return v == null ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  }
+  function motivoTxt(m) { return valoresOcultos() ? String(m || '').replace(/(honorário |empresas: )R\$ [\d.]+,\d{2}/g, '$1R$ ••••') : (m || ''); }
   function pct(n, d) { return d ? Math.round(100 * n / d) : 0; }
   function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } return null; }
   function nivelTerm(p, cortes) { return p == null ? null : (p >= cortes.alto ? 'Alto' : p >= cortes.medio ? 'Médio' : 'Baixo'); }
@@ -96,6 +102,7 @@
     ['visao', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="vazio">Carregando…</div>'; });
     try {
       estado.dados = await api('/api/cs/painel/dados' + (forcar === true ? '?forcar=1' : ''));
+      pintarBotaoValores();
       estado.churnLivre = null;
       desenharTudo();
     } catch (e) {
@@ -337,7 +344,7 @@
     var sel = estado.catSel;
     var lista = d.clientes.filter(function (c) { return sel === 'sem' ? !c.categoria : (sel ? c.categoria === sel : true); });
     var linhas = lista.slice(0, 300).map(function (c) {
-      return '<tr><td style="white-space:normal;min-width:220px">' + nomeLink(c) + '</td><td class="c">' + pillCat(c) + '</td><td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td><td style="white-space:normal;min-width:260px;color:var(--text2);font-size:12px">' + esc(c.categoria_motivo || '') + '</td><td class="c">' + pillRisco(c.risco) + '</td></tr>';
+      return '<tr><td style="white-space:normal;min-width:220px">' + nomeLink(c) + '</td><td class="c">' + pillCat(c) + '</td><td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td><td style="white-space:normal;min-width:260px;color:var(--text2);font-size:12px">' + esc(motivoTxt(c.categoria_motivo)) + '</td><td class="c">' + pillRisco(c.risco) + '</td></tr>';
     }).join('');
     $('sec-categorias').innerHTML =
       '<div class="gp-kpi-row">' + cats.map(function (k) { return '<button class="gp-kpi" data-cat="' + k + '" style="text-align:left;cursor:pointer;' + (sel === k ? 'outline:2px solid ' + COR_CAT[k] : '') + '"><div class="gp-kpi-bar" style="background:' + COR_CAT[k] + '"></div><div class="gp-kpi-label">' + ICONE_CAT[k] + ' ' + k + '</div><div class="gp-kpi-value" style="color:' + COR_CAT[k] + '">' + t.categorias[k] + '</div><div class="gp-kpi-sub">' + pct(t.categorias[k], t.clientes) + '% dos clientes</div></button>'; }).join('') +
@@ -379,6 +386,7 @@
   }
 
   function desenharFicha(f) {
+    estado.ficha = f;
     var c = f.cliente, r = c.risco, cortes = estado.dados.config.cortes;
     $('ficha-nome').innerHTML = esc(c.nome) + seloSuspenso(r);
     $('ficha-sub').innerHTML = esc(c.cnpj) + (c.grupo ? ' · Grupo ' + esc(c.grupo) : '') + (c.unidade ? ' · ' + esc(c.unidade) : '') + ' · cliente desde ' + data(c.entrada);
@@ -394,7 +402,7 @@
     var blocos1 = '<div class="blocos">' + bloco('Risco de perda', r.nivel + (r.pontos != null ? ' · ' + r.pontos : '') + (r.alerta ? ' ⚠️' : ''), r.alerta ? '<span style="color:#dc2626">termômetro muito alto: alerta</span>' : 'média dos termômetros com dado', COR_RISCO[r.nivel]) + '</div>' +
       '<div class="blocos">' + termBloco('financeiro') + termBloco('atendimento') + termBloco('operacional') + '</div>';
     var blocos2 = '<div class="blocos" style="margin-bottom:6px">' +
-      bloco('Categoria', c.categoria ? ICONE_CAT[c.categoria] + ' ' + esc(c.categoria) : 'Sem categoria', esc(c.categoria_motivo || ''), c.categoria ? COR_CAT[c.categoria] : null) +
+      bloco('Categoria', c.categoria ? ICONE_CAT[c.categoria] + ' ' + esc(c.categoria) : 'Sem categoria', esc(motivoTxt(c.categoria_motivo)), c.categoria ? COR_CAT[c.categoria] : null) +
       bloco('Honorário', reais(c.honorario), c.grupo ? 'soma do grupo entra na categoria' : 'mensal') + '</div>';
 
     // Financeiro
@@ -449,6 +457,19 @@
   $('login-form').addEventListener('submit', entrar);
   $('btn-sair').addEventListener('click', function () { sair(false); });
   $('btn-atualizar').addEventListener('click', function () { iniciar(true); });
+  // Botão "Valores ocultos" (só administrador): esconde todo valor em R$ na tela, para apresentar sem mostrar valores. Lembra a escolha neste navegador.
+  function pintarBotaoValores() {
+    var b = $('btn-valores'); var admin = estado.dados && estado.dados.usuario && estado.dados.usuario.papel === 'administrador';
+    b.style.display = admin ? 'inline-flex' : 'none';
+    b.textContent = estado.ocultar ? '🙈 Valores ocultos' : '👁 Ocultar valores';
+    b.className = 'gp-footer-btn' + (estado.ocultar ? ' ativo' : '');
+  }
+  $('btn-valores').addEventListener('click', function () {
+    estado.ocultar = !estado.ocultar; try { localStorage.setItem('cs_ocultar', estado.ocultar ? '1' : '0'); } catch (e) { /* sem armazenamento */ }
+    pintarBotaoValores(); if (estado.dados) desenharTudo();
+    if ($('ficha').style.display === 'flex' && estado.ficha) desenharFicha(estado.ficha);
+  });
+  try { estado.ocultar = localStorage.getItem('cs_ocultar') === '1'; } catch (e) { estado.ocultar = false; }
   $('ficha-fechar').addEventListener('click', fecharFicha);
   $('ficha').addEventListener('click', function (ev) { if (ev.target === $('ficha')) fecharFicha(); });
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') fecharFicha(); });

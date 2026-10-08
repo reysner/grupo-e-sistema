@@ -64,6 +64,26 @@ const token = (role, extra = {}) => auth.signAccess({ id: 'u-' + role, name: 'Te
     assert.ok(/suspenso no Omie/.test(susp) && /reativar o contrato/.test(susp), susp);
   });
 
+  await teste('valores em R$: só o administrador recebe; Usuário recebe tudo oculto (honorário, soma do grupo, títulos)', async () => {
+    assert.strictEqual(painel.veValores('administrador'), true);
+    assert.strictEqual(painel.veValores('usuario'), false);
+    assert.strictEqual(painel.veValores(undefined), false);
+    const base = { totais: { clientes: 2 }, clientes: [
+      { id: 'a', nome: 'A', honorario: 1250, categoria: 'Diamante', categoria_motivo: 'honorário R$ 1.250,00 (faixa a partir de R$ 1.000)' },
+      { id: 'b', nome: 'B', honorario: null, categoria: 'Ouro', categoria_motivo: 'soma do grupo "X", 3 empresas: R$ 2.600,50 (faixa R$ 500 a 999)' },
+    ] };
+    const m = painel.mascararBase(base);
+    assert.strictEqual(m.valores_ocultos, true);
+    assert.ok(m.clientes.every((c) => c.honorario === null));
+    assert.strictEqual(m.clientes[0].categoria_motivo, 'honorário R$ •••• (faixa a partir de R$ 1.000)');
+    assert.strictEqual(m.clientes[1].categoria_motivo, 'soma do grupo "X", 3 empresas: R$ •••• (faixa R$ 500 a 999)');
+    assert.strictEqual(base.clientes[0].honorario, 1250);               // não altera o cache compartilhado
+    assert.ok(!JSON.stringify(m).includes('1.250') && !JSON.stringify(m).includes('2.600'));
+    const f = painel.mascararFicha({ cliente: base.clientes[0], financeiro: [{ unidade: 'U', qtd: 2, valor_aberto: 900, valor_atrasado: 450, qtd_atrasados: 1 }], tickets: [] });
+    assert.strictEqual(f.cliente.honorario, null);
+    assert.deepStrictEqual([f.financeiro[0].valor_aberto, f.financeiro[0].valor_atrasado, f.financeiro[0].qtd_atrasados], [null, null, 1]);
+  });
+
   server.close();
   console.log(`\n${ok} testes passaram.`);
   process.exit(0);

@@ -21,6 +21,21 @@ const PAPEIS = ['administrador', 'usuario'];
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const soDigitos = (s) => String(s || '').replace(/\D/g, '');
 
+/**
+ * Perfil "Usuário" vê o painel SEM valores em R$ (decisão do Reysner, 08/10/2026): honorário, soma do grupo e valores de títulos saem do
+ * servidor ocultos — quem decide é o servidor, não o navegador. Só o administrador recebe os valores (e pode ocultá-los na tela, para apresentações).
+ */
+const veValores = (role) => role === 'administrador';
+const OCULTO = 'R$ ••••';
+function mascararMotivo(m) { return m ? String(m).replace(/(honorário |empresas: )R\$ [\d.]+,\d{2}/g, '$1' + OCULTO) : m; }
+function mascararBase(base) {
+  return { ...base, valores_ocultos: true, clientes: base.clientes.map((c) => ({ ...c, honorario: null, categoria_motivo: mascararMotivo(c.categoria_motivo) })) };
+}
+function mascararFicha(ficha) {
+  return { ...ficha, cliente: { ...ficha.cliente, honorario: null, categoria_motivo: mascararMotivo(ficha.cliente.categoria_motivo) }, valores_ocultos: true,
+    financeiro: (ficha.financeiro || []).map((f) => ({ ...f, valor_aberto: null, valor_atrasado: null })) };
+}
+
 function soEquipe(req, res, next) {
   if (!PAPEIS.includes(req.user && req.user.role)) return res.status(403).json({ error: 'Acesso restrito à equipe do Sucesso do Cliente.' });
   next();
@@ -139,7 +154,8 @@ router.get('/dados', async (req, res) => {
       const c = churn.calcularChurn(clientesChurn, m.ini, m.fim, padroes);
       return { mes: m.mes, base: c.base, saidas: c.saidas_contadas, taxa: c.taxa };
     });
-    res.json({ ...base, usuario: { nome: req.user.name, papel: req.user.role }, churn: { padroes, periodos, evolucao } });
+    const visivel = veValores(req.user.role) ? base : mascararBase(base);
+    res.json({ ...visivel, usuario: { nome: req.user.name, papel: req.user.role }, churn: { padroes, periodos, evolucao } });
   } catch (err) {
     console.error('[painel] GET /dados falhou:', err);
     res.status(500).json({ error: 'Erro ao montar o painel.' });
@@ -205,15 +221,12 @@ router.get('/cliente/:id', async (req, res) => {
     const entregas = ((await consultar(
       `SELECT total, atrasadas_entregues, vencidas_pendentes, atualizado_em, janela_ini, janela_fim FROM cliente_entregas_resumo WHERE doc = $1`, [doc], 'entregas')) || [])[0] || null;
 
-    res.json({
-      cliente: c,
-      proximo_passo: proximoPasso(c, { financeiro }),
-      financeiro, tickets, abandonos, insatisfacoes, sensiveis, pesquisas, entregas,
-    });
+    const ficha = { cliente: c, proximo_passo: proximoPasso(c, { financeiro }), financeiro, tickets, abandonos, insatisfacoes, sensiveis, pesquisas, entregas };
+    res.json(veValores(req.user.role) ? ficha : mascararFicha(ficha));
   } catch (err) {
     console.error('[painel] GET /cliente falhou:', err);
     res.status(500).json({ error: 'Erro ao carregar a ficha do cliente.' });
   }
 });
 
-module.exports = { router, montarBase, proximoPasso, ultimosMeses, PAPEIS };
+module.exports = { router, montarBase, proximoPasso, ultimosMeses, PAPEIS, mascararBase, mascararFicha, mascararMotivo, veValores };
