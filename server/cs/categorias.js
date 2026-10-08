@@ -22,6 +22,7 @@ const { ehPessoaJuridica } = require('./churnSaidas');
 
 const CHAVE_CORTES = 'categoria_cortes';
 const CHAVE_SYNC_TAGS = 'categoria_tags_sync';
+const CHAVE_GRUPO_E = 'categoria_grupoe_cnpjs'; // CNPJs (só dígitos) das empresas do Grupo-E marcadas como piso Ouro, sem depender de TAG
 const CORTES_PADRAO = { prata: 250, ouro: 500, diamante: 1000 };
 const ORDEM = { Bronze: 0, Prata: 1, Ouro: 2, Diamante: 3 };
 const TRATAMENTOS = ['ignorar', 'piso_ouro', 'grupo'];
@@ -59,6 +60,7 @@ function categorizar(entrada, cortes = CORTES_PADRAO) {
   for (const tag of entrada.tagsPiso || []) {
     candidatos.push({ cat: 'Ouro', prec: 3, motivo: `TAG "${tag}" (empresa do Grupo-E): piso Ouro` });
   }
+  if (entrada.pisoManual) candidatos.push({ cat: 'Ouro', prec: 3, motivo: 'empresa do Grupo-E (marcada no sistema): piso Ouro' });
   for (const g of entrada.grupos || []) {
     if (!(g.qtd >= 2)) continue;
     const cat = categoriaPorValor(g.soma, cortes);
@@ -97,7 +99,7 @@ const raizCnpj = (cnpj) => (ehPessoaJuridica(cnpj) ? soDigitos(cnpj).slice(0, 8)
 const raizFormatada = (r) => `${r.slice(0, 2)}.${r.slice(2, 5)}.${r.slice(5, 8)}`;
 
 /** Monta, para cada cliente ativo, a entrada de `categorizar` (grupos por Gestão de Clientes, por TAG e por raiz do CNPJ). */
-function montarEntradas(clientes, vinculosTags) {
+function montarEntradas(clientes, vinculosTags, grupoE = new Set()) {
   const porGrupo = new Map(); // chave minúscula -> { nome, soma, ids:Set }
   const porTag = new Map();   // tag_id -> { nome, soma, ids:Set }
   const porRaiz = new Map();  // raiz do CNPJ -> { nome, soma, ids:Set }
@@ -147,7 +149,7 @@ function montarEntradas(clientes, vinculosTags) {
     }
     return {
       cliente_id: c.id,
-      entrada: { honorario: c.honorario, grupos, tagsPiso: tags.filter((t) => t.tratamento === 'piso_ouro').map((t) => t.nome) },
+      entrada: { honorario: c.honorario, grupos, tagsPiso: tags.filter((t) => t.tratamento === 'piso_ouro').map((t) => t.nome), pisoManual: grupoE.has(soDigitos(c.cnpj)) },
     };
   });
 }
@@ -193,12 +195,18 @@ async function carregarClientesEVinculos() {
   return { clientes, vinculos };
 }
 
+async function lerGrupoE() {
+  const { rows } = await pool.query(`SELECT valor FROM cs_config WHERE chave = $1`, [CHAVE_GRUPO_E]);
+  try { return new Set((rows.length ? JSON.parse(rows[0].valor) : []).map(soDigitos).filter((d) => d.length === 14)); } catch (e) { return new Set(); }
+}
+
 async function calcularCategorias() {
   const cortes = await lerCortes();
+  const grupoE = await lerGrupoE();
   const { clientes, vinculos } = await carregarClientesEVinculos();
   const resultado = {};
   const resumo = { Diamante: 0, Ouro: 0, Prata: 0, Bronze: 0, sem_categoria: 0 };
-  for (const { cliente_id, entrada } of montarEntradas(clientes, vinculos)) {
+  for (const { cliente_id, entrada } of montarEntradas(clientes, vinculos, grupoE)) {
     const r = categorizar(entrada, cortes);
     resultado[cliente_id] = r;
     if (r.categoria) resumo[r.categoria]++; else resumo.sem_categoria++;
@@ -280,6 +288,7 @@ router.get('/config', requireAuth, requireAdmin, async (req, res) => {
       ultima_sincronizacao_tags: sync[0] ? sync[0].valor : null,
       sincronizando: _sincronizando,
       tags: tags.map((t) => ({ ...t, empresas_ativas: contagem[t.id] || 0 })),
+      grupo_e: [...(await lerGrupoE())],
       grupos: [...gruposMap.values()].sort((a, b) => b.qtd - a.qtd || a.nome.localeCompare(b.nome, 'pt-BR')),
       vinculos_total: vinculos.length,
     });
@@ -291,7 +300,15 @@ router.get('/config', requireAuth, requireAdmin, async (req, res) => {
 
 router.put('/config', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { cortes, tags } = req.body || {};
+    const { cortes, tags, grupo_e: grupoE } = req.body || {};
+    if (Array.isArray(grupoE)) {
+      const lista = [...new Set(grupoE.map(soDigitos))].filter((d) => d.length === 14);
+      await pool.query(
+        `INSERT INTO cs_config (chave, valor, updated_at) VALUES ($1,$2,NOW())
+         ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`,
+        [CHAVE_GRUPO_E, JSON.stringify(lista)]
+      );
+    }
     if (cortes) {
       const c = { prata: Number(cortes.prata), ouro: Number(cortes.ouro), diamante: Number(cortes.diamante) };
       if (!(c.prata > 0 && c.ouro > c.prata && c.diamante > c.ouro)) {

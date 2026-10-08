@@ -117,6 +117,20 @@ teste('montarEntradas: CAEPF (produtor rural, 14 dígitos com máscara 000.000.0
   assert.strictEqual(categorizar(e[0].entrada).categoria, 'Prata'); // só o honorário próprio
 });
 
+teste('Grupo-E marcado no sistema: piso Ouro sem TAG, sem honorário, e honorário maior ainda vence', () => {
+  const clientes = [
+    { id: 'g', cnpj: '51.495.282/0001-86', grupo_empresas: null, honorario: null },
+    { id: 'h', cnpj: '25.549.775/0001-41', grupo_empresas: null, honorario: 1500 },
+    { id: 'o', cnpj: '03.320.680/0001-19', grupo_empresas: null, honorario: null },
+  ];
+  const e = montarEntradas(clientes, [], new Set(['51495282000186', '25549775000141']));
+  const g = categorizar(e[0].entrada);
+  assert.strictEqual(g.categoria, 'Ouro');
+  assert.ok(g.motivo.includes('empresa do Grupo-E (marcada no sistema): piso Ouro'), g.motivo);
+  assert.strictEqual(categorizar(e[1].entrada).categoria, 'Diamante');
+  assert.strictEqual(categorizar(e[2].entrada).categoria, null);   // não marcada: continua sem categoria
+});
+
 teste('montarEntradas: filial sozinha (matriz fora da base) continua sem categoria', () => {
   const e = montarEntradas([{ id: 'f', cnpj: '19.111.937/0004-05', grupo_empresas: null, honorario: null }], []);
   assert.strictEqual(categorizar(e[0].entrada).categoria, null);
