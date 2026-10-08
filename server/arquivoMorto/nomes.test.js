@@ -21,7 +21,22 @@ test('normalizar: espaços colapsados e trim', () => {
 });
 
 test('normalizar: mantém sufixo/filial (desambigua)', () => {
-  assert.equal(normalizar('Cardoso Adega Ltda - Filial Uberaba'), 'CARDOSO ADEGA LTDA - FILIAL UBERABA');
+  assert.equal(normalizar('Cardoso Adega Ltda - Filial Uberaba'), 'CARDOSO ADEGA LTDA FILIAL UBERABA');
+  assert.notEqual(normalizar('AR TIJOLOS E CIA LTDA - FILIAL'), normalizar('AR TIJOLOS E CIA LTDA'));
+});
+
+test('normalizar: pontuação não impede o casamento', () => {
+  assert.equal(normalizar('AR TIJOLOS E CIA. LTDA'), normalizar('AR TIJOLOS E CIA LTDA'));
+  assert.equal(normalizar('ACME S.A.'), normalizar('ACME S/A'));
+  assert.equal(normalizar('ACME S/A'), normalizar('ACME SA'));
+  assert.equal(normalizar('PADARIA LTDA-ME'), normalizar('PADARIA LTDA - ME'));
+  assert.equal(normalizar("D'OURO COMERCIO"), normalizar('DOURO COMERCIO'));
+  assert.equal(normalizar('ALFA (FILIAL 2)'), normalizar('ALFA FILIAL 2'));
+});
+
+test('normalizar: "&" com ou sem espaço e pontuação junto', () => {
+  assert.equal(normalizar('M & F CIA. LTDA'), normalizar('M E F CIA LTDA'));
+  assert.equal(normalizar('M&F CIA LTDA'), normalizar('M E F CIA LTDA'));
 });
 
 test('faixaDeLetra: intervalos', () => {

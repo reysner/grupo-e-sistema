@@ -12,12 +12,22 @@
  * depois disso é igualdade exata (ou não é a empresa).
  */
 
-/** "M&F Participações Ltda" / "M E F PARTICIPACOES LTDA" -> "M E F PARTICIPACOES LTDA" */
+/**
+ * "M&F Participações Ltda" / "M E F PARTICIPACOES LTDA" -> "M E F PARTICIPACOES LTDA"
+ * "AR TIJOLOS E CIA. LTDA" / "AR TIJOLOS E CIA LTDA"   -> "AR TIJOLOS E CIA LTDA"
+ *
+ * Pontuação (decisão do Reysner, 08/10/2026): ponto, apóstrofo e barra SOMEM
+ * ("CIA."->"CIA", "S.A."/"S/A"->"SA"); hífen, vírgula, parênteses, dois-pontos,
+ * ponto e vírgula, aspas e "_" viram ESPAÇO ("LTDA-ME" = "LTDA - ME" = "LTDA ME").
+ * Outros símbolos (ex.: "@") ficam, pra não mudar a faixa de letra.
+ */
 function normalizar(nome) {
   return String(nome || '')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '') // remove diacríticos (já separados da letra pelo NFD)
     .replace(/&/g, ' E ')
+    .replace(/[.'´`’/\\]/g, '')
+    .replace(/[-–—,;:()[\]{}"“”_]/g, ' ')
     .toUpperCase()
     .replace(/\s+/g, ' ')
     .trim();
