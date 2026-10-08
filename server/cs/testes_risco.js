@@ -140,20 +140,13 @@ teste('operacional: amostra mínima de 5 entregas ("1 de 2" não vira 100)', () 
   assert.strictEqual(termometroOperacional({ temDado: true, total: 5, atrasadasEntregues: 0, vencidasPendentes: 3 }).pontos, 100); // 5 já conta
 });
 
-teste('operacional: empresa suspensa por falta de pagamento fica sem dado (não conta duas vezes) e o risco usa só os outros termômetros', () => {
+teste('operacional: empresa com contrato suspenso no Omie fica sem dado (não conta duas vezes) e o risco usa só os outros termômetros', () => {
   const o = termometroOperacional({ temDado: true, total: 28, atrasadasEntregues: 0, vencidasPendentes: 25, suspenso: true });
   assert.strictEqual(o.pontos, null);
-  assert.ok(o.detalhe[0].includes('suspensos por falta de pagamento'), o.detalhe[0]);
+  assert.ok(o.detalhe[0].includes('suspenso no Omie'), o.detalhe[0]);
   // Financeiro 100 + Atendimento 0 + Operacional suspenso: (100 + 0) / 2 = 50 (Médio), antes dava 67 (Alto)
   const r = calcularRisco({ financeiro: { pontos: 100, detalhe: ['f'] }, atendimento: { pontos: 0, detalhe: ['a'] }, operacional: o });
   assert.deepStrictEqual([r.pontos, r.nivel, r.parcial], [50, 'Médio', true]);
-});
-
-teste('TAG de suspensão: reconhece o nome no Acessórias (com ou sem acento, caixa alta ou baixa) e não pega outras TAGs', () => {
-  const { REGEX_TAG_SUSPENSAO } = require('./riscoCalculo');
-  assert.ok(REGEX_TAG_SUSPENSAO.test('SUSPENSÃO DOS SERVIÇOS POR FALTA DE PAGAMENTO'));
-  assert.ok(REGEX_TAG_SUSPENSAO.test('Suspensao dos servicos por falta de pagamento'));
-  ['Hands', 'Devia', 'MEI', 'Inativa - Cancelamento', 'SERVIÇOS EXTRAS'].forEach((n) => assert.ok(!REGEX_TAG_SUSPENSAO.test(n), n));
 });
 
 console.log(`\n${ok} testes passaram.`);

@@ -61,7 +61,7 @@ const token = (role, extra = {}) => auth.signAccess({ id: 'u-' + role, name: 'Te
     assert.ok(/Acessórias/.test(painel.proximoPasso(mk('Alto', { financeiro: 0, atendimento: 0, operacional: 80 }), { financeiro: [] })));
     assert.ok(/sem ação/i.test(painel.proximoPasso(mk('Baixo', { financeiro: 0, atendimento: 0, operacional: null }), { financeiro: [] })));
     const susp = painel.proximoPasso({ risco: { nivel: 'Médio', suspenso: true, termometros: { financeiro: 100, atendimento: 0, operacional: null } } }, { financeiro: [{ qtd_atrasados: 3 }] });
-    assert.ok(/suspensos por falta de pagamento/.test(susp) && /tirar a TAG/.test(susp), susp);
+    assert.ok(/suspenso no Omie/.test(susp) && /reativar o contrato/.test(susp), susp);
   });
 
   server.close();

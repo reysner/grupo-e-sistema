@@ -11,6 +11,7 @@
  *   GET  /                      -> risco, termômetros e motivos de cada cliente ativo (qualquer usuário logado)
  *   GET  /config  PUT /config   -> pesos e cortes (admin)
  *   POST /sincronizar-entregas  -> lê as entregas do Acessórias (Operacional), em segundo plano (admin)
+ *   POST /suspensos-omie        -> lista de contratos "Suspenso" do Omie (selo Suspenso; token de sincronização)
  */
 const express = require('express');
 const { pool } = require('../db');
@@ -36,9 +37,41 @@ function garantirSchema() {
       vencidas_pendentes INT NOT NULL DEFAULT 0, janela_ini DATE, janela_fim DATE, atualizado_em TIMESTAMPTZ DEFAULT NOW())`)
       // versao: leituras antigas (versão 1) gravaram total 0 por erro de leitura da resposta; são refeitas.
       .then(() => pool.query(`ALTER TABLE cliente_entregas_resumo ADD COLUMN IF NOT EXISTS versao INT NOT NULL DEFAULT 1`))
+      // Contratos com situação "Suspenso" no Omie (selo "Suspenso" do Risco). RLS ligado e sem policy: só o servidor lê (regra do projeto para tabela nova).
+      .then(() => pool.query(`CREATE TABLE IF NOT EXISTS omie_contratos_suspensos (
+        doc TEXT PRIMARY KEY, contrato TEXT, nome TEXT, atualizado_em TIMESTAMPTZ DEFAULT NOW())`))
+      .then(() => pool.query(`ALTER TABLE omie_contratos_suspensos ENABLE ROW LEVEL SECURITY`))
       .catch((e) => { _schema = null; throw e; });
   }
   return _schema;
+}
+
+/**
+ * Troca a lista de contratos suspensos no Omie (a lista inteira de uma vez: quem saiu da lista deixa de ser "Suspenso").
+ * lista: [{ cnpj, contrato?, nome? }]. Só CNPJ (14 dígitos) entra, como no resto do Risco.
+ */
+async function gravarSuspensosOmie(lista) {
+  await garantirSchema();
+  const vistos = new Map();
+  for (const x of lista || []) {
+    const doc = soDigitos(x && x.cnpj);
+    if (doc.length === 14) vistos.set(doc, { contrato: x.contrato ? String(x.contrato).slice(0, 40) : null, nome: x.nome ? String(x.nome).slice(0, 200) : null });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM omie_contratos_suspensos`);
+    for (const [doc, v] of vistos) await client.query(`INSERT INTO omie_contratos_suspensos (doc, contrato, nome) VALUES ($1,$2,$3)`, [doc, v.contrato, v.nome]);
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+  return { suspensos: vistos.size };
+}
+
+function tokenSyncOk(req, res) {
+  const esperado = process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC_TOKEN;
+  if (!esperado) { res.status(503).json({ error: 'Sincronização não configurada no servidor.' }); return false; }
+  if (req.get('X-Sync-Token') !== esperado) { res.status(401).json({ error: 'Token de sincronização inválido.' }); return false; }
+  return true;
 }
 
 /** Consulta tolerante: se uma fonte opcional (ex.: tabela da Gamificação) não existir, o termômetro segue sem ela. */
@@ -117,9 +150,8 @@ async function calcularTodos({ detalhes = false } = {}) {
 
   const entregas = new Map(((await consultar(`SELECT doc, total, atrasadas_entregues, vencidas_pendentes FROM cliente_entregas_resumo`, [], 'entregas')) || []).map((r) => [r.doc, r]));
 
-  // Suspensos por falta de pagamento = empresas com a TAG de suspensão no Acessórias (tabela cliente_tags, mantida pelas sincronizações de TAG).
-  const suspensos = new Set(((await consultar(
-    `SELECT DISTINCT ct.cnpj AS doc FROM cliente_tags ct JOIN acessorias_tags t ON t.id = ct.tag_id WHERE t.nome ~* $1`, [calc.PADRAO_TAG_SUSPENSAO], 'suspensos')) || []).map((r) => r.doc));
+  // Suspensos = contrato com situação "Suspenso" no Omie (decisão do Reysner, 08/10/2026: só o Omie vale, não a TAG do Acessórias).
+  const suspensos = new Set(((await consultar(`SELECT doc FROM omie_contratos_suspensos`, [], 'suspensos do Omie')) || []).map((r) => r.doc));
 
   const data = {};
   const resumo = { Alto: 0, 'Médio': 0, Baixo: 0, Incompleto: 0 };
@@ -143,7 +175,7 @@ async function calcularTodos({ detalhes = false } = {}) {
     if (suspenso) totalSuspensos++;
     data[c.id] = {
       pontos: r.pontos, nivel: r.nivel, parcial: r.parcial, sem_dado: r.sem_dado, alerta: r.alerta, suspenso,
-      motivos: suspenso ? ['Suspenso por falta de pagamento', ...r.motivos] : r.motivos,
+      motivos: suspenso ? ['Contrato suspenso no Omie', ...r.motivos] : r.motivos,
       termometros: Object.fromEntries(calc.TERMOMETROS.map((t) => [t, termometros[t].pontos])),
     };
     if (detalhes) data[c.id].detalhes = Object.fromEntries(calc.TERMOMETROS.map((t) => [t, termometros[t].detalhe || []]));
@@ -257,6 +289,14 @@ async function salvarFoto() {
 // ── Rotas ────────────────────────────────────────────────────────────────────
 const router = express.Router();
 
+// Lista de contratos "Suspenso" do Omie (token de sincronização, como as demais cargas do Omie). Substitui a lista inteira.
+router.post('/suspensos-omie', async (req, res) => {
+  if (!tokenSyncOk(req, res)) return;
+  if (!Array.isArray(req.body && req.body.contratos)) return res.status(400).json({ error: 'Informe contratos: [{ cnpj, contrato, nome }].' });
+  try { res.json({ ok: true, ...(await gravarSuspensosOmie(req.body.contratos)) }); }
+  catch (err) { console.error('[risco] POST /suspensos-omie falhou:', err); res.status(500).json({ error: 'Erro ao gravar os contratos suspensos.' }); }
+});
+
 router.post('/foto', requireAuth, requireAdmin, async (req, res) => {
   try { res.json({ ok: true, ...(await salvarFoto()) }); }
   catch (err) { console.error('[risco] POST /foto falhou:', err); res.status(500).json({ error: 'Erro ao gravar a foto do risco.' }); }
@@ -299,4 +339,4 @@ router.post('/sincronizar-entregas', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true, mensagem: 'Leitura das entregas iniciada em segundo plano (200 empresas por rodada). Reabra a tela daqui a alguns minutos.' });
 });
 
-module.exports = { router, calcularTodos, sincronizarEntregas, classificarEntregas, entregaChegaAoCliente, salvarFoto };
+module.exports = { router, calcularTodos, gravarSuspensosOmie, sincronizarEntregas, classificarEntregas, entregaChegaAoCliente, salvarFoto };

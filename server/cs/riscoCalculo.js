@@ -94,17 +94,14 @@ function termometroAtendimento(e) {
  * Operacional. entrada: { temDado, total, atrasadasEntregues, vencidasPendentes, suspenso } (entregas com prazo nos últimos 90 dias).
  * Taxa de problema = (entregues com atraso + vencidas sem entrega) ÷ total; 50% de problema já é 100 pontos.
  * Decisões do Reysner (08/10/2026):
- *  - empresa SUSPENSA por falta de pagamento (TAG no Acessórias): o escritório não entrega, então o atraso é efeito da
- *    inadimplência, que o Financeiro já mede. Operacional fica sem dado (não conta duas vezes) e o painel mostra o selo "Suspenso";
+ *  - empresa com contrato SUSPENSO no Omie: o escritório não entrega, então o atraso é efeito da suspensão (em geral
+ *    por falta de pagamento), que o Financeiro já mede. Operacional fica sem dado (não conta duas vezes) e o painel mostra o selo "Suspenso";
  *  - amostra mínima: com menos de MIN_ENTREGAS_OPERACIONAL entregas ("1 de 2") a taxa não diz nada → sem dado.
  */
 const MIN_ENTREGAS_OPERACIONAL = 5;
-// Nome da TAG de suspensão no Acessórias ("SUSPENSÃO DOS SERVIÇOS POR FALTA DE PAGAMENTO"). Mesmo padrão no SQL (~*) e no JS.
-const PADRAO_TAG_SUSPENSAO = 'suspens.o.*servi.os';
-const REGEX_TAG_SUSPENSAO = new RegExp(PADRAO_TAG_SUSPENSAO, 'i');
 
 function termometroOperacional(e) {
-  if (e && e.suspenso) return { pontos: null, detalhe: ['Serviços suspensos por falta de pagamento: as entregas não entram no Operacional (o atraso já aparece no Financeiro)'] };
+  if (e && e.suspenso) return { pontos: null, detalhe: ['Contrato suspenso no Omie: as entregas não entram no Operacional (o atraso já aparece no Financeiro)'] };
   if (!e || !e.temDado || !(Number(e.total) > 0)) return { pontos: null, detalhe: ['Sem dado de entregas do Acessórias'] };
   if (Number(e.total) < MIN_ENTREGAS_OPERACIONAL) {
     return { pontos: null, detalhe: [`Só ${plural(Number(e.total), 'entrega', 'entregas')} nos últimos 90 dias: poucas para avaliar (mínimo ${MIN_ENTREGAS_OPERACIONAL})`] };
@@ -139,6 +136,6 @@ function calcularRisco(termometros, pesos = PESOS_PADRAO, cortes = CORTES_PADRAO
 
 module.exports = {
   PESOS_PADRAO, CORTES_PADRAO, ALERTA_TERMOMETRO, TERMOMETROS, diasEntre,
-  MIN_ENTREGAS_OPERACIONAL, PADRAO_TAG_SUSPENSAO, REGEX_TAG_SUSPENSAO,
+  MIN_ENTREGAS_OPERACIONAL,
   termometroFinanceiro, termometroAtendimento, termometroOperacional, calcularRisco,
 };

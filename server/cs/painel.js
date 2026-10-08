@@ -41,11 +41,6 @@ const TTL_FICHA_MS = 10 * 60 * 1000;
 
 async function montarBase(forcar, ttl = TTL_MS) {
   if (!forcar && _cache && Date.now() - _cache.t < ttl) return _cache.v;
-  // Atualização manual: relê antes a TAG de suspensão no Acessórias (se tiraram a TAG, o selo "Suspenso" some já). Falha não impede o painel.
-  if (forcar && process.env.ACESSORIAS_API_TOKEN) {
-    try { await categorias.sincronizarSuspensao(); }
-    catch (e) { console.warn('[painel] não consegui reler a TAG de suspensão:', e.message); }
-  }
 
   const [r, cat, clientes] = await Promise.all([
     risco.calcularTodos({ detalhes: true }),
@@ -165,7 +160,7 @@ function proximoPasso(c, extra) {
   const t = c.risco.termometros;
   const pontos = (k) => (t[k] == null ? -1 : t[k]);
   if (c.risco.nivel === 'Baixo' || c.risco.nivel === 'Incompleto') return 'Sem ação por enquanto: acompanhar nas próximas semanas.';
-  if (c.risco.suspenso) return 'Serviços suspensos por falta de pagamento (TAG no Acessórias): a ação é de cobrança. Combinar a regularização com o financeiro e, se o cliente pagar, tirar a TAG no Acessórias para retomar as entregas.';
+  if (c.risco.suspenso) return 'Contrato suspenso no Omie: a ação é de cobrança. Combinar a regularização com o financeiro e, se o cliente pagar, reativar o contrato no Omie para retomar as entregas.';
   const dom = ['financeiro', 'atendimento', 'operacional'].sort((a, b) => pontos(b) - pontos(a))[0];
   if (dom === 'financeiro') {
     const f = extra.financeiro[0];

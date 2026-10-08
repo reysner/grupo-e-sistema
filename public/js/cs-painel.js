@@ -162,9 +162,9 @@
     return '<div class="barra">' + partes.map(function (p) { return '<div title="' + esc(p.rot) + ': ' + p.n + '" style="width:' + (100 * p.n / tot) + '%;background:' + p.cor + '"></div>'; }).join('') + '</div>' +
       '<div class="linhas">' + partes.map(function (p) { return '<div><i style="background:' + p.cor + '"></i>' + esc(p.rot) + '<b>' + p.n + '</b></div>'; }).join('') + '</div>';
   }
-  // Selo das empresas com a TAG "Suspensão dos serviços por falta de pagamento" no Acessórias (some sozinho quando a TAG é retirada).
+  // Selo das empresas com contrato "Suspenso" no Omie (some quando o contrato é reativado lá).
   function seloSuspenso(r) {
-    return r && r.suspenso ? ' <span class="pill" title="Serviços suspensos por falta de pagamento (TAG no Acessórias). As entregas não entram no Operacional." style="color:#6b21a8;border-color:#6b21a855;background:#6b21a814">⏸ Suspenso</span>' : '';
+    return r && r.suspenso ? ' <span class="pill" title="Contrato suspenso no Omie. As entregas não entram no Operacional." style="color:#6b21a8;border-color:#6b21a855;background:#6b21a814">⏸ Suspenso</span>' : '';
   }
   function nomeLink(c) {
     return '<button class="link" data-ficha="' + esc(c.id) + '">' + esc(c.nome) + '</button>' + seloSuspenso(c.risco) + '<div class="sub">' + esc(c.cnpj || '') + '</div>';
@@ -206,7 +206,7 @@
     if (t.risco.Alto) pontos.push('<strong>' + t.risco.Alto + ' cliente(s) em Alto risco</strong>: abra a Gestão da Permanência e combine o próximo passo de cada um.');
     if (emRisco) pontos.push('Dos ' + emRisco + ' clientes em risco Alto ou Médio, o termômetro que mais pesa é <strong>Financeiro em ' + dominantes.financeiro + '</strong>, Atendimento em ' + dominantes.atendimento + ' e Operacional em ' + dominantes.operacional + '.');
     if (t.termometros.operacional.com_dado === 0) pontos.push('O termômetro <strong>Operacional ainda está sem dado</strong> (entregas do Acessórias em leitura). Enquanto isso, o risco é calculado só com Financeiro e Atendimento.');
-    if (t.suspensos) pontos.push('<strong>' + t.suspensos + ' cliente(s) suspenso(s) por falta de pagamento</strong> (TAG no Acessórias): a ação é de cobrança e as entregas deles não entram no Operacional. Filtre pelo selo ⏸ Suspenso na Gestão da Permanência.');
+    if (t.suspensos) pontos.push('<strong>' + t.suspensos + ' cliente(s) com contrato suspenso no Omie</strong>: a ação é de cobrança e as entregas deles não entram no Operacional. Filtre pelo selo ⏸ Suspenso na Gestão da Permanência.');
     if (p.fora_do_churn && p.fora_do_churn.a_confirmar) pontos.push(p.fora_do_churn.a_confirmar + ' saída(s) ainda <strong>a confirmar</strong> (sem motivo lido do Acessórias): o churn real fica entre ' + p.taxa + '% e ' + p.taxa_teto + '%.');
     pontos.push('<strong>' + pct(t.sem_reclamacao_30d, t.clientes) + '%</strong> dos clientes ficaram sem nenhuma reclamação nos últimos 30 dias (insatisfação registrada, nota baixa ou abandono).');
 
@@ -277,7 +277,7 @@
         '<div><strong style="color:#dc2626">Risco de perda</strong><br>Média dos termômetros que têm dado, de 0 a 100. Médio a partir de ' + d.config.cortes.medio + ', Alto a partir de ' + d.config.cortes.alto + '. Um termômetro muito alto sozinho gera alerta e sobe o cliente para Médio.</div>' +
         '<div><strong style="color:' + COR_TERM.financeiro + '">Financeiro</strong><br>Dias de atraso do título mais antigo (até 15 dias = 25 pontos; acima de 90 = 90), mais 10 pontos com 3 ou mais títulos. Cliente marcado como inadimplente crônico fica em 70, no mínimo.</div>' +
         '<div><strong style="color:' + COR_TERM.atendimento + '">Atendimento</strong><br>Insatisfações registradas (pesam pela gravidade e diminuem depois de 90 dias), notas baixas, SLA vermelho e abandonos do Zappy <em>depois da revisão da Gamificação</em>, e detratores das pesquisas.</div>' +
-        '<div><strong style="color:' + COR_TERM.operacional + '">Operacional</strong><br>Proporção das entregas do Acessórias (últimos 90 dias) que chegam ao cliente e foram entregues com atraso ou venceram sem entrega: guias e declarações com multa, folha, FGTS, DCTFWeb, INSS e envios ao cliente. Tarefas internas (balancete, renovação de certificado, aniversário de sócio, cadastros) não contam. Entrega dentro do prazo técnico ou do prazo legal não é atraso. Só conta com <strong>5 entregas ou mais</strong> no período (com menos, a taxa não é confiável: fica sem dado). Empresa com a TAG <strong>Suspenso</strong> (serviços suspensos por falta de pagamento) também fica fora do Operacional: o atraso dela já pesa no Financeiro.</div>' +
+        '<div><strong style="color:' + COR_TERM.operacional + '">Operacional</strong><br>Proporção das entregas do Acessórias (últimos 90 dias) que chegam ao cliente e foram entregues com atraso ou venceram sem entrega: guias e declarações com multa, folha, FGTS, DCTFWeb, INSS e envios ao cliente. Tarefas internas (balancete, renovação de certificado, aniversário de sócio, cadastros) não contam. Entrega dentro do prazo técnico ou do prazo legal não é atraso. Só conta com <strong>5 entregas ou mais</strong> no período (com menos, a taxa não é confiável: fica sem dado). Empresa com contrato <strong>Suspenso no Omie</strong> (selo ⏸) também fica fora do Operacional: o atraso dela já pesa no Financeiro.</div>' +
       '</div></details>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px">' +
         '<span class="filter-label">Buscar</span><input class="gp-input" id="r-busca" placeholder="Nome ou CNPJ" value="' + esc(f.busca) + '">' +
@@ -423,7 +423,7 @@
 
     // Operacional
     var e = f.entregas;
-    var oper = r.suspenso ? '<div class="linha-item"><span class="q">⏸</span><span class="x">Serviços suspensos por falta de pagamento: as entregas atrasadas abaixo são efeito da suspensão e não entram no termômetro Operacional.</span></div>' : '';
+    var oper = r.suspenso ? '<div class="linha-item"><span class="q">⏸</span><span class="x">Contrato suspenso no Omie: as entregas atrasadas abaixo são efeito da suspensão e não entram no termômetro Operacional.</span></div>' : '';
     oper += e && e.total ? '<div class="blocos">' + bloco('Entregas (90 dias)', e.total, 'lidas do Acessórias em ' + data(e.atualizado_em), null) + bloco('Entregues com atraso', e.atrasadas_entregues, 'status "Ent. atrasada"', e.atrasadas_entregues ? '#dc2626' : null) + bloco('Vencidas sem entrega', e.vencidas_pendentes, 'status "Atrasada!" ou pendente vencida', e.vencidas_pendentes ? '#dc2626' : null) + '</div>'
       : '<div class="linha-item"><span class="x">Sem entregas lidas do Acessórias para este cliente no período' + (e ? ' (última leitura em ' + data(e.atualizado_em) + ')' : ' (ainda não lido)') + '.</span></div>';
 
