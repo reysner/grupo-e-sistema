@@ -313,16 +313,25 @@ async function listarTags({ token, limitePaginas = 100 } = {}) {
 }
 
 /** CNPJs/CPFs das empresas vinculadas a uma TAG (GET /tags/{id}?companies=1). Formato da lista é lido de forma tolerante. */
+/**
+ * Empresas de uma resposta de /tags/{id}?companies=1. Formato real (confirmado em 08/10/2026): UMA LISTA com um item,
+ * `[ { id, nome, status, companies: [ { id, nome, cnpj } ] } ]`; TAG sem empresas devolve HTTP 204 (corpo vazio → null).
+ * Antes a lista de fora era lida como se fossem as empresas e toda TAG parecia vazia.
+ */
+function extrairEmpresasDaTag(dados) {
+  const raiz = Array.isArray(dados) ? dados[0] : dados;
+  const lista = Array.isArray(raiz?.companies) ? raiz.companies : Array.isArray(raiz?.empresas) ? raiz.empresas : [];
+  return lista.map(e => e?.cnpj || e?.Identificador || e?.identificador).filter(Boolean).map(String);
+}
+
 async function listarEmpresasDaTag(tagId, { token, limitePaginas = 100 } = {}) {
   const achados = new Set();
   for (let pagina = 1; pagina <= limitePaginas; pagina++) {
     const dados = await getJson(`/tags/${encodeURIComponent(tagId)}?companies=1&Pagina=${pagina}`, token);
-    const lista = Array.isArray(dados?.companies) ? dados.companies
-      : Array.isArray(dados?.empresas) ? dados.empresas
-      : Array.isArray(dados) ? dados : [];
+    const lista = extrairEmpresasDaTag(dados);
     const antes = achados.size;
-    lista.forEach(e => { const c = e?.cnpj || e?.Identificador || e?.identificador; if (c) achados.add(String(c)); });
-    if (lista.length < 20 || achados.size === antes) break;
+    lista.forEach(c => achados.add(c));
+    if (!lista.length || achados.size === antes) break; // vazia, 204 ou página repetida: acabou
     await new Promise(r => setTimeout(r, ESPACAMENTO_MS));
   }
   return [...achados];
@@ -363,5 +372,5 @@ module.exports = {
   listarEmpresasAtivas, buscarEmpresaPorCnpj, normalizarRegime, normalizarRegimeComFallback,
   normalizarData, fantasiaUtilizavel, derivarApelido, empresaParaCliente,
   listarEmpresasInativasDesde, empresaInativaParaCandidato,
-  listarTags, listarEmpresasDaTag, extrairMotivoCancelamento, buscarEmpresaBruta,
+  listarTags, listarEmpresasDaTag, extrairEmpresasDaTag, extrairMotivoCancelamento, buscarEmpresaBruta,
 };

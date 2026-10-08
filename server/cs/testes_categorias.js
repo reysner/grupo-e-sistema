@@ -101,5 +101,15 @@ teste('rotas de admin passam por requireAuth ANTES de requireAdmin (requireAdmin
   }
 });
 
+teste('TAG do Acessórias: lê as empresas de dentro de [ { companies:[...] } ]; 204 e lista vazia = nenhuma', () => {
+  const { extrairEmpresasDaTag } = require('../acessoriasClient');
+  const resposta = [{ id: '89', nome: 'SUSPENSÃO', status: 'Ativo', companies: [{ id: '1', nome: 'A', cnpj: '11.111.111/0001-11' }, { id: '2', nome: 'B', cnpj: '22.222.222/0001-22' }] }];
+  assert.deepStrictEqual(extrairEmpresasDaTag(resposta), ['11.111.111/0001-11', '22.222.222/0001-22']);
+  assert.deepStrictEqual(extrairEmpresasDaTag(resposta[0]), ['11.111.111/0001-11', '22.222.222/0001-22']);
+  assert.deepStrictEqual(extrairEmpresasDaTag(null), []);
+  assert.deepStrictEqual(extrairEmpresasDaTag([]), []);
+  assert.deepStrictEqual(extrairEmpresasDaTag([{ id: '5', nome: 'MEI', companies: [] }]), []);
+});
+
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);
