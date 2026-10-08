@@ -206,7 +206,7 @@
     if (t.risco.Alto) pontos.push('<strong>' + t.risco.Alto + ' cliente(s) em Alto risco</strong>: abra a Gestão da Permanência e combine o próximo passo de cada um.');
     if (emRisco) pontos.push('Dos ' + emRisco + ' clientes em risco Alto ou Médio, o termômetro que mais pesa é <strong>Financeiro em ' + dominantes.financeiro + '</strong>, Atendimento em ' + dominantes.atendimento + ' e Operacional em ' + dominantes.operacional + '.');
     if (t.termometros.operacional.com_dado === 0) pontos.push('O termômetro <strong>Operacional ainda está sem dado</strong> (entregas do Acessórias em leitura). Enquanto isso, o risco é calculado só com Financeiro e Atendimento.');
-    if (t.suspensos) pontos.push('<strong>' + t.suspensos + ' cliente(s) com contrato suspenso no Omie</strong>: a ação é de cobrança e as entregas deles não entram no Operacional. Filtre pelo selo ⏸ Suspenso na Gestão da Permanência.');
+    if (t.suspensos) pontos.push('<strong>' + t.suspensos + ' cliente(s) com contrato suspenso no Omie</strong>' + (t.suspensos_lidos_em ? ' (lista lida em ' + data(t.suspensos_lidos_em) + ', atualizada toda segunda)' : '') + ': a ação é de cobrança e as entregas deles não entram no Operacional. Filtre pelo selo ⏸ Suspenso na Gestão da Permanência.');
     if (p.fora_do_churn && p.fora_do_churn.a_confirmar) pontos.push(p.fora_do_churn.a_confirmar + ' saída(s) ainda <strong>a confirmar</strong> (sem motivo lido do Acessórias): o churn real fica entre ' + p.taxa + '% e ' + p.taxa_teto + '%.');
     pontos.push('<strong>' + pct(t.sem_reclamacao_30d, t.clientes) + '%</strong> dos clientes ficaram sem nenhuma reclamação nos últimos 30 dias (insatisfação registrada, nota baixa ou abandono).');
 

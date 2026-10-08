@@ -65,6 +65,9 @@ async function montarBase(forcar, ttl = TTL_MS) {
     `SELECT v.cliente_id, COUNT(*)::int AS n FROM gam_abandono_incidentes a JOIN cs_tickets t ON t.id = a.ticket_id JOIN cs_vinculos v ON v.id = t.vinculo_id
       WHERE v.tipo = 'cliente' AND v.cliente_id IS NOT NULL AND a.data >= CURRENT_DATE - 30 AND a.status <> 'indevida' GROUP BY v.cliente_id`, [], 'abandonos 30d')) || []).map((x) => [x.cliente_id, x.n]));
 
+  // Quando a lista de contratos suspensos do Omie foi lida pela última vez (rotina de segunda de manhã).
+  const suspLidos = ((await consultar(`SELECT to_char(MAX(atualizado_em) AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS d FROM omie_contratos_suspensos`, [], 'suspensos lidos em')) || [])[0];
+
   const lista = [];
   for (const c of clientes) {
     if (!churn.ehPessoaJuridica(c.cnpj)) continue;           // só CNPJ
@@ -95,7 +98,7 @@ async function montarBase(forcar, ttl = TTL_MS) {
     totais: {
       clientes: lista.length, desconsiderados_nao_cnpj: r.desconsiderados_nao_cnpj,
       sem_reclamacao_30d: lista.filter((c) => !c.reclamacoes30).length,
-      risco: resumoRisco, suspensos: lista.filter((c) => c.risco.suspenso).length, categorias: resumoCat, termometros, operacional_lido: r.operacional_lido,
+      risco: resumoRisco, suspensos: lista.filter((c) => c.risco.suspenso).length, suspensos_lidos_em: suspLidos && suspLidos.d ? suspLidos.d : null, categorias: resumoCat, termometros, operacional_lido: r.operacional_lido,
     },
     clientes: lista,
   };

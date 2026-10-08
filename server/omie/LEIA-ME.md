@@ -25,3 +25,9 @@ continuam no Financeiro.
 
 ## Alternativa sem login (futuro)
 API do Omie com App Key/App Secret de cada empresa (variáveis `OMIE_SOLUCOES_APP_KEY/SECRET`, `OMIE_ESCRITORIAL_APP_KEY/SECRET` no servidor).
+
+## Contratos suspensos (selo ⏸ Suspenso do Risco) — toda segunda, junto com a leitura acima
+Mesma rodada (tarefa "omie-financeiro-11h"), nas DUAS empresas (**sempre olhar as duas**: a lista do Risco é a união das duas):
+`paginaContratos.js` (SCRIPT 4, só leitura de Serviços → Contratos de Serviço, filtro Situação "Susp") grava
+`tmp/escritorial-suspensos.txt` e `tmp/solucoes-suspensos.txt`; `enviarSuspensos.js` envia a lista inteira ao sistema
+(`POST /api/cs/risco/suspensos-omie`) — só se as duas leituras deram certo. Reativar o contrato no Omie tira o selo na segunda seguinte.
