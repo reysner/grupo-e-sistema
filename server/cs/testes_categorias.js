@@ -90,6 +90,29 @@ teste('montarEntradas: TAG "grupo" soma e TAG "piso_ouro" vira piso', () => {
   assert.ok(c.motivo.includes('TAG "Talentos"'), c.motivo);
 });
 
+teste('montarEntradas: matriz e filiais (mesma raiz de CNPJ) somam o honorário; filial sem honorário herda a faixa da soma', () => {
+  const clientes = [
+    { id: 'm', cnpj: '19.111.937/0001-11', grupo_empresas: null, honorario: 400 },
+    { id: 'f1', cnpj: '19.111.937/0004-05', grupo_empresas: null, honorario: null },
+    { id: 'f2', cnpj: '19.111.937/0006-77', grupo_empresas: null, honorario: 200 },
+    { id: 'x', cnpj: '19.111.938/0001-00', grupo_empresas: null, honorario: 900 },   // raiz diferente: não entra
+    { id: 'cpf', cnpj: '069.695.846-58', grupo_empresas: null, honorario: 100 },       // CPF: nunca agrupa por raiz
+  ];
+  const e = montarEntradas(clientes, []);
+  const f1 = categorizar(e[1].entrada);
+  assert.strictEqual(f1.categoria, 'Ouro');                       // 400 + 0 + 200 = 600
+  assert.ok(f1.motivo.includes('matriz e filiais (CNPJ 19.111.937)') && f1.motivo.includes('3 empresas') && f1.motivo.includes('600,00'), f1.motivo);
+  assert.strictEqual(categorizar(e[3].entrada).categoria, 'Ouro'); // honorário próprio de 900; sem grupo com outras
+  assert.ok(categorizar(e[3].entrada).motivo.startsWith('honorário'));
+  assert.strictEqual(categorizar(e[4].entrada).categoria, 'Bronze');
+  assert.strictEqual(e[4].entrada.grupos.length, 0);
+});
+
+teste('montarEntradas: filial sozinha (matriz fora da base) continua sem categoria', () => {
+  const e = montarEntradas([{ id: 'f', cnpj: '19.111.937/0004-05', grupo_empresas: null, honorario: null }], []);
+  assert.strictEqual(categorizar(e[0].entrada).categoria, null);
+});
+
 teste('rotas de admin passam por requireAuth ANTES de requireAdmin (requireAdmin sozinho sempre dá 403)', () => {
   const { router } = require('./categorias');
   const { requireAuth, requireAdmin } = require('../auth');

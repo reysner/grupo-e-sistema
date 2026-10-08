@@ -62,7 +62,7 @@ function categorizar(entrada, cortes = CORTES_PADRAO) {
     if (!(g.qtd >= 2)) continue;
     const cat = categoriaPorValor(g.soma, cortes);
     if (!cat) continue;
-    const rotulo = g.origem === 'tag' ? `grupo (TAG "${g.nome}")` : `grupo "${g.nome}"`;
+    const rotulo = g.origem === 'tag' ? `grupo (TAG "${g.nome}")` : g.origem === 'raiz' ? `matriz e filiais (CNPJ ${g.nome})` : `grupo "${g.nome}"`;
     candidatos.push({
       cat, prec: 2, grupo: g,
       motivo: `soma do ${rotulo}, ${g.qtd} empresas: ${moeda(g.soma)} (faixa ${faixaTexto(cat, cortes)})`,
@@ -87,10 +87,18 @@ function categorizar(entrada, cortes = CORTES_PADRAO) {
   };
 }
 
-/** Monta, para cada cliente ativo, a entrada de `categorizar` (grupos por Gestão de Clientes e por TAG). */
+/**
+ * Raiz do CNPJ (8 primeiros dígitos) = mesma pessoa jurídica: matriz e filiais somam o honorário (decisão do Reysner, 08/10/2026:
+ * o honorário costuma estar no contrato da matriz e a filial precisa entrar no mesmo grupo). Só CNPJ de 14 dígitos.
+ */
+const raizCnpj = (cnpj) => { const d = soDigitos(cnpj); return d.length === 14 ? d.slice(0, 8) : null; };
+const raizFormatada = (r) => `${r.slice(0, 2)}.${r.slice(2, 5)}.${r.slice(5, 8)}`;
+
+/** Monta, para cada cliente ativo, a entrada de `categorizar` (grupos por Gestão de Clientes, por TAG e por raiz do CNPJ). */
 function montarEntradas(clientes, vinculosTags) {
   const porGrupo = new Map(); // chave minúscula -> { nome, soma, ids:Set }
   const porTag = new Map();   // tag_id -> { nome, soma, ids:Set }
+  const porRaiz = new Map();  // raiz do CNPJ -> { nome, soma, ids:Set }
   const tagsDoCnpj = new Map(); // cnpj (dígitos) -> [{ id, nome, tratamento }]
   for (const v of vinculosTags) {
     if (!tagsDoCnpj.has(v.cnpj)) tagsDoCnpj.set(v.cnpj, []);
@@ -105,6 +113,11 @@ function montarEntradas(clientes, vinculosTags) {
       if (!porGrupo.has(k)) porGrupo.set(k, { nome: nomeGrupo, soma: 0, ids: new Set() });
       const g = porGrupo.get(k); g.soma += h; g.ids.add(c.id);
     }
+    const raiz = raizCnpj(c.cnpj);
+    if (raiz) {
+      if (!porRaiz.has(raiz)) porRaiz.set(raiz, { nome: raizFormatada(raiz), soma: 0, ids: new Set() });
+      const g = porRaiz.get(raiz); g.soma += h; g.ids.add(c.id);
+    }
     for (const t of tagsDoCnpj.get(soDigitos(c.cnpj)) || []) {
       if (t.tratamento !== 'grupo') continue;
       if (!porTag.has(t.id)) porTag.set(t.id, { nome: t.nome, soma: 0, ids: new Set() });
@@ -118,6 +131,11 @@ function montarEntradas(clientes, vinculosTags) {
     if (nomeGrupo) {
       const g = porGrupo.get(nomeGrupo.toLowerCase());
       grupos.push({ nome: g.nome, origem: 'grupo', soma: g.soma, qtd: g.ids.size });
+    }
+    const raiz = raizCnpj(c.cnpj);
+    if (raiz) {
+      const g = porRaiz.get(raiz);
+      grupos.push({ nome: g.nome, origem: 'raiz', soma: g.soma, qtd: g.ids.size });
     }
     const tags = tagsDoCnpj.get(soDigitos(c.cnpj)) || [];
     for (const t of tags) {
