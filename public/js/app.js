@@ -3182,6 +3182,7 @@ ${isAdmin ? _churnLeituraHtml() : ''}
     const titulo = [r.nivel + (r.pontos != null ? ' (' + r.pontos + ' pontos)' : ''), _riscoTermometros(r)].concat(r.motivos || []).concat(r.parcial ? ['Parcial: sem dado de ' + (r.sem_dado || []).join(', ')] : []).join('\n');
     const motivo = (r.motivos && r.motivos[0]) ? _esc(r.motivos[0]) : (r.nivel === 'Incompleto' ? 'sem dados' : 'sem ocorrências');
     return '<span title="' + _escAttr(titulo) + '" style="background:' + bg + ';color:' + cor + ';padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap">' + r.nivel + (r.pontos != null ? ' · ' + r.pontos : '') + (r.alerta ? ' ⚠' : '') + '</span>'
+      + (r.suspenso ? ' <span title="Serviços suspensos por falta de pagamento (TAG no Acessórias)" style="background:#faf5ff;color:#6b21a8;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap">⏸ Suspenso</span>' : '')
       + '<div class="cat-motivo" title="' + _escAttr(titulo) + '">' + _esc(_riscoTermometros(r)) + (r.parcial ? ' (parcial)' : '') + '</div>'
       + '<div class="cat-motivo" title="' + _escAttr(titulo) + '">' + motivo + '</div>';
   }

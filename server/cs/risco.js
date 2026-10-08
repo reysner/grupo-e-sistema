@@ -117,30 +117,38 @@ async function calcularTodos({ detalhes = false } = {}) {
 
   const entregas = new Map(((await consultar(`SELECT doc, total, atrasadas_entregues, vencidas_pendentes FROM cliente_entregas_resumo`, [], 'entregas')) || []).map((r) => [r.doc, r]));
 
+  // Suspensos por falta de pagamento = empresas com a TAG de suspensão no Acessórias (tabela cliente_tags, mantida pelas sincronizações de TAG).
+  const suspensos = new Set(((await consultar(
+    `SELECT DISTINCT ct.cnpj AS doc FROM cliente_tags ct JOIN acessorias_tags t ON t.id = ct.tag_id WHERE t.nome ~* $1`, [calc.PADRAO_TAG_SUSPENSAO], 'suspensos')) || []).map((r) => r.doc));
+
   const data = {};
   const resumo = { Alto: 0, 'Médio': 0, Baixo: 0, Incompleto: 0 };
+  let totalSuspensos = 0; // já contados no nível de cada um
   for (const c of clientes) {
     const doc = soDigitos(c.cnpj);
     const ab = aberto.get(doc);
     const z = zappy.get(c.id) || {};
     const e = entregas.get(doc);
+    const suspenso = suspensos.has(doc);
     const termometros = {
       financeiro: calc.termometroFinanceiro({ temDado: coberto.has(doc) || !!ab, qtdAtrasados: ab ? ab.qtd : 0, valorAtrasado: ab ? ab.valor : 0, maisAntigo: ab ? ab.mais_antigo : null, cronico: c.cronico, hoje }),
       atendimento: calc.termometroAtendimento({
         insatisfacoes: insat.get(doc) || [], sensiveis: sensiveis.get(doc) || [], notasBaixas: z.notas_baixas || 0,
         slaVermelho: z.sla_vermelho || 0, abandonos: abandonos.get(c.id) || 0, detratores: detratores.get(doc) || 0, tickets90: z.tickets90 || 0,
       }),
-      operacional: calc.termometroOperacional({ temDado: !!e, total: e ? e.total : 0, atrasadasEntregues: e ? e.atrasadas_entregues : 0, vencidasPendentes: e ? e.vencidas_pendentes : 0 }),
+      operacional: calc.termometroOperacional({ temDado: !!e, total: e ? e.total : 0, atrasadasEntregues: e ? e.atrasadas_entregues : 0, vencidasPendentes: e ? e.vencidas_pendentes : 0, suspenso }),
     };
     const r = calc.calcularRisco(termometros, config.pesos, config.cortes);
     resumo[r.nivel]++;
+    if (suspenso) totalSuspensos++;
     data[c.id] = {
-      pontos: r.pontos, nivel: r.nivel, parcial: r.parcial, sem_dado: r.sem_dado, alerta: r.alerta, motivos: r.motivos,
+      pontos: r.pontos, nivel: r.nivel, parcial: r.parcial, sem_dado: r.sem_dado, alerta: r.alerta, suspenso,
+      motivos: suspenso ? ['Suspenso por falta de pagamento', ...r.motivos] : r.motivos,
       termometros: Object.fromEntries(calc.TERMOMETROS.map((t) => [t, termometros[t].pontos])),
     };
     if (detalhes) data[c.id].detalhes = Object.fromEntries(calc.TERMOMETROS.map((t) => [t, termometros[t].detalhe || []]));
   }
-  return { config, data, resumo, operacional_lido: entregas.size, desconsiderados_nao_cnpj: desconsiderados };
+  return { config, data, resumo, suspensos: totalSuspensos, operacional_lido: entregas.size, desconsiderados_nao_cnpj: desconsiderados };
 }
 
 // ── Entregas do Acessórias (Operacional) ─────────────────────────────────────
@@ -233,7 +241,7 @@ async function salvarFoto() {
   for (const [id, x] of Object.entries(r.data)) {
     if (x.nivel !== 'Alto' && x.nivel !== 'Médio') continue;
     const c = porId.get(id); if (!c) continue;
-    clientes.push({ id, nome: c.nome, cnpj: c.cnpj, nivel: x.nivel, pontos: x.pontos, alerta: x.alerta, termometros: x.termometros, motivos: x.motivos });
+    clientes.push({ id, nome: c.nome, cnpj: c.cnpj, nivel: x.nivel, pontos: x.pontos, alerta: x.alerta, suspenso: !!x.suspenso, termometros: x.termometros, motivos: x.motivos });
   }
   clientes.sort((a, b) => (b.pontos || 0) - (a.pontos || 0));
   const foto = { data: hoje, gerado_em: new Date().toISOString(), config: r.config, resumo: r.resumo, clientes };

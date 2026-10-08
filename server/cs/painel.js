@@ -41,6 +41,11 @@ const TTL_FICHA_MS = 10 * 60 * 1000;
 
 async function montarBase(forcar, ttl = TTL_MS) {
   if (!forcar && _cache && Date.now() - _cache.t < ttl) return _cache.v;
+  // Atualização manual: relê antes a TAG de suspensão no Acessórias (se tiraram a TAG, o selo "Suspenso" some já). Falha não impede o painel.
+  if (forcar && process.env.ACESSORIAS_API_TOKEN) {
+    try { await categorias.sincronizarSuspensao(); }
+    catch (e) { console.warn('[painel] não consegui reler a TAG de suspensão:', e.message); }
+  }
 
   const [r, cat, clientes] = await Promise.all([
     risco.calcularTodos({ detalhes: true }),
@@ -74,7 +79,7 @@ async function montarBase(forcar, ttl = TTL_MS) {
     lista.push({
       id: c.id, nome: c.nome, cnpj: c.cnpj, grupo: c.grupo || null, unidade: c.unidade || null, entrada: c.entrada,
       categoria: ct.categoria || null, categoria_motivo: ct.motivo || null, honorario: ct.honorario != null ? ct.honorario : null,
-      risco: { nivel: rk.nivel, pontos: rk.pontos, alerta: rk.alerta, parcial: rk.parcial, sem_dado: rk.sem_dado, termometros: rk.termometros, detalhes: rk.detalhes, motivos: rk.motivos },
+      risco: { nivel: rk.nivel, pontos: rk.pontos, alerta: rk.alerta, suspenso: !!rk.suspenso, parcial: rk.parcial, sem_dado: rk.sem_dado, termometros: rk.termometros, detalhes: rk.detalhes, motivos: rk.motivos },
       reclamacoes30: (insat.get(soDigitos(c.cnpj)) || 0) + (notas.get(c.id) || 0) + (aband.get(c.id) || 0),
     });
   }
@@ -95,7 +100,7 @@ async function montarBase(forcar, ttl = TTL_MS) {
     totais: {
       clientes: lista.length, desconsiderados_nao_cnpj: r.desconsiderados_nao_cnpj,
       sem_reclamacao_30d: lista.filter((c) => !c.reclamacoes30).length,
-      risco: resumoRisco, categorias: resumoCat, termometros, operacional_lido: r.operacional_lido,
+      risco: resumoRisco, suspensos: lista.filter((c) => c.risco.suspenso).length, categorias: resumoCat, termometros, operacional_lido: r.operacional_lido,
     },
     clientes: lista,
   };
@@ -160,6 +165,7 @@ function proximoPasso(c, extra) {
   const t = c.risco.termometros;
   const pontos = (k) => (t[k] == null ? -1 : t[k]);
   if (c.risco.nivel === 'Baixo' || c.risco.nivel === 'Incompleto') return 'Sem ação por enquanto: acompanhar nas próximas semanas.';
+  if (c.risco.suspenso) return 'Serviços suspensos por falta de pagamento (TAG no Acessórias): a ação é de cobrança. Combinar a regularização com o financeiro e, se o cliente pagar, tirar a TAG no Acessórias para retomar as entregas.';
   const dom = ['financeiro', 'atendimento', 'operacional'].sort((a, b) => pontos(b) - pontos(a))[0];
   if (dom === 'financeiro') {
     const f = extra.financeiro[0];

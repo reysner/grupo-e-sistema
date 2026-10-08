@@ -18,6 +18,7 @@ const express = require('express');
 const { pool } = require('../db');
 const { requireAuth, requireAdmin } = require('../auth');
 const acessorias = require('../acessoriasClient');
+const { PADRAO_TAG_SUSPENSAO, REGEX_TAG_SUSPENSAO } = require('./riscoCalculo');
 
 const CHAVE_CORTES = 'categoria_cortes';
 const CHAVE_SYNC_TAGS = 'categoria_tags_sync';
@@ -226,6 +227,46 @@ async function sincronizarTags() {
   } finally { _sincronizando = false; }
 }
 
+/**
+ * Leitura rápida só da TAG de suspensão por falta de pagamento (Risco: selo "Suspenso"). Roda a cada 30 min e quando o painel /cs
+ * é atualizado à mão, para que tirar (ou pôr) a TAG no Acessórias apareça logo no Dashboard sem esperar a sincronização diária.
+ * Troca os vínculos dessa(s) TAG(s) numa transação; se o Acessórias falhar, nada é apagado.
+ */
+let _sincronizandoSusp = false;
+async function sincronizarSuspensao() {
+  const token = process.env.ACESSORIAS_API_TOKEN;
+  if (!token) throw new Error('ACESSORIAS_API_TOKEN não configurado.');
+  if (_sincronizandoSusp) return { ignorado: true };
+  _sincronizandoSusp = true;
+  try {
+    await garantirSchema();
+    const tags = (await acessorias.listarTags({ token })).filter((t) => REGEX_TAG_SUSPENSAO.test(t.nome || ''));
+    const vinculos = [];
+    for (const t of tags) {
+      const cnpjs = await acessorias.listarEmpresasDaTag(t.id, { token });
+      cnpjs.forEach((c) => { const d = soDigitos(c); if (d) vinculos.push([d, t.id]); });
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const t of tags) {
+        await client.query(
+          `INSERT INTO acessorias_tags (id, nome, status, tratamento) VALUES ($1,$2,$3,'ignorar')
+           ON CONFLICT (id) DO UPDATE SET nome = EXCLUDED.nome, status = EXCLUDED.status, atualizado_em = NOW()`,
+          [t.id, t.nome, t.status || null]
+        );
+      }
+      // vínculos de qualquer TAG de suspensão que já esteja no banco (inclusive uma que sumiu do Acessórias)
+      await client.query(`DELETE FROM cliente_tags WHERE tag_id IN (SELECT id FROM acessorias_tags WHERE nome ~* $1)`, [PADRAO_TAG_SUSPENSAO]);
+      for (const [cnpj, tagId] of vinculos) {
+        await client.query(`INSERT INTO cliente_tags (cnpj, tag_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [cnpj, tagId]);
+      }
+      await client.query('COMMIT');
+    } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+    return { tags: tags.length, suspensos: new Set(vinculos.map((v) => v[0])).size };
+  } finally { _sincronizandoSusp = false; }
+}
+
 // ── Rotas ────────────────────────────────────────────────────────────────────
 const router = express.Router();
 
@@ -306,7 +347,13 @@ router.post('/sincronizar-tags', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true, mensagem: 'Sincronização das TAGs iniciada em segundo plano. Reabra esta tela em alguns minutos.' });
 });
 
+router.post('/sincronizar-suspensao', requireAuth, requireAdmin, async (req, res) => {
+  if (!process.env.ACESSORIAS_API_TOKEN) return res.status(400).json({ error: 'ACESSORIAS_API_TOKEN não configurado.' });
+  try { res.json({ ok: true, ...(await sincronizarSuspensao()) }); }
+  catch (e) { console.error('[categorias] sincronizar-suspensao falhou:', e.message); res.status(502).json({ error: 'Não consegui ler a TAG de suspensão no Acessórias.' }); }
+});
+
 module.exports = {
-  router, categorizar, categoriaPorValor, montarEntradas, calcularCategorias, sincronizarTags,
+  router, categorizar, categoriaPorValor, montarEntradas, calcularCategorias, sincronizarTags, sincronizarSuspensao,
   CORTES_PADRAO,
 };

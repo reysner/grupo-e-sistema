@@ -349,6 +349,8 @@ initDB().then(async () => {
     };
     setInterval(rodarSyncAcessorias, 24 * 60 * 60 * 1000); // 1x por dia
     rodarSyncAcessorias(); // já roda uma vez ao subir
+    // Selo "Suspenso" do Risco: relê só a TAG de suspensão por falta de pagamento a cada 30 min (tirar a TAG no Acessórias aparece no /cs sem esperar o dia seguinte).
+    setInterval(() => require('./cs/categorias').sincronizarSuspensao().catch((e) => console.error('[Risco] Falha ao ler a TAG de suspensão:', e.message)), 30 * 60 * 1000);
     // Confere o município de quem ainda não tem (a sincronização já dispara isso; aqui garante o resto do backlog).
     const { completarMunicipiosClientes } = require('./routes/data');
     setInterval(() => completarMunicipiosClientes({ limite: 700 }).catch(e => console.error('[Município]', e.message)), 6 * 60 * 60 * 1000);
