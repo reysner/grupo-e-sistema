@@ -387,8 +387,22 @@
       return e;
     });
   }
+  // Faturamento de 12 meses: zero aparece como "sem faturamento" (não como R$ 0,00); empresa fora do Questor = "sem dado".
+  // Perfil Usuário e "Ocultar valores" sempre veem a máscara (não revela nem se é zero). ⚠ = o Questor avisou que falta configurar o faturamento (passe o mouse).
+  function celFat(q) {
+    if (!q) return '<span class="cinza">sem dado</span>';
+    if (valoresOcultos()) return reais(null) + avisoFat(q);
+    if (q.faturamento == null) return '<span class="cinza">sem dado</span>' + avisoFat(q);
+    if (q.faturamento === 0) return '<span class="cinza">sem faturamento</span>' + avisoFat(q);
+    return reais(q.faturamento) + avisoFat(q);
+  }
+  function celFatTotal(v) {
+    if (valoresOcultos()) return reais(null);
+    if (v == null) return '<span class="cinza">sem dado</span>';
+    return v === 0 ? '<span class="cinza">sem faturamento</span>' : reais(v);
+  }
   // ⚠ quando o Questor avisou que há natureza com movimentação sem configuração de faturamento (o valor pode estar incompleto).
-  function avisoFat(q) { return q && q.aviso ? ' <span class="aviso-fat" title="' + esc(q.aviso) + '">⚠</span>' : ''; }
+  function avisoFat(q) { return q && q.aviso ? ' <span class="aviso-fat" title="' + esc(q.aviso) + '" tabindex="0" aria-label="' + esc(q.aviso) + '">⚠</span>' : ''; }
   function celNum(v) { return v == null ? '<span class="cinza">—</span>' : v === 0 ? '0' : String(v).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
   // Só CNPJ tem risco/ficha; CPF, CAEPF e CNO (só na Análise Inteligente) mostram o nome simples e o tipo do documento.
   function nomeAnalise(c) {
@@ -401,7 +415,7 @@
       '<td class="c">' + (c.regime ? esc(c.regime) : '<span class="cinza">—</span>') + '</td>' +
       '<td class="c">' + (q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : '<span class="cinza">sem dado</span>') + '</td>' +
       '<td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td>' +
-      '<td class="c" style="font-family:var(--mono)">' + (q && q.faturamento != null || valoresOcultos() ? reais(q ? q.faturamento : null) : '<span class="cinza">sem dado</span>') + avisoFat(q) + '</td></tr>';
+      '<td class="c" style="font-family:var(--mono)">' + celFat(q) + '</td></tr>';
   }
   function desenharAnalise() {
     var d = estado.dados, t = d.totais, f = estado.filtroAnalise, b = f.busca.trim().toLowerCase();
@@ -424,7 +438,7 @@
       var rotulo = e.tipo === 'grupo' ? 'GRUPO ' + esc(e.nome.toUpperCase()) : esc(e.nome) + ' <span class="cinza">e filiais</span>';
       var topo = '<tr class="grupo"><td style="white-space:normal;min-width:240px"><button class="lupa" data-abre="' + esc(e.chave) + '" title="' + (aberto ? 'Recolher' : 'Ver as ' + e.itens.length + ' empresas') + '" aria-expanded="' + aberto + '">' + (aberto ? '🔽' : '🔍') + '</button> <button class="link" data-grupo="' + esc(e.chave) + '" title="Abrir a ficha do grupo"><strong>' + rotulo + '</strong></button> <span class="pill" style="color:#256050;border-color:#25605055;background:#25605014">' + e.itens.length + ' empresas</span></td>' +
         '<td class="c"><span class="cinza">—</span></td>' +
-        '<td class="c"><strong>' + celNum(e.funcionarios) + '</strong></td><td class="c" style="font-family:var(--mono)"><strong>' + reais(e.honorario) + '</strong></td><td class="c" style="font-family:var(--mono)"><strong>' + (e.faturamento != null || valoresOcultos() ? reais(e.faturamento) : '<span class="cinza">sem dado</span>') + '</strong></td></tr>';
+        '<td class="c"><strong>' + celNum(e.funcionarios) + '</strong></td><td class="c" style="font-family:var(--mono)"><strong>' + reais(e.honorario) + '</strong></td><td class="c" style="font-family:var(--mono)"><strong>' + celFatTotal(e.faturamento) + '</strong></td></tr>';
       return topo + (aberto ? e.itens.map(function (c) { return linhaAnalise(c, true); }).join('') : '');
     }).join('');
     var per = t.questor_periodo ? (t.questor_periodo.ini.slice(5) + '/' + t.questor_periodo.ini.slice(0, 4) + ' a ' + t.questor_periodo.fim.slice(5) + '/' + t.questor_periodo.fim.slice(0, 4)) : '12 meses';
@@ -463,7 +477,7 @@
     var corpo = e.itens.map(function (c) {
       var q = c.questor;
       return '<tr><td style="white-space:normal;min-width:220px">' + nomeAnalise(c) + '</td><td class="c">' + pillCat(c) + '</td><td class="c">' + (c.risco ? pillRisco(c.risco) : '<span class="cinza">—</span>') + '</td><td class="c">' + (c.regime ? esc(c.regime) : '<span class="cinza">—</span>') +
-        '</td><td class="c">' + (q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : '<span class="cinza">sem dado</span>') + '</td><td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td><td class="c" style="font-family:var(--mono)">' + (q && q.faturamento != null || valoresOcultos() ? reais(q ? q.faturamento : null) : '<span class="cinza">sem dado</span>') + avisoFat(q) + '</td></tr>';
+        '</td><td class="c">' + (q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : '<span class="cinza">sem dado</span>') + '</td><td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td><td class="c" style="font-family:var(--mono)">' + celFat(q) + '</td></tr>';
     }).join('');
     $('ficha-corpo').innerHTML = blocos + '<div class="ficha-sec">Empresas do grupo</div><div class="table-wrap"><table><thead><tr><th>Empresa</th><th class="c">Categoria</th><th class="c">Risco</th><th class="c">Regime</th><th class="c">Funcionários</th><th class="c">Honorário</th><th class="c">Faturamento (12 meses)</th></tr></thead><tbody>' + corpo + '</tbody></table></div>';
   }
