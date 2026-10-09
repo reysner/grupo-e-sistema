@@ -127,6 +127,17 @@
     irPara(estado.secao);
   }
 
+  // Iguala a altura do bloco do logo (menu) e do cabeçalho da página, para a linha de baixo dos dois ficar na mesma altura em todas as páginas.
+  function alinharTopo() {
+    var logo = document.querySelector('.gp-sidebar-logo'), cab = document.querySelector('.gp-header'); if (!logo || !cab) return;
+    logo.style.minHeight = ''; cab.style.minHeight = '';
+    if (window.innerWidth <= 900) return;
+    var base = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--alt-topo')) || 132;
+    var h = Math.max(base, logo.offsetHeight, cab.offsetHeight);
+    logo.style.minHeight = h + 'px'; cab.style.minHeight = h + 'px';
+  }
+  window.addEventListener('resize', alinharTopo);
+
   function irPara(sec) {
     estado.secao = sec;
     Array.prototype.forEach.call(document.querySelectorAll('.gp-nav-item'), function (b) { b.classList.toggle('active', b.getAttribute('data-sec') === sec); });
@@ -135,6 +146,7 @@
     $('subtitulo').textContent = TITULOS[sec][1];
     $('filtro-periodo').style.display = (sec === 'visao' || sec === 'churn') ? 'flex' : 'none';
     var ativa = $('sec-' + sec); if (ativa) ativa.scrollTop = 0;
+    alinharTopo();
   }
 
   // ── gráficos ─────────────────────────────────────────────────────────────────

@@ -192,10 +192,10 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 .ficha-box.larga tbody td{padding:8px 8px;}
 @media (max-width:900px){.ficha-box.larga .table-wrap{overflow-x:auto;}}
 
-/* Linha do cabeçalho alinhada em TODAS as páginas: o bloco do logo (menu lateral) e o cabeçalho da página têm a mesma altura fixa,
-   então a linha de baixo de um fica na mesma altura da do outro (antes variava com o tamanho do subtítulo e com a linha do período). */
-:root{--alt-topo:164px;}
-.gp-sidebar-logo{box-sizing:border-box;height:var(--alt-topo);}
+/* Linha do cabeçalho alinhada em TODAS as páginas: o bloco do logo (menu lateral) e o cabeçalho da página têm a mesma altura, então a linha de
+   baixo de um fica na mesma altura da do outro. Base comum de 132px; se o texto quebrar em mais linhas, o JS (alinharTopo) iguala os dois. */
+:root{--alt-topo:132px;}
+.gp-sidebar-logo{box-sizing:border-box;min-height:var(--alt-topo);}
 .gp-header{box-sizing:border-box;min-height:var(--alt-topo);}
 .gp-header-sub{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
-@media (max-width:900px){.gp-sidebar-logo,.gp-header{height:auto;min-height:0;}}
+@media (max-width:900px){.gp-sidebar-logo,.gp-header{min-height:0;}}
