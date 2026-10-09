@@ -403,11 +403,7 @@
   }
   function desenharAnalise() {
     var d = estado.dados, t = d.totais, f = estado.filtroAnalise, b = f.busca.trim().toLowerCase();
-    if (!d.totais.questor_lido_em && !d.clientes.concat(d.clientes_outros || []).some(function (c) { return c.questor; })) {
-      $('sec-analise').innerHTML = '<div class="nota">Os dados do Questor (faturamento dos últimos 12 meses e funcionários) ainda não foram carregados. Eles chegam pela rotina mensal, a partir do dia 25.</div>' +
-        '<div class="card"><div class="vazio">Sem dados do Questor por enquanto. Honorários e grupos já aparecem quando houver carga.</div></div>';
-      return;
-    }
+    var semQuestor = !d.totais.questor_lido_em && !d.clientes.concat(d.clientes_outros || []).some(function (c) { return c.questor; });
     var base = d.clientes.concat(d.clientes_outros || []), contTipo = { CNPJ: 0, CPF: 0, CAEPF: 0, CNO: 0 };
     base.forEach(function (c) { if (contTipo[c.tipo_doc] != null) contTipo[c.tipo_doc]++; });
     if (f.tipo) base = base.filter(function (c) { return c.tipo_doc === f.tipo; });
@@ -431,6 +427,7 @@
     }).join('');
     var per = t.questor_periodo ? (t.questor_periodo.ini.slice(5) + '/' + t.questor_periodo.ini.slice(0, 4) + ' a ' + t.questor_periodo.fim.slice(5) + '/' + t.questor_periodo.fim.slice(0, 4)) : '12 meses';
     $('sec-analise').innerHTML =
+      (semQuestor ? '<div class="nota" style="border-color:#d97706"><strong>Dados do Questor ainda não carregados.</strong> Faturamento e funcionários chegam pela rotina mensal (a partir do dia 25); até lá aparecem como "sem dado". As empresas, os grupos e os honorários já estão listados.</div>' : '') +
       '<div class="gp-kpi-row">' + kpi('#256050', 'Faturamento (12 meses)', totFat == null && !valoresOcultos() ? '—' : reais(totFat), per) +
         kpi('#b45309', 'Honorários (mensal)', totHon == null && !valoresOcultos() ? '—' : reais(totHon), 'soma dos clientes listados') +
         kpi('#7c3aed', 'Funcionários', celNum(totFun), 'ativos no Questor (0 = sem empregados)') + kpi('#10b981', 'Grupos e filiais', nGrupos, 'linhas consolidadas') + '</div>' +
