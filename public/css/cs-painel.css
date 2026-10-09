@@ -223,3 +223,13 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 .gp-sidebar-id .gp-sidebar-dot{margin-top:6px;}
 .gp-sidebar-title{color:#fff;font-size:13px;font-weight:700;letter-spacing:-.3px;line-height:1.25;}
 .gp-sidebar-sub{color:rgba(255,255,255,.58);font-size:11px;font-weight:500;margin:2px 0 0;}
+
+/* Topo compacto (pedido do Reysner, 09/10/2026): a linha de baixo do cabeçalho NÃO acompanha mais o bloco do logo; fica o mais alta possível e na MESMA
+   posição em todas as páginas. Título/subtítulo à esquerda e filtros/botões à direita, na mesma linha. */
+:root{--alt-topo:88px;}
+.gp-sidebar-logo{min-height:0;}
+.gp-header{flex-wrap:nowrap;padding:10px 28px;min-height:var(--alt-topo);align-items:center;}
+.gp-header>div:first-child{flex:1 1 auto;min-width:0;}
+.gp-header-sub{max-width:none;}
+.gp-header-right{flex-shrink:0;flex-wrap:nowrap;}
+@media (max-width:1180px){.gp-header{flex-wrap:wrap;}.gp-header-right{flex-wrap:wrap;flex-shrink:1;}}
