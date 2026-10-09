@@ -219,7 +219,6 @@
     pontos.push('<strong>' + pct(t.sem_reclamacao_30d, t.clientes) + '%</strong> dos clientes ficaram sem nenhuma reclamação nos últimos 30 dias (insatisfação registrada, nota baixa ou abandono).');
 
     $('sec-visao').innerHTML =
-      '<div class="nota"><strong>Clientes</strong> = empresas com CNPJ ativas na carteira. CPF, CAEPF e CNO ficam de fora de todos os indicadores deste painel (' + t.desconsiderados_nao_cnpj + ' cadastros).</div>' +
       '<div class="gp-kpi-row">' +
         kpi('#256050', 'Clientes ativos', t.clientes, 'CNPJ ativos na carteira') +
         kpi('#dc2626', 'Saídas no período', p.saidas_contadas, 'só "Transferida por…" · base de ' + p.base) +
@@ -237,7 +236,8 @@
         '<div class="gp-chart-card"><div class="gp-chart-title">Churn mês a mês — últimos 12 meses</div><div class="gp-chart-wrap"><canvas id="g-churn"></canvas></div></div>' +
         '<div class="gp-chart-card"><div class="gp-chart-title">Clientes por categoria</div><div class="gp-chart-wrap"><canvas id="g-cat"></canvas></div></div>' +
       '</div>' +
-      '<div class="gp-bullets"><div class="gp-bullets-title">Pontos para a reunião</div>' + pontos.map(function (x) { return '<div class="gp-bullet"><span>•</span><span>' + x + '</span></div>'; }).join('') + '</div>';
+      '<div class="gp-bullets"><div class="gp-bullets-title">Pontos para a reunião</div>' + pontos.map(function (x) { return '<div class="gp-bullet"><span>•</span><span>' + x + '</span></div>'; }).join('') + '</div>' +
+      '<div class="nota"><strong>Clientes</strong> = empresas com CNPJ ativas na carteira. Risco, churn e categorias consideram só CNPJ: CPF, CAEPF e CNO (' + t.desconsiderados_nao_cnpj + ' cadastros) ficam de fora desses indicadores e só aparecem na Análise Inteligente.</div>';
 
     var ev = d.churn.evolucao;
     graf('g-churn', { data: { labels: ev.map(function (m) { return m.mes.slice(5) + '/' + m.mes.slice(2, 4); }), datasets: [
