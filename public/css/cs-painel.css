@@ -199,3 +199,20 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 .gp-header{box-sizing:border-box;min-height:var(--alt-topo);}
 .gp-header-sub{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
 @media (max-width:900px){.gp-sidebar-logo,.gp-header{min-height:0;}}
+
+/* Menu lateral no verde do Sistema Grupo-E (mesmas cores do menu do sistema), com a logo do Grupo-E no topo. */
+:root{--g800:#1a4233;--g900:#14352a;}
+.gp-sidebar{background:var(--g800);border-right:none;box-shadow:2px 0 12px rgba(0,0,0,.15);}
+.gp-sidebar-logo{justify-content:center;align-items:center;padding:18px 16px;border-bottom:1px solid rgba(255,255,255,.08);}
+.gp-sidebar-logo img{width:185px;max-width:100%;height:auto;object-fit:contain;filter:drop-shadow(0 2px 8px rgba(0,0,0,.3));}
+.gp-nav-divider{color:rgba(255,255,255,.42);}
+.gp-nav-item{color:rgba(255,255,255,.65);}
+.gp-nav-item:hover{background:rgba(255,255,255,.07);color:rgba(255,255,255,.92);}
+.gp-nav-item.active{background:rgba(245,197,24,.15);color:var(--yellow);border-color:transparent;}
+.gp-nav-badge{background:rgba(220,38,38,.3);color:#fecaca;}
+.gp-badge-ok{background:rgba(16,185,129,.28);color:#a7f3d0;}
+.gp-sidebar-footer{border-top:1px solid rgba(255,255,255,.08);}
+.gp-footer-user{color:rgba(255,255,255,.6);}
+.gp-sidebar .gp-footer-btn{background:none;border-color:rgba(255,255,255,.18);color:rgba(255,255,255,.78);}
+.gp-sidebar .gp-footer-btn:hover{border-color:#fc8181;color:#fc8181;background:rgba(229,62,62,.12);}
+.gp-nav::-webkit-scrollbar{width:4px;}.gp-nav::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:4px;}

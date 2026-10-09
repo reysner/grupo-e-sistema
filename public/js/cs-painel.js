@@ -609,6 +609,6 @@
     catch (e) { alert(e.message); }
   });
 
-  $('login-versao').textContent = VERSAO; $('app-versao').textContent = VERSAO;
+  $('login-versao').textContent = VERSAO;   // a etiqueta de versão saiu do menu lateral (pedido do Reysner, 09/10/2026)
   if (ls(K_TOKEN)) iniciar(); else mostrarLogin('');
 })();
