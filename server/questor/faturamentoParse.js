@@ -23,4 +23,19 @@ function entradaValida(e, mesesEsperados = 12) {
   const soma = e.meses.reduce((s, m) => s + m.valor, 0);
   return Math.abs(soma - e.total) < 0.05;
 }
-module.exports = { parseFaturamento, entradaValida, dig };
+/**
+ * Avisos do Questor por empresa/filial: "Empresa: 0010 NOME-MATRIZ - Existem Naturezas com movimentação: 6103002, mas sem a configuração de Faturamento…".
+ * Devolve Map "empresa|filial" -> [códigos das naturezas]. Nessas empresas o faturamento pode estar SUBCONTADO.
+ */
+function avisosPorEstab(avisos) {
+  const mapa = new Map();
+  for (const a of avisos || []) {
+    const m = /Empresa:\s*0*(\d+)\s.*-\s*(?:Matriz|Filial\s*(\d+))\s*-\s*Existem Naturezas com movimenta[çc][ãa]o:\s*([\d,\s]+?),?\s*mas sem a configura[çc][ãa]o de Faturamento/i.exec(String(a));
+    if (!m) continue;
+    const chave = `${m[1]}|${m[2] || '1'}`;
+    const codigos = m[3].split(',').map((x) => x.trim()).filter(Boolean);
+    mapa.set(chave, [...new Set([...(mapa.get(chave) || []), ...codigos])]);
+  }
+  return mapa;
+}
+module.exports = { parseFaturamento, entradaValida, avisosPorEstab, dig };

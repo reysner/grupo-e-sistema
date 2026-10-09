@@ -47,5 +47,18 @@ teste('relatório: página incompleta (sem 12 meses) não vale; total que não b
   assert.strictEqual(entradaValida({ ...e[0], cnpj: null }), false);
 });
 
+teste('avisos do Questor: naturezas sem configuração de faturamento por empresa/filial', () => {
+  const { avisosPorEstab } = require('./faturamentoParse');
+  const m = avisosPorEstab([
+    'Empresa: 0010 BRASTRUCK LTDA-MATRIZ - Existem Naturezas com movimentação: 6103002, mas sem a configuração de Faturamento. Para configurar, acesse: Operações > Configurações.',
+    'Empresa: 0406 HEMMER, RIBEIRO, FINOTTI E FERREIRA SOCIEDADE DE ADVOGADOS-Filial 2 - Existem Naturezas com movimentação: 9000002, 9000003, mas sem a configuração de Faturamento. Para configurar',
+    'Empresa: 0406 HEMMER, RIBEIRO, FINOTTI E FERREIRA SOCIEDADE DE ADVOGADOS-Filial 2 - Existem Naturezas com movimentação: 9000002, mas sem a configuração de Faturamento.',
+    'mensagem qualquer que não é desse tipo',
+  ]);
+  assert.deepStrictEqual(m.get('10|1'), ['6103002']);
+  assert.deepStrictEqual(m.get('406|2'), ['9000002', '9000003']);
+  assert.strictEqual(m.size, 2);
+});
+
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);

@@ -239,3 +239,5 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 .tab-analise td:first-child{min-width:0 !important;padding-right:20px;}
 .tab-analise td,.tab-analise th{padding-left:10px;padding-right:10px;}
 .tab-analise th.c,.tab-analise td.c{text-align:center;}
+
+.aviso-fat{color:#d97706;cursor:help;font-size:13px;}

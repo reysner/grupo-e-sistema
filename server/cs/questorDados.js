@@ -21,6 +21,7 @@ function garantirSchema() {
     _schema = pool.query(`CREATE TABLE IF NOT EXISTS questor_cliente_dados (
       doc TEXT PRIMARY KEY, faturamento_12m NUMERIC(16,2), funcionarios INT, atualizado_em TIMESTAMPTZ DEFAULT NOW())`)
       // RLS ligado e sem policy: só o servidor lê (regra do projeto para tabela nova).
+      .then(() => pool.query(`ALTER TABLE questor_cliente_dados ADD COLUMN IF NOT EXISTS aviso TEXT`))   // aviso do Questor: faturamento pode estar incompleto
       .then(() => pool.query(`ALTER TABLE questor_cliente_dados ENABLE ROW LEVEL SECURITY`))
       .catch((e) => { _schema = null; throw e; });
   }
@@ -39,7 +40,7 @@ function validarCarga(corpo) {
     const fat = x.faturamento == null ? null : Number(x.faturamento);
     const fun = x.funcionarios == null ? null : Number(x.funcionarios);
     if ((fat != null && !Number.isFinite(fat)) || (fun != null && (!Number.isInteger(fun) || fun < 0))) throw new Error(`Valor inválido para o CNPJ ${doc}.`);
-    vistos.set(doc, { faturamento: fat, funcionarios: fun });
+    vistos.set(doc, { faturamento: fat, funcionarios: fun, aviso: x.aviso ? String(x.aviso).slice(0, 400) : null });
   }
   if (!vistos.size) throw new Error('Nenhum documento válido (CPF, CNO, CNPJ ou CAEPF) na carga.');
   return { periodo: { ini: p.ini, fim: p.fim }, itens: vistos };
@@ -52,7 +53,7 @@ async function gravar(corpo) {
   try {
     await client.query('BEGIN');
     await client.query(`DELETE FROM questor_cliente_dados`);
-    for (const [doc, v] of itens) await client.query(`INSERT INTO questor_cliente_dados (doc, faturamento_12m, funcionarios) VALUES ($1,$2,$3)`, [doc, v.faturamento, v.funcionarios]);
+    for (const [doc, v] of itens) await client.query(`INSERT INTO questor_cliente_dados (doc, faturamento_12m, funcionarios, aviso) VALUES ($1,$2,$3,$4)`, [doc, v.faturamento, v.funcionarios, v.aviso]);
     await client.query(`INSERT INTO cs_config (chave, valor, updated_at) VALUES ($1,$2,NOW()) ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`, [CHAVE_PERIODO, JSON.stringify(periodo)]);
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
@@ -62,10 +63,10 @@ async function gravar(corpo) {
 /** Map doc -> { faturamento, funcionarios } e o período/data da última carga. Tolerante: sem tabela, devolve vazio. */
 async function carregar() {
   try {
-    const { rows } = await pool.query(`SELECT doc, faturamento_12m::float AS faturamento, funcionarios FROM questor_cliente_dados`);
+    const { rows } = await pool.query(`SELECT doc, faturamento_12m::float AS faturamento, funcionarios, aviso FROM questor_cliente_dados`);
     const cfg = await pool.query(`SELECT valor, to_char(updated_at AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS lido_em FROM cs_config WHERE chave = $1`, [CHAVE_PERIODO]);
     let periodo = null; try { periodo = cfg.rows[0] ? JSON.parse(cfg.rows[0].valor) : null; } catch (e) { /* sem período */ }
-    return { dados: new Map(rows.map((r) => [r.doc, { faturamento: r.faturamento, funcionarios: r.funcionarios }])), periodo, lido_em: cfg.rows[0] ? cfg.rows[0].lido_em : null };
+    return { dados: new Map(rows.map((r) => [r.doc, { faturamento: r.faturamento, funcionarios: r.funcionarios, aviso: r.aviso || null }])), periodo, lido_em: cfg.rows[0] ? cfg.rows[0].lido_em : null };
   } catch (e) { console.warn('[questor] leitura opcional falhou:', e.message); return { dados: new Map(), periodo: null, lido_em: null }; }
 }
 

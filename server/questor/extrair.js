@@ -17,7 +17,7 @@ const fs = require('fs');
 const { Pool } = require('pg');
 const nweb = require('./nwebClient');
 const { periodoDeExtracao, hojeBrasilia } = require('./periodo');
-const { parseFaturamento, entradaValida, dig } = require('./faturamentoParse');
+const { parseFaturamento, entradaValida, avisosPorEstab, dig } = require('./faturamentoParse');
 
 const arg = (n) => { const a = process.argv.find((x) => x.startsWith('--' + n + '=')); return a ? a.slice(n.length + 3) : null; };
 const simular = process.argv.includes('--simular');
@@ -51,7 +51,10 @@ async function main() {
 
   // faturamento: todas as empresas de uma vez (traz as matrizes) + relatório individual das filiais dos clientes ativos
   const base = { PMODELO: '1', PTIPOFATURAMENTO: '501', PCOMPETINICIAL: p.competIni, PCOMPETFINAL: p.competFim, PASSINCONT: '0', PGERARASSINATURACONTADOR: '1', PASSINSOCIO: '3', PGERARASSINATURASOCIO: '1' };
-  const todas = parseFaturamento(await nweb.relatorioCsv('nFisRRFaturamento', base));
+  const relTodas = await nweb.relatorioCsv('nFisRRFaturamento', base);
+  const todas = parseFaturamento(relTodas.csv);
+  const avisos = avisosPorEstab(relTodas.avisos);
+  console.log(`avisos do Questor (natureza com movimentação sem configuração de faturamento): ${relTodas.avisos.length} em ${avisos.size} estabelecimentos`);
   const fatPorCnpj = new Map(); let invalidas = 0;
   for (const e of todas) { if (entradaValida(e)) fatPorCnpj.set(e.cnpj, e.total); else if (e.cnpj) invalidas++; }
   console.log(`relatório de todas: ${todas.length} páginas | válidas por CNPJ: ${fatPorCnpj.size} | inválidas: ${invalidas}`);
@@ -61,13 +64,14 @@ async function main() {
   let lidasFilial = 0;
   for (const d of faltam) {
     const m = noQuestor.get(d);
-    try { const e = parseFaturamento(await nweb.relatorioCsv('nFisRRFaturamento', { ...base, PCODIGOEMPRESA: m.emp, PCODIGOESTAB: m.est })).find((x) => x.cnpj === d && entradaValida(x)); if (e) { fatPorCnpj.set(d, e.total); lidasFilial++; } }
+    try { const r1 = await nweb.relatorioCsv('nFisRRFaturamento', { ...base, PCODIGOEMPRESA: m.emp, PCODIGOESTAB: m.est }); avisosPorEstab(r1.avisos).forEach((v, k) => avisos.set(k, v)); const e = parseFaturamento(r1.csv).find((x) => x.cnpj === d && entradaValida(x)); if (e) { fatPorCnpj.set(d, e.total); lidasFilial++; } }
     catch (err) { console.warn(`  ${d}: relatório individual falhou (${err.message})`); }
   }
   console.log(`relatórios individuais (filiais/ausentes): ${faltam.length} tentados, ${lidasFilial} lidos`);
 
-  const itens = presentes.map((d) => { const m = noQuestor.get(d); return { cnpj: d, faturamento: fatPorCnpj.has(d) ? fatPorCnpj.get(d) : null, funcionarios: porEstab.get(`${m.emp}|${m.est}`) || 0 }; });
+  const itens = presentes.map((d) => { const m = noQuestor.get(d); const av = avisos.get(`${m.emp}|${m.est}`); return { cnpj: d, faturamento: fatPorCnpj.has(d) ? fatPorCnpj.get(d) : null, funcionarios: porEstab.get(`${m.emp}|${m.est}`) || 0, aviso: av ? `Natureza(s) com movimentação sem configuração de faturamento no Questor (${av.join(', ')}): o faturamento pode estar incompleto.` : null }; });
   const comFat = itens.filter((i) => i.faturamento != null).length, zeros = itens.filter((i) => i.faturamento === 0).length;
+  console.log(`itens com aviso de configuração: ${itens.filter((i) => i.aviso).length}`);
   console.log(`itens: ${itens.length} | com faturamento lido: ${comFat} (zero: ${zeros}) | sem faturamento: ${itens.length - comFat} | com funcionários > 0: ${itens.filter((i) => i.funcionarios > 0).length}`);
   const corpo = { periodo: { ini: p.ini, fim: p.fim }, itens };
   if (arg('arquivo')) fs.writeFileSync(arg('arquivo'), JSON.stringify(corpo));

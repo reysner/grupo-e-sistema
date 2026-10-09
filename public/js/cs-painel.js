@@ -387,6 +387,8 @@
       return e;
     });
   }
+  // ⚠ quando o Questor avisou que há natureza com movimentação sem configuração de faturamento (o valor pode estar incompleto).
+  function avisoFat(q) { return q && q.aviso ? ' <span class="aviso-fat" title="' + esc(q.aviso) + '">⚠</span>' : ''; }
   function celNum(v) { return v == null ? '<span class="cinza">—</span>' : v === 0 ? '0' : String(v).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
   // Só CNPJ tem risco/ficha; CPF, CAEPF e CNO (só na Análise Inteligente) mostram o nome simples e o tipo do documento.
   function nomeAnalise(c) {
@@ -399,7 +401,7 @@
       '<td class="c">' + (c.regime ? esc(c.regime) : '<span class="cinza">—</span>') + '</td>' +
       '<td class="c">' + (q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : '<span class="cinza">sem dado</span>') + '</td>' +
       '<td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td>' +
-      '<td class="c" style="font-family:var(--mono)">' + (q && q.faturamento != null || valoresOcultos() ? reais(q ? q.faturamento : null) : '<span class="cinza">sem dado</span>') + '</td></tr>';
+      '<td class="c" style="font-family:var(--mono)">' + (q && q.faturamento != null || valoresOcultos() ? reais(q ? q.faturamento : null) : '<span class="cinza">sem dado</span>') + avisoFat(q) + '</td></tr>';
   }
   function desenharAnalise() {
     var d = estado.dados, t = d.totais, f = estado.filtroAnalise, b = f.busca.trim().toLowerCase();
@@ -461,7 +463,7 @@
     var corpo = e.itens.map(function (c) {
       var q = c.questor;
       return '<tr><td style="white-space:normal;min-width:220px">' + nomeAnalise(c) + '</td><td class="c">' + pillCat(c) + '</td><td class="c">' + (c.risco ? pillRisco(c.risco) : '<span class="cinza">—</span>') + '</td><td class="c">' + (c.regime ? esc(c.regime) : '<span class="cinza">—</span>') +
-        '</td><td class="c">' + (q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : '<span class="cinza">sem dado</span>') + '</td><td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td><td class="c" style="font-family:var(--mono)">' + (q && q.faturamento != null || valoresOcultos() ? reais(q ? q.faturamento : null) : '<span class="cinza">sem dado</span>') + '</td></tr>';
+        '</td><td class="c">' + (q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : '<span class="cinza">sem dado</span>') + '</td><td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td><td class="c" style="font-family:var(--mono)">' + (q && q.faturamento != null || valoresOcultos() ? reais(q ? q.faturamento : null) : '<span class="cinza">sem dado</span>') + avisoFat(q) + '</td></tr>';
     }).join('');
     $('ficha-corpo').innerHTML = blocos + '<div class="ficha-sec">Empresas do grupo</div><div class="table-wrap"><table><thead><tr><th>Empresa</th><th class="c">Categoria</th><th class="c">Risco</th><th class="c">Regime</th><th class="c">Funcionários</th><th class="c">Honorário</th><th class="c">Faturamento (12 meses)</th></tr></thead><tbody>' + corpo + '</tbody></table></div>';
   }
