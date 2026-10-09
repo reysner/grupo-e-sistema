@@ -84,6 +84,27 @@ const token = (role, extra = {}) => auth.signAccess({ id: 'u-' + role, name: 'Te
     assert.deepStrictEqual([f.financeiro[0].valor_aberto, f.financeiro[0].valor_atrasado, f.financeiro[0].qtd_atrasados], [null, null, 1]);
   });
 
+  await teste('Questor: carga validada (só CNPJ, período obrigatório) e faturamento oculto para o perfil Usuário', async () => {
+    const q = require('./questorDados');
+    const ok = q.validarCarga({ periodo: { ini: '2025-09', fim: '2026-08' }, itens: [{ cnpj: '45.459.079/0001-51', faturamento: 218352.4, funcionarios: 0 }, { cnpj: '069.695.846-58', faturamento: 1 }, { cnpj: '11.111.111/0001-11', funcionarios: 7 }] });
+    assert.strictEqual(ok.itens.size, 2);                                   // CPF fica de fora
+    assert.strictEqual(ok.itens.get('45459079000151').funcionarios, 0);     // 0 funcionários é um valor válido (não "sem dado")
+    assert.strictEqual(ok.itens.get('11111111000111').faturamento, null);
+    assert.throws(() => q.validarCarga({ itens: [{ cnpj: '45.459.079/0001-51' }] }), /periodo/);
+    assert.throws(() => q.validarCarga({ periodo: { ini: '2026-08', fim: '2025-09' }, itens: [{ cnpj: '45.459.079/0001-51' }] }), /periodo/);
+    assert.throws(() => q.validarCarga({ periodo: { ini: '2025-09', fim: '2026-08' }, itens: [{ cnpj: '069.695.846-58' }] }), /Nenhum CNPJ/);
+    assert.throws(() => q.validarCarga({ periodo: { ini: '2025-09', fim: '2026-08' }, itens: [{ cnpj: '45.459.079/0001-51', funcionarios: -1 }] }), /inválido/);
+    const base = { clientes: [{ id: 'a', honorario: 1, categoria_motivo: '', questor: { faturamento: 218352.4, funcionarios: 12 } }, { id: 'b', honorario: 1, categoria_motivo: '', questor: null }] };
+    const m = painel.mascararBase(base);
+    assert.strictEqual(m.clientes[0].questor.faturamento, null);
+    assert.strictEqual(m.clientes[0].questor.funcionarios, 12);             // funcionários não é valor em R$: continua visível
+    assert.strictEqual(m.clientes[1].questor, null);
+    assert.strictEqual(base.clientes[0].questor.faturamento, 218352.4);     // não altera o cache compartilhado
+    assert.ok(!JSON.stringify(m).includes('218352'));
+    const f = painel.mascararFicha({ cliente: base.clientes[0], financeiro: [] });
+    assert.strictEqual(f.cliente.questor.faturamento, null);
+  });
+
   server.close();
   console.log(`\n${ok} testes passaram.`);
   process.exit(0);

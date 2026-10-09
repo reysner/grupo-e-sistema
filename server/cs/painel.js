@@ -16,6 +16,7 @@ const { requireAuth } = require('../auth');
 const risco = require('./risco');
 const categorias = require('./categorias');
 const churn = require('./churnSaidas');
+const questor = require('./questorDados');
 
 const PAPEIS = ['administrador', 'usuario'];
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -29,10 +30,10 @@ const veValores = (role) => role === 'administrador';
 const OCULTO = 'R$ ••••';
 function mascararMotivo(m) { return m ? String(m).replace(/(honorário |empresas: )R\$ [\d.]+,\d{2}/g, '$1' + OCULTO) : m; }
 function mascararBase(base) {
-  return { ...base, valores_ocultos: true, clientes: base.clientes.map((c) => ({ ...c, honorario: null, categoria_motivo: mascararMotivo(c.categoria_motivo) })) };
+  return { ...base, valores_ocultos: true, clientes: base.clientes.map((c) => ({ ...c, honorario: null, categoria_motivo: mascararMotivo(c.categoria_motivo), questor: c.questor ? { ...c.questor, faturamento: null } : null })) };
 }
 function mascararFicha(ficha) {
-  return { ...ficha, cliente: { ...ficha.cliente, honorario: null, categoria_motivo: mascararMotivo(ficha.cliente.categoria_motivo) }, valores_ocultos: true,
+  return { ...ficha, cliente: { ...ficha.cliente, honorario: null, categoria_motivo: mascararMotivo(ficha.cliente.categoria_motivo), questor: ficha.cliente.questor ? { ...ficha.cliente.questor, faturamento: null } : null }, valores_ocultos: true,
     financeiro: (ficha.financeiro || []).map((f) => ({ ...f, valor_aberto: null, valor_atrasado: null })) };
 }
 
@@ -83,6 +84,13 @@ async function montarBase(forcar, ttl = TTL_MS) {
   // Quando a lista de contratos suspensos do Omie foi lida pela última vez (rotina de segunda de manhã).
   const suspLidos = ((await consultar(`SELECT to_char(MAX(atualizado_em) AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS d FROM omie_contratos_suspensos`, [], 'suspensos lidos em')) || [])[0];
 
+  const q = await questor.carregar();   // faturamento 12 meses e funcionários (Questor)
+
+  // Regime tributário (Gestão de Clientes): o registro mais recente por CNPJ. Tolerante: se a coluna/tabela não existir, segue sem regime.
+  const regimes = new Map(((await consultar(
+    `SELECT DISTINCT ON (regexp_replace(cnpj, '\\D', '', 'g')) regexp_replace(cnpj, '\\D', '', 'g') AS doc, regime_tributario AS regime
+       FROM gestao_clientes WHERE regime_tributario IS NOT NULL AND regime_tributario <> '' ORDER BY regexp_replace(cnpj, '\\D', '', 'g'), created_at DESC NULLS LAST`, [], 'regime tributário')) || []).map((x) => [x.doc, x.regime]));
+
   const lista = [];
   for (const c of clientes) {
     if (!churn.ehPessoaJuridica(c.cnpj)) continue;           // só CNPJ
@@ -93,6 +101,8 @@ async function montarBase(forcar, ttl = TTL_MS) {
       id: c.id, nome: c.nome, cnpj: c.cnpj, grupo: c.grupo || null, unidade: c.unidade || null, entrada: c.entrada,
       categoria: ct.categoria || null, categoria_motivo: ct.motivo || null, honorario: ct.honorario != null ? ct.honorario : null,
       risco: { nivel: rk.nivel, pontos: rk.pontos, alerta: rk.alerta, suspenso: !!rk.suspenso, parcial: rk.parcial, sem_dado: rk.sem_dado, termometros: rk.termometros, detalhes: rk.detalhes, motivos: rk.motivos },
+      questor: q.dados.has(soDigitos(c.cnpj)) ? q.dados.get(soDigitos(c.cnpj)) : null,
+      regime: regimes.get(soDigitos(c.cnpj)) || null,
       reclamacoes30: (insat.get(soDigitos(c.cnpj)) || 0) + (notas.get(c.id) || 0) + (aband.get(c.id) || 0),
     });
   }
@@ -113,7 +123,7 @@ async function montarBase(forcar, ttl = TTL_MS) {
     totais: {
       clientes: lista.length, desconsiderados_nao_cnpj: r.desconsiderados_nao_cnpj,
       sem_reclamacao_30d: lista.filter((c) => !c.reclamacoes30).length,
-      risco: resumoRisco, suspensos: lista.filter((c) => c.risco.suspenso).length, suspensos_lidos_em: suspLidos && suspLidos.d ? suspLidos.d : null, categorias: resumoCat, termometros, operacional_lido: r.operacional_lido,
+      risco: resumoRisco, suspensos: lista.filter((c) => c.risco.suspenso).length, suspensos_lidos_em: suspLidos && suspLidos.d ? suspLidos.d : null, questor_periodo: q.periodo, questor_lido_em: q.lido_em, categorias: resumoCat, termometros, operacional_lido: r.operacional_lido,
     },
     clientes: lista,
   };

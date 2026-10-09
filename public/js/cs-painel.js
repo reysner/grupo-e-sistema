@@ -17,6 +17,7 @@
     outra_saida: { rot: 'Outra saída', cor: '#6b7280' },
   };
   var TITULOS = {
+    analise: ['Análise Inteligente', 'Faturamento, honorários e funcionários de cada cliente; grupos de empresas e matriz com filiais somados, com a lupa para ver cada empresa.'],
     visao: ['Visão Geral', 'Clientes ativos, saídas por transferência e risco de perda — só CNPJ. Material da reunião semanal das lideranças.'],
     risco: ['Gestão da Permanência', 'Quem está em risco de sair e por quê: Financeiro, Atendimento e Operacional. Clique no nome da empresa para ver a ficha.'],
     churn: ['Churn', 'Saídas do período ÷ base ativa no início do período. Só contam as três "Transferida por…" do Acessórias.'],
@@ -24,7 +25,7 @@
     qualidade: ['Qualidade dos Dados', 'De onde vem cada indicador e o que ainda está sem dado.'],
   };
 
-  var estado = { dados: null, periodoChave: 'ultimos_12_meses', churnLivre: null, secao: 'visao', graficos: {}, filtroRisco: { busca: '', nivel: 'AltoMedio', cat: '', term: '', soAtend: false, todos: false }, abaChurn: 'transferida', catSel: '' };
+  var estado = { dados: null, periodoChave: 'ultimos_12_meses', churnLivre: null, secao: 'visao', graficos: {}, filtroRisco: { busca: '', nivel: 'AltoMedio', cat: '', term: '', soAtend: false, todos: false }, abaChurn: 'transferida', catSel: '', filtroAnalise: { busca: '', soGrupos: false }, abertosAnalise: {} };
 
   // ── utilidades ───────────────────────────────────────────────────────────────
   function $(id) { return document.getElementById(id); }
@@ -99,14 +100,14 @@
     $('app').style.display = 'block';
     var u = null; try { u = JSON.parse(ls(K_USER) || 'null'); } catch (e) { u = null; }
     $('usuario').textContent = u && u.name ? 'Olá, ' + u.name : '';
-    ['visao', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="vazio">Carregando…</div>'; });
+    ['visao', 'analise', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="vazio">Carregando…</div>'; });
     try {
       estado.dados = await api('/api/cs/painel/dados' + (forcar === true ? '?forcar=1' : ''));
       pintarBotaoValores();
       estado.churnLivre = null;
       desenharTudo();
     } catch (e) {
-      ['visao', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; });
+      ['visao', 'analise', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; });
     }
   }
 
@@ -122,7 +123,7 @@
     $('badge-risco').textContent = t.risco.Alto || '';
     $('badge-churn').textContent = periodoAtual().saidas_contadas;
     $('atualizado').textContent = 'Atualizado em ' + new Date(d.gerado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
-    desenharVisao(); desenharRisco(); desenharChurn(); desenharCategorias(); desenharQualidade();
+    desenharVisao(); desenharAnalise(); desenharRisco(); desenharChurn(); desenharCategorias(); desenharQualidade();
     irPara(estado.secao);
   }
 
@@ -355,6 +356,106 @@
         (lista.length > 300 ? '<div class="vazio">Mostrando 300 de ' + lista.length + '. Use o filtro por categoria.</div>' : '') + '</div>';
     Array.prototype.forEach.call(document.querySelectorAll('#sec-categorias [data-cat]'), function (b) { b.addEventListener('click', function () { estado.catSel = b.getAttribute('data-cat'); desenharCategorias(); }); });
     var l = $('c-limpar'); if (l) l.addEventListener('click', function () { estado.catSel = ''; desenharCategorias(); });
+  }
+
+  // ── ANÁLISE INTELIGENTE ──────────────────────────────────────────────────────
+  // Grupo de empresas (Gestão de Clientes) e matriz + filiais (mesma raiz de CNPJ) viram UMA linha consolidada
+  // (funcionários, honorários e faturamento somados); a lupa abre as empresas do grupo logo abaixo, cada uma com os seus números.
+  function somar(itens, f) { var n = 0, algum = false; itens.forEach(function (c) { var v = f(c); if (v != null) { n += Number(v); algum = true; } }); return algum ? n : null; }
+  function montarEntidades(clientes) {
+    var porGrupo = {}, ordem = [], restantes = [];
+    clientes.forEach(function (c) {
+      var g = String(c.grupo || '').trim();
+      if (g) { var k = 'g:' + g.toLowerCase(); if (!porGrupo[k]) { porGrupo[k] = { chave: k, tipo: 'grupo', nome: g, itens: [] }; ordem.push(k); } porGrupo[k].itens.push(c); }
+      else restantes.push(c);
+    });
+    var porRaiz = {};
+    restantes.forEach(function (c) {
+      var d = String(c.cnpj || '').replace(/\D/g, ''); var r = d.length === 14 ? d.slice(0, 8) : c.id;
+      var k = 'r:' + r; if (!porRaiz[k]) { porRaiz[k] = { chave: k, tipo: 'filiais', nome: c.nome, itens: [] }; ordem.push(k); } porRaiz[k].itens.push(c);
+    });
+    var todos = {}; Object.keys(porGrupo).forEach(function (k) { todos[k] = porGrupo[k]; }); Object.keys(porRaiz).forEach(function (k) { todos[k] = porRaiz[k]; });
+    return ordem.map(function (k) {
+      var e = todos[k]; var it = e.itens;
+      // matriz (ordem 0001) primeiro; o nome da linha de matriz+filiais é o da matriz
+      it.sort(function (a, b) { return String(a.cnpj).indexOf('/0001-') >= 0 ? -1 : String(b.cnpj).indexOf('/0001-') >= 0 ? 1 : a.nome.localeCompare(b.nome); });
+      if (e.tipo === 'filiais') e.nome = it[0].nome;
+      e.unico = it.length === 1;
+      e.funcionarios = somar(it, function (c) { return c.questor ? (c.questor.funcionarios == null ? 0 : c.questor.funcionarios) : null; });
+      e.honorario = somar(it, function (c) { return c.honorario; });
+      e.faturamento = somar(it, function (c) { return c.questor ? c.questor.faturamento : null; });
+      return e;
+    });
+  }
+  function celNum(v) { return v == null ? '<span class="cinza">—</span>' : v === 0 ? '0' : String(v).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+  function linhaAnalise(c, filho) {
+    var q = c.questor;
+    return '<tr class="' + (filho ? 'filho' : '') + '"><td style="padding-left:' + (filho ? '38px' : '12px') + ';white-space:normal;min-width:240px">' + nomeLink(c) + '</td>' +
+      '<td class="c" style="white-space:nowrap">' + esc(c.cnpj || '') + '</td><td class="c">' + (c.regime ? esc(c.regime) : '<span class="cinza">—</span>') + '</td>' +
+      '<td class="c">' + (q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : '<span class="cinza">sem dado</span>') + '</td>' +
+      '<td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td>' +
+      '<td class="c" style="font-family:var(--mono)">' + (q && q.faturamento != null || valoresOcultos() ? reais(q ? q.faturamento : null) : '<span class="cinza">sem dado</span>') + '</td></tr>';
+  }
+  function desenharAnalise() {
+    var d = estado.dados, t = d.totais, f = estado.filtroAnalise, b = f.busca.trim().toLowerCase();
+    if (!d.totais.questor_lido_em && !d.clientes.some(function (c) { return c.questor; })) {
+      $('sec-analise').innerHTML = '<div class="nota">Os dados do Questor (faturamento dos últimos 12 meses e funcionários) ainda não foram carregados. Eles chegam pela rotina mensal, a partir do dia 25.</div>' +
+        '<div class="card"><div class="vazio">Sem dados do Questor por enquanto. Honorários e grupos já aparecem quando houver carga.</div></div>';
+      return;
+    }
+    var todasEnts = montarEntidades(d.clientes); estado.entidadesAnalise = {}; todasEnts.forEach(function (e) { estado.entidadesAnalise[e.chave] = e; });
+    var ents = todasEnts.filter(function (e) {
+      if (f.soGrupos && e.unico) return false;
+      if (!b) return true;
+      return e.itens.some(function (c) { return (c.nome || '').toLowerCase().indexOf(b) >= 0 || String(c.cnpj || '').replace(/\D/g, '').indexOf(b.replace(/\D/g, '') || '§') >= 0; }) || e.nome.toLowerCase().indexOf(b) >= 0;
+    });
+    ents.sort(function (a, c) { return (c.faturamento == null ? -1 : c.faturamento) - (a.faturamento == null ? -1 : a.faturamento) || a.nome.localeCompare(c.nome); });
+    var totFat = somar(ents, function (e) { return e.faturamento; }), totHon = somar(ents, function (e) { return e.honorario; }), totFun = somar(ents, function (e) { return e.funcionarios; });
+    var nGrupos = ents.filter(function (e) { return !e.unico; }).length;
+    var linhas = ents.slice(0, 200).map(function (e) {
+      if (e.unico) return linhaAnalise(e.itens[0], false);
+      var aberto = !!estado.abertosAnalise[e.chave];
+      var rotulo = e.tipo === 'grupo' ? 'GRUPO ' + esc(e.nome.toUpperCase()) : esc(e.nome) + ' <span class="cinza">e filiais</span>';
+      var topo = '<tr class="grupo"><td style="white-space:normal;min-width:240px"><button class="lupa" data-abre="' + esc(e.chave) + '" title="' + (aberto ? 'Recolher' : 'Ver as ' + e.itens.length + ' empresas') + '" aria-expanded="' + aberto + '">' + (aberto ? '🔽' : '🔍') + '</button> <button class="link" data-grupo="' + esc(e.chave) + '" title="Abrir a ficha do grupo"><strong>' + rotulo + '</strong></button> <span class="pill" style="color:#256050;border-color:#25605055;background:#25605014">' + e.itens.length + ' empresas</span></td>' +
+        '<td class="c"><span class="cinza">—</span></td><td class="c"><span class="cinza">—</span></td>' +
+        '<td class="c"><strong>' + celNum(e.funcionarios) + '</strong></td><td class="c" style="font-family:var(--mono)"><strong>' + reais(e.honorario) + '</strong></td><td class="c" style="font-family:var(--mono)"><strong>' + (e.faturamento != null || valoresOcultos() ? reais(e.faturamento) : '<span class="cinza">sem dado</span>') + '</strong></td></tr>';
+      return topo + (aberto ? e.itens.map(function (c) { return linhaAnalise(c, true); }).join('') : '');
+    }).join('');
+    var per = t.questor_periodo ? (t.questor_periodo.ini.slice(5) + '/' + t.questor_periodo.ini.slice(0, 4) + ' a ' + t.questor_periodo.fim.slice(5) + '/' + t.questor_periodo.fim.slice(0, 4)) : '12 meses';
+    $('sec-analise').innerHTML =
+      '<div class="gp-kpi-row">' + kpi('#256050', 'Faturamento (12 meses)', totFat == null && !valoresOcultos() ? '—' : reais(totFat), per) +
+        kpi('#b45309', 'Honorários (mensal)', totHon == null && !valoresOcultos() ? '—' : reais(totHon), 'soma dos clientes listados') +
+        kpi('#7c3aed', 'Funcionários', celNum(totFun), 'ativos no Questor (0 = sem empregados)') + kpi('#10b981', 'Grupos e filiais', nGrupos, 'linhas consolidadas') + '</div>' +
+      '<div class="nota">Faturamento dos últimos 12 meses já lançados, lido do módulo Fiscal do Questor' + (t.questor_lido_em ? ' em ' + data(t.questor_lido_em) : '') + '. <strong>Grupo de empresas</strong> (Gestão de Clientes) e <strong>matriz com filiais</strong> aparecem somados em uma linha; clique na lupa para ver cada empresa. Cliente sem funcionário no Questor aparece com 0; sem dado = empresa que não está no Questor. Só clientes ativos com CNPJ.</div>' +
+      '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="a-busca" placeholder="Empresa, grupo ou CNPJ" value="' + esc(f.busca) + '">' +
+        '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="a-grupos"' + (f.soGrupos ? ' checked' : '') + '> só grupos e matriz com filiais</label></div>' +
+        '<div class="card-sub">' + ents.length + ' linha(s) · ordem: faturamento, do maior para o menor</div>' +
+        (ents.length ? '<div class="table-wrap"><table><thead><tr><th>Razão social</th><th class="c">CNPJ</th><th class="c">Regime tributário</th><th class="c">Funcionários</th><th class="c">Honorários</th><th class="c">Faturamento (12 meses)</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nada encontrado neste filtro.</div>') +
+        (ents.length > 200 ? '<div class="vazio">Mostrando 200 de ' + ents.length + '. Use a busca ou o filtro de grupos.</div>' : '') + '</div>';
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-analise [data-abre]'), function (bt) { bt.addEventListener('click', function () { var k = bt.getAttribute('data-abre'); estado.abertosAnalise[k] = !estado.abertosAnalise[k]; desenharAnalise(); }); });
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-analise [data-grupo]'), function (bt) { bt.addEventListener('click', function () { abrirFichaGrupo(bt.getAttribute('data-grupo')); }); });
+    var campo = $('a-busca'); if (campo) { campo.addEventListener('input', function () { f.busca = campo.value; var pos = campo.selectionStart; desenharAnalise(); var n = $('a-busca'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* sem seleção */ } }); }
+    var g = $('a-grupos'); if (g) g.addEventListener('change', function () { f.soGrupos = g.checked; desenharAnalise(); });
+  }
+
+  // Ficha do grupo (mesmo modelo da ficha do cliente): números consolidados e, abaixo, cada empresa com os seus.
+  function abrirFichaGrupo(chave) {
+    var e = estado.entidadesAnalise && estado.entidadesAnalise[chave]; if (!e) return;
+    $('ficha').style.display = 'flex';
+    $('ficha-nome').textContent = e.tipo === 'grupo' ? 'Grupo ' + e.nome : e.nome + ' e filiais';
+    $('ficha-sub').textContent = e.itens.length + ' empresas · ' + (e.tipo === 'grupo' ? 'grupo de empresas (Gestão de Clientes)' : 'matriz e filiais (mesma raiz de CNPJ)');
+    var passo = $('ficha-passo'); passo.style.display = 'block';
+    var alto = e.itens.filter(function (c) { return c.risco.nivel === 'Alto'; }).length, medio = e.itens.filter(function (c) { return c.risco.nivel === 'Médio'; }).length;
+    var susp = e.itens.filter(function (c) { return c.risco.suspenso; }).length;
+    passo.innerHTML = '<strong>Leitura do grupo:</strong> ' + (alto || medio ? (alto ? alto + ' empresa(s) em risco Alto' : '') + (alto && medio ? ' e ' : '') + (medio ? medio + ' em risco Médio' : '') + '. Abra a ficha de cada uma para ver o que está puxando o risco.' : 'nenhuma empresa do grupo está em risco Alto ou Médio.') + (susp ? ' ' + susp + ' com contrato suspenso no Omie.' : '');
+    var blocos = '<div class="blocos">' + bloco('Funcionários', celNum(e.funcionarios), 'soma das empresas do grupo (Questor)', null) +
+      bloco('Honorários', reais(e.honorario), 'mensal, soma do grupo', null) + bloco('Faturamento', reais(e.faturamento), '12 meses, soma do grupo', null) + '</div>';
+    var corpo = e.itens.map(function (c) {
+      var q = c.questor;
+      return '<tr><td style="white-space:normal;min-width:220px">' + nomeLink(c) + '</td><td class="c">' + pillCat(c) + '</td><td class="c">' + pillRisco(c.risco) + '</td><td class="c">' + (c.regime ? esc(c.regime) : '<span class="cinza">—</span>') +
+        '</td><td class="c">' + (q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : '<span class="cinza">sem dado</span>') + '</td><td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td><td class="c" style="font-family:var(--mono)">' + (q && q.faturamento != null || valoresOcultos() ? reais(q ? q.faturamento : null) : '<span class="cinza">sem dado</span>') + '</td></tr>';
+    }).join('');
+    $('ficha-corpo').innerHTML = blocos + '<div class="ficha-sec">Empresas do grupo</div><div class="table-wrap"><table><thead><tr><th>Empresa</th><th class="c">Categoria</th><th class="c">Risco</th><th class="c">Regime</th><th class="c">Funcionários</th><th class="c">Honorário</th><th class="c">Faturamento (12 meses)</th></tr></thead><tbody>' + corpo + '</tbody></table></div>';
   }
 
   // ── QUALIDADE DOS DADOS ──────────────────────────────────────────────────────

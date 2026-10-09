@@ -63,6 +63,7 @@ app.use('/api/users',  usersRoutes);
 app.use('/api/cs/categorias', require('./cs/categorias').router);  // Categorias Diamante/Ouro/Prata/Bronze (antes de /api/cs)
 app.use('/api/cs/churn', require('./cs/churnSaidas').router);  // Churn por saídas (as três 'Transferida por…')
 app.use('/api/cs/risco', require('./cs/risco').router);        // Risco de perda: termômetros Financeiro, Atendimento e Operacional
+app.use('/api/cs/questor', require('./cs/questorDados').router);   // Faturamento 12 meses e funcionários vindos do Questor (rotina local na VPN; token de sincronização)
 app.use('/api/cs/painel', require('./cs/painel').router);      // Painel público /cs (só leitura; administrador e usuário)
 app.use('/api/cs',     require('./cs/routes'));    // Sucesso do Cliente — radar de SLA
 app.use('/api/analistas', require('./routes/analistas'));  // lista de analistas p/ dropdowns

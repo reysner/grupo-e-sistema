@@ -7,7 +7,7 @@
   <title>Painel do Sucesso do Cliente</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/cs-painel.css?v=3">
+  <link rel="stylesheet" href="/css/cs-painel.css?v=4">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
@@ -42,6 +42,7 @@
     </div>
     <nav class="gp-nav" id="nav">
       <button class="gp-nav-item active" data-sec="visao"><span class="gp-nav-icon">🏠</span>Visão Geral</button>
+      <button class="gp-nav-item" data-sec="analise"><span class="gp-nav-icon">🧠</span>Análise Inteligente</button>
       <div class="gp-nav-divider">Indicadores</div>
       <button class="gp-nav-item" data-sec="risco"><span class="gp-nav-icon">🎯</span>Gestão da Permanência<span class="gp-nav-badge" id="badge-risco"></span></button>
       <button class="gp-nav-item" data-sec="churn"><span class="gp-nav-icon">📉</span>Churn<span class="gp-nav-badge gp-badge-ok" id="badge-churn"></span></button>
@@ -84,6 +85,7 @@
     </div>
 
     <section class="gp-section ativa" id="sec-visao"></section>
+    <section class="gp-section" id="sec-analise"></section>
     <section class="gp-section" id="sec-risco"></section>
     <section class="gp-section" id="sec-churn"></section>
     <section class="gp-section" id="sec-categorias"></section>
@@ -107,6 +109,6 @@
   </div>
 </div>
 
-<script src="/js/cs-painel.js?v=6"></script>
+<script src="/js/cs-painel.js?v=8"></script>
 </body>
 </html>
