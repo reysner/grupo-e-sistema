@@ -132,7 +132,7 @@
     var logo = document.querySelector('.gp-sidebar-logo'), cab = document.querySelector('.gp-header'); if (!logo || !cab) return;
     logo.style.minHeight = ''; cab.style.minHeight = '';
     if (window.innerWidth <= 900) return;
-    var base = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--alt-topo')) || 132;
+    var base = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--alt-topo')) || 124;
     var h = Math.max(base, logo.offsetHeight, cab.offsetHeight);
     logo.style.minHeight = h + 'px'; cab.style.minHeight = h + 'px';
   }
