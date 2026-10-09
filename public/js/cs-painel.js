@@ -390,8 +390,9 @@
   function celNum(v) { return v == null ? '<span class="cinza">—</span>' : v === 0 ? '0' : String(v).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
   // Só CNPJ tem risco/ficha; CPF, CAEPF e CNO (só na Análise Inteligente) mostram o nome simples e o tipo do documento.
   function nomeAnalise(c) {
-    if (c.risco) return nomeLink(c);
-    return esc(c.nome) + ' <span class="pill" style="color:#6b7280;border-color:#6b728055;background:#6b728014" title="Documento do tipo ' + esc(c.tipo_doc) + ' (fora do risco, que considera só CNPJ)">' + esc(c.tipo_doc) + '</span><div class="sub">' + esc(c.cnpj || '') + '</div>';
+    // o CNPJ/CPF/CNO já tem coluna própria na tabela: não repetir embaixo do nome
+    if (c.risco) return '<button class="link" data-ficha="' + esc(c.id) + '">' + esc(c.nome) + '</button>' + seloSuspenso(c.risco);
+    return esc(c.nome) + ' <span class="pill" style="color:#6b7280;border-color:#6b728055;background:#6b728014" title="Documento do tipo ' + esc(c.tipo_doc) + ' (fora do risco, que considera só CNPJ)">' + esc(c.tipo_doc) + '</span>';
   }
   function linhaAnalise(c, filho) {
     var q = c.questor;
@@ -436,7 +437,7 @@
         '<span class="filter-label">Documento</span><select class="gp-select" id="a-tipo"><option value=""' + (!f.tipo ? ' selected' : '') + '>Todos (' + (contTipo.CNPJ + contTipo.CPF + contTipo.CAEPF + contTipo.CNO) + ')</option>' + ['CNPJ', 'CPF', 'CAEPF', 'CNO'].map(function (k) { return '<option value="' + k + '"' + (f.tipo === k ? ' selected' : '') + '>Só ' + k + ' (' + contTipo[k] + ')</option>'; }).join('') + '</select>' +
         '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="a-grupos"' + (f.soGrupos ? ' checked' : '') + '> só grupos e matriz com filiais</label></div>' +
         '<div class="card-sub">' + ents.length + ' linha(s) · ordem: faturamento, do maior para o menor</div>' +
-        (ents.length ? '<div class="table-wrap"><table><thead><tr><th>Razão social</th><th class="c">CNPJ</th><th class="c">Regime tributário</th><th class="c">Funcionários</th><th class="c">Honorários</th><th class="c">Faturamento (12 meses)</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nada encontrado neste filtro.</div>') +
+        (ents.length ? '<div class="table-wrap"><table><thead><tr><th>Razão social</th><th class="c">Documento</th><th class="c">Regime tributário</th><th class="c">Funcionários</th><th class="c">Honorários</th><th class="c">Faturamento (12 meses)</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nada encontrado neste filtro.</div>') +
         (ents.length > 200 ? '<div class="vazio">Mostrando 200 de ' + ents.length + '. Use a busca ou o filtro de grupos.</div>' : '') + '</div>';
     Array.prototype.forEach.call(document.querySelectorAll('#sec-analise [data-abre]'), function (bt) { bt.addEventListener('click', function () { var k = bt.getAttribute('data-abre'); estado.abertosAnalise[k] = !estado.abertosAnalise[k]; desenharAnalise(); }); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-analise [data-grupo]'), function (bt) { bt.addEventListener('click', function () { abrirFichaGrupo(bt.getAttribute('data-grupo')); }); });
