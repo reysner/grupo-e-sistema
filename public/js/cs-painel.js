@@ -448,6 +448,7 @@
   // Ficha do grupo (mesmo modelo da ficha do cliente): números consolidados e, abaixo, cada empresa com os seus.
   function abrirFichaGrupo(chave) {
     var e = estado.entidadesAnalise && estado.entidadesAnalise[chave]; if (!e) return;
+    document.querySelector('.ficha-box').classList.add('larga');   // janela larga: a tabela das empresas cabe sem rolagem
     $('ficha').style.display = 'flex';
     $('ficha-nome').textContent = e.tipo === 'grupo' ? 'Grupo ' + e.nome : e.nome + ' e filiais';
     $('ficha-sub').textContent = e.itens.length + ' empresas · ' + (e.tipo === 'grupo' ? 'grupo de empresas (Gestão de Clientes)' : 'matriz e filiais (mesma raiz de CNPJ)');
@@ -485,6 +486,7 @@
   function bloco(t, v, det, cor) { return '<div class="bloco"><div class="t">' + t + '</div><div class="v"' + (cor ? ' style="color:' + cor + '"' : '') + '>' + v + '</div><div class="d">' + det + '</div></div>'; }
 
   async function abrirFicha(id) {
+    document.querySelector('.ficha-box').classList.remove('larga');
     $('ficha').style.display = 'flex';
     $('ficha-nome').textContent = 'Carregando…'; $('ficha-sub').textContent = ''; $('ficha-passo').style.display = 'none'; $('ficha-corpo').innerHTML = '';
     try {
@@ -553,7 +555,7 @@
       '<div class="ficha-sec">Operacional (entregas do Acessórias)</div>' + oper;
   }
 
-  function fecharFicha() { $('ficha').style.display = 'none'; }
+  function fecharFicha() { $('ficha').style.display = 'none'; document.querySelector('.ficha-box').classList.remove('larga'); }
 
   // ── eventos ──────────────────────────────────────────────────────────────────
   document.addEventListener('click', function (ev) {
