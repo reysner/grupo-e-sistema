@@ -53,7 +53,10 @@ async function gravar(corpo) {
   try {
     await client.query('BEGIN');
     await client.query(`DELETE FROM questor_cliente_dados`);
-    for (const [doc, v] of itens) await client.query(`INSERT INTO questor_cliente_dados (doc, faturamento_12m, funcionarios, aviso) VALUES ($1,$2,$3,$4)`, [doc, v.faturamento, v.funcionarios, v.aviso]);
+    // uma única instrução com unnest (antes eram ~600 INSERTs um a um: ~108 s pelo pooler); 593 linhas gravam em poucos segundos
+    const docs = [...itens.keys()], vs = [...itens.values()];
+    await client.query(`INSERT INTO questor_cliente_dados (doc, faturamento_12m, funcionarios, aviso) SELECT * FROM unnest($1::text[], $2::numeric[], $3::int[], $4::text[])`,
+      [docs, vs.map((v) => v.faturamento), vs.map((v) => v.funcionarios), vs.map((v) => v.aviso)]);
     await client.query(`INSERT INTO cs_config (chave, valor, updated_at) VALUES ($1,$2,NOW()) ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`, [CHAVE_PERIODO, JSON.stringify(periodo)]);
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }

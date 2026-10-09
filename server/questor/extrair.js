@@ -81,7 +81,7 @@ async function main() {
   if (arg('arquivo')) fs.writeFileSync(arg('arquivo'), JSON.stringify(corpo));
   if (simular) { console.log('(simulação — nada enviado)'); return; }
 
-  const r = await fetch((process.env.APP_URL || '').replace(/\/$/, '') + '/api/cs/questor', { method: 'POST', headers: { 'X-Sync-Token': process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC_TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(corpo), signal: AbortSignal.timeout(120000) });
+  const r = await fetch((process.env.APP_URL || '').replace(/\/$/, '') + '/api/cs/questor', { method: 'POST', headers: { 'X-Sync-Token': process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC_TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(corpo), signal: AbortSignal.timeout(420000) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(`envio recusado (${r.status}) ${j.error || ''}`);
   console.log('Enviado ao Dashboard:', JSON.stringify(j));
