@@ -49,25 +49,29 @@ async function main() {
   for (const l of fn.linhas) { if (/^s/i.test(String(l[jf.dem]))) continue; const k = `${l[jf.emp]}|${l[jf.est]}`; porEstab.set(k, (porEstab.get(k) || 0) + 1); }
   console.log(`contratos de empregados ativos: ${[...porEstab.values()].reduce((a, b) => a + b, 0)} em ${porEstab.size} estabelecimentos`);
 
-  // faturamento: todas as empresas de uma vez (traz as matrizes) + relatório individual das filiais dos clientes ativos
+  // Faturamento: UM relatório por estabelecimento dos clientes ativos. O relatório de TODAS as empresas de uma vez esgota a memória do nWeb
+  // ("Insufficient memory for this operation", 09/10/2026), e por estabelecimento também resolve matriz, filial, CPF e CNO do mesmo jeito.
   const base = { PMODELO: '1', PTIPOFATURAMENTO: '501', PCOMPETINICIAL: p.competIni, PCOMPETFINAL: p.competFim, PASSINCONT: '0', PGERARASSINATURACONTADOR: '1', PASSINSOCIO: '3', PGERARASSINATURASOCIO: '1' };
-  const relTodas = await nweb.relatorioCsv('nFisRRFaturamento', base);
-  const todas = parseFaturamento(relTodas.csv);
-  const avisos = avisosPorEstab(relTodas.avisos);
-  console.log(`avisos do Questor (natureza com movimentação sem configuração de faturamento): ${relTodas.avisos.length} em ${avisos.size} estabelecimentos`);
-  const fatPorCnpj = new Map(); let invalidas = 0;
-  for (const e of todas) { if (entradaValida(e)) fatPorCnpj.set(e.cnpj, e.total); else if (e.cnpj) invalidas++; }
-  console.log(`relatório de todas: ${todas.length} páginas | válidas por CNPJ: ${fatPorCnpj.size} | inválidas: ${invalidas}`);
-  if (todas.length < 500 || fatPorCnpj.size < 0.6 * todas.length) throw new Error('relatório de todas veio incompleto — nada será enviado');
-
-  const faltam = presentes.filter((d) => !fatPorCnpj.has(d));
-  let lidasFilial = 0;
-  for (const d of faltam) {
-    const m = noQuestor.get(d);
-    try { const r1 = await nweb.relatorioCsv('nFisRRFaturamento', { ...base, PCODIGOEMPRESA: m.emp, PCODIGOESTAB: m.est }); avisosPorEstab(r1.avisos).forEach((v, k) => avisos.set(k, v)); const e = parseFaturamento(r1.csv).find((x) => x.cnpj === d && entradaValida(x)); if (e) { fatPorCnpj.set(d, e.total); lidasFilial++; } }
-    catch (err) { console.warn(`  ${d}: relatório individual falhou (${err.message})`); }
+  const fatPorCnpj = new Map(), avisos = new Map(); let semLeitura = 0; const inicio = Date.now();
+  for (let i = 0; i < presentes.length; i++) {
+    const d = presentes[i], m = noQuestor.get(d); let lido = false;
+    for (let tentativa = 1; tentativa <= 2 && !lido; tentativa++) {
+      try {
+        const r1 = await nweb.relatorioCsv('nFisRRFaturamento', { ...base, PCODIGOEMPRESA: m.emp, PCODIGOESTAB: m.est });
+        if (/Insufficient memory/i.test(r1.mensagem || '')) throw new Error('SEM_MEMORIA');
+        avisosPorEstab(r1.avisos).forEach((v, k) => avisos.set(k, v));
+        const e = parseFaturamento(r1.csv).find((x) => x.cnpj === d && entradaValida(x));
+        if (e) { fatPorCnpj.set(d, e.total); lido = true; }
+      } catch (err) {
+        if (err.message === 'SEM_MEMORIA') throw new Error('o nWeb ficou sem memória para gerar o relatório. Feche e abra o nWeb de novo no servidor da Voecloud (e logue) e rode outra vez. Nada foi enviado.');
+        if (tentativa === 2) console.warn(`  ${d}: relatório falhou (${err.message})`);
+      }
+    }
+    if (!lido) semLeitura++;
+    if (semLeitura > Math.max(10, 0.1 * presentes.length)) throw new Error(`muitos estabelecimentos sem leitura (${semLeitura}) — nada será enviado`);
+    if ((i + 1) % 100 === 0) console.log(`  faturamento: ${i + 1}/${presentes.length} | ${Math.round((Date.now() - inicio) / 60000)} min`);
   }
-  console.log(`relatórios individuais (filiais/ausentes): ${faltam.length} tentados, ${lidasFilial} lidos`);
+  console.log(`relatórios por estabelecimento: ${presentes.length} | lidos: ${fatPorCnpj.size} | sem leitura: ${semLeitura} | avisos de configuração: ${avisos.size} estabelecimentos`);
 
   const itens = presentes.map((d) => { const m = noQuestor.get(d); const av = avisos.get(`${m.emp}|${m.est}`); return { cnpj: d, faturamento: fatPorCnpj.has(d) ? fatPorCnpj.get(d) : null, funcionarios: porEstab.get(`${m.emp}|${m.est}`) || 0, aviso: av ? `Natureza(s) com movimentação sem configuração de faturamento no Questor (${av.join(', ')}): o faturamento pode estar incompleto.` : null }; });
   const comFat = itens.filter((i) => i.faturamento != null).length, zeros = itens.filter((i) => i.faturamento === 0).length;

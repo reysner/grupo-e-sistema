@@ -44,7 +44,7 @@ async function consultar(acao, filtro = {}) {
 async function relatorioCsv(acao, parametros) {
   const j = await chamar(`/TnWebDMRelatorio/Executar?_AActionName=${acao}&_ABase64=False&_ATipoRetorno=nrwexCSV`, parametros);
   // ErrosRelatorio traz AVISOS do Questor por empresa (ex.: natureza com movimentação sem configuração de faturamento); o relatório sai completo mesmo assim.
-  return { csv: j.Data || '', avisos: (j.ErrosRelatorio || []).map((x) => (typeof x === 'string' ? x : JSON.stringify(x))) };
+  return { mensagem: String(j.Message || ''), csv: j.Data || '', avisos: (j.ErrosRelatorio || []).map((x) => (typeof x === 'string' ? x : JSON.stringify(x))) };
 }
 
 module.exports = { chamar, testarNweb, consultar, relatorioCsv, BASE };
