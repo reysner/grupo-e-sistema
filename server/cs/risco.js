@@ -171,10 +171,11 @@ async function calcularTodos({ detalhes = false } = {}) {
       operacional: calc.termometroOperacional({ temDado: !!e, total: e ? e.total : 0, atrasadasEntregues: e ? e.atrasadas_entregues : 0, vencidasPendentes: e ? e.vencidas_pendentes : 0, suspenso }),
     };
     const r = calc.calcularRisco(termometros, config.pesos, config.cortes);
-    resumo[r.nivel]++;
-    if (suspenso) totalSuspensos++;
+    // Cliente SUSPENSO (contrato suspenso no Omie) NÃO conta em risco (Reysner, 09/10/2026): fica com nível "Suspenso", sem pontos, fora de Alto/Médio/Baixo,
+    // das contagens e da foto dos laudos. Os termômetros continuam calculados só para a ficha mostrar o que aconteceu.
+    if (suspenso) totalSuspensos++; else resumo[r.nivel]++;
     data[c.id] = {
-      pontos: r.pontos, nivel: r.nivel, parcial: r.parcial, sem_dado: r.sem_dado, alerta: r.alerta, suspenso,
+      pontos: suspenso ? null : r.pontos, nivel: suspenso ? 'Suspenso' : r.nivel, parcial: r.parcial, sem_dado: r.sem_dado, alerta: suspenso ? false : r.alerta, suspenso,
       motivos: suspenso ? ['Contrato suspenso no Omie', ...r.motivos] : r.motivos,
       termometros: Object.fromEntries(calc.TERMOMETROS.map((t) => [t, termometros[t].pontos])),
     };

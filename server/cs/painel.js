@@ -122,12 +122,12 @@ async function montarBase(forcar, ttl = TTL_MS) {
   }
   outros.sort((a, b) => a.nome.localeCompare(b.nome));
 
-  const resumoRisco = { Alto: 0, 'Médio': 0, Baixo: 0, Incompleto: 0 };
+  const resumoRisco = { Alto: 0, 'Médio': 0, Baixo: 0, Incompleto: 0, Suspenso: 0 };   // Suspenso não conta em risco (aparece à parte)
   const resumoCat = { Diamante: 0, Ouro: 0, Prata: 0, Bronze: 0, sem_categoria: 0 };
   for (const c of lista) { resumoRisco[c.risco.nivel]++; if (c.categoria) resumoCat[c.categoria]++; else resumoCat.sem_categoria++; }
   const termometros = {};
   for (const t of ['financeiro', 'atendimento', 'operacional']) {
-    const com = lista.filter((c) => c.risco.termometros[t] != null);
+    const com = lista.filter((c) => c.risco.termometros[t] != null && !c.risco.suspenso);   // suspensos não entram nas estatísticas de risco
     termometros[t] = { com_dado: com.length, sem_dado: lista.length - com.length, em_alerta: com.filter((c) => c.risco.termometros[t] >= (r.config.cortes.alto)).length, medio_ou_mais: com.filter((c) => c.risco.termometros[t] >= r.config.cortes.medio).length };
   }
 
