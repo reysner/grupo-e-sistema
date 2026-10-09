@@ -30,7 +30,8 @@ const veValores = (role) => role === 'administrador';
 const OCULTO = 'R$ ••••';
 function mascararMotivo(m) { return m ? String(m).replace(/(honorário |empresas: )R\$ [\d.]+,\d{2}/g, '$1' + OCULTO) : m; }
 function mascararBase(base) {
-  return { ...base, valores_ocultos: true, clientes: base.clientes.map((c) => ({ ...c, honorario: null, categoria_motivo: mascararMotivo(c.categoria_motivo), questor: c.questor ? { ...c.questor, faturamento: null } : null })) };
+  const oculta = (c) => ({ ...c, honorario: null, categoria_motivo: mascararMotivo(c.categoria_motivo), questor: c.questor ? { ...c.questor, faturamento: null } : null });
+  return { ...base, valores_ocultos: true, clientes: base.clientes.map(oculta), clientes_outros: (base.clientes_outros || []).map(oculta) };
 }
 function mascararFicha(ficha) {
   return { ...ficha, cliente: { ...ficha.cliente, honorario: null, categoria_motivo: mascararMotivo(ficha.cliente.categoria_motivo), questor: ficha.cliente.questor ? { ...ficha.cliente.questor, faturamento: null } : null }, valores_ocultos: true,
@@ -108,6 +109,19 @@ async function montarBase(forcar, ttl = TTL_MS) {
   }
   lista.sort((a, b) => (b.risco.pontos == null ? -1 : b.risco.pontos) - (a.risco.pontos == null ? -1 : a.risco.pontos) || a.nome.localeCompare(b.nome));
 
+  // Só a Análise Inteligente lista também CPF, CAEPF e CNO (pedido do Reysner, 09/10/2026, com filtro por tipo de documento);
+  // o resto do painel (risco, churn, categorias) continua só CNPJ. Esses clientes não têm termômetros de risco.
+  lista.forEach((c) => { c.tipo_doc = 'CNPJ'; });
+  const outros = [];
+  for (const c of clientes) {
+    const tipo = churn.tipoDocumento(c.cnpj);
+    if (!tipo || tipo === 'CNPJ') continue;                      // sem documento fica de fora
+    const ct = cat.data[c.id] || {}; const d = soDigitos(c.cnpj);
+    outros.push({ id: c.id, nome: c.nome, cnpj: c.cnpj, tipo_doc: tipo, grupo: c.grupo || null, unidade: c.unidade || null, entrada: c.entrada,
+      categoria: ct.categoria || null, honorario: ct.honorario != null ? ct.honorario : null, questor: q.dados.has(d) ? q.dados.get(d) : null, regime: regimes.get(d) || null });
+  }
+  outros.sort((a, b) => a.nome.localeCompare(b.nome));
+
   const resumoRisco = { Alto: 0, 'Médio': 0, Baixo: 0, Incompleto: 0 };
   const resumoCat = { Diamante: 0, Ouro: 0, Prata: 0, Bronze: 0, sem_categoria: 0 };
   for (const c of lista) { resumoRisco[c.risco.nivel]++; if (c.categoria) resumoCat[c.categoria]++; else resumoCat.sem_categoria++; }
@@ -126,6 +140,7 @@ async function montarBase(forcar, ttl = TTL_MS) {
       risco: resumoRisco, suspensos: lista.filter((c) => c.risco.suspenso).length, suspensos_lidos_em: suspLidos && suspLidos.d ? suspLidos.d : null, questor_periodo: q.periodo, questor_lido_em: q.lido_em, categorias: resumoCat, termometros, operacional_lido: r.operacional_lido,
     },
     clientes: lista,
+    clientes_outros: outros,
   };
   _cache = { t: Date.now(), v };
   return v;

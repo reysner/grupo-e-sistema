@@ -86,13 +86,13 @@ const token = (role, extra = {}) => auth.signAccess({ id: 'u-' + role, name: 'Te
 
   await teste('Questor: carga validada (só CNPJ, período obrigatório) e faturamento oculto para o perfil Usuário', async () => {
     const q = require('./questorDados');
-    const ok = q.validarCarga({ periodo: { ini: '2025-09', fim: '2026-08' }, itens: [{ cnpj: '45.459.079/0001-51', faturamento: 218352.4, funcionarios: 0 }, { cnpj: '069.695.846-58', faturamento: 1 }, { cnpj: '11.111.111/0001-11', funcionarios: 7 }] });
-    assert.strictEqual(ok.itens.size, 2);                                   // CPF fica de fora
+    const ok = q.validarCarga({ periodo: { ini: '2025-09', fim: '2026-08' }, itens: [{ cnpj: '45.459.079/0001-51', faturamento: 218352.4, funcionarios: 0 }, { cnpj: '069.695.846-58', faturamento: 1 }, { cnpj: '123', funcionarios: 1 }, { cnpj: '11.111.111/0001-11', funcionarios: 7 }] });
+    assert.strictEqual(ok.itens.size, 3);                                   // CNPJ, CNPJ e CPF entram; documento com tamanho inválido fica de fora
     assert.strictEqual(ok.itens.get('45459079000151').funcionarios, 0);     // 0 funcionários é um valor válido (não "sem dado")
     assert.strictEqual(ok.itens.get('11111111000111').faturamento, null);
     assert.throws(() => q.validarCarga({ itens: [{ cnpj: '45.459.079/0001-51' }] }), /periodo/);
     assert.throws(() => q.validarCarga({ periodo: { ini: '2026-08', fim: '2025-09' }, itens: [{ cnpj: '45.459.079/0001-51' }] }), /periodo/);
-    assert.throws(() => q.validarCarga({ periodo: { ini: '2025-09', fim: '2026-08' }, itens: [{ cnpj: '069.695.846-58' }] }), /Nenhum CNPJ/);
+    assert.throws(() => q.validarCarga({ periodo: { ini: '2025-09', fim: '2026-08' }, itens: [{ cnpj: '123' }] }), /Nenhum documento/);
     assert.throws(() => q.validarCarga({ periodo: { ini: '2025-09', fim: '2026-08' }, itens: [{ cnpj: '45.459.079/0001-51', funcionarios: -1 }] }), /inválido/);
     const base = { clientes: [{ id: 'a', honorario: 1, categoria_motivo: '', questor: { faturamento: 218352.4, funcionarios: 12 } }, { id: 'b', honorario: 1, categoria_motivo: '', questor: null }] };
     const m = painel.mascararBase(base);

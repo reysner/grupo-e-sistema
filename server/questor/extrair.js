@@ -30,7 +30,7 @@ async function main() {
 
   // clientes ativos do Dashboard (só CNPJ)
   const pool = new Pool({ connectionString: (process.env.DATABASE_URL || '').trim(), ssl: { rejectUnauthorized: false }, max: 1 });
-  const ativos = [...new Set((await pool.query(`SELECT regexp_replace(cnpj, '\\D', '', 'g') AS d FROM clientes WHERE status = 'ativo'`)).rows.map((r) => r.d).filter((d) => d.length === 14))];
+  const ativos = [...new Set((await pool.query(`SELECT regexp_replace(cnpj, '\\D', '', 'g') AS d FROM clientes WHERE status = 'ativo'`)).rows.map((r) => r.d).filter((d) => [11, 12, 14].includes(d.length)))];
   await pool.end();
 
   // CNPJ -> empresa/filial do Questor
@@ -39,7 +39,7 @@ async function main() {
   if (Object.values(ie).some((i) => i < 0)) throw new Error('colunas inesperadas em TnGemDCEstabInscrFederal');
   const noQuestor = new Map(); est.linhas.forEach((l) => noQuestor.set(dig(l[ie.doc]), { emp: String(l[ie.emp]), est: String(l[ie.est]) }));
   const presentes = ativos.filter((d) => noQuestor.has(d));
-  console.log(`clientes ativos (CNPJ): ${ativos.length} | existem no Questor: ${presentes.length}`);
+  console.log(`clientes ativos (CNPJ, CPF, CNO e CAEPF): ${ativos.length} | existem no Questor: ${presentes.length}`);
 
   // funcionários ativos por estabelecimento (consulta já traz só ativos; conferimos DEMITIDO)
   const fn = await nweb.consultar('TnFpaDCFuncContrato');

@@ -10,7 +10,7 @@ function parseFaturamento(csv) {
     const cab = /^"(\d+)\s+(.+?)";"\d{2}\/\d{2}\/\d{4}/.exec(l);
     if (cab) { atual = { codigo: cab[1], nome: cab[2], cnpj: null, periodo: null, meses: [], total: null }; empresas.push(atual); continue; }
     if (!atual) continue;
-    const doc = /^"CNPJ: ([^"]+)";"Período: ([^"]+)"/.exec(l); if (doc) { atual.cnpj = dig(doc[1]); atual.periodo = doc[2]; continue; }
+    const doc = /^"(?:CNPJ|CPF|CNO|CAEPF)[^:"]*: ([^"]+)";"Período: ([^"]+)"/.exec(l); if (doc) { atual.cnpj = dig(doc[1]); atual.periodo = doc[2]; continue; }
     const mes = /^"([A-ZÇÃÉÊ]+)";(\d{4});(-?[\d.,]+)$/.exec(l); if (mes) { atual.meses.push({ mes: mes[1], ano: +mes[2], valor: num(mes[3]) }); continue; }
     const tot = /^"TOTAL";;(-?[\d.,]+)$/.exec(l); if (tot) atual.total = num(tot[1]);
   }

@@ -35,13 +35,13 @@ function validarCarga(corpo) {
   const vistos = new Map();
   for (const x of corpo.itens) {
     const doc = soDigitos(x && x.cnpj);
-    if (doc.length !== 14) continue;                                  // só CNPJ
+    if (![11, 12, 14].includes(doc.length)) continue;                 // CPF (11), CNO (12), CNPJ e CAEPF (14); a Análise Inteligente lista todos os tipos
     const fat = x.faturamento == null ? null : Number(x.faturamento);
     const fun = x.funcionarios == null ? null : Number(x.funcionarios);
     if ((fat != null && !Number.isFinite(fat)) || (fun != null && (!Number.isInteger(fun) || fun < 0))) throw new Error(`Valor inválido para o CNPJ ${doc}.`);
     vistos.set(doc, { faturamento: fat, funcionarios: fun });
   }
-  if (!vistos.size) throw new Error('Nenhum CNPJ válido (14 dígitos) na carga.');
+  if (!vistos.size) throw new Error('Nenhum documento válido (CPF, CNO, CNPJ ou CAEPF) na carga.');
   return { periodo: { ini: p.ini, fim: p.fim }, itens: vistos };
 }
 
