@@ -233,3 +233,9 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 .gp-header-sub{max-width:none;}
 .gp-header-right{flex-shrink:0;flex-wrap:nowrap;}
 @media (max-width:1180px){.gp-header{flex-wrap:wrap;}.gp-header-right{flex-wrap:wrap;flex-shrink:1;}}
+
+/* Análise Inteligente: colunas em larguras proporcionais (a razão social não estica mais deixando um vazio até as demais). */
+.tab-analise{table-layout:fixed;}
+.tab-analise td:first-child{min-width:0 !important;padding-right:20px;}
+.tab-analise td,.tab-analise th{padding-left:10px;padding-right:10px;}
+.tab-analise th.c,.tab-analise td.c{text-align:center;}
