@@ -6012,6 +6012,7 @@ async function verificarNotificacoesLegalizacao() {
        FROM legalizacao_alvaras a
        JOIN clientes c ON c.id::text = a.cliente_id
       WHERE a.data_vencimento IS NOT NULL
+        AND c.status = 'ativo'
         AND a.data_vencimento <= CURRENT_DATE + (CASE WHEN a.tipo = 'sanitario' THEN ${LEGAL_DIAS_ALERTA_SANITARIO} ELSE ${LEGAL_DIAS_ALERTA_FUNCIONAMENTO} END) * INTERVAL '1 day'
         AND a.notificado_vencimento_em IS NULL
         AND a.desativado_em IS NULL`
@@ -6031,20 +6032,21 @@ async function verificarNotificacoesLegalizacao() {
   }
 
   const { rows: certs } = await pool.query(
-    `SELECT id, titular_nome, data_vencimento FROM legalizacao_certificados
-      WHERE data_vencimento IS NOT NULL
-        AND data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA_CERTIFICADO} days'
-        AND notificado_vencimento_em IS NULL
-        AND desativado_em IS NULL`
+    `SELECT ce.id, ce.cliente_id, ce.titular_nome, ce.data_vencimento FROM legalizacao_certificados ce
+      WHERE ce.data_vencimento IS NOT NULL
+        AND ce.data_vencimento <= CURRENT_DATE + INTERVAL '${LEGAL_DIAS_ALERTA_CERTIFICADO} days'
+        AND ce.notificado_vencimento_em IS NULL
+        AND ce.desativado_em IS NULL
+        AND NOT (ce.tipo = 'pj' AND EXISTS (SELECT 1 FROM clientes c WHERE c.id::text = ce.cliente_id AND c.status <> 'ativo'))`
   );
   for (const c of certs) {
     const venceu = new Date(c.data_vencimento) < new Date();
     const dataFmt = new Date(c.data_vencimento).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
     await pool.query(
-      `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo)
-       VALUES ('legalizacao_vencimento', $1, $2, 'legalizacao')`,
+      `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id)
+       VALUES ('legalizacao_vencimento', $1, $2, 'legalizacao', $3)`,
       [`Certificado Digital ${venceu ? 'vencido' : 'vencendo'}`,
-       `${c.titular_nome} — certificado digital ${venceu ? 'venceu em' : 'vence em'} ${dataFmt}.`]
+       `${c.titular_nome} — certificado digital ${venceu ? 'venceu em' : 'vence em'} ${dataFmt}.`, c.cliente_id || null]
     );
     await pool.query(`UPDATE legalizacao_certificados SET notificado_vencimento_em = NOW() WHERE id = $1`, [c.id]);
     criadas++;
@@ -6090,9 +6092,9 @@ router.get('/legalizacao/notificacoes', async (req, res) => {
     const visto = v[0] ? v[0].visto_em : new Date(Date.now() - 7 * 24 * 3600 * 1000);
     const { rows } = await pool.query(
       `SELECT id, titulo, mensagem, created_at, (created_at > $1) AS nova
-         FROM notificacoes WHERE tipo = 'legalizacao_vencimento' ORDER BY created_at DESC LIMIT 60`, [visto]);
+         FROM notificacoes WHERE tipo = 'legalizacao_vencimento' AND NOT EXISTS (SELECT 1 FROM clientes ci WHERE ci.status <> 'ativo' AND (ci.id::text = notificacoes.cliente_id::text OR left(notificacoes.mensagem, length(ci.nome_empresa) + 3) = ci.nome_empresa || ' — ')) ORDER BY created_at DESC LIMIT 60`, [visto]);
     const { rows: c } = await pool.query(
-      `SELECT COUNT(*)::int AS n FROM notificacoes WHERE tipo = 'legalizacao_vencimento' AND created_at > $1`, [visto]);
+      `SELECT COUNT(*)::int AS n FROM notificacoes WHERE tipo = 'legalizacao_vencimento' AND created_at > $1 AND NOT EXISTS (SELECT 1 FROM clientes ci WHERE ci.status <> 'ativo' AND (ci.id::text = notificacoes.cliente_id::text OR left(notificacoes.mensagem, length(ci.nome_empresa) + 3) = ci.nome_empresa || ' — '))`, [visto]);
     res.json({ data: rows, naoLidas: c[0].n });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar notificações.' }); }
 });
