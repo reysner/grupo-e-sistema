@@ -25,7 +25,7 @@
     qualidade: ['Qualidade dos Dados', 'De onde vem cada indicador e o que ainda está sem dado.'],
   };
 
-  var estado = { dados: null, periodoChave: 'ultimos_12_meses', churnLivre: null, secao: 'visao', graficos: {}, filtroRisco: { busca: '', nivel: 'AltoMedio', cat: '', term: '', soAtend: false, todos: false }, abaChurn: 'transferida', catSel: '', filtroAnalise: { busca: '', soGrupos: false, tipo: '' }, abertosAnalise: {} };
+  var estado = { dados: null, periodoChave: 'ultimos_12_meses', churnLivre: null, secao: 'visao', graficos: {}, filtroRisco: { busca: '', nivel: 'AltoMedio', cat: '', term: '', soAtend: false, todos: false }, abaChurn: 'transferida', catSel: '', filtroAnalise: { busca: '', soGrupos: false, tipo: '', pag: 1 }, abertosAnalise: {} };
 
   // ── utilidades ───────────────────────────────────────────────────────────────
   function $(id) { return document.getElementById(id); }
@@ -417,6 +417,22 @@
       '<td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td>' +
       '<td class="c" style="font-family:var(--mono)">' + celFat(q) + '</td></tr>';
   }
+  var ANALISE_POR_PAGINA = 100;
+  // Paginação no rodapé da tabela: "Total: N registros  [1] [2] [3] ›" (modelo pedido pelo Reysner, 11/10/2026). Mostra no máximo 7 botões.
+  function paginacaoHtml(total, pag, porPag) {
+    var paginas = Math.max(1, Math.ceil(total / porPag)), p = [], i;
+    if (paginas <= 7) { for (i = 1; i <= paginas; i++) p.push(i); }
+    else {
+      p.push(1); if (pag > 3) p.push('…');
+      for (i = Math.max(2, pag - 1); i <= Math.min(paginas - 1, pag + 1); i++) p.push(i);
+      if (pag < paginas - 2) p.push('…'); p.push(paginas);
+    }
+    var bt = function (n, rot, ativo, titulo) { return '<button type="button" class="pg-btn' + (ativo ? ' ativo' : '') + '" data-pag="' + n + '"' + (ativo ? ' aria-current="page"' : '') + ' title="' + titulo + '">' + rot + '</button>'; };
+    return '<nav class="paginacao" aria-label="Páginas da lista"><span class="pg-total">Total: ' + String(total).replace(/B(?=(d{3})+(?!d))/g, '.') + ' registros</span>' +
+      (paginas > 1 ? (pag > 1 ? bt(pag - 1, '‹', false, 'Página anterior') : '') +
+        p.map(function (n) { return n === '…' ? '<span class="pg-gap">…</span>' : bt(n, n, n === pag, 'Página ' + n); }).join('') +
+        (pag < paginas ? bt(pag + 1, '›', false, 'Próxima página') : '') : '') + '</nav>';
+  }
   function desenharAnalise() {
     var d = estado.dados, t = d.totais, f = estado.filtroAnalise, b = f.busca.trim().toLowerCase();
     var semQuestor = !d.totais.questor_lido_em && !d.clientes.concat(d.clientes_outros || []).some(function (c) { return c.questor; });
@@ -432,7 +448,8 @@
     ents.sort(function (a, c) { return (c.faturamento == null ? -1 : c.faturamento) - (a.faturamento == null ? -1 : a.faturamento) || a.nome.localeCompare(c.nome); });
     var totFat = somar(ents, function (e) { return e.faturamento; }), totHon = somar(ents, function (e) { return e.honorario; }), totFun = somar(ents, function (e) { return e.funcionarios; });
     var nGrupos = ents.filter(function (e) { return !e.unico; }).length;
-    var linhas = ents.slice(0, 200).map(function (e) {
+    var paginasAn = Math.max(1, Math.ceil(ents.length / ANALISE_POR_PAGINA)); if (f.pag > paginasAn) f.pag = paginasAn; if (f.pag < 1) f.pag = 1;
+    var linhas = ents.slice((f.pag - 1) * ANALISE_POR_PAGINA, f.pag * ANALISE_POR_PAGINA).map(function (e) {
       if (e.unico) return linhaAnalise(e.itens[0], false);
       var aberto = !!estado.abertosAnalise[e.chave];
       var rotulo = e.tipo === 'grupo' ? 'GRUPO ' + esc(e.nome.toUpperCase()) : esc(e.nome) + ' <span class="cinza">e filiais</span>';
@@ -453,12 +470,18 @@
         '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="a-grupos"' + (f.soGrupos ? ' checked' : '') + '> só grupos e matriz com filiais</label></div>' +
         '<div class="card-sub">' + ents.length + ' linha(s) · ordem: faturamento, do maior para o menor</div>' +
         (ents.length ? '<div class="table-wrap"><table class="tab-analise"><colgroup><col style="width:35%"><col style="width:15%"><col style="width:13%"><col style="width:17%"><col style="width:20%"></colgroup><thead><tr><th>Razão social</th><th class="c">Regime tributário</th><th class="c">Funcionários</th><th class="c">Honorários</th><th class="c">Faturamento (12 meses)</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nada encontrado neste filtro.</div>') +
-        (ents.length > 200 ? '<div class="vazio">Mostrando 200 de ' + ents.length + '. Use a busca ou o filtro de grupos.</div>' : '') + '</div>';
+        (ents.length ? paginacaoHtml(ents.length, f.pag, ANALISE_POR_PAGINA) : '') + '</div>';
     Array.prototype.forEach.call(document.querySelectorAll('#sec-analise [data-abre]'), function (bt) { bt.addEventListener('click', function () { var k = bt.getAttribute('data-abre'); estado.abertosAnalise[k] = !estado.abertosAnalise[k]; desenharAnalise(); }); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-analise [data-grupo]'), function (bt) { bt.addEventListener('click', function () { abrirFichaGrupo(bt.getAttribute('data-grupo')); }); });
-    var campo = $('a-busca'); if (campo) { campo.addEventListener('input', function () { f.busca = campo.value; var pos = campo.selectionStart; desenharAnalise(); var n = $('a-busca'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* sem seleção */ } }); }
-    var tp = $('a-tipo'); if (tp) tp.addEventListener('change', function () { f.tipo = tp.value; desenharAnalise(); });
-    var g = $('a-grupos'); if (g) g.addEventListener('change', function () { f.soGrupos = g.checked; desenharAnalise(); });
+    var campo = $('a-busca'); if (campo) { campo.addEventListener('input', function () { f.busca = campo.value; f.pag = 1; var pos = campo.selectionStart; desenharAnalise(); var n = $('a-busca'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* sem seleção */ } }); }
+    var tp = $('a-tipo'); if (tp) tp.addEventListener('change', function () { f.tipo = tp.value; f.pag = 1; desenharAnalise(); });
+    var g = $('a-grupos'); if (g) g.addEventListener('change', function () { f.soGrupos = g.checked; f.pag = 1; desenharAnalise(); });
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-analise [data-pag]'), function (bt) {
+      bt.addEventListener('click', function () {
+        f.pag = parseInt(bt.getAttribute('data-pag'), 10) || 1; desenharAnalise();
+        var topo = document.querySelector('#sec-analise .filter-group'); if (topo && topo.scrollIntoView) topo.scrollIntoView({ block: 'start' });
+      });
+    });
   }
 
   // Ficha do grupo (mesmo modelo da ficha do cliente): números consolidados e, abaixo, cada empresa com os seus.
