@@ -417,16 +417,12 @@
       '<td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td>' +
       '<td class="c" style="font-family:var(--mono)">' + celFat(q) + '</td></tr>';
   }
-  var ANALISE_POR_PAGINA = 100;
-  // Paginação no rodapé da tabela: "Total: N registros  [1] [2] [3] ›" (modelo pedido pelo Reysner, 11/10/2026). Mostra no máximo 7 botões.
+  var ANALISE_POR_PAGINA = 50;
+  // Paginação no rodapé da tabela: "Total: N registros  [1] [2] [3] ›" (modelo pedido pelo Reysner, 11/10/2026). Mostra só 3 números de página (a atual no meio) mais as setas.
   function paginacaoHtml(total, pag, porPag) {
     var paginas = Math.max(1, Math.ceil(total / porPag)), p = [], i;
-    if (paginas <= 7) { for (i = 1; i <= paginas; i++) p.push(i); }
-    else {
-      p.push(1); if (pag > 3) p.push('…');
-      for (i = Math.max(2, pag - 1); i <= Math.min(paginas - 1, pag + 1); i++) p.push(i);
-      if (pag < paginas - 2) p.push('…'); p.push(paginas);
-    }
+    var de = Math.max(1, Math.min(pag - 1, paginas - 2)), ate = Math.min(paginas, de + 2);
+    for (i = de; i <= ate; i++) p.push(i);
     var bt = function (n, rot, ativo, titulo) { return '<button type="button" class="pg-btn' + (ativo ? ' ativo' : '') + '" data-pag="' + n + '"' + (ativo ? ' aria-current="page"' : '') + ' title="' + titulo + '">' + rot + '</button>'; };
     return '<nav class="paginacao" aria-label="Páginas da lista"><span class="pg-total">Total: ' + String(total).replace(/B(?=(d{3})+(?!d))/g, '.') + ' registros</span>' +
       (paginas > 1 ? (pag > 1 ? bt(pag - 1, '‹', false, 'Página anterior') : '') +
