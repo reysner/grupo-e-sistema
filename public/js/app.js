@@ -1366,10 +1366,10 @@ const App = (() => {
         return `<tr style="${!ativo?'opacity:.55':''}">
           <td style="font-weight:600">${u.name}</td>
           <td style="font-size:12px;color:var(--gray-500)">${u.email}</td>
-          <td><span class="role-pill ${u.role==='administrador'?'admin':'user'}">${ROLE_LABEL[u.role] || u.role}</span>${u.acesso_minha_nota ? ' <span title="Também acessa Minha Nota" style="font-size:12px">🏆</span>' : ''}${u.acesso_legalizacao ? ' <span title="Também acessa Legalização" style="font-size:12px">📋</span>' : ''}${u.role==='contabil' && (u.regimes_atendidos||[]).length ? '<div style="font-size:10.5px;color:var(--gray-400);margin-top:2px">' + u.regimes_atendidos.join(' · ') + '</div>' : ''}</td>
+          <td><span class="role-pill ${u.role==='administrador'?'admin':'user'}">${ROLE_LABEL[u.role] || u.role}</span>${u.acesso_minha_nota ? ' <span title="Também acessa Minha Nota" style="font-size:12px">🏆</span>' : ''}${u.acesso_legalizacao ? ' <span title="Também acessa Legalização" style="font-size:12px">📋</span>' : ''}${u.acesso_cs ? ' <span title="Acessa o Painel CS (/cs)" style="font-size:12px">🎯</span>' : ''}${u.acesso_financeiro ? ' <span title="Acessa o Financeiro (/financeiro)" style="font-size:12px">💰</span>' : ''}${u.role==='contabil' && (u.regimes_atendidos||[]).length ? '<div style="font-size:10.5px;color:var(--gray-400);margin-top:2px">' + u.regimes_atendidos.join(' · ') + '</div>' : ''}</td>
           <td><span style="background:${ativo?'#f0fff4':'#fff5f5'};color:${ativo?'#38a169':'#e53e3e'};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${ativo?'Ativo':'Inativo'}</span></td>
           <td style="white-space:nowrap;display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditProfile('${u.id}','${u.name}','${u.email}','${u.role}',${!!u.acesso_minha_nota},${!!u.acesso_legalizacao},'${(u.regimes_atendidos||[]).join(',')}')">✏️ Editar</button>
+            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditProfile('${u.id}','${u.name}','${u.email}','${u.role}',${!!u.acesso_minha_nota},${!!u.acesso_legalizacao},'${(u.regimes_atendidos||[]).join(',')}',${!!u.acesso_cs},${!!u.acesso_financeiro})">✏️ Editar</button>
             <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditPass('${u.id}')">🔑 Senha</button>
             <button class="btn btn-sm" style="background:${ativo?'#fff5f5':'#f0fff4'};color:${ativo?'#e53e3e':'#38a169'};border:1px solid ${ativo?'#fed7d7':'#c6f6d5'}" onclick="App.Admin.toggleAtivo('${u.id}','${u.name}',${ativo})">${ativo?'⏸ Desativar':'▶ Ativar'}</button>
             <button class="btn btn-danger btn-sm" onclick="App.Admin.deleteUser('${u.id}','${u.name}')">🗑 Excluir</button>
@@ -1463,6 +1463,14 @@ const App = (() => {
           <input id="m-legalizacao" type="checkbox" style="width:auto" />
           <label for="m-legalizacao" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso à página pública de Legalização (Alvarás/Certificados + solicitar inativação de cliente)</label>
         </div>
+        <div class="field" style="margin-top:8px;display:flex;align-items:center;gap:8px">
+          <input id="m-cs" type="checkbox" style="width:auto" />
+          <label for="m-cs" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso ao Painel do Sucesso do Cliente (/cs) e ao Financeiro (/financeiro) sem valores em R$</label>
+        </div>
+        <div class="field" style="margin-top:8px;display:flex;align-items:center;gap:8px">
+          <input id="m-financeiro" type="checkbox" style="width:auto" />
+          <label for="m-financeiro" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso ao Financeiro (/financeiro) com os valores em R$ (inadimplência, honorários, cobranças)</label>
+        </div>
         <div class="field" id="m-regimes-wrap" hidden style="margin-top:8px;background:#f8fafc;border-radius:8px;padding:10px 14px">
           <label style="margin:0 0 4px">Regimes que atende</label>
           <div style="font-size:11px;color:var(--gray-400);margin-bottom:6px">Quando um cliente é dado como baixa/saída no Acessórias, o ticket abre sozinho pro Contábil marcado no regime dele. Ninguém marcado = todos os Contábeis são avisados.</div>
@@ -1475,13 +1483,15 @@ const App = (() => {
       let role = document.getElementById('m-role')?.value;
       const acesso_minha_nota = document.getElementById('m-minha-nota')?.checked || false;
       const acesso_legalizacao = document.getElementById('m-legalizacao')?.checked || false;
+      const acesso_cs = document.getElementById('m-cs')?.checked || false;
+      const acesso_financeiro = document.getElementById('m-financeiro')?.checked || false;
       const regimes_atendidos = [...document.querySelectorAll('.m-regime-check:checked')].map(c => c.value);
       if (!name||!email||!password) { Toast.err('Preencha todos os campos.'); return; }
       if (!role) {
-        if (!acesso_minha_nota && !acesso_legalizacao) { Toast.err('Escolha um perfil, ou marque um dos acessos abaixo.'); return; }
+        if (!acesso_minha_nota && !acesso_legalizacao && !acesso_cs && !acesso_financeiro) { Toast.err('Escolha um perfil, ou marque um dos acessos abaixo.'); return; }
         role = 'colaborador'; // sem perfil + algum acesso marcado = acesso só àquela(s) tela(s)
       }
-      const res  = await API.post('/api/users', { name, email, password, role, acesso_minha_nota, acesso_legalizacao, regimes_atendidos });
+      const res  = await API.post('/api/users', { name, email, password, role, acesso_minha_nota, acesso_legalizacao, acesso_cs, acesso_financeiro, regimes_atendidos });
       const data = await res.json();
       if (!res.ok) { Toast.err(data.error); return; }
       Modal.close(); Toast.ok('Usuário criado!'); Admin.load();
@@ -1494,11 +1504,11 @@ const App = (() => {
       if (wrap) wrap.hidden = role !== 'contabil';
     },
 
-    openEditProfile(id, name, email, role, acessoMinhaNota, acessoLegalizacao, regimesCsv) {
+    openEditProfile(id, name, email, role, acessoMinhaNota, acessoLegalizacao, regimesCsv, acessoCs, acessoFinanceiro) {
       // 'colaborador' é representado no dropdown como "Escolha o perfil" (vazio)
       // + checkbox marcada — não é mais uma opção própria na lista.
       const roleParaExibir = role === 'colaborador' ? '' : role;
-      const minhaNotaMarcada = acessoMinhaNota || role === 'colaborador';
+      const minhaNotaMarcada = acessoMinhaNota || (role === 'colaborador' && !acessoLegalizacao && !acessoCs && !acessoFinanceiro);
       const regimesMarcados = (regimesCsv || '').split(',').filter(Boolean);
       App.Modal.open('Editar usuário', '<div style="display:grid;gap:12px">' +
         '<div class="field"><label>Nome</label><input id="eu-name" type="text" value="' + (name||'') + '" /></div>' +
@@ -1517,6 +1527,14 @@ const App = (() => {
           '<input id="eu-legalizacao" type="checkbox" style="width:auto"' + (acessoLegalizacao ? ' checked' : '') + ' />' +
           '<label for="eu-legalizacao" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso à página pública de Legalização — ou marque sozinho pra acesso só a ela</label>' +
         '</div>' +
+        '<div class="field" style="display:flex;align-items:center;gap:8px">' +
+          '<input id="eu-cs" type="checkbox" style="width:auto"' + (acessoCs ? ' checked' : '') + ' />' +
+          '<label for="eu-cs" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso ao Painel do Sucesso do Cliente (/cs) e ao Financeiro (/financeiro) sem valores em R$</label>' +
+        '</div>' +
+        '<div class="field" style="display:flex;align-items:center;gap:8px">' +
+          '<input id="eu-financeiro" type="checkbox" style="width:auto"' + (acessoFinanceiro ? ' checked' : '') + ' />' +
+          '<label for="eu-financeiro" style="margin:0;text-transform:none;font-weight:600;font-size:13px;letter-spacing:0">Também dá acesso ao Financeiro (/financeiro) com os valores em R$ (inadimplência, honorários, cobranças)</label>' +
+        '</div>' +
         '<div class="field" id="eu-regimes-wrap"' + (roleParaExibir==='contabil'?'':' hidden') + ' style="background:#f8fafc;border-radius:8px;padding:10px 14px">' +
           '<label style="margin:0 0 4px">Regimes que atende</label>' +
           '<div style="font-size:11px;color:var(--gray-400);margin-bottom:6px">Quando um cliente é dado como baixa/saída no Acessórias, o ticket abre sozinho pro Contábil marcado no regime dele. Ninguém marcado = todos os Contábeis são avisados.</div>' +
@@ -1532,13 +1550,15 @@ const App = (() => {
       let role    = document.getElementById('eu-role')?.value;
       const acesso_minha_nota = document.getElementById('eu-minha-nota')?.checked || false;
       const acesso_legalizacao = document.getElementById('eu-legalizacao')?.checked || false;
+      const acesso_cs = document.getElementById('eu-cs')?.checked || false;
+      const acesso_financeiro = document.getElementById('eu-financeiro')?.checked || false;
       const regimes_atendidos = [...document.querySelectorAll('.eu-regime-check:checked')].map(c => c.value);
       if (!name) { App.Toast.err('Nome obrigatório.'); return; }
       if (!role) {
-        if (!acesso_minha_nota && !acesso_legalizacao) { App.Toast.err('Escolha um perfil, ou marque um dos acessos abaixo.'); return; }
+        if (!acesso_minha_nota && !acesso_legalizacao && !acesso_cs && !acesso_financeiro) { App.Toast.err('Escolha um perfil, ou marque um dos acessos abaixo.'); return; }
         role = 'colaborador';
       }
-      const res = await API.patch('/api/users/' + id + '/profile', { name, email, role, acesso_minha_nota, acesso_legalizacao, regimes_atendidos });
+      const res = await API.patch('/api/users/' + id + '/profile', { name, email, role, acesso_minha_nota, acesso_legalizacao, acesso_cs, acesso_financeiro, regimes_atendidos });
       if (res && res.ok) { App.Modal.close(); App.Toast.ok('Usuário atualizado!'); Admin.load(); }
       else App.Toast.err('Erro ao atualizar.');
     },

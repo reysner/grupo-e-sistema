@@ -78,7 +78,7 @@
       var r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: $('inp-email').value.trim(), password: $('inp-senha').value }) });
       var j = await r.json().catch(function () { return {}; });
       if (!r.ok) { mostrarLogin(j.error || 'Não foi possível entrar.'); return; }
-      if (['administrador', 'usuario'].indexOf(j.user.role) < 0) { mostrarLogin('Este painel é da equipe do Sucesso do Cliente. Peça acesso à administração.'); return; }
+      if (['administrador', 'usuario'].indexOf(j.user.role) < 0 && !j.user.acesso_cs) { mostrarLogin('Este painel é da equipe do Sucesso do Cliente. Peça acesso à administração.'); return; }
       ls(K_TOKEN, j.token); ls(K_REFRESH, j.refreshToken); ls(K_USER, JSON.stringify(j.user));
       $('inp-senha').value = '';
       iniciar();

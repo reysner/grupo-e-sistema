@@ -1,0 +1,43 @@
+/* Página /financeiro — só o que não existe em cs-painel.css (menu, cartões, tabelas, ficha e paginação vêm de lá). */
+.ficha-box.fin{max-width:min(1040px,97vw);}
+.ficha-box.fin .table-wrap{overflow-x:auto;}
+
+/* Envelhecimento da dívida (aging): uma barra por faixa, proporcional ao valor (ou ao nº de clientes quando os valores estão ocultos) */
+.aging{display:grid;gap:10px;}
+.aging-linha{display:grid;grid-template-columns:130px 1fr 150px;gap:12px;align-items:center;font-size:12.5px;}
+.aging-trilho{height:14px;background:var(--surface2);border-radius:7px;overflow:hidden;}
+.aging-trilho i{display:block;height:100%;border-radius:7px;}
+.aging-num{text-align:right;font-variant-numeric:tabular-nums;}
+.aging-num small{color:var(--text3);margin-left:6px;}
+
+/* Meses em aberto de cada cliente */
+.mes-chip{display:inline-block;margin:2px 4px 2px 0;padding:1px 8px;border-radius:6px;font-size:11px;font-weight:600;border:1px solid var(--border);background:var(--surface2);white-space:nowrap;}
+.mes-chip.nunca{border-color:#dc262680;color:#b91c1c;background:#dc26260d;}
+.mes-chip.cobrado{border-color:#d9770680;color:#92400e;background:#d977060d;}
+.mes-chip.muito{border-color:#7f1d1d99;color:#7f1d1d;background:#7f1d1d14;}
+
+/* Próximo passo: faixa colorida pela gravidade */
+.passo{font-size:12px;line-height:1.45;padding:6px 10px;border-radius:8px;border-left:3px solid var(--border);background:var(--surface2);min-width:220px;}
+.passo.alta{border-left-color:#dc2626;}
+.passo.media{border-left-color:#d97706;}
+.passo.baixa{border-left-color:#2563eb;}
+.passo.ok{border-left-color:#10b981;}
+
+/* Linha do tempo das cobranças (ficha) */
+.tempo{display:grid;gap:0;}
+.tempo-item{display:grid;grid-template-columns:96px 150px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12.5px;align-items:baseline;}
+.tempo-item .d{font-weight:600;font-variant-numeric:tabular-nums;}
+.tempo-item .x{color:var(--text2);}
+
+.lista-top{display:grid;gap:0;}
+.lista-top .item{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;align-items:baseline;}
+.lista-top .item:last-child{border-bottom:none;}
+.lista-top .item .n{min-width:0;}
+.lista-top .item .v{white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:600;}
+.duas{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;}
+
+@media (max-width:760px){
+  .aging-linha{grid-template-columns:96px 1fr;}
+  .aging-num{grid-column:1 / -1;text-align:left;}
+  .tempo-item{grid-template-columns:1fr;gap:2px;}
+}

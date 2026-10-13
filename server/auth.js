@@ -32,7 +32,7 @@ const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function signAccess(user) {
   return jwt.sign(
-    { sub: user.id, name: user.name, role: user.role, acesso_minha_nota: !!user.acesso_minha_nota, acesso_legalizacao: !!user.acesso_legalizacao },
+    { sub: user.id, name: user.name, role: user.role, acesso_minha_nota: !!user.acesso_minha_nota, acesso_legalizacao: !!user.acesso_legalizacao, acesso_cs: !!user.acesso_cs, acesso_financeiro: !!user.acesso_financeiro },
     ACCESS_SECRET,
     { expiresIn: ACCESS_TTL, issuer: 'grupo-e' }
   );
@@ -72,7 +72,12 @@ function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Não autenticado.' });
   try {
     const payload = jwt.verify(token, ACCESS_SECRET, { issuer: 'grupo-e' });
-    req.user = { id: payload.sub, name: payload.name, role: payload.role, acessoMinhaNota: !!payload.acesso_minha_nota, acessoLegalizacao: !!payload.acesso_legalizacao };
+    req.user = { id: payload.sub, name: payload.name, role: payload.role, acessoMinhaNota: !!payload.acesso_minha_nota, acessoLegalizacao: !!payload.acesso_legalizacao, acessoCs: !!payload.acesso_cs, acessoFinanceiro: !!payload.acesso_financeiro };
+    // Páginas /cs e /financeiro (13/10/2026): Contábil e Colaborador só chegam nelas pela permissão própria (acesso_cs / acesso_financeiro).
+    // O que cada pessoa VÊ lá dentro é decidido na própria rota (server/cs/painel.js e server/financeiro/), nunca no front-end.
+    const rotaCompleta = (req.baseUrl || '') + (req.path || '');
+    const isCsPainelRoute = rotaCompleta.startsWith('/api/cs/painel') && !!payload.acesso_cs;
+    const isFinanceiroRoute = rotaCompleta.startsWith('/api/financeiro') && !!(payload.acesso_financeiro || payload.acesso_cs);
     const isAuthOuPerfil = req.path && (req.path.includes('/auth') || req.path.includes('/perfil'));
     // Minha Nota (28/08/2026, self-service da Gamificação): rotas
     // /gam/minha-* e /gam/meus-* — a nota/tickets da PRÓPRIA pessoa,
@@ -101,7 +106,8 @@ function requireAuth(req, res, next) {
       const isTicketRoute = req.path && req.path.includes('/tickets');
       const permitido = isTicketRoute || isAuthOuPerfil
         || (payload.acesso_minha_nota && isMinhaNotaRoute)
-        || (payload.acesso_legalizacao && isLegalizacaoRoute);
+        || (payload.acesso_legalizacao && isLegalizacaoRoute)
+        || isCsPainelRoute || isFinanceiroRoute;
       if (!permitido) return res.status(403).json({ error: 'Acesso restrito ao portal contábil.' });
     }
     // Colaborador: só pode ver a própria nota (ou Legalização, se
@@ -109,7 +115,7 @@ function requireAuth(req, res, next) {
     // clientes, outros colaboradores etc. Papel "puro", pra quem não deve
     // ter NENHUM outro acesso (diferente dos checkboxes acima, que
     // ADICIONAM uma tela a um perfil que já tem outra coisa).
-    if (payload.role === 'colaborador' && !(isMinhaNotaRoute || isAuthOuPerfil || (payload.acesso_legalizacao && isLegalizacaoRoute))) {
+    if (payload.role === 'colaborador' && !(isMinhaNotaRoute || isAuthOuPerfil || (payload.acesso_legalizacao && isLegalizacaoRoute) || isCsPainelRoute || isFinanceiroRoute)) {
       return res.status(403).json({ error: 'Acesso restrito à sua nota da Gamificação.' });
     }
     next();

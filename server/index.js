@@ -64,6 +64,7 @@ app.use('/api/cs/categorias', require('./cs/categorias').router);  // Categorias
 app.use('/api/cs/churn', require('./cs/churnSaidas').router);  // Churn por saídas (as três 'Transferida por…')
 app.use('/api/cs/risco', require('./cs/risco').router);        // Risco de perda: termômetros Financeiro, Atendimento e Operacional
 app.use('/api/cs/questor', require('./cs/questorDados').router);   // Faturamento 12 meses e funcionários vindos do Questor (rotina local na VPN; token de sincronização)
+app.use('/api/financeiro', require('./financeiro/rotas').router);   // Página /financeiro: inadimplência, suspensos e cobranças (login; valores só para administrador e acesso_financeiro)
 app.use('/api/cs/painel', require('./cs/painel').router);      // Painel público /cs (só leitura; administrador e usuário)
 app.use('/api/cs',     require('./cs/routes'));    // Sucesso do Cliente — radar de SLA
 app.use('/api/analistas', require('./routes/analistas'));  // lista de analistas p/ dropdowns
@@ -117,6 +118,12 @@ app.get('/legalizacao/regras', (req, res) => {
 app.get('/cs', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'cs-painel.html'));
 });
+
+// ── Financeiro (login próprio, contas do Grupo-E; inadimplência por competência, suspensos e cobranças) ──
+app.get('/financeiro', (req, res) => {
+  res.sendFile(path.join(PUBLIC, 'financeiro.html'));
+});
+app.get('/financiero', (req, res) => res.redirect(301, '/financeiro'));   // grafia que o pedido original usou
 
 // ── Arquivos estáticos com MIME correto ───────────────────────────────────────
 app.get('/js/:file', (req, res) => {

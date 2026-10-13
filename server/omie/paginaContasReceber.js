@@ -60,13 +60,16 @@ const somaMes = (n) => ym(new Date(hojeD.getFullYear(), hojeD.getMonth() + n, 1)
 const HOJE = hojeD.toISOString().slice(0, 10); const JANELA = somaMes(-6); const ATIVO_DESDE = somaMes(-2);
 const r2 = (x) => Math.round(x * 100) / 100; const num = (x) => r2(x).toFixed(2).replace(/\.?0+$/, '');
 const yymm = (m) => m ? m.slice(2, 4) + m.slice(5, 7) : ''; const yymmdd = (d) => d ? d.slice(2, 4) + d.slice(5, 7) + d.slice(8, 10) : '';
-const C = {}, A = {};
+const C = {}, A = {}, TIT = [], PON = {};
 for (const r of R) {
   const f = frac(r.k); if (!f || !r.c || !r.dv) continue;
   const doc = r.c.replace(/\D/g, ''); const nome = r.z || r.n; const mes = r.dv.slice(0, 7);
   const c = C[doc] = C[doc] || { nome, meses: {}, primeiro: mes }; c.meses[mes] = (c.meses[mes] || 0) + (+r.v || 0) * f; if (mes < c.primeiro) c.primeiro = mes;
   const aberto = /^Atrasado|Parcialmente|^A vencer|^Vence/.test(r.s) ? (+r.a || 0) * f : 0;
   if (aberto > 0.005) { const a = A[doc] = A[doc] || { nome, n: 0, ab: 0, at: 0, nat: 0, velho: '' }; a.n++; a.ab += aberto; if (r.dv < HOJE) { a.at += aberto; a.nat++; if (!a.velho || r.dv < a.velho) a.velho = r.dv; } }
+  // /financeiro (13/10/2026): cada honorário em aberto (título a título) e a pontualidade de quem pagou (dias entre o vencimento e o pagamento)
+  if (aberto > 0.005) TIT.push([r.id, doc, yymmdd(r.dv), num(aberto), num((+r.v || 0) * f), /^Atrasado/.test(r.s) ? 'A' : /^Parcialmente/.test(r.s) ? 'P' : 'V'].join('|'));
+  else if (r.dp && (+r.p || 0) > 0 && r.dv.slice(0, 7) >= JANELA) { const dias = Math.max(0, Math.round((Date.parse(r.dp) - Date.parse(r.dv)) / 86400000)); const p = PON[doc] = PON[doc] || { n: 0, soma: 0, max: 0 }; p.n++; p.soma += dias; if (dias > p.max) p.max = dias; }
 }
 // honorário ATUAL = valor em vigor: no período recente (7 meses), o último valor que se repete por ≥2 meses seguidos
 // (um mês isolado a mais = serviço extra, ignorado); cliente ativo = tem honorário nos últimos 3 meses.
@@ -78,16 +81,18 @@ const hon = Object.entries(C).filter(([, c]) => ult(c) >= ATIVO_DESDE).map(([d, 
 const abertos = Object.entries(A).map(([d, a]) => [d, a.n, num(a.ab), num(a.at), a.nat, yymmdd(a.velho)].join('|'));
 window.__C = C; window.__A = A;
 window.__nomes = (docs) => docs.map(d => { const c = C[d] || {}; const a = A[d] || {}; return [d, (c.nome || a.nome || '').replace(/\|/g, ' '), yymm(c.primeiro)].join('|'); }).join('\n');
-window.__saida = { hon, abertos };
-({ titulos: R.length, clientesAtivos: hon.length, clientesComAberto: abertos.length, JANELA, ATIVO_DESDE })
+const pontual = Object.entries(PON).map(([d, p]) => [d, p.n, r2(p.soma / p.n), p.max].join('|'));
+window.__saida = { hon, abertos, titulos: TIT, pontual };
+({ titulos: R.length, clientesAtivos: hon.length, clientesComAberto: abertos.length, titulosEmAberto: TIT.length, clientesComPontualidade: pontual.length, JANELA, ATIVO_DESDE })
 */
 
 // ═══════════ SCRIPT 3 — SAÍDA (o javascript_tool do Chrome corta a resposta em ~1000 caracteres) ═══════════
 // Troca o corpo da página por um <pre> com as listas e lê com get_page_text (aceita até dezenas de milhares de caracteres):
 /*
-document.body.innerHTML = '<pre id="__saida_txt" style="white-space:pre-wrap">HON\n' + window.__saida.hon.join('\n') + '\nABERTO\n' + window.__saida.abertos.join('\n') + '\nFIM</pre>'; document.getElementById('__saida_txt').textContent.length
+document.body.innerHTML = '<pre id="__saida_txt" style="white-space:pre-wrap">HON\n' + window.__saida.hon.join('\n') + '\nABERTO\n' + window.__saida.abertos.join('\n') + '\nTIT\n' + window.__saida.titulos.join('\n') + '\nPONT\n' + window.__saida.pontual.join('\n') + '\nFIM</pre>'; document.getElementById('__saida_txt').textContent.length
 */
-// Depois: get_page_text → gravar as linhas entre HON e ABERTO em <slug>-hon.txt e entre ABERTO e FIM em <slug>-aberto.txt
+// Depois: get_page_text (com max_chars=200000: a lista de títulos passa dos 50 mil caracteres) → gravar as linhas entre HON e ABERTO em <slug>-hon.txt,
+// entre ABERTO e TIT em <slug>-aberto.txt, entre TIT e PONT em <slug>-titulos.txt (rec|cnpj|AAMMDD|aberto|doc|A/P/V) e entre PONT e FIM em <slug>-pontual.txt (cnpj|pagos|media|max)
 // (server/omie/tmp/). ATENÇÃO: isso destrói a página; o window.__nomes(...) continua disponível (variáveis vivem) — no fim recarregue o ERP.
 // Rodar: node server/omie/importarOmie.js --unidade="..." --hon=... --aberto=... — se responder NOMES_NECESSARIOS: a,b,c → no mesmo tab:
 //   window.__nomes(['a','b','c'])  → gravar em <slug>-nomes.txt e rodar de novo com --nomes=.

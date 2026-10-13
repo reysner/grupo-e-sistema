@@ -126,6 +126,11 @@ async function init() {
   // pedido do Reysner, 18/09/2026). Ver server/auth.js requireAuth e
   // public/legalizacao-publica.html.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS acesso_legalizacao BOOLEAN NOT NULL DEFAULT false`).catch(()=>{});
+  // Acessos às páginas /cs (Painel do Sucesso do Cliente) e /financeiro (inadimplência, suspensos, cobranças), marcados em
+  // Administração > Usuários (pedido do Reysner, 13/10/2026). acesso_cs = vê o /cs e o /financeiro SEM valores em R$;
+  // acesso_financeiro = vê o /financeiro com valores. Ver server/auth.js e server/financeiro/.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS acesso_cs BOOLEAN NOT NULL DEFAULT false`).catch(()=>{});
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS acesso_financeiro BOOLEAN NOT NULL DEFAULT false`).catch(()=>{});
 }
 
 async function query(text, params) {

@@ -22,7 +22,7 @@ router.get('/', async (req, res) => {
   try {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true`).catch(()=>{});
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS regimes_atendidos JSONB DEFAULT '[]'`).catch(()=>{});
-    const result = await pool.query(`SELECT id, name, email, role, active, acesso_minha_nota, acesso_legalizacao, regimes_atendidos, created_at FROM users ORDER BY created_at ASC`);
+    const result = await pool.query(`SELECT id, name, email, role, active, acesso_minha_nota, acesso_legalizacao, acesso_cs, acesso_financeiro, regimes_atendidos, created_at FROM users ORDER BY created_at ASC`);
     const users = result.rows.map(u => ({ ...u, ativo: u.active !== 0 }));
     res.json({ users });
   } catch (err) {
@@ -32,7 +32,7 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { name, email, password, role, acesso_minha_nota, acesso_legalizacao, regimes_atendidos } = req.body;
+    const { name, email, password, role, acesso_minha_nota, acesso_legalizacao, acesso_cs, acesso_financeiro, regimes_atendidos } = req.body;
     if (!name || !email || !password)
       return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios.' });
     if (password.length < 6)
@@ -47,10 +47,10 @@ router.post('/', async (req, res) => {
     const userRole = VALID_ROLES.includes(role) ? role : 'usuario';
     const regimes = sanearRegimes(regimes_atendidos);
     await pool.query(
-      `INSERT INTO users (id, name, email, password, role, acesso_minha_nota, acesso_legalizacao, regimes_atendidos) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
-      [id, name.trim(), email.toLowerCase().trim(), hashedPw, userRole, !!acesso_minha_nota, !!acesso_legalizacao, JSON.stringify(regimes)]
+      `INSERT INTO users (id, name, email, password, role, acesso_minha_nota, acesso_legalizacao, acesso_cs, acesso_financeiro, regimes_atendidos) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
+      [id, name.trim(), email.toLowerCase().trim(), hashedPw, userRole, !!acesso_minha_nota, !!acesso_legalizacao, !!acesso_cs, !!acesso_financeiro, JSON.stringify(regimes)]
     );
-    res.status(201).json({ user: { id, name: name.trim(), email, role: userRole, acesso_minha_nota: !!acesso_minha_nota, acesso_legalizacao: !!acesso_legalizacao, regimes_atendidos: regimes } });
+    res.status(201).json({ user: { id, name: name.trim(), email, role: userRole, acesso_minha_nota: !!acesso_minha_nota, acesso_legalizacao: !!acesso_legalizacao, acesso_cs: !!acesso_cs, acesso_financeiro: !!acesso_financeiro, regimes_atendidos: regimes } });
   } catch (err) {
     console.error('Create user error:', err);
     res.status(500).json({ error: 'Erro ao criar usuário.' });
@@ -86,7 +86,7 @@ router.delete('/:id', async (req, res) => {
 // PATCH /api/users/:id/profile (name + email + role)
 router.patch('/:id/profile', async (req, res) => {
   try {
-    const { name, email, role, acesso_minha_nota, acesso_legalizacao, regimes_atendidos } = req.body;
+    const { name, email, role, acesso_minha_nota, acesso_legalizacao, acesso_cs, acesso_financeiro, regimes_atendidos } = req.body;
     if (!name || !email) return res.status(400).json({ error: 'Nome e e-mail são obrigatórios.' });
 
     // Check email not taken by another user
@@ -100,6 +100,8 @@ router.patch('/:id/profile', async (req, res) => {
     // mesmo login (e agora Legalização do mesmo jeito).
     const acessoMinhaNota = !!acesso_minha_nota;
     const acessoLegalizacao = !!acesso_legalizacao;
+    const acessoCs = !!acesso_cs;
+    const acessoFinanceiro = !!acesso_financeiro;
     // Regimes que esse Contábil atende (roteamento automático de ticket — ver REGIMES_TICKET acima).
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS regimes_atendidos JSONB DEFAULT '[]'`).catch(()=>{});
     const regimes = JSON.stringify(sanearRegimes(regimes_atendidos));
@@ -107,13 +109,13 @@ router.patch('/:id/profile', async (req, res) => {
     // Se veio um role válido, atualiza também; senão, mantém o atual
     if (VALID_ROLES.includes(role)) {
       await pool.query(
-        `UPDATE users SET name = $1, email = $2, role = $3, acesso_minha_nota = $4, acesso_legalizacao = $5, regimes_atendidos = $6::jsonb, updated_at = NOW() WHERE id = $7`,
-        [name.trim(), email.toLowerCase().trim(), role, acessoMinhaNota, acessoLegalizacao, regimes, req.params.id]
+        `UPDATE users SET name = $1, email = $2, role = $3, acesso_minha_nota = $4, acesso_legalizacao = $5, acesso_cs = $6, acesso_financeiro = $7, regimes_atendidos = $8::jsonb, updated_at = NOW() WHERE id = $9`,
+        [name.trim(), email.toLowerCase().trim(), role, acessoMinhaNota, acessoLegalizacao, acessoCs, acessoFinanceiro, regimes, req.params.id]
       );
     } else {
       await pool.query(
-        `UPDATE users SET name = $1, email = $2, acesso_minha_nota = $3, acesso_legalizacao = $4, regimes_atendidos = $5::jsonb, updated_at = NOW() WHERE id = $6`,
-        [name.trim(), email.toLowerCase().trim(), acessoMinhaNota, acessoLegalizacao, regimes, req.params.id]
+        `UPDATE users SET name = $1, email = $2, acesso_minha_nota = $3, acesso_legalizacao = $4, acesso_cs = $5, acesso_financeiro = $6, regimes_atendidos = $7::jsonb, updated_at = NOW() WHERE id = $8`,
+        [name.trim(), email.toLowerCase().trim(), acessoMinhaNota, acessoLegalizacao, acessoCs, acessoFinanceiro, regimes, req.params.id]
       );
     }
     // Role ou flags de acesso mudaram (todos vão no JWT) — revoga os

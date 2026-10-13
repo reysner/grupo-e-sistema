@@ -39,7 +39,7 @@ function mascararFicha(ficha) {
 }
 
 function soEquipe(req, res, next) {
-  if (!PAPEIS.includes(req.user && req.user.role)) return res.status(403).json({ error: 'Acesso restrito à equipe do Sucesso do Cliente.' });
+  if (!PAPEIS.includes(req.user && req.user.role) && !(req.user && req.user.acessoCs)) return res.status(403).json({ error: 'Acesso restrito à equipe do Sucesso do Cliente.' });
   next();
 }
 
