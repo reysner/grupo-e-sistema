@@ -4,7 +4,8 @@
  * 3 destinos. NUNCA mexe em destino, só na origem, e só no sub-caminho exato
  * que foi verificado (nunca a pasta da empresa inteira).
  *
- * Reconfirma CADA arquivo (arquivo por arquivo, de novo, agora, na hora H) nos
+ * Reconfirma CADA arquivo (arquivo por arquivo, de novo, agora, na hora H — existe
+ * E tem o mesmo tamanho) nos
  * 3 destinos antes de apagar — se alguma coisa mudou desde a verificação
  * anterior, PULA essa origem em vez de apagar às cegas.
  *
@@ -31,7 +32,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const { carregarConfig } = require('./config');
 const { normalizar } = require('./nomes');
-const { existe, longPath } = require('./copiador');
+const { longPath } = require('./copiador');
 const { nomePastaSeguro } = require('./pipeline');
 
 const SO_CERTIFICADO = rel => /\.(pfx|p12)$/i.test(rel);
@@ -88,8 +89,14 @@ async function reconferir(origemDir, destinos, filtroArquivo, ignorarIdx = []) {
       if (ent.name.toLowerCase() === 'desktop.ini') continue;
       if (filtroArquivo && !filtroArquivo(rel)) { foraDoFiltro.push(rel); continue; }
       arquivos.push(rel);
+      // Tamanho tem que bater em cada destino (não basta existir) — decisão do
+      // Reysner (2026-10-13): só apaga com certeza absoluta da cópia.
+      let tamOrig = null;
+      try { tamOrig = (await fs.stat(longPath(path.win32.join(dirOrig, ent.name)))).size; } catch { /* sem tamanho = não confere */ }
       for (let i = 0; i < destinos.length; i++) {
-        if (!(await existe(path.win32.join(destinos[i], rel)))) {
+        let tamDest = null;
+        try { tamDest = (await fs.stat(longPath(path.win32.join(destinos[i], rel)))).size; } catch { /* não existe */ }
+        if (tamOrig === null || tamDest !== tamOrig) {
           if (ignorarIdx.includes(i)) faltandoIgnorado.push({ rel, destinoIdx: i });
           else completo = false;
         }
