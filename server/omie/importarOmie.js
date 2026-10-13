@@ -29,7 +29,7 @@ const mes = (a) => (/^\d{4}$/.test(a || '') ? `20${a.slice(0, 2)}-${a.slice(2)}`
 const dia = (a) => (/^\d{6}$/.test(a || '') ? `20${a.slice(0, 2)}-${a.slice(2, 4)}-${a.slice(4)}` : null);
 
 async function post(rota, corpo) {
-  const r = await fetch(APP_URL + '/api/data/' + rota, { method: 'POST', headers: { 'X-Sync-Token': TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(corpo), signal: AbortSignal.timeout(180000) });
+  const r = await fetch(APP_URL + '/api/data/' + rota, { method: 'POST', headers: { 'X-Sync-Token': TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(corpo), signal: AbortSignal.timeout(600000) }); // 10 min: a Escritorial já passou de 180 s (13/10/2026: 187 s)
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(`${rota}: ${r.status} ${j.error || ''}`);
   return j;
