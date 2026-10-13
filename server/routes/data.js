@@ -176,21 +176,20 @@ router.post('/financeiro/importar', async (req, res) => {
     // um título dele (o Acessórias costuma demorar a atualizar) — fica só no relatório `encerradosFaturando`
     // abaixo, como lembrete, sem contar em ticket médio/receita mensal/inadimplência. Cliente sem cadastro no
     // Acessórias (status null) não é "encerrado" — continua contando normalmente.
-    const { rows: encerradosRows } = await pool.query(
-      `SELECT regexp_replace(cnpj, '\\D', '', 'g') AS doc FROM clientes WHERE status = 'encerrado'`
-    );
-    const docsEncerrados = new Set(encerradosRows.map(r => r.doc));
+    // 13/10/2026 (Abalen/Tronconi, que voltaram pro escritório): o snapshot guarda TUDO o que veio do Omie e quem
+    // tira o encerrado da conta é o GET /financeiro, pelo status ATUAL da Carteira. Assim, cliente que é reativado
+    // volta a contar na hora, sem depender de uma nova leitura do Omie.
     await client.query('BEGIN');
     await client.query(`DELETE FROM financeiro_clientes WHERE unidade = $1`, [unidade]);
     await client.query(`DELETE FROM financeiro_aberto WHERE unidade = $1`, [unidade]);
     for (const c of clientes) {
       const doc = so(c.cnpj); const v = Math.round((+c.valor || 0) * 100) / 100;
-      if (![11, 14].includes(doc.length) || v <= 0 || docsEncerrados.has(doc)) continue;
+      if (![11, 14].includes(doc.length) || v <= 0) continue;
       await client.query(`INSERT INTO financeiro_clientes (unidade, cnpj, nome, honorario_atual, vigencia) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (unidade, cnpj) DO UPDATE SET nome = $3, honorario_atual = $4, vigencia = $5`,
         [unidade, doc, String(c.nome || '').slice(0, 200), v, /^\d{4}-\d{2}(-\d{2})?$/.test(c.vigencia || '') ? (c.vigencia.length === 7 ? c.vigencia + '-01' : c.vigencia) : null]);
     }
     for (const a of abertos) {
-      const doc = so(a.cnpj); if (![11, 14].includes(doc.length) || docsEncerrados.has(doc)) continue;
+      const doc = so(a.cnpj); if (![11, 14].includes(doc.length)) continue;
       await client.query(`INSERT INTO financeiro_aberto (unidade, cnpj, nome, qtd, valor_aberto, valor_atrasado, qtd_atrasados, mais_antigo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (unidade, cnpj) DO UPDATE SET nome=$3, qtd=$4, valor_aberto=$5, valor_atrasado=$6, qtd_atrasados=$7, mais_antigo=$8`,
         [unidade, doc, String(a.nome || '').slice(0, 200), parseInt(a.qtd, 10) || 0, +a.aberto || 0, +a.atrasado || 0, parseInt(a.qtdAtrasados, 10) || 0, /^\d{4}-\d{2}-\d{2}$/.test(a.maisAntigo || '') ? a.maisAntigo : null]);
     }
@@ -784,6 +783,7 @@ router.get('/financeiro', requireAdmin, async (req, res) => {
          LEFT JOIN fa ON fa.cnpj = d.cnpj
          LEFT JOIN LATERAL (SELECT nome_empresa, status, id, origem FROM clientes c WHERE regexp_replace(c.cnpj, '\\D', '', 'g') = d.cnpj
                              ORDER BY (c.status = 'ativo') DESC, c.created_at DESC LIMIT 1) cc ON true
+        WHERE cc.status IS DISTINCT FROM 'encerrado' -- encerrado na Carteira não conta (ver POST /financeiro/importar)
         ORDER BY fc.honorario_atual DESC NULLS LAST, nome`, [unidade]);
     const hon = rows.filter(r => r.honorario_atual != null).map(r => parseFloat(r.honorario_atual));
     const ticket = hon.length ? Math.round((hon.reduce((s, v) => s + v, 0) / hon.length) * 100) / 100 : 0;
@@ -1232,9 +1232,33 @@ async function sincronizarAcessorias({ userId = null } = {}) {
     if (!emp.regime_tributario) semRegimeReconhecido++;
     try {
       const existente = await pool.query(
-        `SELECT id FROM clientes WHERE acessorias_id = $1 OR cnpj = $2 LIMIT 1`,
+        `SELECT id, status FROM clientes WHERE acessorias_id = $1 OR cnpj = $2
+          ORDER BY (status = 'ativo') DESC, (acessorias_id = $1) DESC, created_at DESC LIMIT 1`,
         [emp.acessorias_id, emp.cnpj]
       );
+      // Achado do Reysner (13/10/2026, Abalen e Tronconi): empresa que saiu e VOLTOU pro escritório (no Acessórias,
+      // cadastro novo com outro código) casava pelo CNPJ com a linha já ENCERRADA, que só ganhava o ID novo e
+      // continuava encerrada pra sempre — sumindo da Carteira, do Financeiro e dos honorários. Um CNPJ = um cadastro
+      // (o Acessórias também não aceita dois): ativa lá + encerrada aqui = RETORNO → reativa a MESMA linha (honorários
+      // e histórico continuam nela), troca o código pelo novo e grava o evento de retorno com a saída anterior.
+      const voltou = existente.rows.length && existente.rows[0].status !== 'ativo';
+      if (voltou) {
+        const ant = (await pool.query(`SELECT codigo, data_saida, motivo_saida FROM clientes WHERE id = $1`, [existente.rows[0].id])).rows[0] || {};
+        const dataRetorno = emp.data_entrada || new Date().toISOString().slice(0, 10);
+        await pool.query(
+          `UPDATE clientes SET status = 'ativo', data_saida = NULL, motivo_saida = NULL, codigo = COALESCE($2, codigo) WHERE id = $1`,
+          [existente.rows[0].id, emp.codigo]
+        );
+        const saidaAnt = ant.data_saida ? new Date(ant.data_saida).toISOString().slice(0, 10).split('-').reverse().join('/') : 'data não registrada';
+        await pool.query(
+          `INSERT INTO eventos_clientes (cliente_id, tipo, descricao, data_evento) VALUES ($1,'entrada',$2,$3)`,
+          [existente.rows[0].id, `Retorno ao escritório (Acessórias: código ${ant.codigo || '—'} → ${emp.codigo || '—'}). Saída anterior: ${saidaAnt}${ant.motivo_saida ? ' — ' + ant.motivo_saida : ''}.`, dataRetorno]
+        ).catch(e => console.error('[Acessórias] evento de retorno:', emp.nome_empresa, e.message));
+        await pool.query(
+          `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id) VALUES ('novo_cliente_acessorias', 'Cliente voltou pro escritório', $1, 'gestao', $2)`,
+          [`${emp.nome_empresa} (CNPJ ${emp.cnpj}) voltou a ficar ativa no Acessórias (código novo ${emp.codigo || '—'}) e foi reativada na Carteira, com os honorários que já tinha.`, existente.rows[0].id]
+        ).catch(e => console.error('[Acessórias] notificação de retorno:', emp.nome_empresa, e.message));
+      }
       if (existente.rows.length) {
         await pool.query(
           `UPDATE clientes SET
@@ -1281,9 +1305,9 @@ async function sincronizarAcessorias({ userId = null } = {}) {
           await pool.query(
             `UPDATE gestao_clientes SET
                regime_tributario = COALESCE($1, regime_tributario),
-               codigo = COALESCE(codigo, $2)
+               codigo = CASE WHEN $4 THEN COALESCE($2, codigo) ELSE COALESCE(codigo, $2) END
              WHERE id = $3`,
-            [emp.regime_tributario, emp.codigo, jaTemGestao.rows[0].id]
+            [emp.regime_tributario, emp.codigo, jaTemGestao.rows[0].id, !!voltou] // retorno: código novo do Acessórias
           );
         }
       } else {
