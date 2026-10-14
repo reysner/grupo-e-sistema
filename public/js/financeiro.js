@@ -147,14 +147,14 @@
   function nomeLink(c) {
     return '<button class="link" data-ficha="' + esc(c.doc) + '">' + esc(c.nome) + '</button>' + (c.cronico ? ' <span class="pill" style="color:#92400e;border-color:#92400e55;background:#92400e14" title="Marcado como inadimplente crônico na Carteira">crônico</span>' : '') + '<div class="sub">' + esc(c.cnpj || '') + (c.grupo ? ' · ' + esc(c.grupo) : '') + '</div>';
   }
-  function chipsMeses(c) {
+  // Resumo dos meses em aberto para a LISTA (o mês a mês fica só na ficha, ao abrir a empresa).
+  function resumoMeses(c) {
     var v = c.abertos.filter(function (t) { return t.vencido; });
     if (!v.length) return c.qtd_atrasados ? '<span class="cinza">' + c.qtd_atrasados + ' título(s) · detalhe na próxima leitura do Omie</span>' : '<span class="cinza">—</span>';
-    return v.map(function (t) {
-      var cls = t.cobrancas === 0 ? 'nunca' : t.cobrancas >= 3 ? 'muito' : 'cobrado';
-      var tip = 'Vencimento ' + data(t.vencimento) + ' · ' + t.dias_atraso + ' dias de atraso · ' + (t.cobrancas ? 'cobrado ' + t.cobrancas + ' vez(es), a última em ' + data(t.ultima_cobranca) : 'nunca cobrado');
-      return '<span class="mes-chip ' + cls + '" title="' + esc(tip) + '">' + competencia(t.vencimento) + ' ×' + t.cobrancas + '</span>';
-    }).join('');
+    var meses = []; v.forEach(function (t) { var m = competencia(t.vencimento); if (meses.indexOf(m) < 0) meses.push(m); });
+    var nunca = v.filter(function (t) { return !t.cobrancas; }).length;
+    var faixa = meses.length > 1 ? meses[0] + ' a ' + meses[meses.length - 1] : meses[0];
+    return '<b>' + meses.length + ' ' + (meses.length === 1 ? 'mês' : 'meses') + '</b><div class="sub">' + esc(faixa) + (nunca && nunca < v.length ? ' · ' + nunca + ' nunca cobrado' + (nunca === 1 ? '' : 's') : '') + '</div>';
   }
   function celPasso(c) {
     var p = c.proximo_passo; return '<div class="passo ' + esc(p.gravidade) + '">' + esc(p.texto) + '</div>';
@@ -242,7 +242,7 @@
     var pagina = fatiar(lista, f);
     var linhas = pagina.map(function (c) {
       return '<tr><td style="white-space:normal;min-width:230px">' + nomeLink(c) + (c.suspenso ? ' <span class="pill" style="color:#6b21a8;border-color:#6b21a855;background:#6b21a814">⏸ Suspenso</span>' : '') + '<div style="margin-top:4px">' + pillCat(c) + '</div></td>' +
-        '<td style="white-space:normal;min-width:190px">' + chipsMeses(c) + '</td>' +
+        '<td class="c" style="white-space:normal;min-width:150px">' + resumoMeses(c) + '</td>' +
         '<td class="c" style="font-family:var(--mono)">' + reais(c.valor_atrasado) + '</td>' +
         '<td class="c"><b>' + c.dias_atraso + '</b> d</td>' +
         '<td class="c">' + celCobr(c) + '</td>' +
@@ -258,8 +258,8 @@
           '<option value=""' + (!f.cobr ? ' selected' : '') + '>Todas</option><option value="nunca"' + (f.cobr === 'nunca' ? ' selected' : '') + '>Nunca cobrado</option>' +
           '<option value="3"' + (f.cobr === '3' ? ' selected' : '') + '>Cobrado 3× ou mais</option><option value="parado"' + (f.cobr === 'parado' ? ' selected' : '') + '>Sem cobrar há 15 dias ou mais</option></select>' +
       '</div>' +
-      '<div class="card-sub">' + lista.length + ' cliente(s) · ordem: maior atraso primeiro. Cada mês mostra quantas vezes foi cobrado (×N); vermelho = nunca cobrado.</div>' +
-      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Empresa</th><th>Meses em aberto (competência)</th><th class="c">Valor em atraso</th><th class="c">Atraso</th><th class="c">Cobranças</th><th>Próximo passo</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' + paginacao(lista.length, f.pag, 'inad') : '<div class="vazio">Nenhum cliente neste filtro.</div>') +
+      '<div class="card-sub">' + lista.length + ' cliente(s) · ordem: maior atraso primeiro. Clique na empresa para ver cada mês, o valor e quantas vezes foi cobrado.</div>' +
+      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Empresa</th><th class="c">Meses em aberto</th><th class="c">Valor em atraso</th><th class="c">Atraso</th><th class="c">Cobranças</th><th>Próximo passo</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' + paginacao(lista.length, f.pag, 'inad') : '<div class="vazio">Nenhum cliente neste filtro.</div>') +
       '</div>';
     ligarFiltros('inad', { 'i-busca': 'busca', 'i-faixa': 'faixa', 'i-cat': 'cat', 'i-cobr': 'cobr' }, desenharInadimplentes);
   }
@@ -274,7 +274,7 @@
       return '<tr><td style="white-space:normal;min-width:230px">' + nomeLink(c) + '<div style="margin-top:4px">' + pillCat(c) + '</div></td>' +
         '<td class="c" style="font-family:var(--mono)">' + (c.honorario != null || valoresOcultos() ? reais(c.honorario) : '<span class="cinza">sem honorário</span>') + '</td>' +
         '<td class="c">' + (c.qtd_atrasados ? '<b>' + c.qtd_atrasados + '</b> título(s)<div class="sub">' + reais(c.valor_atrasado) + ' · ' + c.dias_atraso + ' dias</div>' : '<span class="cinza">sem débito</span>') + '</td>' +
-        '<td style="white-space:normal;min-width:190px">' + chipsMeses(c) + '</td>' +
+        '<td class="c" style="white-space:normal;min-width:150px">' + resumoMeses(c) + '</td>' +
         '<td class="c">' + celCobr(c) + '</td>' +
         '<td style="white-space:normal">' + celPasso(c) + '</td></tr>';
     }).join('');
@@ -286,7 +286,7 @@
       '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="s-busca" placeholder="Empresa, grupo ou CNPJ" value="' + esc(f.busca) + '"></div>' +
       '<div class="card-sub">' + lista.length + ' cliente(s) suspenso(s). A lista vem do Omie e some do contrato quando ele é reativado lá.</div>' +
-      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Empresa</th><th class="c">Honorário</th><th class="c">Débito</th><th>Meses em aberto</th><th class="c">Cobranças</th><th>Próximo passo</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' + paginacao(lista.length, f.pag, 'susp') : '<div class="vazio">Nenhum contrato suspenso.</div>') +
+      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Empresa</th><th class="c">Honorário</th><th class="c">Débito</th><th class="c">Meses em aberto</th><th class="c">Cobranças</th><th>Próximo passo</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' + paginacao(lista.length, f.pag, 'susp') : '<div class="vazio">Nenhum contrato suspenso.</div>') +
       '</div>';
     ligarFiltros('susp', { 's-busca': 'busca' }, desenharSuspensos);
   }
