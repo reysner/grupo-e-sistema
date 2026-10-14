@@ -8,6 +8,7 @@
 
   var SECOES = {
     visao: ['Visão Geral', 'Carteira, inadimplência, suspensos e cobranças em um só lugar. Material da reunião semanal.'],
+    oportunidades: ['Oportunidades', 'O que fazer agora para recuperar receita, e ideias para evoluir o módulo. Calculado com os dados de hoje.'],
     inadimplentes: ['Inadimplentes', 'Clientes com honorário vencido e não pago: meses em aberto, quantas vezes foi cobrado e o próximo passo. Clique no nome da empresa para ver cada honorário.'],
     suspensos: ['Suspensos no Omie', 'Contratos com situação "Suspenso" no Omie (lista lida toda segunda de manhã), com o débito que ficou em aberto.'],
     carteira: ['Todos os clientes', 'Todos os clientes ativos no Acessórias, com a situação financeira de cada um.'],
@@ -24,7 +25,7 @@
 
   var estado = {
     dados: null, secao: 'visao', ocultar: false,
-    f: { inad: { busca: '', faixa: '', cat: '', cobr: '', pag: 1 }, susp: { busca: '', pag: 1 }, cart: { busca: '', sit: '', cat: '', pag: 1 } },
+    f: { inad: { busca: '', faixa: '', cat: '', cobr: '', pag: 1 }, susp: { busca: '', deb: '', pag: 1 }, cart: { busca: '', sit: '', cat: '', pag: 1 } },
   };
 
   // ── utilidades ───────────────────────────────────────────────────────────────
@@ -98,7 +99,7 @@
   }
 
   // ── carga ────────────────────────────────────────────────────────────────────
-  var NOMES_SEC = ['visao', 'inadimplentes', 'suspensos', 'carteira', 'cobrancas', 'qualidade'];
+  var NOMES_SEC = ['visao', 'oportunidades', 'inadimplentes', 'suspensos', 'carteira', 'cobrancas', 'qualidade'];
   async function iniciar(forcar) {
     $('login-screen').style.display = 'none';
     $('app').style.display = 'block';
@@ -118,7 +119,7 @@
     $('badge-inad').textContent = k.inadimplentes || '';
     $('badge-susp').textContent = k.suspensos || '';
     $('atualizado').textContent = k.qualidade.financeiro_lido_em ? 'Omie lido em ' + data(k.qualidade.financeiro_lido_em.slice(0, 10)) + ' ' + k.qualidade.financeiro_lido_em.slice(11) : 'Omie ainda não lido';
-    desenharVisao(); desenharInadimplentes(); desenharSuspensos(); desenharCarteira(); desenharCobrancas(); desenharQualidade();
+    desenharVisao(); desenharOportunidades(); desenharInadimplentes(); desenharSuspensos(); desenharCarteira(); desenharCobrancas(); desenharQualidade();
     irPara(estado.secao);
   }
   function irPara(sec) {
@@ -244,7 +245,7 @@
   }
   function listaSusp() {
     var d = estado.dados, f = estado.f.susp, q = norm(f.busca.trim());
-    var lista = d.clientes.filter(function (c) { return c.suspenso && bateBusca(c, q); })
+    var lista = d.clientes.filter(function (c) { return c.suspenso && bateBusca(c, q) && (f.deb !== 'com' || c.qtd_atrasados > 0) && (f.deb !== 'sem' || !c.qtd_atrasados); })
       .sort(function (a, b) { return (b.qtd_atrasados > 0) - (a.qtd_atrasados > 0) || b.dias_atraso - a.dias_atraso; });
     return lista;
   }
@@ -301,11 +302,12 @@
         kpi('#dc2626', 'Com débito em aberto', num(k.suspensos_com_debito), 'ainda devem honorário') +
         kpi('#0891b2', 'Honorário parado', reais(k.honorario_suspenso), 'valor mensal dos suspensos que têm honorário no Omie') +
       '</div>' +
-      '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="s-busca" placeholder="Empresa, grupo ou CNPJ" value="' + esc(f.busca) + '"></div>' +
+      '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="s-busca" placeholder="Empresa, grupo ou CNPJ" value="' + esc(f.busca) + '">' +
+        '<span class="filter-label">Débito</span><select class="gp-select" id="s-deb"><option value=""' + (!f.deb ? ' selected' : '') + '>Todos</option><option value="com"' + (f.deb === 'com' ? ' selected' : '') + '>Com débito em aberto</option><option value="sem"' + (f.deb === 'sem' ? ' selected' : '') + '>Sem débito</option></select></div>' +
       '<div class="card-sub">' + lista.length + ' cliente(s) suspenso(s). A lista vem do Omie e some do contrato quando ele é reativado lá.</div>' +
       (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Empresa</th><th class="c">Honorário</th><th class="c">Débito</th><th class="c">Meses em aberto</th><th class="c">Cobranças</th><th>Próximo passo</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' + paginacao(lista.length, f.pag, 'susp') : '<div class="vazio">Nenhum contrato suspenso.</div>') +
       '</div>';
-    ligarFiltros('susp', { 's-busca': 'busca' }, desenharSuspensos);
+    ligarFiltros('susp', { 's-busca': 'busca', 's-deb': 'deb' }, desenharSuspensos);
   }
 
   // ── TODOS OS CLIENTES ────────────────────────────────────────────────────────
@@ -345,7 +347,7 @@
     });
     var meses = Object.keys(porMes).sort().map(function (m) { return porMes[m]; });
     var linhasMes = meses.map(function (o) {
-      return '<tr><td><b>' + competencia(o.mes + '-10') + '</b><div class="sub">vence em ' + o.mes.slice(5) + '/' + o.mes.slice(0, 4) + '</div></td><td class="c">' + num(o.titulos) + '</td><td class="c">' + Object.keys(o.clientes).length + '</td><td class="c" style="font-family:var(--mono)">' + reais(o.valor) + '</td>' +
+      return '<tr class="clicavel" data-comp="' + o.mes + '" title="Ver as empresas desta competência"><td><b>' + competencia(o.mes + '-10') + '</b><div class="sub">vence em ' + o.mes.slice(5) + '/' + o.mes.slice(0, 4) + '</div></td><td class="c">' + num(o.titulos) + '</td><td class="c">' + Object.keys(o.clientes).length + '</td><td class="c" style="font-family:var(--mono)">' + reais(o.valor) + '</td>' +
         '<td class="c">' + (o.titulos ? (Math.round(10 * o.cobrancas / o.titulos) / 10).toString().replace('.', ',') : '—') + '×</td><td class="c">' + (o.nunca ? '<span class="pill" style="color:#b91c1c;border-color:#b91c1c55;background:#b91c1c14">' + o.nunca + '</span>' : '<span class="cinza">0</span>') + '</td></tr>';
     }).join('');
     var inad = d.clientes.filter(function (c) { return c.qtd_atrasados > 0; });
@@ -359,7 +361,7 @@
         kpi('#d97706', 'Cobrados 3× ou mais', num(k.cobrados_3_ou_mais), 'continuam sem pagar') +
         kpi('#2563eb', 'Parados há 15 dias+', num(inad.filter(function (c) { return c.cobrancas && c.dias_desde_cobranca >= 15; }).length), 'cobrados antes, sem nova cobrança') +
       '</div>' +
-      '<div class="card"><div class="card-title">Competências em aberto</div><div class="card-sub">Cada linha é o mês do honorário. "Cobrado em média" = vezes que cada título daquele mês já foi cobrado.</div>' +
+      '<div class="card"><div class="card-title">Competências em aberto</div><div class="card-sub">Cada linha é o mês do honorário: clique para ver as empresas, os vencimentos e os valores. "Cobrado em média" = vezes que cada título daquele mês já foi cobrado.</div>' +
         (meses.length ? '<div class="table-wrap"><table><thead><tr><th>Competência</th><th class="c">Títulos</th><th class="c">Clientes</th><th class="c">Valor</th><th class="c">Cobrado em média</th><th class="c">Nunca cobrados</th></tr></thead><tbody>' + linhasMes + '</tbody></table></div>' : '<div class="vazio">Sem detalhe título a título ainda: ele chega com a próxima leitura do Omie (rotina das 11h).</div>') + '</div>' +
       '<div class="duas">' +
         '<div class="card"><div class="card-title">Nunca cobrados</div><div class="card-sub">Maior atraso primeiro.</div><div class="lista-top">' + (nunca.map(function (c) { return item(c, c.dias_atraso + ' dias em atraso · ' + c.qtd_atrasados + ' título(s)'); }).join('') || '<div class="vazio">Todos os inadimplentes já foram cobrados.</div>') + '</div></div>' +
@@ -389,6 +391,7 @@
   // ── FICHA DO CLIENTE ─────────────────────────────────────────────────────────
   var fichaDoc = null;
   async function abrirFicha(doc) {
+    estado.modalComp = null;
     fichaDoc = doc;
     $('ficha').style.display = 'flex';
     $('ficha-nome').textContent = 'Carregando…'; $('ficha-sub').textContent = ''; $('ficha-passo').style.display = 'none'; $('ficha-corpo').innerHTML = '';
@@ -440,6 +443,122 @@
   }
   function fecharFicha() { $('ficha').style.display = 'none'; fichaDoc = null; }
 
+  // ── DETALHE DE UMA COMPETÊNCIA (clique na linha da seção Cobranças) ──────────
+  function titulosDaCompetencia(mes) {
+    var r = [];
+    estado.dados.clientes.forEach(function (c) { c.abertos.forEach(function (t) { if (t.vencido && t.vencimento.slice(0, 7) === mes) r.push({ c: c, t: t }); }); });
+    r.sort(function (a, b) { return b.t.dias_atraso - a.t.dias_atraso || (b.t.valor || 0) - (a.t.valor || 0) || a.c.nome.localeCompare(b.c.nome); });
+    return r;
+  }
+  function abrirCompetencia(mes) {
+    var lista = titulosDaCompetencia(mes);
+    estado.modalComp = mes; estado.ficha = null; fichaDoc = null;
+    var total = lista.reduce(function (s, x) { return s + (x.t.valor || 0); }, 0), empresas = {};
+    lista.forEach(function (x) { empresas[x.c.doc] = 1; });
+    var nunca = lista.filter(function (x) { return !x.t.cobrancas; }).length;
+    $('ficha').style.display = 'flex';
+    $('ficha-nome').textContent = 'Competência ' + competencia(mes + '-10') + ' em aberto';
+    $('ficha-sub').innerHTML = lista.length + ' honorário(s) · ' + Object.keys(empresas).length + ' empresa(s) · vencimento em ' + mes.slice(5) + '/' + mes.slice(0, 4) + ' · ' + reais(total) + ' · ' + nunca + ' nunca cobrado(s)';
+    $('ficha-passo').style.display = 'none';
+    var linhas = lista.map(function (x) {
+      var c = x.c, t = x.t;
+      return '<tr><td style="white-space:normal;min-width:220px"><button class="link" data-ficha="' + esc(c.doc) + '">' + esc(c.nome) + '</button>' + (c.suspenso ? ' <span class="pill" style="color:#6b21a8;border-color:#6b21a855;background:#6b21a814">⏸ Suspenso</span>' : '') + '<div class="sub">' + esc(c.cnpj || '') + '</div></td>' +
+        '<td class="c">' + data(t.vencimento) + '</td><td class="c" style="font-family:var(--mono)">' + reais(t.valor) + '</td><td class="c">' + t.dias_atraso + ' d</td>' +
+        '<td class="c">' + (t.cobrancas ? '<b>' + t.cobrancas + '×</b>' : '<span class="pill" style="color:#b91c1c;border-color:#b91c1c55;background:#b91c1c14">nunca</span>') + '</td>' +
+        '<td class="c">' + (t.ultima_cobranca ? data(t.ultima_cobranca) : '—') + '</td></tr>';
+    }).join('');
+    $('ficha-corpo').innerHTML = '<div style="margin-bottom:10px"><button class="gp-footer-btn" id="comp-csv" style="width:auto;padding:4px 10px;display:inline-flex">⬇ CSV desta competência</button></div>' +
+      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Empresa</th><th class="c">Vencimento</th><th class="c">Valor em aberto</th><th class="c">Atraso</th><th class="c">Cobrado</th><th class="c">Última cobrança</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhum honorário em aberto nesta competência.</div>');
+    var b = $('comp-csv');
+    if (b) b.addEventListener('click', function () {
+      window.Exportar.csv('financeiro-competencia-' + mes, ['Empresa', 'CNPJ', 'Grupo', 'Categoria', 'Suspenso', 'Competência', 'Vencimento', 'Valor em aberto (R$)', 'Dias de atraso', 'Vezes cobrado', 'Última cobrança'],
+        lista.map(function (x) { return [x.c.nome, x.c.cnpj, x.c.grupo || '', x.c.categoria || '', x.c.suspenso ? 'Sim' : '', competencia(x.t.vencimento), dataExp(x.t.vencimento), moedaExp(x.t.valor), x.t.dias_atraso, x.t.cobrancas, dataExp(x.t.ultima_cobranca)]; }));
+    });
+  }
+
+  // ── OPORTUNIDADES (calculadas com os dados de hoje) ──────────────────────────
+  function listaOportunidades() {
+    var d = estado.dados, k = d.kpis, cl = d.clientes, ops = [];
+    var soma = function (arr) { return arr.reduce(function (s, c) { return s + (c.valor_atrasado || 0); }, 0); };
+    var inad = cl.filter(function (c) { return c.qtd_atrasados > 0; });
+    var add = function (o) { if (o.qtd > 0) ops.push(o); };
+    var nunca = inad.filter(function (c) { return !c.cobrancas; });
+    add({ chave: 'nunca', grav: 'alta', titulo: 'Cobrar quem nunca foi cobrado', qtd: nunca.length, valor: soma(nunca), unid: 'cliente(s)',
+      texto: 'Inadimplentes sem nenhuma cobrança do Bruno no Zappy desde ' + data(k.qualidade.cobrancas_desde) + '.', acao: 'Disparar a primeira cobrança, começando pelos maiores valores e pelos atrasos mais longos.', ir: { sec: 'inadimplentes', f: { cobr: 'nunca' } } });
+    var parados = inad.filter(function (c) { return c.cobrancas && c.dias_desde_cobranca >= 15; });
+    add({ chave: 'parados', grav: 'media', titulo: 'Retomar cobranças paradas', qtd: parados.length, valor: soma(parados), unid: 'cliente(s)',
+      texto: 'Foram cobrados antes, mas a última cobrança tem 15 dias ou mais.', acao: 'Cobrar de novo ou ligar; registrar o retorno do cliente.', ir: { sec: 'inadimplentes', f: { cobr: 'parado' } } });
+    var muitas = inad.filter(function (c) { return c.cobrancas >= 3; });
+    add({ chave: 'muitas', grav: 'alta', titulo: 'Mensagem não resolve: partir para o contato direto', qtd: muitas.length, valor: soma(muitas), unid: 'cliente(s)',
+      texto: 'Já receberam 3 cobranças ou mais por mensagem e continuam sem pagar.', acao: 'Ligar, propor acordo ou parcelamento e levar para a reunião semanal.', ir: { sec: 'inadimplentes', f: { cobr: '3' } } });
+    var velhas = inad.filter(function (c) { return c.dias_atraso > 365; });
+    add({ chave: 'velhas', grav: 'alta', titulo: 'Dívida com mais de 1 ano', qtd: velhas.length, valor: soma(velhas), unid: 'cliente(s)',
+      texto: 'Honorário vencido há mais de 365 dias: a chance de recuperar por mensagem é baixa.', acao: 'Decidir caso a caso: acordo, cobrança formal/jurídica ou baixa como perda para limpar a carteira.', ir: { sec: 'inadimplentes', f: { faixa: 'mais90' } } });
+    var suspDeb = cl.filter(function (c) { return c.suspenso && c.qtd_atrasados > 0; });
+    add({ chave: 'suspdeb', grav: 'alta', titulo: 'Suspensos que ainda devem', qtd: suspDeb.length, valor: soma(suspDeb), unid: 'cliente(s)',
+      texto: 'Contrato suspenso no Omie com honorário em aberto.', acao: 'Só reativar depois de regularizar; sem retorno em 60 dias, decidir entre acordo e encerramento.', ir: { sec: 'suspensos', f: { deb: 'com' } } });
+    var suspSem = cl.filter(function (c) { return c.suspenso && !c.qtd_atrasados; });
+    add({ chave: 'suspsem', grav: 'media', titulo: 'Suspensos sem débito', qtd: suspSem.length, valor: null, unid: 'cliente(s)',
+      texto: 'Contrato suspenso e sem nada em aberto: ficam parados sem gerar receita.', acao: 'Confirmar com o cliente: reativar o contrato ou encerrar no Acessórias.', ir: { sec: 'suspensos', f: { deb: 'sem' } } });
+    var ruins = cl.filter(function (c) { return !c.qtd_atrasados && c.pontualidade && c.pontualidade.pagos >= 3 && c.pontualidade.media_dias >= 10; });
+    add({ chave: 'ruins', grav: 'baixa', titulo: 'Maus pagadores ainda em dia', qtd: ruins.length, valor: null, unid: 'cliente(s)',
+      texto: 'Em dia hoje, mas pagam, em média, 10 dias ou mais depois do vencimento.', acao: 'Mandar lembrete uma semana antes do vencimento (cobrança preventiva).', ir: { sec: 'carteira', f: {} } });
+    add({ chave: 'avencer', grav: 'baixa', titulo: 'Vencem nos próximos 7 dias', qtd: k.a_vencer_7_dias.titulos, valor: k.a_vencer_7_dias.valor, unid: 'título(s)',
+      texto: 'Honorários que vencem esta semana.', acao: 'Lembrete preventivo, principalmente para quem costuma atrasar.', ir: null });
+    add({ chave: 'semhon', grav: 'media', titulo: 'Clientes ativos sem honorário no Omie', qtd: k.qualidade.sem_honorario_no_omie, valor: null, unid: 'cliente(s)',
+      texto: 'Ativos no Acessórias, mas sem honorário lido no Omie: podem estar sem contrato, sem cobrança emitida ou com outro CNPJ.', acao: 'Conferir cada um; cobrança não emitida é receita perdida.', ir: { sec: 'carteira', f: { sit: 'sem_honorario' } } });
+    var top = inad.slice().sort(function (a, b) { return (b.valor_atrasado || 0) - (a.valor_atrasado || 0); }).slice(0, 10);
+    var totalAtraso = soma(inad);
+    if (top.length >= 5 && !valoresOcultos() && totalAtraso > 0) {
+      var vt = soma(top);
+      add({ chave: 'conc', grav: 'media', titulo: 'Concentração da dívida', qtd: top.length, valor: vt, unid: 'maiores devedores',
+        texto: 'Os 10 maiores devedores respondem por ' + Math.round(100 * vt / totalAtraso) + '% de tudo o que está em atraso.', acao: 'Atacar esses 10 primeiro: é onde a recuperação rende mais por contato.', ir: { sec: 'inadimplentes', f: {} } });
+    }
+    add({ chave: 'semdet', grav: 'baixa', titulo: 'Inadimplentes sem detalhe mês a mês', qtd: k.qualidade.inadimplentes_sem_detalhe, valor: null, unid: 'cliente(s)',
+      texto: 'Têm o total em atraso, mas o Omie ainda não trouxe os títulos um a um.', acao: 'Entra sozinho na próxima leitura semanal do Omie.', ir: null });
+    var peso = { alta: 0, media: 1, baixa: 2 };
+    ops.sort(function (a, b) { return peso[a.grav] - peso[b.grav] || (b.valor || 0) - (a.valor || 0); });
+    return ops;
+  }
+  var ROT_GRAV = { alta: ['Prioridade alta', '#dc2626'], media: ['Atenção', '#d97706'], baixa: ['Acompanhar', '#2563eb'] };
+  function desenharOportunidades() {
+    var ops = listaOportunidades();
+    var bd = $('badge-op'); if (bd) bd.textContent = ops.filter(function (o) { return o.grav === 'alta'; }).length || '';
+    var cards = ops.map(function (o) {
+      var g = ROT_GRAV[o.grav];
+      return '<div class="card op-card"><div class="op-topo"><span class="pill" style="color:' + g[1] + ';border-color:' + g[1] + '55;background:' + g[1] + '14">' + g[0] + '</span>' +
+        '<div class="op-qtd"><b>' + num(o.qtd) + '</b> <span class="cinza">' + esc(o.unid) + '</span></div></div>' +
+        '<div class="card-title" style="margin-top:8px">' + esc(o.titulo) + '</div><div class="card-sub">' + esc(o.texto) + '</div>' +
+        (o.valor != null ? '<div class="op-valor">' + reais(o.valor) + '</div>' : '') +
+        '<div class="passo ' + (o.grav === 'alta' ? 'alta' : o.grav === 'media' ? 'media' : 'baixa') + '"><strong>O que fazer:</strong> ' + esc(o.acao) + '</div>' +
+        (o.ir ? '<div style="margin-top:10px"><button class="gp-footer-btn" style="width:auto;padding:5px 12px;display:inline-flex" data-op="' + o.chave + '">Ver a lista →</button></div>' : '') + '</div>';
+    }).join('');
+    var ideias = [
+      ['Régua de cobrança automática', 'Mensagem pelo Zappy no D-3, D+1, D+7 e D+15, com texto por faixa de atraso. Hoje a cobrança depende da memória de uma pessoa.'],
+      ['Promessa de pagamento e acordo', 'Registrar "vai pagar dia X" e parcelamentos na ficha, com alerta quando a data passar sem pagamento.'],
+      ['Evolução semana a semana', 'Guardar um retrato semanal da inadimplência para mostrar tendência (hoje cada leitura do Omie substitui a anterior).'],
+      ['Previsão de recebimento', 'Projetar o caixa do mês com o histórico de atraso de cada cliente (a pontualidade já está sendo lida).'],
+      ['Atualização sem depender de login', 'Chaves da API do Omie para a leitura rodar sozinha todo dia, sem abrir o ERP. Hoje roda uma vez por semana.'],
+      ['Responsável e cobrança em outros canais', 'Registrar quem cobrou, por qual canal (ligação, e-mail) e o retorno do cliente, para medir também o que não passa pelo Zappy.'],
+    ];
+    $('sec-oportunidades').innerHTML =
+      '<div class="nota"><strong>Como ler:</strong> cada cartão é calculado agora, com os dados de hoje do Omie, do Zappy e do Acessórias. A cor indica a prioridade e o botão abre a lista já filtrada.</div>' +
+      (cards ? '<div class="op-grid">' + cards + '</div>' : '<div class="card"><div class="vazio">Nada pendente: sem inadimplência nem pontos de atenção hoje.</div></div>') +
+      '<div class="card"><div class="card-title">Ideias para evoluir o módulo</div><div class="card-sub">Sugestões de ampliação, da que mais ajuda para a que mais custa.</div><div class="lista-top">' +
+      ideias.map(function (i) { return '<div class="item"><div class="n"><b>' + esc(i[0]) + '</b><div class="sub">' + esc(i[1]) + '</div></div></div>'; }).join('') + '</div></div>';
+  }
+  function irParaOportunidade(chave) {
+    var it = listaOportunidades().filter(function (x) { return x.chave === chave; })[0];
+    if (!it || !it.ir) return;
+    var alvo = { inadimplentes: 'inad', suspensos: 'susp', carteira: 'cart' }[it.ir.sec];
+    var f = estado.f[alvo];
+    Object.keys(f).forEach(function (k) { if (k !== 'pag') f[k] = ''; });
+    Object.keys(it.ir.f || {}).forEach(function (k) { f[k] = it.ir.f[k]; });
+    f.pag = 1;
+    REDESENHO[alvo]();
+    irPara(it.ir.sec);
+  }
+
   // ── EXPORTAÇÃO (CSV e PDF) ───────────────────────────────────────────────────
   // Exporta TODAS as linhas do filtro atual da seção aberta (não só a página). Os dados já vieram do servidor com as permissões e os
   // valores ocultos aplicados; com "Ocultar valores" ligado, os valores em R$ saem como "oculto".
@@ -455,6 +574,13 @@
   function dadosExport(sec) {
     var d = estado.dados, k = d.kpis, f;
     var aviso = valoresOcultos() ? 'Valores em R$ ocultos.' : '';
+    if (sec === 'oportunidades') {
+      var ops = listaOportunidades();
+      return { arquivo: 'financeiro-oportunidades', titulo: 'Financeiro - Oportunidades', filtros: ['Calculado com os dados de ' + data(k.hoje) + '.', aviso],
+        colunas: ['Prioridade', 'Oportunidade', 'Quantidade', 'Unidade', 'Valor (R$)', 'Situação', 'O que fazer'],
+        linhas: ops.map(function (o) { return [ROT_GRAV[o.grav][0], o.titulo, o.qtd, o.unid, o.valor == null ? '' : moedaExp(o.valor), o.texto, o.acao]; }),
+        alinhar: ['left', 'left', 'center', 'left', 'right', 'left', 'left'], fonte: 7 };
+    }
     if (sec === 'visao') {
       var lin = [
         ['Clientes ativos', k.clientes_ativos], ['Clientes que faturam no Omie', k.clientes_com_honorario], ['Honorário mensal (R$)', moedaExp(k.honorario_mensal)],
@@ -568,6 +694,10 @@
   document.addEventListener('click', function (ev) {
     var f = ev.target.closest && ev.target.closest('[data-ficha]');
     if (f) { abrirFicha(f.getAttribute('data-ficha')); return; }
+    var cp = ev.target.closest && ev.target.closest('[data-comp]');
+    if (cp) { abrirCompetencia(cp.getAttribute('data-comp')); return; }
+    var op = ev.target.closest && ev.target.closest('[data-op]');
+    if (op) { irParaOportunidade(op.getAttribute('data-op')); return; }
     var p = ev.target.closest && ev.target.closest('[data-pag]');
     if (p) {
       var chave = p.getAttribute('data-chave'); estado.f[chave].pag = parseInt(p.getAttribute('data-pag'), 10) || 1;
@@ -592,6 +722,7 @@
     estado.ocultar = !estado.ocultar; ls('fin_ocultar', estado.ocultar ? '1' : '0');
     pintarBotaoValores(); if (estado.dados) desenharTudo();
     if ($('ficha').style.display === 'flex' && estado.ficha) desenharFicha(estado.ficha);
+    if ($('ficha').style.display === 'flex' && estado.modalComp) abrirCompetencia(estado.modalComp);
   });
   estado.ocultar = ls('fin_ocultar') === '1';
   $('ficha-fechar').addEventListener('click', fecharFicha);

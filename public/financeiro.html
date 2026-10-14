@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/cs-painel.css?v=17">
-  <link rel="stylesheet" href="/css/financeiro.css?v=1">
+  <link rel="stylesheet" href="/css/financeiro.css?v=2">
 </head>
 <body>
 
@@ -51,6 +51,7 @@
     </div>
     <nav class="gp-nav" id="nav">
       <button class="gp-nav-item active" data-sec="visao"><span class="gp-nav-icon">🏠</span>Visão Geral</button>
+      <button class="gp-nav-item" data-sec="oportunidades"><span class="gp-nav-icon">💡</span>Oportunidades<span class="gp-nav-badge" id="badge-op"></span></button>
       <div class="gp-nav-divider">Carteira</div>
       <button class="gp-nav-item" data-sec="inadimplentes"><span class="gp-nav-icon">⚠️</span>Inadimplentes<span class="gp-nav-badge" id="badge-inad"></span></button>
       <button class="gp-nav-item" data-sec="suspensos"><span class="gp-nav-icon">⏸</span>Suspensos<span class="gp-nav-badge gp-badge-ok" id="badge-susp"></span></button>
@@ -83,6 +84,7 @@
     </div>
 
     <section class="gp-section ativa" id="sec-visao"></section>
+    <section class="gp-section" id="sec-oportunidades"></section>
     <section class="gp-section" id="sec-inadimplentes"></section>
     <section class="gp-section" id="sec-suspensos"></section>
     <section class="gp-section" id="sec-carteira"></section>
@@ -108,6 +110,6 @@
 </div>
 
 <script src="/js/exportar.js?v=1"></script>
-<script src="/js/financeiro.js?v=4"></script>
+<script src="/js/financeiro.js?v=5"></script>
 </body>
 </html>
