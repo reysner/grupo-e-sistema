@@ -8998,6 +8998,7 @@ window.Tickets = Tickets;
     /** Chamado pelo Nav.go('sucesso-cliente') ao abrir a aba. */
     async load() {
       await this.carregar();
+      this.carregarHoje();   // não bloqueia o radar
       await this.carregarFiltros();
       await this.filtrarHistorico();
       await this.carregarVinculosPendentes();
@@ -9683,6 +9684,81 @@ window.Tickets = Tickets;
     },
 
     // Mesmo padrão usado nos outros módulos do app.js (ex.: linha "const _tk = () => localStorage.getItem('ge_token') || '';")
+
+    // ── HOJE: pedidos por e-mail que esperam resposta (leitura diária feita pelo job local; só contagens por cliente) ──
+    _hojeTodos: false,
+    _hojeDados: null,
+
+    async carregarHoje() {
+      const alvo = document.getElementById('hoje-container');
+      if (!alvo) return;
+      try {
+        const resp = await fetch('/api/cs/painel/email-sinais', { headers: SucessoCliente._authHeaders(), cache: 'no-store' });
+        const j = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(j.error || ('HTTP ' + resp.status));
+        SucessoCliente._hojeDados = j;
+        SucessoCliente._renderHoje(alvo);
+      } catch (e) {
+        alvo.innerHTML = '<p class="radar-erro">Não foi possível carregar o bloco Hoje agora.</p>' +
+          '<p style="font-family:monospace;font-size:12px;color:var(--gray-500)">' + SucessoCliente._esc(e.message) + '</p>';
+      }
+    },
+
+    alternarHojeTodos() {
+      SucessoCliente._hojeTodos = !SucessoCliente._hojeTodos;
+      const alvo = document.getElementById('hoje-container');
+      if (alvo) SucessoCliente._renderHoje(alvo);
+    },
+
+    _renderHoje(alvo) {
+      const esc = SucessoCliente._esc;
+      const d = SucessoCliente._hojeDados || {};
+      if (!d.lido_em) {
+        alvo.innerHTML = '<div class="hoje-box"><div class="hoje-titulo">Hoje</div>' +
+          '<p class="hoje-nota">Ainda não há leitura de e-mails. O job local envia os sinais uma vez por dia.</p></div>';
+        return;
+      }
+      const t = d.totais || {};
+      const lido = new Date(d.lido_em);
+      const idadeH = (Date.now() - lido.getTime()) / 3600000;
+      const quando = lido.toLocaleDateString('pt-BR') + ' às ' + lido.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const fmtIdade = (h) => h >= 48 ? Math.round(h / 24) + ' dias' : (h >= 24 ? '1 dia' : Math.max(1, Math.round(h)) + ' h');
+      const cor = (h) => h >= 168 ? 'hoje-venc' : (h >= 48 ? 'hoje-aviso' : '');
+      const esperando = (d.clientes || []).filter((c) => (c.aguardando_4h || 0) + (c.aguardando_compartilhado || 0) > 0);
+      const dias7 = esperando.filter((c) => c.aguardando_7d > 0).length;
+      const pessoais = (d.dominios || []).filter((x) => x.pessoal).reduce((s, x) => s + (x.aguardando || 0), 0);
+      const card = (rotulo, valor, sub, classe) =>
+        '<div class="hoje-card"><div class="hoje-card-rotulo">' + rotulo + '</div><div class="hoje-card-valor ' + (classe || '') + '">' + valor + '</div><div class="hoje-card-sub">' + sub + '</div></div>';
+      const limite = SucessoCliente._hojeTodos ? esperando.length : 12;
+      const linhas = esperando.slice(0, limite).map((c) => {
+        const grupo = c.aguardando_compartilhado > 0 && !c.aguardando_4h;
+        const quem = (c.caixas || []).map((x) => x.split(' ')[0]).join(', ') || '—';
+        return '<tr><td>' + esc(c.nome || c.cnpj) + (grupo ? ' <span class="hoje-pill" title="Pedido de um contato que atende várias empresas">grupo</span>' : '') + '</td>' +
+          '<td class="hoje-idade ' + cor(c.mais_antigo_h) + '">' + esc(fmtIdade(c.mais_antigo_h)) + '</td>' +
+          '<td>' + esc(quem) + '</td></tr>';
+      }).join('');
+      const domExternos = (d.dominios || []).filter((x) => !x.pessoal && x.aguardando > 0).slice(0, 6);
+      alvo.innerHTML =
+        '<div class="hoje-box">' +
+          '<div class="hoje-cab"><div><div class="hoje-titulo">Hoje</div><div class="hoje-sub">Quem escreveu por e-mail e ainda não recebeu resposta nossa</div></div>' +
+          '<div class="hoje-leitura' + (idadeH > 36 ? ' hoje-venc' : '') + '">Leitura de ' + esc(quando) + (idadeH > 36 ? ' — desatualizada' : '') + '</div></div>' +
+          '<div class="hoje-cards">' +
+            card('Esperando por e-mail', String(t.aguardando || 0), (t.aguardando_exclusivos || 0) + ' de uma empresa, ' + (t.aguardando_compartilhados || 0) + ' de grupo') +
+            card('Há 7 dias ou mais', String(dias7), 'empresas — confirme antes de cobrar', dias7 ? 'hoje-venc' : '') +
+            card('Já falamos pelo Zappy', String(t.resolvidos_zappy || 0), 'saíram da fila', 'hoje-ok') +
+            card('Sem cliente identificado', String(t.aguardando_nao_identificados || 0), pessoais + ' de e-mail pessoal') +
+          '</div>' +
+          '<div class="hoje-tabela-titulo">Esperando resposta por e-mail</div>' +
+          (esperando.length
+            ? '<div class="hoje-tabela-wrap"><table class="radar-tabela hoje-tabela"><thead><tr><th>Empresa</th><th>Há</th><th>Quem recebeu</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' +
+              (esperando.length > 12 ? '<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="SucessoCliente.alternarHojeTodos()">' + (SucessoCliente._hojeTodos ? 'Mostrar só os 12 mais antigos' : 'Ver as ' + esperando.length + ' empresas') + '</button>' : '')
+            : '<p class="radar-ok">Ninguém esperando resposta por e-mail agora.</p>') +
+          (domExternos.length ? '<div class="hoje-nota" style="margin-top:12px">Fora do cadastro, também esperam: ' + domExternos.map((x) => esc(x.dominio) + ' (' + x.aguardando + ')').join(', ') + '.</div>' : '') +
+          '<p class="hoje-nota">Conta só e-mail: quem o escritório já atendeu no Zappy depois do e-mail sai da fila. Telefone e WhatsApp fora do Zappy não aparecem. ' +
+          'Lidas ' + esc(d.caixas_lidas || 0) + ' caixas, últimos ' + esc(d.janela_dias || 14) + ' dias, só cabeçalhos (nunca assunto nem texto).</p>' +
+        '</div>';
+    },
+
     _authHeaders() {
       const token = localStorage.getItem('ge_token') || '';
       return token ? { Authorization: 'Bearer ' + token } : {};

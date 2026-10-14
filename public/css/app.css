@@ -656,3 +656,26 @@ body.sigilo-on.sigilo-ticket-fin-on .valor-rs.rs-ticket-fin { filter: none; user
 .cat-prata{background:#e2e8f0;color:#475569}
 .cat-bronze{background:#ffedd5;color:#9a3412}
 .cat-motivo{font-size:10.5px;color:var(--gray-400);max-width:230px;line-height:1.3;margin-top:3px;white-space:normal}
+
+/* ── Bloco "Hoje" (pedidos por e-mail esperando resposta) ── */
+.hoje-box { background: var(--white); border: 1px solid var(--gray-200); border-radius: 12px; padding: 16px 18px; margin-bottom: 24px; }
+.hoje-cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.hoje-titulo { font-size: 18px; font-weight: 700; color: var(--g800); }
+body.dark-mode .hoje-titulo { color: var(--gray-800); }
+.hoje-sub { font-size: 13px; color: var(--gray-500); margin-top: 2px; }
+.hoje-leitura { font-size: 12px; color: var(--gray-500); }
+.hoje-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.hoje-card { background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 10px; padding: 12px 14px; }
+.hoje-card-rotulo { font-size: 12px; color: var(--gray-500); }
+.hoje-card-valor { font-size: 26px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--gray-800); }
+.hoje-card-sub { font-size: 12px; color: var(--gray-500); margin-top: 2px; }
+.hoje-card-valor.hoje-venc, .hoje-venc { color: #c62828; }
+.hoje-aviso { color: #b7791f; }
+.hoje-card-valor.hoje-ok { color: #2e7d32; }
+.hoje-tabela-titulo { font-weight: 600; margin: 0 0 6px; color: var(--gray-700); }
+.hoje-tabela-wrap { overflow-x: auto; }
+.hoje-tabela th { white-space: nowrap; }
+.hoje-idade { white-space: nowrap; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hoje-pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--gray-100); color: var(--gray-600); }
+.hoje-nota { font-size: 12px; color: var(--gray-500); line-height: 1.5; margin: 10px 0 0; }
+body.dark-mode .radar-tabela th, body.dark-mode .radar-tabela td { border-color: var(--gray-200); color: var(--gray-700); }
