@@ -274,6 +274,45 @@ async function classificarSaidasPelaReceita({ limite = 150 } = {}) {
   } finally { _classificando = false; }
 }
 
+// ── Saída lançada com atraso: a data vale no mês EXATO da saída ──────────────
+/**
+ * Quando o sistema detecta a inativação e o Acessórias ainda não informa "Cliente até", a saída é gravada com a data da DETECÇÃO.
+ * Se depois o Acessórias informa um "Cliente até" anterior, a saída precisa contar no mês certo (pedido do Reysner, 14/10/2026).
+ * Só corrige quando a data gravada é a da detecção (±1 dia, por causa do fuso): data digitada à mão ou vinda do próprio
+ * Acessórias nunca é trocada. Devolve a data nova ou null.
+ */
+function dataSaidaCorrigida(dataSaidaAtual, detectadoEm, clienteAte) {
+  const ok = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+  if (!ok(dataSaidaAtual) || !ok(detectadoEm) || !ok(clienteAte)) return null;
+  if (clienteAte >= dataSaidaAtual) return null;
+  const dias = Math.abs(Date.parse(dataSaidaAtual) - Date.parse(detectadoEm)) / 86400000;
+  return dias <= 1 ? clienteAte : null;
+}
+
+/** Aplica dataSaidaCorrigida ao cliente encerrado desse CNPJ. Devolve quantos foram corrigidos (tolerante a coluna ausente). */
+async function corrigirDataDeSaida(cnpjDigitos, clienteAte) {
+  let corrigidos = 0;
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, cnpj, to_char(data_saida, 'YYYY-MM-DD') AS saida,
+              to_char((alerta_baixa_notificado_em AT TIME ZONE 'America/Sao_Paulo')::date, 'YYYY-MM-DD') AS detectado
+         FROM clientes
+        WHERE regexp_replace(cnpj, '\\D', '', 'g') = $1 AND status = 'encerrado' AND data_saida IS NOT NULL AND alerta_baixa_notificado_em IS NOT NULL`, [cnpjDigitos]);
+    for (const c of rows) {
+      const nova = dataSaidaCorrigida(c.saida, c.detectado, clienteAte);
+      if (!nova) continue;
+      await pool.query(`UPDATE clientes SET data_saida = $1 WHERE id = $2`, [nova, c.id]);
+      // o registro automático do evento e da Gestão de Clientes acompanha a nova data (tolerante: não derruba a sincronização)
+      await pool.query(`UPDATE eventos_clientes SET data_evento = $1 WHERE cliente_id = $2 AND tipo = 'saida' AND data_evento::text LIKE $3`, [nova, c.id, c.saida + '%']).catch(() => {});
+      await pool.query(
+        `UPDATE gestao_clientes SET data_sol = $1, competencia = $2
+          WHERE analista = 'Automático (Acessórias)' AND cnpj = $3 AND data_sol::text LIKE $4`, [nova, nova.slice(0, 7), c.cnpj, c.saida + '%']).catch(() => {});
+      corrigidos++;
+    }
+  } catch (e) { console.warn('[churn] correção da data de saída não aplicada:', e.message); }
+  return corrigidos;
+}
+
 // ── Leitura do motivo de cancelamento direto do Acessórias ───────────────────
 let _sincronizando = false;
 async function sincronizarMotivos({ desde = '2025-01-01' } = {}) {
@@ -284,11 +323,12 @@ async function sincronizarMotivos({ desde = '2025-01-01' } = {}) {
   try {
     await garantirColuna();
     const inativas = await acessorias.listarEmpresasInativasDesde({ token, desde });
-    let comMotivo = 0, semMotivo = 0, atualizados = 0;
+    let comMotivo = 0, semMotivo = 0, atualizados = 0, datasCorrigidas = 0;
     const exemplos = new Set();
     for (const e of inativas) {
       const cnpj = String(e.cnpj || '').replace(/\D/g, '');
       if (!cnpj) continue;
+      if (e.clienteAte) datasCorrigidas += await corrigirDataDeSaida(cnpj, e.clienteAte);   // saída lançada com atraso entra no mês exato
       const motivo = e.motivoCancelamentoBruto;
       if (!motivo) { semMotivo++; continue; }
       comMotivo++;
@@ -300,7 +340,7 @@ async function sincronizarMotivos({ desde = '2025-01-01' } = {}) {
       );
       atualizados += r.rowCount;
     }
-    const resumo = { em: new Date().toISOString(), desde, inativas: inativas.length, com_motivo: comMotivo, sem_motivo: semMotivo, atualizados, exemplos_de_motivo: [...exemplos] };
+    const resumo = { em: new Date().toISOString(), desde, inativas: inativas.length, com_motivo: comMotivo, sem_motivo: semMotivo, atualizados, datas_corrigidas: datasCorrigidas, exemplos_de_motivo: [...exemplos] };
     await pool.query(
       `INSERT INTO cs_config (chave, valor, updated_at) VALUES ($1,$2,NOW())
        ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`,
@@ -416,6 +456,6 @@ router.get('/diagnostico', requireAuth, requireAdmin, async (req, res) => {
 module.exports = {
   router, classificarSaida, classificarSaidaDetalhe, inferirPelaReceita, calcularChurn, presets, somarDias, normalizar,
   tipoDocumento, ehPessoaJuridica,
-  sincronizarMotivos, classificarSaidasPelaReceita, consultarSituacaoCnpj, garantirColuna, PADROES_PADRAO,
+  sincronizarMotivos, classificarSaidasPelaReceita, consultarSituacaoCnpj, garantirColuna, PADROES_PADRAO, dataSaidaCorrigida,
   carregarClientes, lerPadroes, hojeBrasilia,
 };

@@ -306,16 +306,34 @@
   }
 
   // ── CHURN ────────────────────────────────────────────────────────────────────
+  async function decidirSaida(id, tipo, nome, saida) {
+    var rotulo = tipo === 'transferida' ? 'CONTA como churn (transferida)' : 'é BAIXA e não conta como churn';
+    var mes = saida ? saida.slice(5, 7) + '/' + saida.slice(0, 4) : '';
+    if (!window.confirm(nome + '\n\nSaída em ' + data(saida) + '. Esta saída ' + rotulo + (tipo === 'transferida' ? ' no mês da saída (' + mes + ')' : '') + '.\n\nConfirmar?')) return;
+    var url = '/api/cs/churn/saidas/' + encodeURIComponent(id) + '/classificacao';
+    var enviar = function () { return fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (ls(K_TOKEN) || '') }, body: JSON.stringify({ tipo: tipo }) }); };
+    try {
+      var r = await enviar();
+      if (r.status === 401 && await renovar()) r = await enviar();
+      var j = await r.json().catch(function () { return {}; });
+      if (!r.ok) { window.alert(j.error || 'Não foi possível salvar a decisão.'); return; }
+      iniciar(true);
+    } catch (e) { window.alert('Sem conexão com o servidor. Tente de novo.'); }
+  }
+
   function desenharChurn() {
     var d = estado.dados, p = periodoAtual();
     var abas = [['transferida', 'Transferidas (contam)'], ['a_confirmar', 'A confirmar'], ['baixa', 'Baixas'], ['outra_saida', 'Outras saídas']];
     var cont = function (tp) { return p.saidas.filter(function (s) { return s.tipo === tp; }).length; };
     var lista = p.saidas.filter(function (s) { return s.tipo === estado.abaChurn; });
+    // Saída "a confirmar" (sem motivo no Acessórias e sem resposta da Receita): o administrador decide se conta como churn. Vale no mês da saída.
+    var decide = estado.abaChurn === 'a_confirmar' && !!(d.usuario && d.usuario.papel === 'administrador');
     var linhas = lista.map(function (s) {
       var t = TIPO_SAIDA[s.tipo];
       return '<tr><td style="white-space:normal">' + esc(s.nome) + '<div class="sub">' + esc(s.cnpj || '') + '</div></td><td class="c">' + data(s.data_entrada) + '</td><td class="c">' + data(s.data_saida) + '</td>' +
         '<td class="c"><span class="pill" style="color:' + t.cor + ';border-color:' + t.cor + '55;background:' + t.cor + '14">' + t.rot + '</span></td>' +
-        '<td class="c">' + (s.na_base ? 'Sim' : '<span class="cinza">entrou no período</span>') + '</td><td class="c"><span class="cinza">' + esc(s.origem || '—') + '</span></td></tr>';
+        '<td class="c">' + (s.na_base ? 'Sim' : '<span class="cinza">entrou no período</span>') + '</td><td class="c"><span class="cinza">' + esc(s.origem || '—') + '</span></td>' +
+        (decide ? '<td class="c" style="white-space:nowrap"><button class="gp-footer-btn" style="width:auto;padding:4px 8px;display:inline-flex" data-decide="transferida" data-id="' + esc(s.id) + '" data-nome="' + esc(s.nome) + '" data-saida="' + esc(s.data_saida) + '" title="Conta como churn (transferida), no mês da saída">Conta como churn</button> <button class="gp-footer-btn" style="width:auto;padding:4px 8px;display:inline-flex" data-decide="baixa" data-id="' + esc(s.id) + '" data-nome="' + esc(s.nome) + '" data-saida="' + esc(s.data_saida) + '" title="É baixa: não conta como churn">É baixa</button></td>' : '') + '</tr>';
     }).join('');
     $('sec-churn').innerHTML =
       '<div class="gp-kpi-row">' +
@@ -328,9 +346,12 @@
       '<div class="nota">Período de <strong>' + data(p.ini) + '</strong> a <strong>' + data(p.fim) + '</strong>. Contam como churn as saídas cujo motivo no Acessórias começa com: <strong>' + d.churn.padroes.map(esc).join('</strong>, <strong>') + '</strong>. Baixas não contam. Quando o Acessórias não informa o motivo, a situação do CNPJ na Receita ajuda a separar baixa de transferência; o que não for possível fica "a confirmar". Só CNPJ.</div>' +
       '<div class="card"><div class="card-title">Saídas do período</div><div class="card-sub">Clique na aba para ver cada tipo de saída.</div>' +
         '<div class="tabs" id="abas-churn">' + abas.map(function (a) { return '<button data-aba="' + a[0] + '" class="' + (estado.abaChurn === a[0] ? 'active' : '') + '">' + a[1] + ' (' + cont(a[0]) + ')</button>'; }).join('') + '</div>' +
-        (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Entrada</th><th class="c">Saída</th><th class="c">Tipo</th><th class="c">Na base do início</th><th class="c">Como foi classificada</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhuma saída deste tipo no período.</div>') +
+        (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Entrada</th><th class="c">Saída</th><th class="c">Tipo</th><th class="c">Na base do início</th><th class="c">Como foi classificada</th>' + (decide ? '<th class="c">Decisão</th>' : '') + '</tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhuma saída deste tipo no período.</div>') +
       '</div>' +
       '<div class="gp-chart-card"><div class="gp-chart-title">Churn mês a mês — últimos 12 meses</div><div class="gp-chart-wrap"><canvas id="g-churn2"></canvas></div></div>';
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-churn [data-decide]'), function (b) {
+      b.addEventListener('click', function () { decidirSaida(b.getAttribute('data-id'), b.getAttribute('data-decide'), b.getAttribute('data-nome'), b.getAttribute('data-saida')); });
+    });
     Array.prototype.forEach.call(document.querySelectorAll('#abas-churn button'), function (b) { b.addEventListener('click', function () { estado.abaChurn = b.getAttribute('data-aba'); desenharChurn(); }); });
     var ev = d.churn.evolucao;
     graf('g-churn2', { data: { labels: ev.map(function (m) { return m.mes.slice(5) + '/' + m.mes.slice(2, 4); }), datasets: [

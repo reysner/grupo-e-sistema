@@ -179,5 +179,16 @@ teste('rotas de admin passam por requireAuth ANTES de requireAdmin', () => {
   assert.ok(achouAdmin >= 5, 'esperava as 5 rotas de admin (config, saidas/:id/classificacao, classificar-saidas, sincronizar-motivos, diagnostico)');
 });
 
+teste('saída lançada com atraso: só corrige a data gravada na detecção; data digitada à mão ou já correta nunca muda', () => {
+  const { dataSaidaCorrigida } = require('./churnSaidas');
+  assert.strictEqual(dataSaidaCorrigida('2026-10-13', '2026-10-13', '2026-08-31'), '2026-08-31');   // gravada no dia da detecção, Cliente até anterior
+  assert.strictEqual(dataSaidaCorrigida('2026-10-14', '2026-10-13', '2026-08-31'), '2026-08-31');   // ±1 dia (fuso)
+  assert.strictEqual(dataSaidaCorrigida('2026-09-15', '2026-10-13', '2026-08-31'), null);            // data diferente da detecção: foi digitada à mão
+  assert.strictEqual(dataSaidaCorrigida('2026-08-31', '2026-10-13', '2026-08-31'), null);            // já está certa
+  assert.strictEqual(dataSaidaCorrigida('2026-10-13', '2026-10-13', '2026-10-20'), null);            // Cliente até posterior: não mexe
+  assert.strictEqual(dataSaidaCorrigida('2026-10-13', null, '2026-08-31'), null);                    // sem data de detecção
+  assert.strictEqual(dataSaidaCorrigida('2026-10-13', '2026-10-13', null), null);
+});
+
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);
