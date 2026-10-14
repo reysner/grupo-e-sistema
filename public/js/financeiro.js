@@ -311,8 +311,8 @@
         '<span class="filter-label">Buscar</span><input class="gp-input" id="c-busca" placeholder="Empresa, grupo ou CNPJ" value="' + esc(f.busca) + '">' +
         '<span class="filter-label">Situação</span><select class="gp-select" id="c-sit">' + sits.map(function (s) { return '<option value="' + s[0] + '"' + (f.sit === s[0] ? ' selected' : '') + '>' + s[1] + '</option>'; }).join('') + '</select>' +
         '<span class="filter-label">Categoria</span><select class="gp-select" id="c-cat">' + opcoesCat(f.cat) + '</select></div>' +
-      '<div class="card-sub">' + lista.length + ' cliente(s) · ordem: maior honorário primeiro. "Paga em" = dias médios de atraso nos honorários pagos dos últimos meses.</div>' +
-      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Empresa</th><th class="c">Situação</th><th class="c">Categoria</th><th class="c">Honorário</th><th class="c">Em atraso</th><th class="c">Paga em</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' + paginacao(lista.length, f.pag, 'cart') : '<div class="vazio">Nenhum cliente neste filtro.</div>') +
+      '<div class="card-sub">' + lista.length + ' cliente(s) · ordem: maior honorário primeiro. "Atraso médio ao pagar" = quantos dias depois do vencimento o cliente costuma pagar, nos honorários pagos dos últimos meses.</div>' +
+      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Empresa</th><th class="c">Situação</th><th class="c">Categoria</th><th class="c">Honorário</th><th class="c">Em atraso</th><th class="c" title="Dias de atraso, em média, nos honorários que o cliente já pagou (janela lida do Omie). Pagar antes do vencimento conta como 0.">Atraso médio ao pagar</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' + paginacao(lista.length, f.pag, 'cart') : '<div class="vazio">Nenhum cliente neste filtro.</div>') +
       '</div>';
     ligarFiltros('cart', { 'c-busca': 'busca', 'c-sit': 'sit', 'c-cat': 'cat' }, desenharCarteira);
   }
