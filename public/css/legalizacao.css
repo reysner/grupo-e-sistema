@@ -1,0 +1,69 @@
+/* Legalização (/legalizacao): complementos ao cs-painel.css e ao financeiro.css (mesmo modelo visual do /financeiro). */
+
+/* topo à direita: "Como funciona", sininho e menu do usuário; as ferramentas ficam logo abaixo */
+.lg-direita{display:flex;flex-direction:column;align-items:flex-end;gap:10px;}
+.lg-topo{display:flex;align-items:center;gap:10px;}
+.lg-como{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:9px;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-size:13px;font-weight:600;text-decoration:none;}
+.lg-como:hover{border-color:var(--brand3);}
+.lg-sino-wrap{position:relative;}
+.lg-sino{position:relative;width:40px;height:40px;border-radius:50%;border:1px solid var(--border);background:var(--surface2);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.lg-sino:hover{border-color:var(--brand3);}
+.lg-sino:focus-visible,.lg-como:focus-visible{outline:2px solid var(--brand);outline-offset:2px;}
+.lg-sino-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#e5484d;color:#fff;font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center;border:2px solid var(--surface);box-sizing:content-box;}
+.lg-sino-badge[hidden],.lg-sino-painel[hidden]{display:none;}
+.lg-sino-painel{position:absolute;right:0;top:calc(100% + 8px);width:min(380px,92vw);max-height:70vh;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.22);z-index:900;}
+.lg-sino-topo{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);}
+.lg-sino-topo button{background:none;border:none;color:var(--brand2);font-size:12px;font-weight:600;cursor:pointer;}
+.lg-sino-item{display:flex;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;line-height:1.45;}
+.lg-sino-item.nova{background:rgba(16,185,129,.1);}
+.lg-sino-item b{display:block;margin-bottom:2px;}
+.lg-sino-quando{font-size:11px;color:var(--text3);margin-top:3px;}
+.lg-sino-vazio{padding:28px 16px;text-align:center;color:var(--text3);font-size:13px;}
+
+/* barra empilhada por situação (Visão Geral e cartões de documento) */
+.lg-docs{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-bottom:18px;}
+.lg-doc{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%;transition:border-color .15s,transform .15s;}
+.lg-doc:hover{border-color:var(--brand3);transform:translateY(-2px);}
+.lg-doc:focus-visible{outline:2px solid var(--brand);outline-offset:2px;}
+.lg-doc-topo{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:10px;}
+.lg-doc-nome{font-size:13px;font-weight:700;}
+.lg-doc-total{font-size:22px;font-weight:700;letter-spacing:-.5px;font-variant-numeric:tabular-nums;}
+.lg-barra{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--surface2);margin-bottom:10px;}
+.lg-barra span{display:block;height:100%;}
+.lg-leg{display:grid;grid-template-columns:auto 1fr auto;gap:4px 8px;font-size:12px;align-items:center;}
+.lg-pt{width:8px;height:8px;border-radius:50%;display:inline-block;}
+.lg-leg b{font-variant-numeric:tabular-nums;}
+.lg-prox{font-size:11.5px;color:var(--text2);margin-top:10px;line-height:1.4;}
+
+/* células compactas na lista "Todos os clientes" */
+.lg-cel{display:flex;flex-direction:column;gap:2px;align-items:flex-start;}
+.lg-cel .sub{white-space:nowrap;}
+.lg-prazo-venc{color:#dc2626;font-weight:700;}
+.lg-prazo-aviso{color:#b45309;font-weight:700;}
+.lg-acao{border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;}
+.lg-acao:hover{border-color:var(--brand3);}
+.lg-acao.perigo{color:#b42318;border-color:#e5484d66;background:#e5484d12;}
+.lg-acao.perigo:hover{background:#e5484d;color:#fff;}
+.lg-acoes{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}
+.lg-cadastro{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-bottom:6px;}
+
+/* pedido de inativação */
+.lg-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2100;align-items:center;justify-content:center;padding:16px;}
+.lg-modal.aberto{display:flex;}
+.lg-modal-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;width:100%;max-width:480px;max-height:92vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.3);}
+.lg-modal-topo{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;}
+.lg-modal-topo h2{font-size:16px;margin:0;}
+.lg-modal-txt{font-size:13px;color:var(--text2);line-height:1.5;margin:0 0 6px;}
+.lg-modal-acoes{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;}
+textarea.login-input{resize:vertical;font-family:inherit;}
+
+.lg-aviso{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#1a4233;color:#fff;padding:11px 18px;border-radius:10px;font-size:13.5px;font-weight:600;z-index:3000;box-shadow:0 6px 20px rgba(0,0,0,.25);}
+
+@media (max-width:900px){
+  .lg-direita{align-items:flex-start;width:100%;}
+  .lg-topo{flex-wrap:wrap;}
+}
+@media (prefers-reduced-motion:reduce){
+  .lg-doc{transition:none;}
+  .lg-doc:hover{transform:none;}
+}

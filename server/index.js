@@ -109,6 +109,11 @@ app.get('/legalizacao', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'legalizacao-publica.html'));
 });
 
+// ── Tela antiga da Legalização (tabela única), mantida por um tempo durante a transição para o novo modelo ──
+app.get('/legalizacao-antiga', (req, res) => {
+  res.sendFile(path.join(PUBLIC, 'legalizacao-antiga.html'));
+});
+
 // ── De onde vêm os dados da Legalização (sem login, como /gamificacao/regras) ──
 app.get('/legalizacao/regras', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'legalizacao-regras.html'));

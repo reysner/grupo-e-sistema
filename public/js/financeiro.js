@@ -68,6 +68,23 @@
       return true;
     } catch (e) { return false; }
   }
+  // chamada genérica (PATCH etc.) com o token da página e renovação da sessão; usada pelo menu do usuário
+  async function chamarApi(caminho, opcoes, tentou) {
+    var o = Object.assign({}, opcoes || {});
+    o.headers = Object.assign({}, o.headers || {}, { Authorization: 'Bearer ' + (ls(K_TOKEN) || '') });
+    var r = await fetch(caminho, o);
+    if (r.status === 401 && !tentou && await renovar()) return chamarApi(caminho, opcoes, true);
+    return r;
+  }
+  function montarMenuUsuario(u) {
+    if (!window.MenuUsuario || !$('menu-usuario')) return;
+    window.MenuUsuario.montar({
+      alvo: $('menu-usuario'), usuario: u, chamar: chamarApi,
+      rotulos: { colaborador: 'Colaborador' },
+      aoSair: function () { sair(false); },
+      aoAtualizar: function (novo) { var atual = {}; try { atual = JSON.parse(ls(K_USER) || '{}') || {}; } catch (e) { atual = {}; } ls(K_USER, JSON.stringify(Object.assign(atual, { name: novo.name, email: novo.email }))); }
+    });
+  }
   async function api(caminho, tentou) {
     var r = await fetch(caminho, { headers: { Authorization: 'Bearer ' + (ls(K_TOKEN) || '') }, cache: 'no-store' });
     if (r.status === 401 && !tentou) { if (await renovar()) return api(caminho, true); }
@@ -105,7 +122,7 @@
     $('login-screen').style.display = 'none';
     $('app').style.display = 'block';
     var u = null; try { u = JSON.parse(ls(K_USER) || 'null'); } catch (e) { u = null; }
-    $('usuario').textContent = u && u.name ? 'Olá, ' + u.name : '';
+    if (u && u.name) montarMenuUsuario(u);
     NOMES_SEC.forEach(function (s) { $('sec-' + s).innerHTML = '<div class="vazio">Carregando…</div>'; });
     try {
       estado.dados = await api('/api/financeiro/dados' + (forcar === true ? '?forcar=1' : ''));
@@ -782,7 +799,6 @@
     }
   });
   $('login-form').addEventListener('submit', entrar);
-  $('btn-sair').addEventListener('click', function () { sair(false); });
   $('btn-atualizar').addEventListener('click', function () { iniciar(true); });
   $('btn-csv').addEventListener('click', function () { exportar('csv'); });
   $('btn-pdf').addEventListener('click', function () { exportar('pdf'); });

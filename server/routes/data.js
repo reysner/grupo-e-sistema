@@ -5420,6 +5420,20 @@ async function ensureLegalizacaoSchema() {
   )`).catch(()=>{});
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_proc_cliente_tipo ON legalizacao_procuracoes (cliente_id, tipo)`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_procuracoes ADD COLUMN IF NOT EXISTS notificado_vencimento_em TIMESTAMPTZ`).catch(()=>{});
+
+  // Retrato semanal da Legalização (seção "Evolução" de /legalizacao) — 14/10/2026.
+  await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_historico (
+    semana DATE PRIMARY KEY,
+    atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    clientes INTEGER NOT NULL DEFAULT 0,
+    vencidos INTEGER NOT NULL DEFAULT 0,
+    vencendo INTEGER NOT NULL DEFAULT 0,
+    solicitacao INTEGER NOT NULL DEFAULT 0,
+    em_dia INTEGER NOT NULL DEFAULT 0,
+    sem_data INTEGER NOT NULL DEFAULT 0,
+    por_tipo JSONB NOT NULL DEFAULT '{}'::jsonb
+  )`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_historico ENABLE ROW LEVEL SECURITY`).catch(()=>{});
 }
 
 const LEGAL_DIAS_ALERTA_PROCURACAO = 10;
@@ -5516,17 +5530,15 @@ function legalPainelLinha(r) {
  * front pagina/filtra localmente (mesmo padrão de Carteira/Recuperação/
  * Atendimento, App.Util.paginate). Também alimenta os cards de resumo.
  */
-router.get('/legalizacao/painel', async (req, res) => {
-  try {
+async function montarPainelLegalizacao(verDesativados) {
     await ensureLegalizacaoSchema();
     const { rows: todas } = await pool.query(LEGAL_PAINEL_SQL);
     const { rows: muns } = await pool.query(`SELECT id::text AS id, municipio, uf, municipio_ibge, inscricao_municipal FROM clientes`);
     const munPorId = new Map(muns.map(m => [m.id, m]));
     const { rows: pend } = await pool.query(`SELECT cliente_id, tipo FROM legalizacao_alvaras WHERE lido_por_ocr AND conferido_em IS NULL AND desativado_em IS NULL AND data_vencimento IS NOT NULL`);
     const aConferir = new Set(pend.map(p => p.cliente_id + '|' + p.tipo));
-    const verDesativados = req.query.desativados === '1' && req.user.role === 'administrador';
     const rows = verDesativados ? todas : todas.filter(r => !(r.sem_cadastro_acessorias && r.cert_desat)).map(r => (r.sanit_desat ? { ...r, sanit_id: null } : r));
-    res.json({
+    return {
       data: rows.map(r => {
         const l = legalPainelLinha(r);
         const m = munPorId.get(r.cliente_id);
@@ -5551,8 +5563,48 @@ router.get('/legalizacao/painel', async (req, res) => {
         return l;
       }),
       diasAlerta: { alvara: LEGAL_DIAS_ALERTA_ALVARA, funcionamento: LEGAL_DIAS_ALERTA_FUNCIONAMENTO, sanitario: LEGAL_DIAS_ALERTA_SANITARIO, certificado: LEGAL_DIAS_ALERTA_CERTIFICADO, procuracao: LEGAL_DIAS_ALERTA_PROCURACAO },
-    });
+    };
+}
+
+router.get('/legalizacao/painel', async (req, res) => {
+  try {
+    res.json(await montarPainelLegalizacao(req.query.desativados === '1' && req.user.role === 'administrador'));
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar legalização.' }); }
+});
+
+/**
+ * RETRATO SEMANAL — uma linha por semana (segunda a domingo) com a contagem de documentos por situação e tipo.
+ * A última leitura da semana vale. Alimenta a seção "Evolução" de /legalizacao. Lógica pura em server/legalizacaoRetrato.js.
+ */
+const legalRetrato = require('../legalizacaoRetrato');
+async function gravarRetratoLegalizacao() {
+  await ensureLegalizacaoSchema();
+  const painel = await montarPainelLegalizacao(false);
+  const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const r = legalRetrato.retratoDeLinhas(painel.data, hoje);
+  await pool.query(
+    `INSERT INTO legalizacao_historico (semana, atualizado_em, clientes, vencidos, vencendo, solicitacao, em_dia, sem_data, por_tipo)
+     VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7, $8::jsonb)
+     ON CONFLICT (semana) DO UPDATE SET atualizado_em = NOW(), clientes = EXCLUDED.clientes, vencidos = EXCLUDED.vencidos,
+       vencendo = EXCLUDED.vencendo, solicitacao = EXCLUDED.solicitacao, em_dia = EXCLUDED.em_dia, sem_data = EXCLUDED.sem_data, por_tipo = EXCLUDED.por_tipo`,
+    [r.semana, r.clientes, r.vencidos, r.vencendo, r.solicitacao, r.em_dia, r.sem_data, JSON.stringify(r.por_tipo)]
+  );
+  return r;
+}
+
+router.get('/legalizacao/historico', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const semanaAtual = legalRetrato.semanaDe(hoje);
+    const { rows: tem } = await pool.query(`SELECT 1 FROM legalizacao_historico WHERE semana = $1::date`, [semanaAtual]);
+    if (!tem.length) await gravarRetratoLegalizacao().catch((e) => console.error('[Legalização] retrato semanal falhou:', e.message));
+    const { rows } = await pool.query(
+      `SELECT to_char(semana, 'YYYY-MM-DD') AS semana, atualizado_em, clientes, vencidos, vencendo, solicitacao, em_dia, sem_data, por_tipo
+         FROM legalizacao_historico ORDER BY semana DESC LIMIT 60`
+    );
+    res.json({ data: rows.reverse() });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar a evolução.' }); }
 });
 
 /**
@@ -6100,6 +6152,7 @@ async function verificarNotificacoesLegalizacao() {
     criadas++;
   }
 
+  await gravarRetratoLegalizacao().catch((e) => console.error('[Legalização] retrato semanal falhou:', e.message));
   return { criadas };
 }
 
