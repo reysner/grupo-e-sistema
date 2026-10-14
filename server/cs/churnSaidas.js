@@ -11,7 +11,9 @@
  *   2) motivo real gravado pelo sistema (ignora o padrão "Baixa de empresa" e "Pendente de revisão");
  *   3) situação do CNPJ na Receita (BrasilAPI/Minha Receita): BAIXADO = baixa; ATIVO = transferida (o Acessórias só tem 4
  *      motivos — Baixada e três "Transferida por…" — e as três transferências contam, então basta saber se a empresa fechou);
- *   4) sem nada disso: "A confirmar" (não entra na conta e aparece destacada).
+ *   4) sem nada disso: PRESUMIDA como transferência (decisão do Reysner, 14/10/2026: "todas as 'a confirmar' contam como churn").
+ *      Aparece marcada como "presumida"; o administrador pode trocar para baixa (ou confirmar) na lista, e a Receita ainda corrige sozinha
+ *      quando responder (baixado = baixa).
  *
  * Taxa = saídas contadas ÷ base ativa no início do período (quem já era cliente antes do início e ainda não tinha saído).
  *
@@ -81,17 +83,18 @@ function inferirPelaReceita(situacao, dataSituacao, dataSaida) {
   return null;
 }
 
-/** { tipo: 'transferida'|'baixa'|'outra_saida'|'a_confirmar', origem: 'acessorias'|'sistema'|'receita'|null } */
+/** { tipo: 'transferida'|'baixa'|'outra_saida', origem: 'manual'|'acessorias'|'sistema'|'receita'|'presumida' } */
 function classificarSaidaDetalhe(motivoAcessorias, motivoSistema, padroes = PADROES_PADRAO, receita = null, dataSaida = null, manual = null) {
   if (manual === 'transferida' || manual === 'baixa') return { tipo: manual, origem: 'manual' };
-  const doTexto = (texto) => (padroes.some((p) => p && texto.includes(normalizar(p))) ? 'transferida' : texto.includes('baixa') ? 'baixa' : 'outra_saida');
+  // "Transferida para outro contador (automático…)" é o texto que o próprio sistema grava quando a Receita mostra o CNPJ ativo.
+  const doTexto = (texto) => (padroes.some((p) => p && texto.includes(normalizar(p))) || texto.startsWith('transferida para outro contador') ? 'transferida' : texto.includes('baixa') ? 'baixa' : 'outra_saida');
   const bruto = normalizar(motivoAcessorias);
   if (bruto) return { tipo: doTexto(bruto), origem: 'acessorias' };
   const doSistema = motivoDoSistemaConfiavel(motivoSistema);
   if (doSistema) return { tipo: doTexto(doSistema), origem: 'sistema' };
   const inf = receita ? inferirPelaReceita(receita.situacao, receita.data, dataSaida) : null;
   if (inf) return { tipo: inf, origem: 'receita' };
-  return { tipo: 'a_confirmar', origem: null };
+  return { tipo: 'transferida', origem: 'presumida' };
 }
 
 /** 'transferida' (conta) | 'baixa' | 'outra_saida' | 'a_confirmar'. */
@@ -135,6 +138,7 @@ function calcularChurn(todosClientes, ini, fim, padroes = PADROES_PADRAO) {
     transferidas_fora_da_base: saidas.filter((s) => s.tipo === 'transferida' && !s.na_base).length,
     fora_do_churn: { baixas: contagem('baixa'), outras_saidas: contagem('outra_saida'), a_confirmar: contagem('a_confirmar') },
     inferidas_pela_receita: saidas.filter((s) => s.origem === 'receita').length,
+    presumidas: saidas.filter((s) => s.origem === 'presumida').length,   // contadas como transferência sem prova (o admin pode trocar)
     desconsiderados_cpf_caepf_cno: desconsiderados,
     saidas,
   };

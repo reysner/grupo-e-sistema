@@ -217,6 +217,7 @@
     if (t.termometros.operacional.com_dado === 0) pontos.push('O termômetro <strong>Operacional ainda está sem dado</strong> (entregas do Acessórias em leitura). Enquanto isso, o risco é calculado só com Financeiro e Atendimento.');
     if (t.suspensos) pontos.push('<strong>' + t.suspensos + ' cliente(s) com contrato suspenso no Omie</strong>' + (t.suspensos_lidos_em ? ' (lista lida em ' + data(t.suspensos_lidos_em) + ', atualizada toda segunda)' : '') + ': a ação é de cobrança e as entregas deles não entram no Operacional. Filtre pelo selo ⏸ Suspenso na Gestão da Permanência.');
     if (p.fora_do_churn && p.fora_do_churn.a_confirmar) pontos.push(p.fora_do_churn.a_confirmar + ' saída(s) ainda <strong>a confirmar</strong> (sem motivo lido do Acessórias): o churn real fica entre ' + p.taxa + '% e ' + p.taxa_teto + '%.');
+    if (p.presumidas) pontos.push('<strong>' + p.presumidas + ' saída(s) presumida(s) como transferência</strong> (sem motivo no Acessórias e sem resposta da Receita): contam no churn. Na aba Churn o administrador pode trocar para baixa.');
     pontos.push('<strong>' + pct(t.sem_reclamacao_30d, t.clientes) + '%</strong> dos clientes ficaram sem nenhuma reclamação nos últimos 30 dias (insatisfação registrada, nota baixa ou abandono).');
 
     $('sec-visao').innerHTML =
@@ -325,15 +326,17 @@
     var d = estado.dados, p = periodoAtual();
     var abas = [['transferida', 'Transferidas (contam)'], ['a_confirmar', 'A confirmar'], ['baixa', 'Baixas'], ['outra_saida', 'Outras saídas']];
     var cont = function (tp) { return p.saidas.filter(function (s) { return s.tipo === tp; }).length; };
+    abas = abas.filter(function (a) { return a[0] !== 'a_confirmar' || cont('a_confirmar') > 0; });
+    var ROT_ORIGEM = { acessorias: 'Acessórias', sistema: 'sistema', receita: 'Receita (CNPJ)', manual: 'definida pelo administrador', presumida: 'presumida (sem motivo no Acessórias)' };
     var lista = p.saidas.filter(function (s) { return s.tipo === estado.abaChurn; });
     // Saída "a confirmar" (sem motivo no Acessórias e sem resposta da Receita): o administrador decide se conta como churn. Vale no mês da saída.
-    var decide = estado.abaChurn === 'a_confirmar' && !!(d.usuario && d.usuario.papel === 'administrador');
+    var decide = !!(d.usuario && d.usuario.papel === 'administrador') && lista.some(function (s) { return s.origem === 'presumida'; });
     var linhas = lista.map(function (s) {
       var t = TIPO_SAIDA[s.tipo];
       return '<tr><td style="white-space:normal">' + esc(s.nome) + '<div class="sub">' + esc(s.cnpj || '') + '</div></td><td class="c">' + data(s.data_entrada) + '</td><td class="c">' + data(s.data_saida) + '</td>' +
         '<td class="c"><span class="pill" style="color:' + t.cor + ';border-color:' + t.cor + '55;background:' + t.cor + '14">' + t.rot + '</span></td>' +
-        '<td class="c">' + (s.na_base ? 'Sim' : '<span class="cinza">entrou no período</span>') + '</td><td class="c"><span class="cinza">' + esc(s.origem || '—') + '</span></td>' +
-        (decide ? '<td class="c" style="white-space:nowrap"><button class="gp-footer-btn" style="width:auto;padding:4px 8px;display:inline-flex" data-decide="transferida" data-id="' + esc(s.id) + '" data-nome="' + esc(s.nome) + '" data-saida="' + esc(s.data_saida) + '" title="Conta como churn (transferida), no mês da saída">Conta como churn</button> <button class="gp-footer-btn" style="width:auto;padding:4px 8px;display:inline-flex" data-decide="baixa" data-id="' + esc(s.id) + '" data-nome="' + esc(s.nome) + '" data-saida="' + esc(s.data_saida) + '" title="É baixa: não conta como churn">É baixa</button></td>' : '') + '</tr>';
+        '<td class="c">' + (s.na_base ? 'Sim' : '<span class="cinza">entrou no período</span>') + '</td><td class="c"><span class="cinza">' + esc(ROT_ORIGEM[s.origem] || s.origem || '—') + '</span></td>' +
+        (decide ? '<td class="c" style="white-space:nowrap">' + (s.origem !== 'presumida' ? '' : '<button class="gp-footer-btn" style="width:auto;padding:4px 8px;display:inline-flex" data-decide="transferida" data-id="' + esc(s.id) + '" data-nome="' + esc(s.nome) + '" data-saida="' + esc(s.data_saida) + '" title="Confirma a transferência (conta como churn no mês da saída)">Confirmar transferência</button> <button class="gp-footer-btn" style="width:auto;padding:4px 8px;display:inline-flex" data-decide="baixa" data-id="' + esc(s.id) + '" data-nome="' + esc(s.nome) + '" data-saida="' + esc(s.data_saida) + '" title="É baixa: não conta como churn">É baixa</button>') + '</td>' : '') + '</tr>';
     }).join('');
     $('sec-churn').innerHTML =
       '<div class="gp-kpi-row">' +
@@ -343,7 +346,7 @@
         kpi('#7c3aed', 'Saíram em até 90 dias', p.menos_de_90_dias, 'de casa, todos os tipos') +
         kpi('#6b7280', 'Fora do churn', p.fora_do_churn.baixas + p.fora_do_churn.outras_saidas, 'baixas e outras saídas') +
       '</div>' +
-      '<div class="nota">Período de <strong>' + data(p.ini) + '</strong> a <strong>' + data(p.fim) + '</strong>. Contam como churn as saídas cujo motivo no Acessórias começa com: <strong>' + d.churn.padroes.map(esc).join('</strong>, <strong>') + '</strong>. Baixas não contam. Quando o Acessórias não informa o motivo, a situação do CNPJ na Receita ajuda a separar baixa de transferência; o que não for possível fica "a confirmar". Só CNPJ.</div>' +
+      '<div class="nota">Período de <strong>' + data(p.ini) + '</strong> a <strong>' + data(p.fim) + '</strong>. Contam como churn as saídas cujo motivo no Acessórias começa com: <strong>' + d.churn.padroes.map(esc).join('</strong>, <strong>') + '</strong>. Baixas não contam. Quando o Acessórias não informa o motivo, a situação do CNPJ na Receita ajuda a separar baixa de transferência; o que não for possível é presumido como transferência (marcado "presumida"; o administrador pode trocar para baixa). Só CNPJ.</div>' +
       '<div class="card"><div class="card-title">Saídas do período</div><div class="card-sub">Clique na aba para ver cada tipo de saída.</div>' +
         '<div class="tabs" id="abas-churn">' + abas.map(function (a) { return '<button data-aba="' + a[0] + '" class="' + (estado.abaChurn === a[0] ? 'active' : '') + '">' + a[1] + ' (' + cont(a[0]) + ')</button>'; }).join('') + '</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Entrada</th><th class="c">Saída</th><th class="c">Tipo</th><th class="c">Na base do início</th><th class="c">Como foi classificada</th>' + (decide ? '<th class="c">Decisão</th>' : '') + '</tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhuma saída deste tipo no período.</div>') +
@@ -684,7 +687,7 @@
       return { arquivo: 'cs-churn-saidas', titulo: 'Painel do Sucesso do Cliente - Churn: saídas do período',
         filtros: ['Período de ' + data(pc.ini) + ' a ' + data(pc.fim) + ' · base ' + pc.base + ' · saídas que contam ' + pc.saidas_contadas + ' · taxa ' + (pc.taxa == null ? '-' : pc.taxa + '%'), 'Todas as saídas do período, com o tipo de cada uma.'],
         colunas: ['Cliente', 'CNPJ', 'Entrada', 'Saída', 'Tipo', 'Na base do início', 'Como foi classificada'],
-        linhas: pc.saidas.map(function (s) { var tp = TIPO_SAIDA[s.tipo] || { rot: s.tipo }; return [s.nome, s.cnpj || '', data(s.data_entrada), data(s.data_saida), tp.rot, s.na_base ? 'Sim' : 'Entrou no período', s.origem || '']; }),
+        linhas: pc.saidas.map(function (s) { var tp = TIPO_SAIDA[s.tipo] || { rot: s.tipo }; return [s.nome, s.cnpj || '', data(s.data_entrada), data(s.data_saida), tp.rot, s.na_base ? 'Sim' : 'Entrou no período', ({ acessorias: 'Acessórias', sistema: 'sistema', receita: 'Receita (CNPJ)', manual: 'definida pelo administrador', presumida: 'presumida (sem motivo no Acessórias)' })[s.origem] || s.origem || '']; }),
         alinhar: ['left', 'left', 'center', 'center', 'left', 'center', 'left'], fonte: 7.5 };
     }
     if (sec === 'categorias') {

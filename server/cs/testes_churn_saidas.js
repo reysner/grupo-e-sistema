@@ -23,10 +23,16 @@ teste('o motivo do Acessórias vence o que o sistema gravou', () => {
   assert.strictEqual(classificarSaida('Baixada', 'Transferida por preço (automático — Acessórias)'), 'baixa');
 });
 
-teste('"Baixa de empresa" e "Pendente de revisão" do sistema NÃO são prova: ficam a confirmar', () => {
-  assert.strictEqual(classificarSaida(null, 'Baixa de empresa'), 'a_confirmar');
-  assert.strictEqual(classificarSaida('', 'Pendente de revisão — baixa/saída detectada no Acessórias'), 'a_confirmar');
-  assert.strictEqual(classificarSaida(null, null), 'a_confirmar');
+teste('"Baixa de empresa" e "Pendente de revisão" do sistema NÃO são prova: a saída é presumida como transferência (conta)', () => {
+  assert.strictEqual(classificarSaida(null, 'Baixa de empresa'), 'transferida');
+  assert.strictEqual(classificarSaida('', 'Pendente de revisão — baixa/saída detectada no Acessórias'), 'transferida');
+  assert.strictEqual(classificarSaida(null, null), 'transferida');
+  const { classificarSaidaDetalhe } = require('./churnSaidas');
+  assert.deepStrictEqual(classificarSaidaDetalhe(null, null), { tipo: 'transferida', origem: 'presumida' });
+});
+
+teste('texto que o próprio sistema grava ("Transferida para outro contador (automático…)") é transferência, não "outra saída"', () => {
+  assert.strictEqual(classificarSaida(null, 'Transferida para outro contador (automático — CNPJ ativo na Receita)'), 'transferida');
 });
 
 teste('sem leitura do Acessórias, motivo real gravado pelo sistema ainda serve de apoio', () => {
@@ -43,17 +49,18 @@ teste('taxa = saídas por transferência da base ÷ base ativa no início do per
     C('d', '2024-04-10', '2026-10-04', 'Baixada'),                         // base, baixa (não conta)
     C('e', '2024-05-10', '2026-10-05', 'Transferida por preço'),           // base, conta
     C('h', '2024-06-10', '2026-10-07', 'Outro motivo qualquer'),           // base, outra saída (não conta)
-    C('i', '2024-07-10', '2026-10-08', null, 'Baixa de empresa'),          // base, a confirmar (não conta)
+    C('i', '2024-07-10', '2026-10-08', null, 'Baixa de empresa'),          // base, sem prova: presumida como transferência (conta)
     C('f', '2026-10-02', '2026-10-06', 'Transferida por conveniência'),    // entrou no período: fora da base
     C('g', '2025-01-01', '2026-09-20', 'Transferida por conveniência'),    // saiu ANTES do período: nem na base
   ];
   const r = calcularChurn(clientes, '2026-10-01', '2026-10-31');
   assert.strictEqual(r.base, 7);                 // a, b, c, d, e, h, i
-  assert.strictEqual(r.saidas_contadas, 2);      // c e e
-  assert.strictEqual(r.taxa, 28.57);
-  assert.strictEqual(r.taxa_teto, 42.86); // + 1 'a confirmar' (i) na base: 3/7
+  assert.strictEqual(r.saidas_contadas, 3);      // c, e e i (presumida)
+  assert.strictEqual(r.taxa, 42.86);
+  assert.strictEqual(r.taxa_teto, 42.86);        // não há mais "a confirmar": o teto é a própria taxa
+  assert.strictEqual(r.presumidas, 1);           // i
   assert.strictEqual(r.transferidas_fora_da_base, 1); // f
-  assert.deepStrictEqual(r.fora_do_churn, { baixas: 1, outras_saidas: 1, a_confirmar: 1 });
+  assert.deepStrictEqual(r.fora_do_churn, { baixas: 1, outras_saidas: 1, a_confirmar: 0 });
 });
 
 teste('sem base, a taxa é nula (não divide por zero)', () => {
@@ -96,7 +103,7 @@ teste('sem motivo, a situação do CNPJ na Receita decide: baixado = baixa, ativ
   assert.deepStrictEqual(sem, { tipo: 'transferida', origem: 'receita' });
   assert.strictEqual(classificarSaidaDetalhe('Baixada', null, undefined, { situacao: 'ATIVA' }, '2026-05-10').origem, 'acessorias');
   assert.strictEqual(classificarSaidaDetalhe(null, 'Transferida por preço (automático — Acessórias)').origem, 'sistema');
-  assert.deepStrictEqual(classificarSaidaDetalhe(null, null, undefined, { situacao: 'INDISPONIVEL' }, '2026-05-10'), { tipo: 'a_confirmar', origem: null });
+  assert.deepStrictEqual(classificarSaidaDetalhe(null, null, undefined, { situacao: 'INDISPONIVEL' }, '2026-05-10'), { tipo: 'transferida', origem: 'presumida' });
 });
 
 teste('calcularChurn usa a Receita e informa quantas saídas foram inferidas', () => {
@@ -116,18 +123,19 @@ teste('definição manual (exceção) vale acima de qualquer automático', () =>
   const { classificarSaidaDetalhe } = require('./churnSaidas');
   assert.deepStrictEqual(classificarSaidaDetalhe('Baixada', null, undefined, { situacao: 'BAIXADA' }, '2026-02-24', 'transferida'), { tipo: 'transferida', origem: 'manual' });
   assert.deepStrictEqual(classificarSaidaDetalhe(null, null, undefined, null, '2026-02-24', 'baixa'), { tipo: 'baixa', origem: 'manual' });
-  assert.deepStrictEqual(classificarSaidaDetalhe(null, null, undefined, null, '2026-02-24', 'qualquer coisa'), { tipo: 'a_confirmar', origem: null });
-  // no cálculo: a saída "a confirmar" definida como transferida passa a contar
+  assert.deepStrictEqual(classificarSaidaDetalhe(null, null, undefined, null, '2026-02-24', 'qualquer coisa'), { tipo: 'transferida', origem: 'presumida' });
+  // no cálculo: a saída presumida conta; o administrador pode trocar para baixa e ela sai da conta
   const clientes = [
     { id: 'x', nome: 'x', cnpj: '05.832.066/0001-61', data_entrada: '2003-08-18', data_saida: '2026-02-24', motivo_saida: 'Baixa de empresa', motivo_acessorias: null, situacao_receita: 'INDISPONIVEL', classificacao_manual: null },
     { id: 'y', nome: 'y', cnpj: '11.222.333/0001-81', data_entrada: '2003-08-18', data_saida: null, motivo_saida: null, motivo_acessorias: null },
   ];
-  assert.strictEqual(calcularChurn(clientes, '2026-01-01', '2026-12-31').fora_do_churn.a_confirmar, 1);
-  clientes[0].classificacao_manual = 'transferida';
+  const antes = calcularChurn(clientes, '2026-01-01', '2026-12-31');
+  assert.deepStrictEqual([antes.saidas_contadas, antes.presumidas, antes.saidas[0].origem], [1, 1, 'presumida']);
+  clientes[0].classificacao_manual = 'baixa';
   const r = calcularChurn(clientes, '2026-01-01', '2026-12-31');
-  assert.strictEqual(r.saidas_contadas, 1);
-  assert.strictEqual(r.fora_do_churn.a_confirmar, 0);
-  assert.strictEqual(r.saidas[0].origem, 'manual');
+  assert.deepStrictEqual([r.saidas_contadas, r.presumidas, r.fora_do_churn.baixas, r.saidas[0].origem], [0, 0, 1, 'manual']);
+  clientes[0].classificacao_manual = 'transferida';
+  assert.strictEqual(calcularChurn(clientes, '2026-01-01', '2026-12-31').saidas[0].origem, 'manual');
 });
 
 teste('tipo do documento: CNPJ, CPF, CAEPF e CNO', () => {
