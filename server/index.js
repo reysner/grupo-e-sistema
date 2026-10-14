@@ -39,6 +39,7 @@ app.use(cors({
 }));
 
 app.use(cookieParser());
+app.use('/api/cs/email-sinais', express.json({ limit: '1mb' }));   // leitura diária dos sinais de e-mail (job local; só contagens por cliente)
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: false }));
 app.set('trust proxy', 1);
@@ -65,6 +66,8 @@ app.use('/api/cs/churn', require('./cs/churnSaidas').router);  // Churn por saí
 app.use('/api/cs/risco', require('./cs/risco').router);        // Risco de perda: termômetros Financeiro, Atendimento e Operacional
 app.use('/api/cs/questor', require('./cs/questorDados').router);   // Faturamento 12 meses e funcionários vindos do Questor (rotina local na VPN; token de sincronização)
 app.use('/api/financeiro', require('./financeiro/rotas').router);   // Página /financeiro: inadimplência, suspensos e cobranças (login; valores só para administrador e acesso_financeiro)
+app.use('/api/cs/email-sinais', require('./cs/emailSinais').router);          // Sinais de e-mail por cliente: POST do job local (token de sincronização)
+app.use('/api/cs/painel/email-sinais', require('./cs/emailSinais').router);   // ...e leitura para o painel (login; administrador, usuário ou acesso_cs)
 app.use('/api/cs/painel', require('./cs/painel').router);      // Painel público /cs (só leitura; administrador e usuário)
 app.use('/api/cs',     require('./cs/routes'));    // Sucesso do Cliente — radar de SLA
 app.use('/api/analistas', require('./routes/analistas'));  // lista de analistas p/ dropdowns

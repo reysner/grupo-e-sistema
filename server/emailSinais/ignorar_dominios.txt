@@ -1,0 +1,17 @@
+# Domínios que NÃO são pedido de cliente: o coletor ignora quem escreve desses endereços.
+# Uma regra por linha. "exemplo.com" vale para o domínio e seus subdomínios; ".gov.br" vale para qualquer final.
+# Domínio que pertence a um cliente (contato cadastrado no Acessórias) nunca é ignorado, mesmo que esteja aqui.
+# Edite à vontade; vale na próxima coleta.
+
+# vagas e candidatos
+indeed.com
+indeedemail.com
+
+# compras e serviços
+amazon.com
+algar.com.br
+uaucaixa.com.br
+
+# órgãos públicos (notificações e comunicados, não pedidos de cliente)
+.gov.br
+fiemg.com.br

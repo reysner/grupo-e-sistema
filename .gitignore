@@ -11,3 +11,6 @@ server/legalizacao/bh-sanitario-bruto.log
 server/legalizacao/ocr/node_modules/
 server/legalizacao/_omie_*
 server/omie/tmp/
+
+# Piloto de e-mail: endereços aprendidos ficam só na máquina do Reysner
+server/emailSinais/aprendidos.json
