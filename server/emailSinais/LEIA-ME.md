@@ -26,7 +26,7 @@ Leva uns 12 a 20 minutos. Se alguma caixa falhar, **não envia** (leitura incomp
 Tarefa do Agendador do Windows **GrupoE-Sinais-de-email-segunda-0830**: toda **segunda-feira às 08:30**, nesta máquina, com o usuário atual.
 Se a máquina estiver desligada na hora, roda assim que ligar (`StartWhenAvailable`). Saída em `server/emailSinais/logs/coleta.log`.
 ```
-powershell -ExecutionPolicy Bypass -File serveremailSinaisagendar.ps1     # cria ou atualiza a tarefa
+powershell -ExecutionPolicy Bypass -File server\emailSinais\agendar.ps1     # cria ou atualiza a tarefa
 Unregister-ScheduledTask -TaskName GrupoE-Sinais-de-email-segunda-0830 -Confirm:$false   # remove
 ```
 O bloco **Hoje** avisa "desatualizada" quando a última leitura passa de 8 dias.
