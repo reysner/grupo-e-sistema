@@ -9715,12 +9715,13 @@ window.Tickets = Tickets;
       const d = SucessoCliente._hojeDados || {};
       if (!d.lido_em) {
         alvo.innerHTML = '<div class="hoje-box"><div class="hoje-titulo">Hoje</div>' +
-          '<p class="hoje-nota">Ainda não há leitura de e-mails. O job local envia os sinais uma vez por dia.</p></div>';
+          '<p class="hoje-nota">Ainda não há leitura de e-mails. O job local envia os sinais toda segunda-feira de manhã.</p></div>';
         return;
       }
       const t = d.totais || {};
       const lido = new Date(d.lido_em);
       const idadeH = (Date.now() - lido.getTime()) / 3600000;
+      const LIMITE_DESATUALIZADO_H = 8 * 24;   // a leitura é semanal (segunda 08:30): desatualizada só depois de 8 dias
       const quando = lido.toLocaleDateString('pt-BR') + ' às ' + lido.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       const fmtIdade = (h) => h >= 48 ? Math.round(h / 24) + ' dias' : (h >= 24 ? '1 dia' : Math.max(1, Math.round(h)) + ' h');
       const cor = (h) => h >= 168 ? 'hoje-venc' : (h >= 48 ? 'hoje-aviso' : '');
@@ -9741,7 +9742,7 @@ window.Tickets = Tickets;
       alvo.innerHTML =
         '<div class="hoje-box">' +
           '<div class="hoje-cab"><div><div class="hoje-titulo">Hoje</div><div class="hoje-sub">Quem escreveu por e-mail e ainda não recebeu resposta nossa</div></div>' +
-          '<div class="hoje-leitura' + (idadeH > 36 ? ' hoje-venc' : '') + '">Leitura de ' + esc(quando) + (idadeH > 36 ? ' — desatualizada' : '') + '</div></div>' +
+          '<div class="hoje-leitura' + (idadeH > LIMITE_DESATUALIZADO_H ? ' hoje-venc' : '') + '">Leitura de ' + esc(quando) + (idadeH > LIMITE_DESATUALIZADO_H ? ' — desatualizada' : '') + '</div></div>' +
           '<div class="hoje-cards">' +
             card('Esperando por e-mail', String(t.aguardando || 0), (t.aguardando_exclusivos || 0) + ' de uma empresa, ' + (t.aguardando_compartilhados || 0) + ' de grupo') +
             card('Há 7 dias ou mais', String(dias7), 'empresas — confirme antes de cobrar', dias7 ? 'hoje-venc' : '') +

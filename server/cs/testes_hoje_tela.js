@@ -66,10 +66,13 @@ const resposta = {
     await S.carregarHoje();
     assert.ok(alvo.innerHTML.includes('Ainda não há leitura de e-mails'));
   });
-  await teste('leitura com mais de 36 h é marcada como desatualizada', async () => {
-    ctx.__resposta = Object.assign({}, resposta, { lido_em: new Date(Date.now() - 40 * 3600000).toISOString() });
+  await teste('leitura com mais de 8 dias é marcada como desatualizada; a de 5 dias não', async () => {
+    ctx.__resposta = Object.assign({}, resposta, { lido_em: new Date(Date.now() - 9 * 24 * 3600000).toISOString() });
     await S.carregarHoje();
     assert.ok(alvo.innerHTML.includes('desatualizada'));
+    ctx.__resposta = Object.assign({}, resposta, { lido_em: new Date(Date.now() - 5 * 24 * 3600000).toISOString() });
+    await S.carregarHoje();
+    assert.ok(!alvo.innerHTML.includes('desatualizada'));
   });
   await teste('erro do servidor aparece como aviso, sem quebrar a página', async () => {
     ctx.fetch = async () => ({ ok: false, status: 403, json: async () => ({ error: 'Acesso restrito à equipe autorizada.' }) });

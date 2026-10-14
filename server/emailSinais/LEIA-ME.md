@@ -1,7 +1,7 @@
 # Sinais de e-mail por cliente (piloto do Sucesso do Cliente)
 
 Job **local** (roda na máquina do Reysner, não no Render). Lê só **cabeçalhos** das caixas do domínio, liga cada conversa a um
-cliente pelos contatos do Acessórias e envia ao sistema **somente contagens por cliente**: quantos pedidos por e-mail estão
+cliente pelos contatos do Acessórias e envia ao sistema **somente contagens por cliente** (toda segunda-feira de manhã): quantos pedidos por e-mail estão
 esperando resposta, há quanto tempo e em qual caixa. Assunto e corpo nunca são lidos; endereços de e-mail nunca saem desta máquina.
 
 ## O que entra na conta
@@ -21,6 +21,15 @@ node server/emailSinais/coletar.js --enviar              # lê TODAS as caixas e
 node server/emailSinais/coletar.js --caixas="bruno"      # teste em poucas caixas (nunca envia)
 ```
 Leva uns 12 a 20 minutos. Se alguma caixa falhar, **não envia** (leitura incompleta não substitui a anterior).
+
+## Agendamento (leitura semanal)
+Tarefa do Agendador do Windows **GrupoE-Sinais-de-email-segunda-0830**: toda **segunda-feira às 08:30**, nesta máquina, com o usuário atual.
+Se a máquina estiver desligada na hora, roda assim que ligar (`StartWhenAvailable`). Saída em `server/emailSinais/logs/coleta.log`.
+```
+powershell -ExecutionPolicy Bypass -File serveremailSinaisagendar.ps1     # cria ou atualiza a tarefa
+Unregister-ScheduledTask -TaskName GrupoE-Sinais-de-email-segunda-0830 -Confirm:$false   # remove
+```
+O bloco **Hoje** avisa "desatualizada" quando a última leitura passa de 8 dias.
 
 ## Configuração
 - Chave da conta de serviço do Gmail: `GMAIL_CHAVE_JSON` (padrão `C:\Users\Grupo e\Segredos\...json`). Só nesta máquina.

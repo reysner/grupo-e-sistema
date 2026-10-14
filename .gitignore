@@ -14,3 +14,4 @@ server/omie/tmp/
 
 # Piloto de e-mail: endereços aprendidos ficam só na máquina do Reysner
 server/emailSinais/aprendidos.json
+server/emailSinais/logs/
