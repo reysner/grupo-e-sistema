@@ -49,6 +49,15 @@ function garantirSchema() {
         unidade TEXT NOT NULL, cnpj TEXT NOT NULL, pagos INT NOT NULL DEFAULT 0, media_dias NUMERIC(8,1) NOT NULL DEFAULT 0,
         max_dias INT NOT NULL DEFAULT 0, atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (unidade, cnpj))`))
       .then(() => pool.query(`ALTER TABLE financeiro_pontualidade ENABLE ROW LEVEL SECURITY`))
+      // Um retrato por semana (segunda-feira como chave): a última leitura da semana vale. Começa a existir em 14/10/2026.
+      .then(() => pool.query(`CREATE TABLE IF NOT EXISTS financeiro_historico (
+        semana DATE PRIMARY KEY, atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        clientes_ativos INT NOT NULL DEFAULT 0, clientes_com_honorario INT NOT NULL DEFAULT 0, honorario_mensal NUMERIC(14,2) NOT NULL DEFAULT 0,
+        inadimplentes INT NOT NULL DEFAULT 0, pct_inadimplentes NUMERIC(6,1) NOT NULL DEFAULT 0, valor_atrasado NUMERIC(14,2) NOT NULL DEFAULT 0,
+        titulos_atrasados INT NOT NULL DEFAULT 0, mais_90_dias INT NOT NULL DEFAULT 0, nunca_cobrados INT NOT NULL DEFAULT 0, cobrados_3_ou_mais INT NOT NULL DEFAULT 0,
+        suspensos INT NOT NULL DEFAULT 0, suspensos_com_debito INT NOT NULL DEFAULT 0, honorario_suspenso NUMERIC(14,2) NOT NULL DEFAULT 0,
+        cobrancas_30_dias INT NOT NULL DEFAULT 0, aging JSONB NOT NULL DEFAULT '[]')`))
+      .then(() => pool.query(`ALTER TABLE financeiro_historico ENABLE ROW LEVEL SECURITY`))
       .catch((e) => { _schema = null; throw e; });
   }
   return _schema;
@@ -179,6 +188,29 @@ function compor({ clientes, categorias = {}, honorarios = new Map(), abertoAgg =
   return { kpis, clientes: lista, eventos: eventosDe };
 }
 
+// ── Retrato semanal (histórico da inadimplência) ─────────────────────────────
+/** Segunda-feira da semana de uma data AAAA-MM-DD (a semana vai de segunda a domingo, como no resto do sistema). */
+function semanaDe(iso) {
+  const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dow = dt.getUTCDay();                       // 0 = domingo
+  dt.setUTCDate(dt.getUTCDate() - (dow === 0 ? 6 : dow - 1));
+  return dt.toISOString().slice(0, 10);
+}
+const COLUNAS_RETRATO = ['clientes_ativos', 'clientes_com_honorario', 'honorario_mensal', 'inadimplentes', 'pct_inadimplentes', 'valor_atrasado', 'titulos_atrasados',
+  'mais_90_dias', 'nunca_cobrados', 'cobrados_3_ou_mais', 'suspensos', 'suspensos_com_debito', 'honorario_suspenso', 'cobrancas_30_dias'];
+/** Os números do dia que entram no histórico. Uma linha por semana: a última leitura da semana vale. */
+function retratoDeKpis(k) {
+  const r = { semana: semanaDe(k.hoje) };
+  COLUNAS_RETRATO.forEach((c) => { r[c] = k[c] == null ? 0 : k[c]; });
+  r.aging = (k.aging || []).map((a) => ({ id: a.id, clientes: a.clientes, valor: a.valor }));
+  return r;
+}
+/** Quem não vê valores recebe o histórico sem os valores em R$ (contagens e percentuais continuam). */
+function mascararHistorico(linhas) {
+  return linhas.map((l) => ({ ...l, honorario_mensal: null, valor_atrasado: null, honorario_suspenso: null, aging: (l.aging || []).map((a) => ({ ...a, valor: null })) }));
+}
+
 // ── Valores ocultos (feito no servidor) ──────────────────────────────────────
 function mascarar(dados) {
   const k = dados.kpis;
@@ -240,6 +272,21 @@ async function carregar(forcar) {
 }
 
 // ── Rotas ────────────────────────────────────────────────────────────────────
+/** Grava (ou atualiza) o retrato da semana atual com os números de agora. */
+async function gravarRetrato() {
+  await garantirSchema();
+  const d = await carregar(true);
+  const r = retratoDeKpis(d.kpis);
+  const cols = ['semana'].concat(COLUNAS_RETRATO, ['aging']);
+  const vals = cols.map((c) => (c === 'aging' ? JSON.stringify(r.aging) : r[c]));
+  const marcas = cols.map((c, i) => (c === 'aging' ? '$' + (i + 1) + '::jsonb' : '$' + (i + 1)));
+  const atualiza = cols.slice(1).map((c) => c + ' = EXCLUDED.' + c).join(', ');
+  await pool.query(
+    `INSERT INTO financeiro_historico (${cols.join(', ')}) VALUES (${marcas.join(', ')})
+     ON CONFLICT (semana) DO UPDATE SET ${atualiza}, atualizado_em = NOW()`, vals);
+  return r;
+}
+
 const router = express.Router();
 
 function tokenSyncOk(req, res) {
@@ -258,6 +305,26 @@ router.get('/dados', requireAuth, soFinanceiro, async (req, res) => {
   } catch (err) {
     console.error('[financeiro] GET /dados falhou:', err);
     res.status(500).json({ error: 'Erro ao montar o Financeiro.' });
+  }
+});
+
+/** Histórico semanal da inadimplência (gráficos e tabela de evolução). Cria o retrato da semana na primeira consulta, se ainda não existir. */
+router.get('/historico', requireAuth, soFinanceiro, async (req, res) => {
+  try {
+    await garantirSchema();
+    const tem = await pool.query(`SELECT 1 FROM financeiro_historico WHERE semana = $1::date`, [semanaDe(hojeBrasilia())]);
+    if (!tem.rows.length) await gravarRetrato().catch((e) => console.warn('[financeiro] retrato da semana não gravado:', e.message));
+    const { rows } = await pool.query(
+      `SELECT to_char(semana, 'YYYY-MM-DD') AS semana, to_char(atualizado_em AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD HH24:MI') AS atualizado_em,
+              clientes_ativos, clientes_com_honorario, honorario_mensal::float AS honorario_mensal, inadimplentes, pct_inadimplentes::float AS pct_inadimplentes,
+              valor_atrasado::float AS valor_atrasado, titulos_atrasados, mais_90_dias, nunca_cobrados, cobrados_3_ou_mais, suspensos, suspensos_com_debito,
+              honorario_suspenso::float AS honorario_suspenso, cobrancas_30_dias, aging
+         FROM financeiro_historico ORDER BY semana ASC LIMIT 200`);
+    const ve = veValores(req.user);
+    res.json({ semanas: ve ? rows : mascararHistorico(rows), valores_ocultos: !ve });
+  } catch (err) {
+    console.error('[financeiro] GET /historico falhou:', err);
+    res.status(500).json({ error: 'Erro ao ler o histórico.' });
   }
 });
 
@@ -326,6 +393,7 @@ router.post('/titulos', async (req, res) => {
     }
     await client.query('COMMIT');
     _cache = null;
+    gravarRetrato().catch((e) => console.warn('[financeiro] retrato semanal não gravado:', e.message));   // em segundo plano: não atrasa a resposta
     res.json({ ok: true, unidade, titulos: T.rec.length, pontualidade: P.cnpj.length, ignorados: titulos.length - T.rec.length });
   } catch (err) {
     if (client) await client.query('ROLLBACK').catch(() => {});
@@ -334,4 +402,4 @@ router.post('/titulos', async (req, res) => {
   } finally { if (client) client.release(); }
 });
 
-module.exports = { router, compor, mascarar, veValores, podeEntrar, soFinanceiro };
+module.exports = { router, compor, mascarar, veValores, podeEntrar, soFinanceiro, semanaDe, retratoDeKpis, mascararHistorico };

@@ -12,6 +12,7 @@
     inadimplentes: ['Inadimplentes', 'Clientes com honorário vencido e não pago: meses em aberto, quantas vezes foi cobrado e o próximo passo. Clique no nome da empresa para ver cada honorário.'],
     suspensos: ['Suspensos no Omie', 'Contratos com situação "Suspenso" no Omie (lista lida toda segunda de manhã), com o débito que ficou em aberto.'],
     carteira: ['Todos os clientes', 'Todos os clientes ativos no Acessórias, com a situação financeira de cada um.'],
+    evolucao: ['Evolução', 'Como a inadimplência, os suspensos e as cobranças mudam de semana para semana. Um retrato por semana, gravado a cada leitura do Omie.'],
     cobrancas: ['Cobranças', 'Cobranças feitas pelo Bruno no Zappy, contadas por dia e por competência (mês do honorário em aberto).'],
     qualidade: ['Qualidade dos Dados', 'De onde vem cada número e o que ainda está sem dado.'],
   };
@@ -99,7 +100,7 @@
   }
 
   // ── carga ────────────────────────────────────────────────────────────────────
-  var NOMES_SEC = ['visao', 'oportunidades', 'inadimplentes', 'suspensos', 'carteira', 'cobrancas', 'qualidade'];
+  var NOMES_SEC = ['visao', 'oportunidades', 'inadimplentes', 'suspensos', 'carteira', 'evolucao', 'cobrancas', 'qualidade'];
   async function iniciar(forcar) {
     $('login-screen').style.display = 'none';
     $('app').style.display = 'block';
@@ -108,6 +109,7 @@
     NOMES_SEC.forEach(function (s) { $('sec-' + s).innerHTML = '<div class="vazio">Carregando…</div>'; });
     try {
       estado.dados = await api('/api/financeiro/dados' + (forcar === true ? '?forcar=1' : ''));
+      try { estado.historico = (await api('/api/financeiro/historico')).semanas || []; } catch (e) { estado.historico = []; }   // o histórico nunca derruba a página
       pintarBotaoValores();
       desenharTudo();
     } catch (e) {
@@ -119,7 +121,7 @@
     $('badge-inad').textContent = k.inadimplentes || '';
     $('badge-susp').textContent = k.suspensos || '';
     $('atualizado').textContent = k.qualidade.financeiro_lido_em ? 'Omie lido em ' + data(k.qualidade.financeiro_lido_em.slice(0, 10)) + ' ' + k.qualidade.financeiro_lido_em.slice(11) : 'Omie ainda não lido';
-    desenharVisao(); desenharOportunidades(); desenharInadimplentes(); desenharSuspensos(); desenharCarteira(); desenharCobrancas(); desenharQualidade();
+    desenharVisao(); desenharOportunidades(); desenharInadimplentes(); desenharSuspensos(); desenharCarteira(); desenharEvolucao(); desenharCobrancas(); desenharQualidade();
     irPara(estado.secao);
   }
   function irPara(sec) {
@@ -559,6 +561,73 @@
     irPara(it.ir.sec);
   }
 
+  // ── EVOLUÇÃO SEMANA A SEMANA ─────────────────────────────────────────────────
+  // Um retrato por semana (segunda a domingo), gravado pelo servidor a cada leitura do Omie.
+  function dataSemana(s) { return s ? s.slice(8, 10) + '/' + s.slice(5, 7) : ''; }
+  /** Variação contra a semana anterior; para estes indicadores, descer é bom. */
+  function deltaHtml(atual, anterior, fmt, semanaAnt) {
+    if (anterior == null || atual == null) return '';
+    var d = atual - anterior;
+    if (Math.abs(d) < 0.005) return '<span class="delta igual">= igual à semana de ' + dataSemana(semanaAnt) + '</span>';
+    return '<span class="delta ' + (d < 0 ? 'bom' : 'ruim') + '">' + (d < 0 ? '▼ ' : '▲ ') + fmt(Math.abs(d)) + ' desde ' + dataSemana(semanaAnt) + '</span>';
+  }
+  function graficoLinha(pontos, fmt) {
+    if (!pontos.length) return '';
+    var W = 440, H = 160, pl = 54, pr = 14, pt = 12, pb = 26;
+    var ys = pontos.map(function (p) { return p.y; }), min = Math.min.apply(null, ys), max = Math.max.apply(null, ys);
+    if (min === max) { min = Math.max(0, min - 1); max = max + 1; } else { var pad = (max - min) * 0.2; min = Math.max(0, min - pad); max += pad; }
+    var X = function (i) { return pl + (pontos.length === 1 ? (W - pl - pr) / 2 : i * (W - pl - pr) / (pontos.length - 1)); };
+    var Y = function (v) { return pt + (H - pt - pb) * (1 - (v - min) / (max - min)); };
+    var linha = pontos.map(function (p, i) { return (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(p.y).toFixed(1); }).join(' ');
+    var area = pontos.length > 1 ? linha + ' L' + X(pontos.length - 1).toFixed(1) + ' ' + (H - pb) + ' L' + X(0).toFixed(1) + ' ' + (H - pb) + ' Z' : '';
+    var pts = pontos.map(function (p, i) { return '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(p.y).toFixed(1) + '" r="' + (i === pontos.length - 1 ? 4.5 : 3) + '" class="gl-pt"><title>' + esc(p.x + ': ' + fmt(p.y)) + '</title></circle>'; }).join('');
+    var ult = pontos[pontos.length - 1];
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="gl" role="img" aria-label="Gráfico de evolução semanal">' +
+      '<line x1="' + pl + '" y1="' + Y(min) + '" x2="' + (W - pr) + '" y2="' + Y(min) + '" class="gl-eixo"/><line x1="' + pl + '" y1="' + Y(max) + '" x2="' + (W - pr) + '" y2="' + Y(max) + '" class="gl-grade"/>' +
+      '<text x="' + (pl - 6) + '" y="' + (Y(max) + 4) + '" text-anchor="end" class="gl-txt">' + esc(fmt(max)) + '</text><text x="' + (pl - 6) + '" y="' + (Y(min) + 4) + '" text-anchor="end" class="gl-txt">' + esc(fmt(min)) + '</text>' +
+      (area ? '<path d="' + area + '" class="gl-area"/>' : '') + (pontos.length > 1 ? '<path d="' + linha + '" class="gl-linha"/>' : '') + pts +
+      '<text x="' + X(pontos.length - 1).toFixed(1) + '" y="' + (Y(ult.y) - 9).toFixed(1) + '" text-anchor="' + (pontos.length > 1 ? 'end' : 'middle') + '" class="gl-val">' + esc(fmt(ult.y)) + '</text>' +
+      '<text x="' + X(0).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="' + (pontos.length > 1 ? 'start' : 'middle') + '" class="gl-txt">' + esc(pontos[0].x) + '</text>' +
+      (pontos.length > 1 ? '<text x="' + X(pontos.length - 1).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="end" class="gl-txt">' + esc(ult.x) + '</text>' : '') + '</svg>';
+  }
+  function desenharEvolucao() {
+    var h = estado.historico || [];
+    var alvo = $('sec-evolucao');
+    if (!h.length) { alvo.innerHTML = '<div class="card"><div class="vazio">Ainda não há retrato semanal. O primeiro é gravado na próxima leitura do Omie.</div></div>'; return; }
+    var ult = h[h.length - 1], ant = h.length > 1 ? h[h.length - 2] : null, sa = ant ? ant.semana : null;
+    var n0 = function (v) { return num(Math.round(v)); }, pc = function (v) { return String(Math.round(v * 10) / 10).replace('.', ',') + '%'; };
+    var kp = function (cor, rot, val, delta, sub) {
+      return '<div class="gp-kpi"><div class="gp-kpi-bar" style="background:' + cor + '"></div><div class="gp-kpi-label">' + rot + '</div><div class="gp-kpi-value" style="color:' + cor + '">' + val + '</div><div class="gp-kpi-sub">' + delta + (sub ? '<div>' + sub + '</div>' : '') + '</div></div>';
+    };
+    var cards = '<div class="gp-kpi-row">' +
+      kp('#dc2626', 'Inadimplentes', num(ult.inadimplentes), ant ? deltaHtml(ult.inadimplentes, ant.inadimplentes, n0, sa) : '', pc(ult.pct_inadimplentes) + ' de quem fatura') +
+      kp('#b45309', 'Valor em atraso', reais(ult.valor_atrasado), ant && !valoresOcultos() ? deltaHtml(ult.valor_atrasado, ant.valor_atrasado, function (v) { return reais(v); }, sa) : '', num(ult.titulos_atrasados) + ' título(s) vencido(s)') +
+      kp('#b91c1c', 'Nunca cobrados', num(ult.nunca_cobrados), ant ? deltaHtml(ult.nunca_cobrados, ant.nunca_cobrados, n0, sa) : '', 'inadimplentes sem cobrança') +
+      kp('#6b21a8', 'Suspensos com débito', num(ult.suspensos_com_debito), ant ? deltaHtml(ult.suspensos_com_debito, ant.suspensos_com_debito, n0, sa) : '', num(ult.suspensos) + ' suspensos no total') +
+      kp('#7c3aed', 'Cobranças em 30 dias', num(ult.cobrancas_30_dias), ant ? '<span class="delta neutro">' + (ult.cobrancas_30_dias >= ant.cobrancas_30_dias ? '▲ ' : '▼ ') + n0(Math.abs(ult.cobrancas_30_dias - ant.cobrancas_30_dias)) + ' desde ' + dataSemana(sa) + '</span>' : '', 'dias com cobrança') +
+    '</div>';
+    var serie = function (campo) { return h.map(function (s) { return { x: dataSemana(s.semana), y: Number(s[campo]) || 0 }; }); };
+    var graf = function (titulo, campo, fmt) { return '<div class="card gl-card"><div class="card-title">' + esc(titulo) + '</div>' + graficoLinha(serie(campo), fmt) + '</div>'; };
+    var graficos = '<div class="gl-grid">' +
+      graf('Inadimplentes (clientes)', 'inadimplentes', n0) +
+      (valoresOcultos() ? graf('Inadimplentes (% de quem fatura)', 'pct_inadimplentes', pc) : graf('Valor em atraso (R$)', 'valor_atrasado', function (v) { return Math.round(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }); })) +
+      graf('Inadimplentes nunca cobrados', 'nunca_cobrados', n0) +
+      graf('Suspensos com débito', 'suspensos_com_debito', n0) + '</div>';
+    var linhas = h.slice().reverse().map(function (s) {
+      return '<tr><td><b>' + data(s.semana) + '</b><div class="sub">lido em ' + esc(data(s.atualizado_em.slice(0, 10)) + ' ' + s.atualizado_em.slice(11)) + '</div></td>' +
+        '<td class="c">' + num(s.inadimplentes) + '</td><td class="c">' + pc(s.pct_inadimplentes) + '</td><td class="c" style="font-family:var(--mono)">' + reais(s.valor_atrasado) + '</td>' +
+        '<td class="c">' + num(s.titulos_atrasados) + '</td><td class="c">' + num(s.mais_90_dias) + '</td><td class="c">' + num(s.nunca_cobrados) + '</td><td class="c">' + num(s.cobrados_3_ou_mais) + '</td>' +
+        '<td class="c">' + num(s.suspensos) + '</td><td class="c">' + num(s.suspensos_com_debito) + '</td><td class="c">' + num(s.cobrancas_30_dias) + '</td></tr>';
+    }).join('');
+    alvo.innerHTML =
+      '<div class="nota"><strong>Como ler:</strong> um retrato por semana (de segunda a domingo), gravado a cada leitura do Omie; a última leitura da semana vale. ' +
+        (h.length === 1 ? 'O primeiro retrato é da semana de <strong>' + data(h[0].semana) + '</strong>: os gráficos ganham forma a cada nova semana.' : 'Há <strong>' + h.length + '</strong> semana(s) guardada(s), desde ' + data(h[0].semana) + '.') +
+        ' Em todos os indicadores, descer é bom.</div>' +
+      cards + graficos +
+      '<div class="card"><div class="card-title">Semana a semana</div><div class="card-sub">A semana mais recente primeiro.</div><div class="table-wrap"><table><thead><tr><th>Semana (início)</th><th class="c">Inadimplentes</th><th class="c">% de quem fatura</th><th class="c">Valor em atraso</th>' +
+        '<th class="c">Títulos vencidos</th><th class="c">Mais de 90 dias</th><th class="c">Nunca cobrados</th><th class="c">Cobrados 3× ou mais</th><th class="c">Suspensos</th><th class="c">Suspensos com débito</th><th class="c">Cobranças em 30 dias</th></tr></thead><tbody>' + linhas + '</tbody></table></div></div>';
+  }
+
   // ── EXPORTAÇÃO (CSV e PDF) ───────────────────────────────────────────────────
   // Exporta TODAS as linhas do filtro atual da seção aberta (não só a página). Os dados já vieram do servidor com as permissões e os
   // valores ocultos aplicados; com "Ocultar valores" ligado, os valores em R$ saem como "oculto".
@@ -574,6 +643,13 @@
   function dadosExport(sec) {
     var d = estado.dados, k = d.kpis, f;
     var aviso = valoresOcultos() ? 'Valores em R$ ocultos.' : '';
+    if (sec === 'evolucao') {
+      var hs = estado.historico || [];
+      return { arquivo: 'financeiro-evolucao-semanal', titulo: 'Financeiro - Evolução semana a semana', filtros: [hs.length + ' semana(s) guardada(s). Um retrato por semana, a última leitura da semana vale.', aviso],
+        colunas: ['Semana (início)', 'Lido em', 'Clientes ativos', 'Clientes que faturam', 'Inadimplentes', '% de quem fatura', 'Valor em atraso (R$)', 'Títulos vencidos', 'Mais de 90 dias', 'Nunca cobrados', 'Cobrados 3x ou mais', 'Suspensos', 'Suspensos com débito', 'Honorário parado nos suspensos (R$)', 'Cobranças em 30 dias'],
+        linhas: hs.map(function (s) { return [data(s.semana), s.atualizado_em, s.clientes_ativos, s.clientes_com_honorario, s.inadimplentes, s.pct_inadimplentes, moedaExp(s.valor_atrasado), s.titulos_atrasados, s.mais_90_dias, s.nunca_cobrados, s.cobrados_3_ou_mais, s.suspensos, s.suspensos_com_debito, moedaExp(s.honorario_suspenso), s.cobrancas_30_dias]; }),
+        alinhar: ['left', 'left', 'center', 'center', 'center', 'center', 'right', 'center', 'center', 'center', 'center', 'center', 'center', 'right', 'center'], fonte: 6.5 };
+    }
     if (sec === 'oportunidades') {
       var ops = listaOportunidades();
       return { arquivo: 'financeiro-oportunidades', titulo: 'Financeiro - Oportunidades', filtros: ['Calculado com os dados de ' + data(k.hoje) + '.', aviso],

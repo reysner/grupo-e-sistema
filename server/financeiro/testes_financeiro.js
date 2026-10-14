@@ -163,6 +163,26 @@ const token = (role, extra = {}) => auth.signAccess({ id: 'u-' + role, name: 'Te
     assert.strictEqual(fin.veValores(undefined), false);
   });
 
+  await teste('retrato semanal: a semana vai de segunda a domingo e o retrato guarda os números do dia', () => {
+    assert.strictEqual(fin.semanaDe('2026-10-12'), '2026-10-12');   // segunda
+    assert.strictEqual(fin.semanaDe('2026-10-14'), '2026-10-12');   // quarta
+    assert.strictEqual(fin.semanaDe('2026-10-18'), '2026-10-12');   // domingo ainda é da semana que começou na segunda
+    assert.strictEqual(fin.semanaDe('2026-10-19'), '2026-10-19');
+    assert.strictEqual(fin.semanaDe('2027-01-01'), '2026-12-28');   // virada de ano
+    const r = fin.retratoDeKpis(dados.kpis);
+    assert.strictEqual(r.semana, '2026-10-12');
+    assert.deepStrictEqual([r.inadimplentes, r.suspensos, r.valor_atrasado, r.nunca_cobrados], [2, 1, 1723, 1]);
+    assert.strictEqual(r.aging.length, 5);
+  });
+  await teste('retrato semanal: quem não vê valores recebe o histórico sem R$ (contagens e percentuais ficam)', () => {
+    const r = fin.retratoDeKpis(dados.kpis);
+    const m = fin.mascararHistorico([r])[0];
+    assert.deepStrictEqual([m.honorario_mensal, m.valor_atrasado, m.honorario_suspenso], [null, null, null]);
+    assert.ok(m.aging.every((a) => a.valor === null));
+    assert.deepStrictEqual([m.inadimplentes, m.suspensos, m.pct_inadimplentes], [r.inadimplentes, r.suspensos, r.pct_inadimplentes]);
+    assert.strictEqual(r.valor_atrasado, 1723);                       // não altera o original
+  });
+
   // ── quem chega nas rotas (isolamento: o servidor decide) ──
   const app = express();
   app.use(express.json());
@@ -175,12 +195,13 @@ const token = (role, extra = {}) => auth.signAccess({ id: 'u-' + role, name: 'Te
 
   await teste('financeiro: sem login 401; token inválido 401', async () => {
     assert.strictEqual((await chamar(porta, '/api/financeiro/dados')).status, 401);
+    assert.strictEqual((await chamar(porta, '/api/financeiro/historico')).status, 401);
     assert.strictEqual((await chamar(porta, FICHA_INVALIDA, { token: 'lixo' })).status, 401);
   });
   await teste('financeiro: contábil e colaborador sem as marcas = 403 (mesmo com Minha Nota e Legalização)', async () => {
     for (const role of ['contabil', 'colaborador']) {
       const t = token(role, { acesso_minha_nota: true, acesso_legalizacao: true });
-      for (const r of ['/api/financeiro/dados', FICHA_INVALIDA]) assert.strictEqual((await chamar(porta, r, { token: t })).status, 403, role + ' ' + r);
+      for (const r of ['/api/financeiro/dados', '/api/financeiro/historico', FICHA_INVALIDA]) assert.strictEqual((await chamar(porta, r, { token: t })).status, 403, role + ' ' + r);
     }
   });
   await teste('financeiro: administrador, usuário, acesso_cs e acesso_financeiro passam pela porta', async () => {

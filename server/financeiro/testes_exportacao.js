@@ -62,11 +62,13 @@ const semLixo = (e, nome) => {
     suspensos: new Map([['77888999000133', { contrato: '1' }]]),
     mensagens: [{ doc: '11222333000181', dia: '2026-09-15', texto: B('Identificamos honorários em aberto da empresa.'), ticket: '900' }],
   });
-  const F = carregar('financeiro.js', '{ estado: estado, dadosExport: dadosExport, linhasPorTitulo: linhasPorTitulo, COLUNAS_TITULO: COLUNAS_TITULO, abrirCompetencia: abrirCompetencia, desenharOportunidades: desenharOportunidades, irParaOportunidade: irParaOportunidade, listaOportunidades: listaOportunidades }');
+  const F = carregar('financeiro.js', '{ estado: estado, dadosExport: dadosExport, linhasPorTitulo: linhasPorTitulo, COLUNAS_TITULO: COLUNAS_TITULO, abrirCompetencia: abrirCompetencia, desenharEvolucao: desenharEvolucao, desenharOportunidades: desenharOportunidades, irParaOportunidade: irParaOportunidade, listaOportunidades: listaOportunidades }');
   F.t.estado.dados = { kpis: dados.kpis, clientes: dados.clientes, valores_ocultos: false, usuario: { ve_valores: true } };
+  const r1 = fin.retratoDeKpis(dados.kpis);
+  F.t.estado.historico = [Object.assign({}, r1, { semana: '2026-10-05', atualizado_em: '2026-10-05 09:10', valor_atrasado: 1900, inadimplentes: 3, nunca_cobrados: 2 }), Object.assign({}, r1, { atualizado_em: '2026-10-13 17:23' })];
 
   await teste('financeiro: todas as seções geram colunas e linhas coerentes', () => {
-    for (const sec of ['visao', 'oportunidades', 'inadimplentes', 'suspensos', 'carteira', 'cobrancas', 'qualidade']) {
+    for (const sec of ['visao', 'oportunidades', 'evolucao', 'inadimplentes', 'suspensos', 'carteira', 'cobrancas', 'qualidade']) {
       const e = F.t.dadosExport(sec);
       assert.ok(e && e.colunas.length && e.linhas.length, sec + ' vazio');
       semLixo(e, 'financeiro/' + sec);
@@ -85,13 +87,20 @@ const semLixo = (e, nome) => {
     const ops = F.t.listaOportunidades();
     assert.ok(ops.length > 0 && ops.every((o) => o.titulo && o.acao && o.qtd > 0), 'sem oportunidades');
     F.t.desenharOportunidades();
+    const h0 = F.t.estado.historico;
+    F.t.desenharEvolucao();                            // duas semanas: cartões com variação, gráficos e tabela
+    F.t.estado.historico = [h0[1]];                    // uma semana só: sem variação, sem erro
+    F.t.desenharEvolucao();
+    F.t.estado.historico = [];
+    F.t.desenharEvolucao();
+    F.t.estado.historico = h0;
     for (const o of ops.filter((x) => x.ir)) F.t.irParaOportunidade(o.chave);
     assert.strictEqual(F.t.estado.f.inad.pag, 1);
     F.t.abrirCompetencia('2026-07');
   });
   await teste('financeiro: com "Ocultar valores" nenhum valor em R$ vai para a exportação', () => {
     F.t.estado.ocultar = true;
-    for (const sec of ['visao', 'oportunidades', 'inadimplentes', 'suspensos', 'carteira', 'cobrancas']) {
+    for (const sec of ['visao', 'oportunidades', 'evolucao', 'inadimplentes', 'suspensos', 'carteira', 'cobrancas']) {
       const e = F.t.dadosExport(sec);
       const txt = JSON.stringify(e.linhas);
       assert.ok(!/\b(800|1600|1723|2400|350|123)\b/.test(txt), sec + ' vazou valor: ' + txt.slice(0, 200));

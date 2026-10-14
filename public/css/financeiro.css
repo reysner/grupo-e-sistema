@@ -52,3 +52,19 @@ tr.clicavel:hover td{background:var(--brand-soft);}
 .op-qtd b{font-size:22px;letter-spacing:-.5px;}
 .op-valor{font-size:18px;font-weight:700;font-family:var(--mono);margin:2px 0 10px;}
 .op-card .passo{margin-top:auto;}
+
+/* Evolução semanal: variação e gráficos de linha (SVG, sem biblioteca) */
+.delta{display:inline-block;font-size:11px;font-weight:700;margin-bottom:2px;}
+.delta.bom{color:#059669;}
+.delta.ruim{color:#dc2626;}
+.delta.igual,.delta.neutro{color:var(--text3);}
+.gl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;margin-bottom:18px;}
+.gl-card{margin-bottom:0;}
+.gl{width:100%;height:auto;display:block;}
+.gl-eixo{stroke:var(--border);stroke-width:1;}
+.gl-grade{stroke:var(--border);stroke-width:1;stroke-dasharray:3 4;}
+.gl-linha{fill:none;stroke:var(--brand);stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round;}
+.gl-area{fill:var(--brand);opacity:.09;}
+.gl-pt{fill:var(--brand);stroke:var(--surface);stroke-width:1.5;}
+.gl-txt{font-size:10px;fill:var(--text3);font-family:var(--font);}
+.gl-val{font-size:11px;font-weight:700;fill:var(--text);font-family:var(--font);}
