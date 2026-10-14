@@ -135,6 +135,7 @@
     $('subtitulo').textContent = TITULOS[sec][1];
     $('filtro-periodo').style.display = (sec === 'visao' || sec === 'churn') ? 'flex' : 'none';
     var ativa = $('sec-' + sec); if (ativa) ativa.scrollTop = 0;
+    ['btn-csv', 'btn-pdf'].forEach(function (id) { var b = $(id); if (b) b.style.display = SEC_EXPORTA[sec] ? 'inline-flex' : 'none'; });
   }
 
   // ── gráficos ─────────────────────────────────────────────────────────────────
@@ -429,9 +430,9 @@
         p.map(function (n) { return n === '…' ? '<span class="pg-gap">…</span>' : bt(n, n, n === pag, 'Página ' + n); }).join('') +
         (pag < paginas ? bt(pag + 1, '›', false, 'Próxima página') : '') : '') + '</nav>';
   }
-  function desenharAnalise() {
-    var d = estado.dados, t = d.totais, f = estado.filtroAnalise, b = f.busca.trim().toLowerCase();
-    var semQuestor = !d.totais.questor_lido_em && !d.clientes.concat(d.clientes_outros || []).some(function (c) { return c.questor; });
+  // Linhas da Análise Inteligente já filtradas e ordenadas (usada pela tela e pela exportação).
+  function analiseFiltrada() {
+    var d = estado.dados, f = estado.filtroAnalise, b = f.busca.trim().toLowerCase();
     var base = d.clientes.concat(d.clientes_outros || []), contTipo = { CNPJ: 0, CPF: 0, CAEPF: 0, CNO: 0 };
     base.forEach(function (c) { if (contTipo[c.tipo_doc] != null) contTipo[c.tipo_doc]++; });
     if (f.tipo) base = base.filter(function (c) { return c.tipo_doc === f.tipo; });
@@ -442,6 +443,12 @@
       return e.itens.some(function (c) { return (c.nome || '').toLowerCase().indexOf(b) >= 0 || String(c.cnpj || '').replace(/\D/g, '').indexOf(b.replace(/\D/g, '') || '§') >= 0; }) || e.nome.toLowerCase().indexOf(b) >= 0;
     });
     ents.sort(function (a, c) { return (c.faturamento == null ? -1 : c.faturamento) - (a.faturamento == null ? -1 : a.faturamento) || a.nome.localeCompare(c.nome); });
+    return { contTipo: contTipo, todasEnts: todasEnts, ents: ents };
+  }
+  function desenharAnalise() {
+    var d = estado.dados, t = d.totais, f = estado.filtroAnalise;
+    var semQuestor = !d.totais.questor_lido_em && !d.clientes.concat(d.clientes_outros || []).some(function (c) { return c.questor; });
+    var an = analiseFiltrada(), contTipo = an.contTipo, ents = an.ents;
     var totFat = somar(ents, function (e) { return e.faturamento; }), totHon = somar(ents, function (e) { return e.honorario; }), totFun = somar(ents, function (e) { return e.funcionarios; });
     var nGrupos = ents.filter(function (e) { return !e.unico; }).length;
     var paginasAn = Math.max(1, Math.ceil(ents.length / ANALISE_POR_PAGINA)); if (f.pag > paginasAn) f.pag = paginasAn; if (f.pag < 1) f.pag = 1;
@@ -592,6 +599,97 @@
 
   function fecharFicha() { $('ficha').style.display = 'none'; document.querySelector('.ficha-box').classList.remove('larga'); }
 
+  // ── EXPORTAÇÃO (CSV e PDF) ───────────────────────────────────────────────────
+  // Exporta TODAS as linhas do filtro atual da seção aberta (não só a página). Os dados já vieram do servidor com as permissões e os
+  // valores ocultos aplicados; com "Ocultar valores" ligado, os valores em R$ saem como "oculto".
+  var SEC_EXPORTA = { visao: 1, analise: 1, risco: 1, churn: 1, categorias: 1 };
+  function moedaExp(v) { return valoresOcultos() ? 'oculto' : (v == null ? '' : Math.round(v * 100) / 100); }
+  function fatExp(q) {
+    if (valoresOcultos()) return 'oculto';
+    if (!q || q.faturamento == null) return 'sem dado';
+    return q.faturamento === 0 ? 'sem faturamento' : Math.round(q.faturamento * 100) / 100;
+  }
+  function funcExp(q) { return q ? (q.funcionarios == null ? 0 : q.funcionarios) : 'sem dado'; }
+  var ROT_NIVEL = { AltoMedio: 'Alto e Médio', Alto: 'Só Alto', 'Médio': 'Só Médio', Baixo: 'Baixo', Suspenso: 'Suspensos (fora do risco)', todos: 'Todos' };
+
+  function dadosExport(sec) {
+    var d = estado.dados, t = d.totais, aviso = valoresOcultos() ? 'Valores em R$ ocultos.' : '';
+    if (sec === 'visao') {
+      var p = periodoAtual();
+      var lin = [
+        ['Clientes ativos (CNPJ)', t.clientes],
+        ['Período do churn', data(p.ini) + ' a ' + data(p.fim)], ['Base no início do período', p.base], ['Saídas que contam (Transferida por...)', p.saidas_contadas],
+        ['Taxa de churn (%)', p.taxa == null ? '' : p.taxa], ['Teto do churn com as saídas a confirmar (%)', p.taxa_teto == null ? '' : p.taxa_teto], ['Saíram em até 90 dias', p.menos_de_90_dias],
+        ['Risco Alto', t.risco.Alto], ['Risco Médio', t.risco['Médio']], ['Risco Baixo', t.risco.Baixo], ['Suspensos no Omie (fora do risco)', t.suspensos || 0],
+        ['Clientes sem reclamação nos últimos 30 dias', t.sem_reclamacao_30d],
+        ['Categoria Diamante', t.categorias.Diamante], ['Categoria Ouro', t.categorias.Ouro], ['Categoria Prata', t.categorias.Prata], ['Categoria Bronze', t.categorias.Bronze], ['Sem categoria', t.categorias.sem_categoria],
+      ];
+      ['financeiro', 'atendimento', 'operacional'].forEach(function (k) {
+        var tm = t.termometros[k];
+        lin.push(['Termômetro ' + NOME_TERM[k] + ': clientes com dado', tm.com_dado]); lin.push(['Termômetro ' + NOME_TERM[k] + ': em alerta', tm.em_alerta]); lin.push(['Termômetro ' + NOME_TERM[k] + ': Médio ou mais', tm.medio_ou_mais]);
+      });
+      return { arquivo: 'cs-visao-geral', titulo: 'Painel do Sucesso do Cliente - Visão geral', filtros: [aviso], colunas: ['Indicador', 'Valor'], linhas: lin, alinhar: ['left', 'right'], orientacao: 'portrait', fonte: 9 };
+    }
+    if (sec === 'analise') {
+      var f = estado.filtroAnalise, a = analiseFiltrada(), linhas = [];
+      var linhaEmp = function (c, nivel) {
+        var q = c.questor;
+        return [nivel, c.nome, c.cnpj || '', c.tipo_doc || 'CNPJ', c.regime || '', funcExp(q), moedaExp(c.honorario), fatExp(q), q && q.aviso ? 'Natureza sem configuração de faturamento no Questor' : ''];
+      };
+      a.ents.forEach(function (e) {
+        if (e.unico) { linhas.push(linhaEmp(e.itens[0], 'Empresa')); return; }
+        var fat = valoresOcultos() ? 'oculto' : (e.faturamento == null ? 'sem dado' : e.faturamento === 0 ? 'sem faturamento' : Math.round(e.faturamento * 100) / 100);
+        linhas.push([e.tipo === 'grupo' ? 'Grupo' : 'Matriz e filiais', e.tipo === 'grupo' ? 'GRUPO ' + e.nome.toUpperCase() : e.nome + ' e filiais', e.itens.length + ' empresas', '', '', e.funcionarios == null ? 'sem dado' : e.funcionarios, moedaExp(e.honorario), fat, '']);
+        e.itens.forEach(function (c) { linhas.push(linhaEmp(c, '  Empresa do grupo')); });
+      });
+      var fl = []; if (f.busca) fl.push('Busca: ' + f.busca); if (f.tipo) fl.push('Documento: ' + f.tipo); if (f.soGrupos) fl.push('Só grupos e matriz com filiais');
+      return { arquivo: 'cs-analise-inteligente', titulo: 'Painel do Sucesso do Cliente - Análise Inteligente', filtros: [a.ents.length + ' linha(s)' + (fl.length ? ' · ' + fl.join(' · ') : ' · sem filtro') + ' · ordem: faturamento, do maior para o menor', aviso],
+        colunas: ['Nível', 'Razão social', 'Documento', 'Tipo', 'Regime tributário', 'Funcionários', 'Honorários (R$)', 'Faturamento 12 meses (R$)', 'Aviso do Questor'], linhas: linhas,
+        alinhar: ['left', 'left', 'left', 'center', 'left', 'center', 'right', 'right', 'left'], fonte: 7 };
+    }
+    if (sec === 'risco') {
+      var fr = estado.filtroRisco, lr = filtrarRisco();
+      var fx = ['Risco: ' + (ROT_NIVEL[fr.nivel] || fr.nivel)]; if (fr.busca) fx.push('Busca: ' + fr.busca); if (fr.cat) fx.push('Categoria: ' + fr.cat); if (fr.term) fx.push('Pesa mais: ' + NOME_TERM[fr.term]); if (fr.soAtend) fx.push('Só com sinal de Atendimento');
+      return { arquivo: 'cs-gestao-da-permanencia', titulo: 'Painel do Sucesso do Cliente - Gestão da Permanência', filtros: [lr.length + ' cliente(s) · ' + fx.join(' · ') + ' · ordem: pontos de risco, do maior para o menor', aviso],
+        colunas: ['Cliente', 'CNPJ', 'Categoria', 'Risco', 'Pontos', 'Financeiro', 'Atendimento', 'Operacional', 'Suspenso no Omie', 'Honorário (R$)', 'O que está puxando'],
+        linhas: lr.map(function (c) {
+          var tm = c.risco.termometros, v = function (x) { return x == null ? 'sem dado' : x; };
+          return [c.nome, c.cnpj || '', c.categoria || '', c.risco.nivel, c.risco.pontos == null ? '' : c.risco.pontos, v(tm.financeiro), v(tm.atendimento), v(tm.operacional), c.risco.suspenso ? 'Sim' : '', moedaExp(c.honorario), (c.risco.motivos || []).join(' | ')];
+        }),
+        alinhar: ['left', 'left', 'left', 'center', 'center', 'center', 'center', 'center', 'center', 'right', 'left'], fonte: 7 };
+    }
+    if (sec === 'churn') {
+      var pc = periodoAtual();
+      return { arquivo: 'cs-churn-saidas', titulo: 'Painel do Sucesso do Cliente - Churn: saídas do período',
+        filtros: ['Período de ' + data(pc.ini) + ' a ' + data(pc.fim) + ' · base ' + pc.base + ' · saídas que contam ' + pc.saidas_contadas + ' · taxa ' + (pc.taxa == null ? '-' : pc.taxa + '%'), 'Todas as saídas do período, com o tipo de cada uma.'],
+        colunas: ['Cliente', 'CNPJ', 'Entrada', 'Saída', 'Tipo', 'Na base do início', 'Como foi classificada'],
+        linhas: pc.saidas.map(function (s) { var tp = TIPO_SAIDA[s.tipo] || { rot: s.tipo }; return [s.nome, s.cnpj || '', data(s.data_entrada), data(s.data_saida), tp.rot, s.na_base ? 'Sim' : 'Entrou no período', s.origem || '']; }),
+        alinhar: ['left', 'left', 'center', 'center', 'left', 'center', 'left'], fonte: 7.5 };
+    }
+    if (sec === 'categorias') {
+      var sel = estado.catSel;
+      var lc = d.clientes.filter(function (c) { return sel === 'sem' ? !c.categoria : (sel ? c.categoria === sel : true); });
+      return { arquivo: 'cs-categorias', titulo: 'Painel do Sucesso do Cliente - Categorias', filtros: [lc.length + ' cliente(s) · ' + (sel === 'sem' ? 'Sem categoria' : sel ? 'Categoria ' + sel : 'Todas as categorias'), aviso],
+        colunas: ['Cliente', 'CNPJ', 'Categoria', 'Honorário (R$)', 'Motivo da categoria', 'Risco', 'Pontos'],
+        linhas: lc.map(function (c) { return [c.nome, c.cnpj || '', c.categoria || 'Sem categoria', moedaExp(c.honorario), motivoTxt(c.categoria_motivo), c.risco.nivel, c.risco.pontos == null ? '' : c.risco.pontos]; }),
+        alinhar: ['left', 'left', 'left', 'right', 'left', 'center', 'center'], fonte: 7 };
+    }
+    return null;
+  }
+  function exportar(formato) {
+    var e = dadosExport(estado.secao);
+    if (!e) { alert('Esta seção não tem relatório para exportar.'); return; }
+    var u = null; try { u = JSON.parse(ls(K_USER) || 'null'); } catch (x) { u = null; }
+    var sub = (e.filtros || []).filter(Boolean).concat(u && u.name ? ['Gerado por ' + u.name] : []);
+    try {
+      if (formato === 'csv') { window.Exportar.csv(e.arquivo, e.colunas, e.linhas); return; }
+      var btn = $('btn-pdf'), rot = btn.textContent; btn.disabled = true; btn.textContent = 'Gerando PDF…';
+      window.Exportar.pdf({ arquivo: e.arquivo, titulo: e.titulo, subtitulo: sub, colunas: e.colunas, linhas: e.linhas, alinhar: e.alinhar, orientacao: e.orientacao || 'landscape', fonte: e.fonte, paginaDe: 'Sucesso do Cliente' })
+        .catch(function (err) { alert(err.message || 'Não foi possível gerar o PDF.'); })
+        .then(function () { btn.disabled = false; btn.textContent = rot; });
+    } catch (err) { alert(err.message || 'Não foi possível exportar.'); }
+  }
+
   // ── eventos ──────────────────────────────────────────────────────────────────
   document.addEventListener('click', function (ev) {
     var f = ev.target.closest && ev.target.closest('[data-ficha]');
@@ -602,6 +700,8 @@
   $('login-form').addEventListener('submit', entrar);
   $('btn-sair').addEventListener('click', function () { sair(false); });
   $('btn-atualizar').addEventListener('click', function () { iniciar(true); });
+  $('btn-csv').addEventListener('click', function () { exportar('csv'); });
+  $('btn-pdf').addEventListener('click', function () { exportar('pdf'); });
   // Botão "Valores ocultos" (só administrador): esconde todo valor em R$ na tela, para apresentar sem mostrar valores. Lembra a escolha neste navegador.
   function pintarBotaoValores() {
     var b = $('btn-valores'); var admin = estado.dados && estado.dados.usuario && estado.dados.usuario.papel === 'administrador';

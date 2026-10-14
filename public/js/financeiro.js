@@ -128,6 +128,7 @@
     $('titulo').textContent = SECOES[sec][0];
     $('subtitulo').textContent = SECOES[sec][1];
     var ativa = $('sec-' + sec); if (ativa) ativa.scrollTop = 0;
+    var t = $('btn-csv-tit'); if (t) t.style.display = (sec === 'inadimplentes' || sec === 'suspensos') ? 'inline-flex' : 'none';
   }
 
   // ── blocos reutilizáveis ─────────────────────────────────────────────────────
@@ -226,8 +227,8 @@
       '<div class="nota"><strong>Como ler:</strong> honorário vencido = título do Omie com vencimento anterior a hoje e ainda não pago. O honorário de um mês vence no mês seguinte (o de junho vence em 10/07), por isso a competência mostrada é o mês anterior ao vencimento. "Cobrado" conta dias com cobrança do Bruno no Zappy, a partir de ' + data(k.qualidade.cobrancas_desde) + '.</div>';
   }
 
-  // ── INADIMPLENTES ────────────────────────────────────────────────────────────
-  function desenharInadimplentes() {
+  // Listas filtradas (a mesma lógica serve a tela e a exportação)
+  function listaInad() {
     var d = estado.dados, f = estado.f.inad, q = norm(f.busca.trim());
     var base = d.clientes.filter(function (c) { return c.situacao === 'inadimplente' || (c.suspenso && c.qtd_atrasados > 0); });
     var lista = base.filter(function (c) {
@@ -239,6 +240,24 @@
       if (f.cobr === 'parado' && !(c.cobrancas && c.dias_desde_cobranca >= 15)) return false;
       return true;
     }).sort(function (a, b) { return (b.dias_atraso - a.dias_atraso) || ((b.valor_atrasado || 0) - (a.valor_atrasado || 0)); });
+    return lista;
+  }
+  function listaSusp() {
+    var d = estado.dados, f = estado.f.susp, q = norm(f.busca.trim());
+    var lista = d.clientes.filter(function (c) { return c.suspenso && bateBusca(c, q); })
+      .sort(function (a, b) { return (b.qtd_atrasados > 0) - (a.qtd_atrasados > 0) || b.dias_atraso - a.dias_atraso; });
+    return lista;
+  }
+  function listaCart() {
+    var d = estado.dados, f = estado.f.cart, q = norm(f.busca.trim());
+    var lista = d.clientes.filter(function (c) { return bateBusca(c, q) && (!f.sit || c.situacao === f.sit || (f.sit === 'suspenso' && c.suspenso)) && (!f.cat || c.categoria === f.cat); })
+      .sort(function (a, b) { return (b.honorario || 0) - (a.honorario || 0) || a.nome.localeCompare(b.nome); });
+    return lista;
+  }
+
+  // ── INADIMPLENTES ────────────────────────────────────────────────────────────
+  function desenharInadimplentes() {
+    var d = estado.dados, f = estado.f.inad, lista = listaInad();
     var pagina = fatiar(lista, f);
     var linhas = pagina.map(function (c) {
       return '<tr><td style="white-space:normal;min-width:230px">' + nomeLink(c) + (c.suspenso ? ' <span class="pill" style="color:#6b21a8;border-color:#6b21a855;background:#6b21a814">⏸ Suspenso</span>' : '') + '<div style="margin-top:4px">' + pillCat(c) + '</div></td>' +
@@ -266,9 +285,7 @@
 
   // ── SUSPENSOS ────────────────────────────────────────────────────────────────
   function desenharSuspensos() {
-    var d = estado.dados, f = estado.f.susp, q = norm(f.busca.trim()), k = d.kpis;
-    var lista = d.clientes.filter(function (c) { return c.suspenso && bateBusca(c, q); })
-      .sort(function (a, b) { return (b.qtd_atrasados > 0) - (a.qtd_atrasados > 0) || b.dias_atraso - a.dias_atraso; });
+    var d = estado.dados, f = estado.f.susp, k = d.kpis, lista = listaSusp();
     var pagina = fatiar(lista, f);
     var linhas = pagina.map(function (c) {
       return '<tr><td style="white-space:normal;min-width:230px">' + nomeLink(c) + '<div style="margin-top:4px">' + pillCat(c) + '</div></td>' +
@@ -293,9 +310,7 @@
 
   // ── TODOS OS CLIENTES ────────────────────────────────────────────────────────
   function desenharCarteira() {
-    var d = estado.dados, f = estado.f.cart, q = norm(f.busca.trim());
-    var lista = d.clientes.filter(function (c) { return bateBusca(c, q) && (!f.sit || c.situacao === f.sit || (f.sit === 'suspenso' && c.suspenso)) && (!f.cat || c.categoria === f.cat); })
-      .sort(function (a, b) { return (b.honorario || 0) - (a.honorario || 0) || a.nome.localeCompare(b.nome); });
+    var d = estado.dados, f = estado.f.cart, lista = listaCart();
     var pagina = fatiar(lista, f);
     var linhas = pagina.map(function (c) {
       var p = c.pontualidade;
@@ -425,6 +440,118 @@
   }
   function fecharFicha() { $('ficha').style.display = 'none'; fichaDoc = null; }
 
+  // ── EXPORTAÇÃO (CSV e PDF) ───────────────────────────────────────────────────
+  // Exporta TODAS as linhas do filtro atual da seção aberta (não só a página). Os dados já vieram do servidor com as permissões e os
+  // valores ocultos aplicados; com "Ocultar valores" ligado, os valores em R$ saem como "oculto".
+  function moedaExp(v) { return valoresOcultos() ? 'oculto' : (v == null ? '' : Math.round(v * 100) / 100); }
+  function mesesExp(c) {
+    var ms = []; c.abertos.filter(function (t) { return t.vencido; }).forEach(function (t) { var m = competencia(t.vencimento); if (ms.indexOf(m) < 0) ms.push(m); });
+    return { qtd: ms.length, de: ms[0] || '', ate: ms.length ? ms[ms.length - 1] : '' };
+  }
+  function dataExp(s) { return s ? data(s) : ''; }
+  function rotuloFaixa(id) { var a = (estado.dados.kpis.aging || []).filter(function (x) { return x.id === id; })[0]; return a ? a.rotulo : ''; }
+  var ROT_COBR = { nunca: 'Nunca cobrado', '3': 'Cobrado 3 vezes ou mais', parado: 'Sem cobrar há 15 dias ou mais' };
+
+  function dadosExport(sec) {
+    var d = estado.dados, k = d.kpis, f;
+    var aviso = valoresOcultos() ? 'Valores em R$ ocultos.' : '';
+    if (sec === 'visao') {
+      var lin = [
+        ['Clientes ativos', k.clientes_ativos], ['Clientes que faturam no Omie', k.clientes_com_honorario], ['Honorário mensal (R$)', moedaExp(k.honorario_mensal)],
+        ['Inadimplentes', k.inadimplentes], ['% de inadimplentes (de quem fatura)', k.pct_inadimplentes], ['Valor em atraso (R$)', moedaExp(k.valor_atrasado)],
+        ['Títulos vencidos', k.titulos_atrasados], ['Inadimplentes há mais de 90 dias', k.mais_90_dias], ['Inadimplentes nunca cobrados', k.nunca_cobrados],
+        ['Cobrados 3 vezes ou mais sem pagar', k.cobrados_3_ou_mais], ['Inadimplentes crônicos (Carteira)', k.cronicos], ['Contratos suspensos no Omie', k.suspensos],
+        ['Suspensos com débito em aberto', k.suspensos_com_debito], ['Honorário mensal parado nos suspensos (R$)', moedaExp(k.honorario_suspenso)],
+        ['Cobranças nos últimos 30 dias (dias com cobrança)', k.cobrancas_30_dias], ['Títulos que vencem em 7 dias', k.a_vencer_7_dias.titulos], ['Valor que vence em 7 dias (R$)', moedaExp(k.a_vencer_7_dias.valor)],
+        ['Pagam sempre atrasado (média de 10 dias ou mais)', k.maus_pagadores],
+      ];
+      k.aging.forEach(function (a) { lin.push(['Dívida de ' + a.rotulo.toLowerCase() + ': clientes', a.clientes]); lin.push(['Dívida de ' + a.rotulo.toLowerCase() + ': valor (R$)', moedaExp(a.valor)]); });
+      return { arquivo: 'financeiro-resumo', titulo: 'Financeiro - Visão geral', filtros: [aviso], colunas: ['Indicador', 'Valor'], linhas: lin, alinhar: ['left', 'right'], orientacao: 'portrait', fonte: 9 };
+    }
+    if (sec === 'inadimplentes') {
+      f = estado.f.inad;
+      var fi = [];
+      if (f.busca) fi.push('Busca: ' + f.busca); if (f.faixa) fi.push('Atraso: ' + rotuloFaixa(f.faixa)); if (f.cat) fi.push('Categoria: ' + f.cat); if (f.cobr) fi.push('Cobrança: ' + ROT_COBR[f.cobr]);
+      var li = listaInad();
+      return { arquivo: 'financeiro-inadimplentes', titulo: 'Financeiro - Inadimplentes', filtros: [li.length + ' cliente(s)' + (fi.length ? ' · ' + fi.join(' · ') : ' · sem filtro'), aviso],
+        colunas: ['Empresa', 'CNPJ', 'Grupo', 'Categoria', 'Suspenso', 'Meses em aberto', 'Primeira competência', 'Última competência', 'Títulos vencidos', 'Valor em atraso (R$)', 'Dias de atraso', 'Cobranças', 'Última cobrança', 'Próximo passo'],
+        linhas: li.map(function (c) { var m = mesesExp(c); return [c.nome, c.cnpj, c.grupo || '', c.categoria || '', c.suspenso ? 'Sim' : '', m.qtd, m.de, m.ate, c.qtd_atrasados, moedaExp(c.valor_atrasado), c.dias_atraso, c.cobrancas, dataExp(c.ultima_cobranca), c.proximo_passo.texto]; }),
+        alinhar: ['left', 'left', 'left', 'left', 'center', 'center', 'center', 'center', 'center', 'right', 'center', 'center', 'center', 'left'], fonte: 6.5, porTitulo: li };
+    }
+    if (sec === 'suspensos') {
+      f = estado.f.susp;
+      var ls2 = listaSusp();
+      return { arquivo: 'financeiro-suspensos', titulo: 'Financeiro - Suspensos no Omie', filtros: [ls2.length + ' cliente(s) suspenso(s)' + (f.busca ? ' · Busca: ' + f.busca : ''), aviso],
+        colunas: ['Empresa', 'CNPJ', 'Grupo', 'Categoria', 'Honorário mensal (R$)', 'Títulos vencidos', 'Valor em atraso (R$)', 'Dias de atraso', 'Meses em aberto', 'Primeira competência', 'Última competência', 'Cobranças', 'Última cobrança', 'Próximo passo'],
+        linhas: ls2.map(function (c) { var m = mesesExp(c); return [c.nome, c.cnpj, c.grupo || '', c.categoria || '', moedaExp(c.honorario), c.qtd_atrasados, moedaExp(c.valor_atrasado), c.dias_atraso, m.qtd, m.de, m.ate, c.cobrancas, dataExp(c.ultima_cobranca), c.proximo_passo.texto]; }),
+        alinhar: ['left', 'left', 'left', 'left', 'right', 'center', 'right', 'center', 'center', 'center', 'center', 'center', 'center', 'left'], fonte: 6.5, porTitulo: ls2 };
+    }
+    if (sec === 'carteira') {
+      f = estado.f.cart;
+      var lc = listaCart();
+      var fc = []; if (f.busca) fc.push('Busca: ' + f.busca); if (f.sit) fc.push('Situação: ' + (ROT_SIT[f.sit] || f.sit)); if (f.cat) fc.push('Categoria: ' + f.cat);
+      return { arquivo: 'financeiro-todos-os-clientes', titulo: 'Financeiro - Todos os clientes', filtros: [lc.length + ' cliente(s)' + (fc.length ? ' · ' + fc.join(' · ') : ' · sem filtro'), aviso],
+        colunas: ['Empresa', 'CNPJ', 'Grupo', 'Situação', 'Suspenso', 'Categoria', 'Honorário mensal (R$)', 'Títulos vencidos', 'Valor em atraso (R$)', 'Atraso médio ao pagar (dias)', 'Honorários pagos na janela'],
+        linhas: lc.map(function (c) { var p = c.pontualidade; return [c.nome, c.cnpj, c.grupo || '', ROT_SIT[c.situacao].replace('⏸ ', ''), c.suspenso ? 'Sim' : '', c.categoria || '', moedaExp(c.honorario), c.qtd_atrasados, moedaExp(c.valor_atrasado), p ? p.media_dias : '', p ? p.pagos : '']; }),
+        alinhar: ['left', 'left', 'left', 'left', 'center', 'left', 'right', 'center', 'right', 'center', 'center'], fonte: 7 };
+    }
+    if (sec === 'cobrancas') {
+      var porMes = {};
+      d.clientes.forEach(function (c) {
+        c.abertos.filter(function (t) { return t.vencido; }).forEach(function (t) {
+          var m = t.vencimento.slice(0, 7); var o = porMes[m] = porMes[m] || { mes: m, titulos: 0, clientes: {}, valor: 0, cobrancas: 0, nunca: 0 };
+          o.titulos++; o.clientes[c.doc] = 1; o.valor += (t.valor || 0); o.cobrancas += t.cobrancas; if (!t.cobrancas) o.nunca++;
+        });
+      });
+      var ms = Object.keys(porMes).sort().map(function (m) { return porMes[m]; });
+      return { arquivo: 'financeiro-cobrancas-por-competencia', titulo: 'Financeiro - Cobranças por competência', filtros: ['Cobranças do Bruno no Zappy desde ' + data(k.qualidade.cobrancas_desde) + '.', aviso],
+        colunas: ['Competência', 'Mês do vencimento', 'Títulos em aberto', 'Clientes', 'Valor (R$)', 'Cobrado em média (vezes)', 'Títulos nunca cobrados'],
+        linhas: ms.map(function (o) { return [competencia(o.mes + '-10'), o.mes.slice(5) + '/' + o.mes.slice(0, 4), o.titulos, Object.keys(o.clientes).length, moedaExp(o.valor), o.titulos ? Math.round(10 * o.cobrancas / o.titulos) / 10 : '', o.nunca]; }),
+        alinhar: ['left', 'center', 'center', 'center', 'right', 'center', 'center'], orientacao: 'portrait', fonte: 9 };
+    }
+    if (sec === 'qualidade') {
+      var q = k.qualidade;
+      return { arquivo: 'financeiro-qualidade-dos-dados', titulo: 'Financeiro - Qualidade dos dados', filtros: [],
+        colunas: ['Item', 'Situação'], alinhar: ['left', 'left'], orientacao: 'portrait', fonte: 9,
+        linhas: [['Honorário e títulos em aberto (Omie)', q.financeiro_lido_em ? 'lido em ' + q.financeiro_lido_em : 'ainda não lido'], ['Detalhe título a título', q.titulos_lidos_em ? 'lido em ' + q.titulos_lidos_em : 'ainda não lido'],
+          ['Contratos suspensos (Omie)', k.suspensos + ' contrato(s)' + (q.suspensos_lidos_em ? ', lidos em ' + data(q.suspensos_lidos_em) : '')], ['Cobranças (Zappy)', 'desde ' + data(q.cobrancas_desde)],
+          ['Clientes ativos (Acessórias)', k.clientes_ativos], ['Ativos sem honorário no Omie', q.sem_honorario_no_omie], ['Inadimplentes sem detalhe de títulos', q.inadimplentes_sem_detalhe]] };
+    }
+    return null;
+  }
+  /** Uma linha por honorário em aberto das empresas da lista (CSV "por título"). */
+  function linhasPorTitulo(lista) {
+    var r = [];
+    lista.forEach(function (c) {
+      c.abertos.forEach(function (t) {
+        r.push([c.nome, c.cnpj, c.grupo || '', c.categoria || '', c.suspenso ? 'Sim' : '', competencia(t.vencimento), dataExp(t.vencimento), moedaExp(t.valor),
+          t.vencido ? (t.situacao === 'P' ? 'vencido (pago em parte)' : 'vencido') : 'a vencer', t.dias_atraso, t.vencido ? t.cobrancas : '', dataExp(t.ultima_cobranca)]);
+      });
+    });
+    return r;
+  }
+  var COLUNAS_TITULO = ['Empresa', 'CNPJ', 'Grupo', 'Categoria', 'Suspenso', 'Competência', 'Vencimento', 'Valor em aberto (R$)', 'Situação', 'Dias de atraso', 'Vezes cobrado', 'Última cobrança'];
+
+  function exportar(formato, porTitulo) {
+    var e = dadosExport(estado.secao);
+    if (!e) { alert('Esta seção não tem relatório para exportar.'); return; }
+    var u = null; try { u = JSON.parse(ls(K_USER) || 'null'); } catch (x) { u = null; }
+    var sub = (e.filtros || []).filter(Boolean).concat(u && u.name ? ['Gerado por ' + u.name] : []);
+    try {
+      if (porTitulo) {
+        var lt = linhasPorTitulo(e.porTitulo || []);
+        if (!lt.length) { alert('Nenhum honorário em aberto com detalhe para exportar neste filtro.'); return; }
+        window.Exportar.csv(e.arquivo + '-por-titulo', COLUNAS_TITULO, lt);
+        return;
+      }
+      if (formato === 'csv') { window.Exportar.csv(e.arquivo, e.colunas, e.linhas); return; }
+      var btn = $('btn-pdf'), rot = btn.textContent; btn.disabled = true; btn.textContent = 'Gerando PDF…';
+      window.Exportar.pdf({ arquivo: e.arquivo, titulo: e.titulo, subtitulo: sub, colunas: e.colunas, linhas: e.linhas, alinhar: e.alinhar, orientacao: e.orientacao || 'landscape', fonte: e.fonte, paginaDe: 'Financeiro' })
+        .catch(function (err) { alert(err.message || 'Não foi possível gerar o PDF.'); })
+        .then(function () { btn.disabled = false; btn.textContent = rot; });
+    } catch (err) { alert(err.message || 'Não foi possível exportar.'); }
+  }
+
   // ── eventos ──────────────────────────────────────────────────────────────────
   /** Liga os campos de filtro de uma seção ao estado e desenha de novo (mantendo o cursor da busca). */
   function ligarFiltros(chave, campos, redesenhar) {
@@ -451,6 +578,9 @@
   $('login-form').addEventListener('submit', entrar);
   $('btn-sair').addEventListener('click', function () { sair(false); });
   $('btn-atualizar').addEventListener('click', function () { iniciar(true); });
+  $('btn-csv').addEventListener('click', function () { exportar('csv'); });
+  $('btn-pdf').addEventListener('click', function () { exportar('pdf'); });
+  $('btn-csv-tit').addEventListener('click', function () { exportar('csv', true); });
   // Botão "Ocultar valores" (quem vê valores): esconde todo R$ na tela, para apresentar sem mostrar valores. Lembra a escolha neste navegador.
   function pintarBotaoValores() {
     var b = $('btn-valores'); var ve = estado.dados && estado.dados.usuario && estado.dados.usuario.ve_valores;

@@ -1,0 +1,170 @@
+'use strict';
+// Rodar: node server/financeiro/testes_exportacao.js
+// Roda o JavaScript das páginas /financeiro e /cs e do exportador (CSV/PDF) num DOM de mentira, com dados de exemplo, e confere:
+// colunas x linhas, nenhum "undefined"/NaN, valores em R$ ocultos e o formato do CSV (Excel pt-BR).
+process.env.LEGALIZACAO_SYNC_TOKEN = 'x';
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const fin = require('./rotas');
+
+let ok = 0;
+const teste = async (nome, fn) => { await fn(); ok++; console.log('  ok -', nome); };
+const PUB = path.join(__dirname, '..', '..', 'public', 'js');
+
+function elemento() {
+  const e = new Proxy(function () {}, {
+    get: (t, k) => { if (k === 'style' || k === 'classList' || k === 'dataset') return k === 'classList' ? { add() {}, remove() {}, toggle() {} } : {}; if (k === Symbol.toPrimitive) return () => ''; if (k === 'then') return undefined; if (k === 'value' || k === 'textContent' || k === 'innerHTML' || k === 'innerText') return ''; if (k === 'checked') return false; return typeof t[k] === 'function' || t[k] === undefined ? () => e : t[k]; },
+    set: () => true, apply: () => e,
+  });
+  return e;
+}
+function carregar(arquivo, ganchos) {
+  const fonte = fs.readFileSync(path.join(PUB, arquivo), 'utf8');
+  const i = fonte.lastIndexOf('})(');
+  assert.ok(i > 0, 'fim do IIFE não encontrado em ' + arquivo);
+  const codigo = fonte.slice(0, i) + ';globalThis.__t = ' + ganchos + ';\n' + fonte.slice(i);
+  const win = {};
+  const documento = { getElementById: () => elemento(), querySelectorAll: () => [], querySelector: () => elemento(), addEventListener() {}, createElement: () => elemento(), body: elemento(), head: elemento() };
+  const ctx = { window: win, document: documento, localStorage: { getItem: () => null, setItem() {}, removeItem() {} }, alert: (m) => { throw new Error('alert: ' + m); }, console, setTimeout, Promise, Date, Math, JSON, Array, Object, String, Number, Intl, RegExp, parseInt, parseFloat, isFinite, fetch: () => Promise.reject(new Error('sem rede')), URL, Blob };
+  ctx.globalThis = ctx; win.document = documento;
+  vm.createContext(ctx);
+  vm.runInContext(codigo, ctx, { filename: arquivo });
+  return { t: ctx.__t, win, ctx };
+}
+const semLixo = (e, nome) => {
+  assert.ok(e.linhas.every((l) => l.length === e.colunas.length), nome + ': linha com número de colunas diferente do cabeçalho');
+  assert.ok(e.alinhar.length === e.colunas.length, nome + ': alinhar diferente de colunas');
+  const txt = JSON.stringify(e.linhas);
+  assert.ok(!/undefined|NaN|\[object/.test(txt), nome + ': valor inválido na exportação: ' + (txt.match(/.{0,30}(undefined|NaN|\[object).{0,30}/) || [''])[0]);
+};
+
+(async () => {
+  // ── /financeiro ──
+  const B = (t) => '*Bruno Xavier:* ' + t;
+  const dados = fin.compor({
+    hoje: '2026-10-13',
+    clientes: [
+      { id: 'a', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', cronico: false },
+      { id: 'b', nome: 'BETA; "ASPAS" LTDA', cnpj: '44.555.666/0001-22', grupo: null, cronico: true },
+      { id: 'c', nome: 'GAMA LTDA', cnpj: '77.888.999/0001-33', grupo: null, cronico: false },
+    ],
+    categorias: { a: { categoria: 'Ouro' } },
+    honorarios: new Map([['11222333000181', 800], ['44555666000122', 350]]),
+    abertoAgg: new Map([['11222333000181', { qtd: 3, aberto: 2400, atrasado: 1600, qtd_atrasados: 2, mais_antigo: '2026-07-10' }], ['77888999000133', { qtd: 1, aberto: 123, atrasado: 123, qtd_atrasados: 1, mais_antigo: '2026-06-10' }]]),
+    titulos: [
+      { doc: '11222333000181', rec: '1', venc: '2026-07-10', aberto: 800, doc_valor: 800, sit: 'A' },
+      { doc: '11222333000181', rec: '2', venc: '2026-08-10', aberto: 800, doc_valor: 800, sit: 'A' },
+      { doc: '11222333000181', rec: '3', venc: '2026-10-20', aberto: 800, doc_valor: 800, sit: 'V' },
+    ],
+    pontual: new Map([['44555666000122', { pagos: 6, media_dias: 2.8, max_dias: 9 }]]),
+    suspensos: new Map([['77888999000133', { contrato: '1' }]]),
+    mensagens: [{ doc: '11222333000181', dia: '2026-09-15', texto: B('Identificamos honorários em aberto da empresa.'), ticket: '900' }],
+  });
+  const F = carregar('financeiro.js', '{ estado: estado, dadosExport: dadosExport, linhasPorTitulo: linhasPorTitulo, COLUNAS_TITULO: COLUNAS_TITULO }');
+  F.t.estado.dados = { kpis: dados.kpis, clientes: dados.clientes, valores_ocultos: false, usuario: { ve_valores: true } };
+
+  await teste('financeiro: todas as seções geram colunas e linhas coerentes', () => {
+    for (const sec of ['visao', 'inadimplentes', 'suspensos', 'carteira', 'cobrancas', 'qualidade']) {
+      const e = F.t.dadosExport(sec);
+      assert.ok(e && e.colunas.length && e.linhas.length, sec + ' vazio');
+      semLixo(e, 'financeiro/' + sec);
+    }
+  });
+  await teste('financeiro: inadimplentes traz meses, valor e cobranças; CSV por título tem uma linha por honorário em aberto', () => {
+    const e = F.t.dadosExport('inadimplentes');
+    const alfa = e.linhas.find((l) => l[0] === 'ALFA LTDA');
+    assert.deepStrictEqual([alfa[5], alfa[6], alfa[7], alfa[8], alfa[9], alfa[11]], [2, 'jun/26', 'jul/26', 2, 1600, 1]);
+    const t = F.t.linhasPorTitulo(e.porTitulo);
+    assert.strictEqual(t.filter((l) => l[0] === 'ALFA LTDA').length, 3);
+    assert.ok(t.every((l) => l.length === F.t.COLUNAS_TITULO.length));
+    assert.deepStrictEqual([...t.find((l) => l[5] === 'set/26').slice(8, 11)], ['a vencer', 0, '']);
+  });
+  await teste('financeiro: com "Ocultar valores" nenhum valor em R$ vai para a exportação', () => {
+    F.t.estado.ocultar = true;
+    for (const sec of ['visao', 'inadimplentes', 'suspensos', 'carteira', 'cobrancas']) {
+      const e = F.t.dadosExport(sec);
+      const txt = JSON.stringify(e.linhas);
+      assert.ok(!/\b(800|1600|1723|2400|350|123)\b/.test(txt), sec + ' vazou valor: ' + txt.slice(0, 200));
+    }
+    assert.ok(F.t.linhasPorTitulo(F.t.dadosExport('inadimplentes').porTitulo).every((l) => l[7] === 'oculto'));
+    F.t.estado.ocultar = false;
+  });
+
+  // ── /cs ──
+  const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport }');
+  C.t.estado.dados = {
+    clientes: [
+      { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
+      { id: '2', nome: 'ALFA FILIAL LTDA', cnpj: '11.222.333/0002-62', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'soma do grupo "Grupo A", 2 empresas: R$ 1.300,00 (faixa R$ 1.000 a 1.999)', honorario: 500, regime: null, questor: { faturamento: 0, funcionarios: 0, aviso: 'Natureza sem configuração' }, risco: risco('Baixo', 5, { financeiro: 0, atendimento: 0, operacional: null }) },
+      { id: '3', nome: 'GAMA LTDA', cnpj: '77.888.999/0001-33', grupo: null, tipo_doc: 'CNPJ', categoria: null, categoria_motivo: null, honorario: null, regime: 'Simples Nacional', questor: null, risco: risco('Suspenso', null, { financeiro: null, atendimento: null, operacional: null }, { suspenso: true }) },
+    ],
+    clientes_outros: [{ id: '9', nome: 'JOAO DA SILVA', cnpj: '123.456.789-09', tipo_doc: 'CPF', grupo: null, categoria: null, honorario: 100, regime: null, questor: null }],
+    totais: { clientes: 3, risco: { Alto: 1, 'Médio': 0, Baixo: 1, Suspenso: 1, Incompleto: 0 }, suspensos: 1, sem_reclamacao_30d: 3, categorias: { Diamante: 0, Ouro: 2, Prata: 0, Bronze: 0, sem_categoria: 1 },
+      termometros: { financeiro: { com_dado: 2, em_alerta: 1, medio_ou_mais: 1 }, atendimento: { com_dado: 2, em_alerta: 0, medio_ou_mais: 0 }, operacional: { com_dado: 0, em_alerta: 0, medio_ou_mais: 0 } } },
+    churn: { periodos: { ultimos_12_meses: { ini: '2025-10-01', fim: '2026-10-13', base: 10, saidas_contadas: 1, taxa: 10, taxa_teto: 12, menos_de_90_dias: 0, fora_do_churn: { a_confirmar: 0, baixas: 0, outras_saidas: 0 },
+      saidas: [{ nome: 'SAIU LTDA', cnpj: '10.000.000/0001-00', data_entrada: '2024-01-01', data_saida: '2026-05-01', tipo: 'transferida', origem: 'acessorias', na_base: true }, { nome: 'NOVA LTDA', cnpj: '20.000.000/0001-00', data_entrada: '2026-02-01', data_saida: '2026-04-01', tipo: 'baixa', origem: 'receita', na_base: false }] } }, padroes: [], evolucao: [] },
+    config: { cortes: { medio: 30, alto: 60 }, pesos: { financeiro: 1, atendimento: 1, operacional: 1 } }, usuario: { papel: 'administrador' },
+  };
+  await teste('cs: todas as seções geram colunas e linhas coerentes', () => {
+    C.t.estado.filtroRisco.nivel = 'todos';
+    for (const sec of ['visao', 'analise', 'risco', 'churn', 'categorias']) {
+      const e = C.t.dadosExport(sec);
+      assert.ok(e && e.colunas.length && e.linhas.length, sec + ' vazio');
+      semLixo(e, 'cs/' + sec);
+    }
+    assert.strictEqual(C.t.dadosExport('qualidade'), null);
+  });
+  await teste('cs: análise traz o grupo consolidado e cada empresa; zero vira "sem faturamento"; CPF aparece', () => {
+    const e = C.t.dadosExport('analise');
+    const nomes = e.linhas.map((l) => l[1].trim());
+    assert.ok(nomes.includes('GRUPO GRUPO A') && nomes.includes('ALFA LTDA') && nomes.includes('ALFA FILIAL LTDA') && nomes.includes('JOAO DA SILVA'));
+    const grupo = e.linhas.find((l) => l[0] === 'Grupo');
+    assert.deepStrictEqual([grupo[5], grupo[6], grupo[7]], [3, 1300, 120000.5]);
+    assert.strictEqual(e.linhas.find((l) => l[1].trim() === 'ALFA FILIAL LTDA')[7], 'sem faturamento');
+    assert.strictEqual(e.linhas.find((l) => l[1].trim() === 'ALFA FILIAL LTDA')[8], 'Natureza sem configuração de faturamento no Questor');
+    assert.strictEqual(e.linhas.find((l) => l[1] === 'JOAO DA SILVA')[3], 'CPF');
+  });
+  await teste('cs: risco e churn trazem os campos certos', () => {
+    const r = C.t.dadosExport('risco');
+    const alfa = r.linhas.find((l) => l[0] === 'ALFA LTDA');
+    assert.deepStrictEqual([alfa[3], alfa[4], alfa[5], alfa[7], alfa[10]], ['Alto', 70, 90, 'sem dado', 'Inadimplente: 3 títulos | Nota baixa']);
+    assert.strictEqual(r.linhas.find((l) => l[0] === 'GAMA LTDA')[8], 'Sim');
+    const c = C.t.dadosExport('churn');
+    assert.strictEqual(c.linhas.length, 2);
+    assert.deepStrictEqual([...c.linhas[0].slice(2, 6)], ['01/01/2024', '01/05/2026', 'Transferida', 'Sim']);
+  });
+  await teste('cs: valores ocultos (perfil Usuário ou botão) não vazam honorário, faturamento nem motivo da categoria', () => {
+    C.t.estado.ocultar = true;
+    for (const sec of ['analise', 'risco', 'categorias']) {
+      const txt = JSON.stringify(C.t.dadosExport(sec).linhas);
+      assert.ok(!/\b(800|1300|1\.300|120000)/.test(txt), sec + ' vazou: ' + txt.slice(0, 200));   // 500 e 999 são limites de faixa, não valores do cliente
+    }
+    C.t.estado.ocultar = false;
+    C.t.estado.dados.valores_ocultos = true;                       // perfil Usuário: o servidor já mascarou
+    assert.ok(C.t.dadosExport('analise').linhas.every((l) => l[6] === 'oculto' || l[6] === ''));
+    C.t.estado.dados.valores_ocultos = false;
+  });
+
+  // ── exportador (CSV) ──
+  let ultimo = null;
+  const E = carregar('exportar.js', '{ Exportar: window.Exportar }');
+  E.ctx.document.createElement = () => ({ click() { ultimo.clicou = true; }, set href(v) {}, set download(v) { ultimo.nome = v; }, style: {} });
+  E.ctx.document.body = { appendChild() {}, removeChild() {} };
+  E.ctx.URL = { createObjectURL: (b) => { ultimo = { blob: b }; return 'blob:x'; }, revokeObjectURL() {} };
+  await teste('csv: BOM, separador ";", vírgula decimal, aspas e proteção contra fórmula', async () => {
+    E.win.Exportar.csv('teste', ['Nome', 'Valor', 'Obs'], [['BETA; "ASPAS" LTDA', 1234.5, '=SOMA(A1)'], ['Linha\ncom quebra', null, 'ok']]);
+    assert.ok(/^teste-\d{4}-\d{2}-\d{2}\.csv$/.test(ultimo.nome), ultimo.nome);
+    const txt = Buffer.from(await ultimo.blob.arrayBuffer()).toString('utf8');
+    assert.strictEqual(txt.charCodeAt(0), 0xfeff);
+    const linhas = txt.slice(1).split('\r\n');
+    assert.strictEqual(linhas[0], 'Nome;Valor;Obs');
+    assert.strictEqual(linhas[1], '"BETA; ""ASPAS"" LTDA";1234,5;\'=SOMA(A1)');
+    assert.strictEqual(linhas[2], 'Linha com quebra;;ok');
+  });
+
+  console.log(`\n${ok} testes passaram.`);
+  process.exit(0);
+})().catch((e) => { console.error('FALHOU:', e); process.exit(1); });
