@@ -639,7 +639,7 @@
   // Faturamento por ano civil de cada cliente ATIVO (lido do Questor por rotina local; só administrador vê valores). Destaca quem subiu pelo menos
   // X% sobre o ano anterior, para avaliar reajuste de honorário. Funcionários e regime POR ANO ainda não estão na API do Questor: hoje só o atual.
   function cfgAnual() { return (estado.anual && estado.anual.config) || { percentual: 30, pode_editar: false }; }
-  function filtroAnual() { return estado.filtroAnual || (estado.filtroAnual = { busca: '', ano: null, soDestaque: false, regra: 'ambos', ordem: 'alfa', tipo: '', pag: 1 }); }
+  function filtroAnual() { return estado.filtroAnual || (estado.filtroAnual = { busca: '', ano: null, soDestaque: false, regra: 'ou', ordem: 'alfa', tipo: '', pag: 1 }); }
   function soDig(s) { return String(s || '').replace(/\D/g, ''); }
   /** Anos completos disponíveis (do segundo ano da série até o último ano fechado) e o ano parcial em curso, se houver. */
   function anosAnual() {
@@ -704,7 +704,7 @@
   }
   /** Destaque pela regra escolhida: "ambos" exige as DUAS variações (faturamento e funcionários) no limite ou acima; quando não há folha para comparar, vale o faturamento. */
   function destaqueLinha(l, regra) {
-    var r = regra || filtroAnual().regra || 'ambos';
+    var r = regra || filtroAnual().regra || 'ou';
     if (r === 'fat') return destaqueAnual(l.v);
     if (r === 'func') return destaqueAnual(l.vf);
     if (r === 'ou') return destaqueAnual(l.v) || destaqueAnual(l.vf);        // qualquer um dos dois no limite
@@ -749,7 +749,7 @@
       alvo.innerHTML = '<div class="nota" style="border-color:#d97706"><strong>Faturamento por ano ainda não carregado.</strong> A rotina que lê o Questor (server/questor/extrairAnual.js) roda no computador com a VPN e envia os totais por ano. Assim que chegar, a lista aparece aqui.</div>'; return;
     }
     var r = linhasAnual(), ano = r.ano, pag = Math.max(1, Math.ceil(r.linhas.length / ANALISE_POR_PAGINA)); if (f.pag > pag) f.pag = pag; if (f.pag < 1) f.pag = 1;
-    var X = cfgAnual().percentual, regra = f.regra || 'ambos';
+    var X = cfgAnual().percentual, regra = f.regra || 'ou';
     var totPrev = 0, totCur = 0; r.linhas.forEach(function (l) { if (l.prev != null && l.cur != null) { totPrev += l.prev; totCur += l.cur; } });
     var comFunc = r.linhas.filter(function (l) { return l.fp != null && l.fc != null; }).length;
     var corpo = r.linhas.slice((f.pag - 1) * ANALISE_POR_PAGINA, f.pag * ANALISE_POR_PAGINA).map(function (l) {
@@ -1068,7 +1068,7 @@
       var ra = linhasAnual(), fa = filtroAnual(), Xa = cfgAnual().percentual;
       var fan = []; if (fa.busca) fan.push('Busca: ' + fa.busca); if (fa.tipo) fan.push('Documento: ' + fa.tipo); if (fa.soDestaque) fan.push('Só os destacados');
       return { arquivo: 'cs-analise-anual', titulo: 'Painel do Sucesso do Cliente - Análise Anual (' + ra.ano + ' × ' + (ra.ano - 1) + ')',
-        filtros: [ra.linhas.length + ' cliente(s) · rever honorário: ' + pctTxt(Xa) + '% ou mais em ' + ROT_REGRA[fa.regra || 'ambos'] + (fan.length ? ' · ' + fan.join(' · ') : '') + ' · ' + ROT_ORDEM[fa.ordem || 'alfa'], aviso],
+        filtros: [ra.linhas.length + ' cliente(s) · rever honorário: ' + pctTxt(Xa) + '% ou mais em ' + ROT_REGRA[fa.regra || 'ou'] + (fan.length ? ' · ' + fan.join(' · ') : '') + ' · ' + ROT_ORDEM[fa.ordem || 'alfa'], aviso],
         colunas: ['Razão social', 'Documento', 'Categoria', 'Regime ' + (ra.ano - 1), 'Regime ' + ra.ano, 'Faturamento ' + (ra.ano - 1) + ' (R$)', 'Faturamento ' + ra.ano + ' (R$)', 'Variação faturamento (%)',
           'Funcionários ' + (ra.ano - 1), 'Funcionários ' + ra.ano, 'Variação funcionários (%)', 'Rever honorário'],
         linhas: ra.linhas.map(function (l) {
