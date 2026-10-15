@@ -4,7 +4,7 @@
  * Regras de cálculo em riscoCalculo.js (puras, com testes).
  *
  * Atendimento usa os dados do Zappy DEPOIS da revisão da Gamificação (pedido do Reysner, 06/10/2026, "pra não ser
- * injusto"): nota baixa marcada "indevida", SLA vermelho cuja revisão de velocidade foi "indevida" e abandono "indevida"
+ * injusto"): nota baixa marcada "indevida" e SLA vermelho cuja revisão de velocidade foi "indevida"
  * não entram no risco do cliente.
  *
  * Endpoints (montados em /api/cs/risco):
@@ -142,12 +142,6 @@ async function calcularTodos({ detalhes = false } = {}) {
   if (!zappyRows) zappyRows = await consultar(zappySemRevisao, [], 'zappy sem revisão') || [];
   const zappy = new Map(zappyRows.map((r) => [r.cliente_id, r]));
 
-  const abandonos = new Map(((await consultar(
-    `SELECT v.cliente_id, COUNT(*)::int AS n
-       FROM gam_abandono_incidentes a JOIN cs_tickets t ON t.id = a.ticket_id JOIN cs_vinculos v ON v.id = t.vinculo_id
-      WHERE v.tipo = 'cliente' AND v.cliente_id IS NOT NULL AND a.data >= CURRENT_DATE - 90 AND a.status <> 'indevida'
-      GROUP BY v.cliente_id`, [], 'abandonos')) || []).map((r) => [r.cliente_id, r.n]));
-
   const entregas = new Map(((await consultar(`SELECT doc, total, atrasadas_entregues, vencidas_pendentes FROM cliente_entregas_resumo`, [], 'entregas')) || []).map((r) => [r.doc, r]));
 
   // Suspensos = contrato com situação "Suspenso" no Omie (decisão do Reysner, 08/10/2026: só o Omie vale, não a TAG do Acessórias).
@@ -166,7 +160,7 @@ async function calcularTodos({ detalhes = false } = {}) {
       financeiro: calc.termometroFinanceiro({ temDado: coberto.has(doc) || !!ab, qtdAtrasados: ab ? ab.qtd : 0, valorAtrasado: ab ? ab.valor : 0, maisAntigo: ab ? ab.mais_antigo : null, cronico: c.cronico, hoje }),
       atendimento: calc.termometroAtendimento({
         insatisfacoes: insat.get(doc) || [], sensiveis: sensiveis.get(doc) || [], notasBaixas: z.notas_baixas || 0,
-        slaVermelho: z.sla_vermelho || 0, abandonos: abandonos.get(c.id) || 0, detratores: detratores.get(doc) || 0, tickets90: z.tickets90 || 0,
+        slaVermelho: z.sla_vermelho || 0, detratores: detratores.get(doc) || 0, tickets90: z.tickets90 || 0,
       }),
       operacional: calc.termometroOperacional({ temDado: !!e, total: e ? e.total : 0, atrasadasEntregues: e ? e.atrasadas_entregues : 0, vencidasPendentes: e ? e.vencidas_pendentes : 0, suspenso }),
     };

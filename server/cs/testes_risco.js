@@ -53,10 +53,10 @@ teste('atendimento: notas baixas, SLA vermelho, detratores e sensíveis somam e 
   assert.strictEqual(termometroAtendimento({ notasBaixas: 3, slaVermelho: 4, detratores: 2 }).pontos, 100); // 60+20+30 = 110 -> 100
 });
 
-teste('atendimento: abandonos (já revisados) somam 15 cada, com teto de 30', () => {
-  assert.strictEqual(termometroAtendimento({ abandonos: 1 }).pontos, 15);
-  assert.strictEqual(termometroAtendimento({ abandonos: 5 }).pontos, 30);
-  assert.ok(termometroAtendimento({ abandonos: 2 }).detalhe[0].includes('2 abandonos'));
+teste('atendimento: abandono de atendimento não conta mais (decisão de 16/10/2026)', () => {
+  assert.strictEqual(termometroAtendimento({ abandonos: 1 }).pontos, 0);
+  assert.strictEqual(termometroAtendimento({ abandonos: 5 }).pontos, 0);
+  assert.ok(!termometroAtendimento({ abandonos: 2 }).detalhe.join(' ').includes('abandono'));
 });
 
 teste('operacional: sem entregas = sem dado; 50% de problema = 100', () => {

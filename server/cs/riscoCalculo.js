@@ -54,9 +54,9 @@ function termometroFinanceiro(e) {
 /**
  * Atendimento. entrada: {
  *   insatisfacoes:[{gravidade, dias}], sensiveis:[{gravidade, dias}], notasBaixas:n (≤2 nos últimos 90d),
- *   slaVermelho:n (tickets com SLA vermelho nos últimos 90d), abandonos:n (cliente sem resposta, últimos 90d),
+ *   slaVermelho:n (tickets com SLA vermelho nos últimos 90d),   (abandono de atendimento NÃO entra mais: decisão do Reysner, 16/10/2026)
  *   detratores:n (NPS ≤ 6 nos últimos 180d), tickets90:n }
- * Notas baixas, SLA vermelho e abandonos chegam JÁ DEPOIS da revisão da Gamificação (o que foi marcado "indevida" não entra).
+ * Notas baixas e SLA vermelho chegam JÁ DEPOIS da revisão da Gamificação (o que foi marcado "indevida" não entra).
  * Sempre tem dado: ausência de ocorrências = 0 pontos.
  */
 function termometroAtendimento(e) {
@@ -79,9 +79,6 @@ function termometroAtendimento(e) {
 
   const sla = Number(x.slaVermelho) || 0;
   if (sla) { pontos += Math.min(20, sla * 5); detalhe.push(`${plural(sla, 'ticket', 'tickets')} com SLA vermelho nos últimos 90 dias`); }
-
-  const aband = Number(x.abandonos) || 0;
-  if (aband) { pontos += Math.min(30, aband * 15); detalhe.push(`${plural(aband, 'abandono de atendimento', 'abandonos de atendimento')} (cliente ficou sem resposta) nos últimos 90 dias`); }
 
   const det = Number(x.detratores) || 0;
   if (det) { pontos += Math.min(30, det * 15); detalhe.push(`${plural(det, 'pesquisa de detrator', 'pesquisas de detrator')} (NPS até 6) nos últimos 180 dias`); }

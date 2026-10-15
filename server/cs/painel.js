@@ -67,7 +67,7 @@ async function montarBase(forcar, ttl = TTL_MS) {
                  FROM clientes c WHERE c.status = 'ativo'`, [], 'clientes').then((x) => x || []),
   ]);
 
-  // Reclamações dos últimos 30 dias por cliente (insatisfação registrada + nota baixa + abandono, depois da revisão da Gamificação)
+  // Reclamações dos últimos 30 dias por cliente (insatisfação registrada + nota baixa, depois da revisão da Gamificação)
   const insat = new Map(((await consultar(
     `SELECT regexp_replace(cnpj, '\\D', '', 'g') AS doc, COUNT(*)::int AS n FROM insatisfacoes WHERE created_at >= NOW() - INTERVAL '30 days' GROUP BY 1`, [], 'insatisfacoes 30d')) || []).map((x) => [x.doc, x.n]));
   const notas = new Map(((await consultar(
@@ -78,9 +78,6 @@ async function montarBase(forcar, ttl = TTL_MS) {
       `SELECT v.cliente_id, COUNT(*)::int AS n FROM cs_tickets t JOIN cs_vinculos v ON v.id = t.vinculo_id
         WHERE v.tipo = 'cliente' AND v.cliente_id IS NOT NULL AND t.abertura >= NOW() - INTERVAL '30 days' AND t.nota_avaliacao <= 2 GROUP BY v.cliente_id`, [], 'notas 30d (sem revisão)'))
     || []).map((x) => [x.cliente_id, x.n]));
-  const aband = new Map(((await consultar(
-    `SELECT v.cliente_id, COUNT(*)::int AS n FROM gam_abandono_incidentes a JOIN cs_tickets t ON t.id = a.ticket_id JOIN cs_vinculos v ON v.id = t.vinculo_id
-      WHERE v.tipo = 'cliente' AND v.cliente_id IS NOT NULL AND a.data >= CURRENT_DATE - 30 AND a.status <> 'indevida' GROUP BY v.cliente_id`, [], 'abandonos 30d')) || []).map((x) => [x.cliente_id, x.n]));
 
   // Quando a lista de contratos suspensos do Omie foi lida pela última vez (rotina de segunda de manhã).
   const suspLidos = ((await consultar(`SELECT to_char(MAX(atualizado_em) AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS d FROM omie_contratos_suspensos`, [], 'suspensos lidos em')) || [])[0];
@@ -104,7 +101,7 @@ async function montarBase(forcar, ttl = TTL_MS) {
       risco: { nivel: rk.nivel, pontos: rk.pontos, alerta: rk.alerta, suspenso: !!rk.suspenso, parcial: rk.parcial, sem_dado: rk.sem_dado, termometros: rk.termometros, detalhes: rk.detalhes, motivos: rk.motivos },
       questor: q.dados.has(soDigitos(c.cnpj)) ? q.dados.get(soDigitos(c.cnpj)) : null,
       regime: regimes.get(soDigitos(c.cnpj)) || null,
-      reclamacoes30: (insat.get(soDigitos(c.cnpj)) || 0) + (notas.get(c.id) || 0) + (aband.get(c.id) || 0),
+      reclamacoes30: (insat.get(soDigitos(c.cnpj)) || 0) + (notas.get(c.id) || 0),
     });
   }
   lista.sort((a, b) => (b.risco.pontos == null ? -1 : b.risco.pontos) - (a.risco.pontos == null ? -1 : a.risco.pontos) || a.nome.localeCompare(b.nome));
@@ -212,7 +209,7 @@ function proximoPasso(c, extra) {
       ? `Combinar a regularização com o financeiro: ${f.qtd_atrasados} título(s) em atraso. Reportar o retorno do cliente na reunião de segunda.`
       : 'Conferir a situação financeira com o financeiro e reportar na reunião de segunda.';
   }
-  if (dom === 'atendimento') return 'Ligar para o cliente: houve falha de atendimento (insatisfação, abandono, nota baixa ou prazo estourado). Registrar o retorno como insatisfação, se for o caso.';
+  if (dom === 'atendimento') return 'Ligar para o cliente: houve falha de atendimento (insatisfação, nota baixa ou prazo estourado). Registrar o retorno como insatisfação, se for o caso.';
   return 'Conferir com a equipe responsável as entregas atrasadas ou vencidas no Acessórias e combinar a regularização.';
 }
 
@@ -231,9 +228,6 @@ router.get('/cliente/:id', async (req, res) => {
          FROM cs_tickets t JOIN cs_vinculos v ON v.id = t.vinculo_id
         WHERE v.tipo = 'cliente' AND v.cliente_id = $1 AND t.abertura >= NOW() - INTERVAL '90 days'
         ORDER BY t.abertura DESC LIMIT 30`, [c.id], 'tickets')) || [];
-    const abandonos = (await consultar(
-      `SELECT a.data, a.analista, a.status FROM gam_abandono_incidentes a JOIN cs_tickets t ON t.id = a.ticket_id JOIN cs_vinculos v ON v.id = t.vinculo_id
-        WHERE v.tipo = 'cliente' AND v.cliente_id = $1 AND a.data >= CURRENT_DATE - 90 AND a.status <> 'indevida' ORDER BY a.data DESC`, [c.id], 'abandonos')) || [];
     const insatisfacoes = (await consultar(
       `SELECT created_at, analista, reclamado, reclamacao, gravidade FROM insatisfacoes
         WHERE regexp_replace(cnpj, '\\D', '', 'g') = $1 AND created_at >= NOW() - INTERVAL '180 days' ORDER BY created_at DESC LIMIT 20`, [doc], 'insatisfacoes')) || [];
@@ -246,7 +240,7 @@ router.get('/cliente/:id', async (req, res) => {
     const entregas = ((await consultar(
       `SELECT total, atrasadas_entregues, vencidas_pendentes, atualizado_em, janela_ini, janela_fim FROM cliente_entregas_resumo WHERE doc = $1`, [doc], 'entregas')) || [])[0] || null;
 
-    const ficha = { cliente: c, proximo_passo: proximoPasso(c, { financeiro }), financeiro, tickets, abandonos, insatisfacoes, sensiveis, pesquisas, entregas };
+    const ficha = { cliente: c, proximo_passo: proximoPasso(c, { financeiro }), financeiro, tickets, insatisfacoes, sensiveis, pesquisas, entregas };
     res.json(veValores(req.user.role) ? ficha : mascararFicha(ficha));
   } catch (err) {
     console.error('[painel] GET /cliente falhou:', err);
