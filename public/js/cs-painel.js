@@ -632,7 +632,7 @@
   // Faturamento por ano civil de cada cliente ATIVO (lido do Questor por rotina local; só administrador vê valores). Destaca quem subiu pelo menos
   // X% sobre o ano anterior, para avaliar reajuste de honorário. Funcionários e regime POR ANO ainda não estão na API do Questor: hoje só o atual.
   function cfgAnual() { return (estado.anual && estado.anual.config) || { percentual: 30, pode_editar: false }; }
-  function filtroAnual() { return estado.filtroAnual || (estado.filtroAnual = { busca: '', ano: null, soDestaque: false, regra: 'ambos', pag: 1 }); }
+  function filtroAnual() { return estado.filtroAnual || (estado.filtroAnual = { busca: '', ano: null, soDestaque: false, regra: 'ambos', ordem: 'alfa', pag: 1 }); }
   function soDig(s) { return String(s || '').replace(/\D/g, ''); }
   /** Anos completos disponíveis (do segundo ano da série até o último ano fechado) e o ano parcial em curso, se houver. */
   function anosAnual() {
@@ -672,6 +672,7 @@
     return a !== REGIME_GENERICO && b !== REGIME_GENERICO;          // dois regimes específicos e diferentes
   }
   var ROT_REGRA = { ambos: 'faturamento e funcionários', fat: 'faturamento', func: 'funcionários' };
+  var ROT_ORDEM = { alfa: 'ordem alfabética', alta: 'maior alta de faturamento primeiro' };
   /** Regime como chip colorido e curto: Simples, Presumido, Real (Imune/Isenta em cinza). O texto completo fica no title. */
   function chipRegime(r) {
     if (!r) return '<span class="cinza">—</span>';
@@ -719,7 +720,9 @@
     var subiram = linhas.filter(function (l) { return destaqueLinha(l); });
     var mudaram = linhas.filter(function (l) { return l.mudouRegime; }).length;
     if (f.soDestaque) linhas = subiram;
-    linhas.sort(function (x, y) { return (y.v == null ? -1e9 : y.v) - (x.v == null ? -1e9 : x.v) || (x.c.nome || '').localeCompare(y.c.nome || ''); });
+    var porNome = function (x, y) { return (x.c.nome || '').localeCompare(y.c.nome || '', 'pt-BR', { sensitivity: 'base' }); };
+    if ((f.ordem || 'alfa') === 'alta') linhas.sort(function (x, y) { return (y.v == null ? -1e9 : y.v) - (x.v == null ? -1e9 : x.v) || porNome(x, y); });
+    else linhas.sort(porNome);
     return { ano: ano, linhas: linhas, comDado: comDado, todas: todas, subiram: subiram.length, mudaram: mudaram };
   }
   function celVar(v, dest) {
@@ -771,8 +774,9 @@
       '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="n-busca" placeholder="Empresa ou CNPJ" value="' + esc(f.busca) + '">' +
         '<span class="filter-label">Comparar</span><select class="gp-select" id="n-ano">' + optAnos + '</select>' +
         '<span class="filter-label">Destacar quem subiu</span><select class="gp-select" id="n-regra">' + optRegra + '</select>' +
+        '<span class="filter-label">Ordenar</span><select class="gp-select" id="n-ordem"><option value="alfa"' + ((f.ordem || 'alfa') === 'alfa' ? ' selected' : '') + '>Ordem alfabética</option><option value="alta"' + (f.ordem === 'alta' ? ' selected' : '') + '>Maior alta de faturamento</option></select>' +
         '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="n-dest"' + (f.soDestaque ? ' checked' : '') + '> só os destacados</label></div>' +
-        '<div class="card-sub">' + r.linhas.length + ' cliente(s) · ' + comFunc + ' com folha nos dois anos · ordem: maior alta de faturamento primeiro. Clique na empresa para ver ano a ano.</div>' +
+        '<div class="card-sub">' + r.linhas.length + ' cliente(s) · ' + comFunc + ' com folha nos dois anos · ' + ROT_ORDEM[f.ordem || 'alfa'] + '. Clique na empresa para ver ano a ano.</div>' +
         (r.linhas.length ? '<div class="table-wrap"><table class="tab-analise"><colgroup><col style="width:19%"><col style="width:8%"><col style="width:17%"><col style="width:10%"><col style="width:10%"><col style="width:7%"><col style="width:8%"><col style="width:6%"><col style="width:8%"><col style="width:7%"></colgroup>' +
           '<thead><tr><th>Razão social</th><th class="c">Categoria</th><th class="c">Regime ' + (ano - 1) + ' → ' + ano + '</th><th class="c">Faturamento ' + (ano - 1) + '</th><th class="c">Faturamento ' + ano + '</th>' +
           '<th class="c">Variação<div class="th-sub">' + botaoPctAnual() + '</div></th><th class="c">Funcionários</th><th class="c">Variação</th><th class="c">Honorário mensal</th><th class="c">Análise</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' + paginacaoHtml(r.linhas.length, f.pag, ANALISE_POR_PAGINA)
@@ -780,6 +784,7 @@
     var campo = $('n-busca'); if (campo) campo.addEventListener('input', function () { f.busca = campo.value; f.pag = 1; var pos = campo.selectionStart; desenharAnual(); var n = $('n-busca'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* sem seleção */ } });
     var sa = $('n-ano'); if (sa) sa.addEventListener('change', function () { f.ano = parseInt(sa.value, 10); f.pag = 1; desenharAnual(); });
     var sr = $('n-regra'); if (sr) sr.addEventListener('change', function () { f.regra = sr.value; f.pag = 1; desenharAnual(); });
+    var so = $('n-ordem'); if (so) so.addEventListener('change', function () { f.ordem = so.value; f.pag = 1; desenharAnual(); });
     var sd = $('n-dest'); if (sd) sd.addEventListener('change', function () { f.soDestaque = sd.checked; f.pag = 1; desenharAnual(); });
     var bp = $('btn-pct-anual'); if (bp) bp.addEventListener('click', function (ev) { ev.stopPropagation(); abrirPopAnual(bp); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-anual [data-anual]'), function (bt) { bt.addEventListener('click', function () { abrirFichaAnual(bt.getAttribute('data-anual')); }); });
@@ -829,6 +834,7 @@
   function abrirFichaAnual(doc) {
     var d = estado.dados, c = d.clientes.concat(d.clientes_outros || []).filter(function (x) { return soDig(x.cnpj) === doc; })[0]; if (!c) return;
     var anos = (mapaAnual()[doc]) || {}, ac = anosAnual(), X = cfgAnual().percentual;
+    document.querySelector('.ficha-box').classList.add('larga');   // janela larga: a tabela ano a ano cabe sem rolagem
     $('ficha').style.display = 'flex';
     $('ficha-nome').textContent = c.nome;
     $('ficha-sub').innerHTML = esc(c.cnpj || '') + (c.grupo ? ' · Grupo ' + esc(c.grupo) : '') + ' · cliente desde ' + data(c.entrada);
@@ -1050,7 +1056,7 @@
       var ra = linhasAnual(), fa = filtroAnual(), Xa = cfgAnual().percentual;
       var fan = []; if (fa.busca) fan.push('Busca: ' + fa.busca); if (fa.soDestaque) fan.push('Só os destacados');
       return { arquivo: 'cs-analise-anual', titulo: 'Painel do Sucesso do Cliente - Análise Anual (' + ra.ano + ' × ' + (ra.ano - 1) + ')',
-        filtros: [ra.linhas.length + ' cliente(s) · rever honorário: ' + pctTxt(Xa) + '% ou mais em ' + ROT_REGRA[fa.regra || 'ambos'] + (fan.length ? ' · ' + fan.join(' · ') : '') + ' · ordem: maior alta de faturamento primeiro', aviso],
+        filtros: [ra.linhas.length + ' cliente(s) · rever honorário: ' + pctTxt(Xa) + '% ou mais em ' + ROT_REGRA[fa.regra || 'ambos'] + (fan.length ? ' · ' + fan.join(' · ') : '') + ' · ' + ROT_ORDEM[fa.ordem || 'alfa'], aviso],
         colunas: ['Razão social', 'Documento', 'Categoria', 'Regime ' + (ra.ano - 1), 'Regime ' + ra.ano, 'Faturamento ' + (ra.ano - 1) + ' (R$)', 'Faturamento ' + ra.ano + ' (R$)', 'Variação faturamento (%)',
           'Funcionários ' + (ra.ano - 1), 'Funcionários ' + ra.ano, 'Variação funcionários (%)', 'Honorário mensal (R$)', 'Rever honorário'],
         linhas: ra.linhas.map(function (l) {

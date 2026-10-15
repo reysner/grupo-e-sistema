@@ -182,7 +182,7 @@ const semLixo = (e, nome) => {
         { cnpj: '99999999000199', anos: [a(2024, 100, 1, null), a(2025, 900, 9, null)] },                                                                                                                           // não está na lista de ativos
       ],
     };
-    E.filtroAnual = { busca: '', ano: null, soDestaque: false, regra: 'ambos', pag: 1 };
+    E.filtroAnual = { busca: '', ano: null, soDestaque: false, regra: 'ambos', ordem: 'alta', pag: 1 };
     // fontes diferentes não geram mudança falsa: 'Lucro (Presumido/Real)' (sem detalhe) contra um regime específico não conta
     assert.strictEqual(C.t.regimeMudou('Lucro Presumido', 'Lucro (Presumido/Real)'), false);
     assert.strictEqual(C.t.regimeMudou('Lucro (Presumido/Real)', 'Lucro Presumido'), false);
@@ -215,6 +215,9 @@ const semLixo = (e, nome) => {
     E.filtroAnual.soDestaque = true;
     assert.deepStrictEqual(C.t.linhasAnual().linhas.map((l) => l.c.nome), ['GAMA LTDA', 'ALFA LTDA']);
     E.filtroAnual.soDestaque = false;
+    E.filtroAnual.ordem = 'alfa';                                                          // ordem alfabética (padrão da tela)
+    assert.deepStrictEqual(C.t.linhasAnual().linhas.map((l) => l.c.nome), ['ALFA FILIAL LTDA', 'ALFA LTDA', 'GAMA LTDA', 'JOAO DA SILVA']);
+    E.filtroAnual.ordem = 'alta';
     const x = C.t.dadosExport('anual');
     semLixo(x, 'cs/anual');
     const lin = x.linhas.find((l) => l[0] === 'ALFA LTDA');
