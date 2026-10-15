@@ -178,6 +178,10 @@ function garantirColuna() {
       await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS classificacao_manual TEXT`);
       await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS classificacao_manual_por TEXT`);
       await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS classificacao_manual_em TIMESTAMPTZ`);
+      // Motivo do churn (lista da Gestão de Clientes), definido no painel /cs. Fica fora do motivo_saida para não mexer na classificação da saída.
+      await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS motivo_churn TEXT`);
+      await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS motivo_churn_por TEXT`);
+      await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS motivo_churn_em TIMESTAMPTZ`);
       // O fluxo manual "foi baixa ou saída?" acabou (06/10/2026): limpa do sino os avisos antigos que pediam essa decisão.
       await pool.query(`UPDATE notificacoes SET lida = true WHERE tipo = 'churn_acessorias' AND lida = false`).catch(() => {});
     })().catch((e) => { _colunaPronta = null; throw e; });
@@ -209,7 +213,7 @@ async function carregarClientes() {
   await garantirColuna();
   const { rows } = await pool.query(
     `SELECT id, nome_empresa AS nome, cnpj, to_char(data_entrada, 'YYYY-MM-DD') AS data_entrada,
-            to_char(data_saida, 'YYYY-MM-DD') AS data_saida, motivo_saida,
+            to_char(data_saida, 'YYYY-MM-DD') AS data_saida, motivo_saida, motivo_churn,
             motivo_cancelamento_acessorias AS motivo_acessorias, situacao_receita, classificacao_manual,
             to_char(data_situacao_receita, 'YYYY-MM-DD') AS data_situacao_receita
        FROM clientes`

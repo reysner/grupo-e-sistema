@@ -148,7 +148,7 @@ async function montarBase(forcar, ttl = TTL_MS) {
 // ── Churn ────────────────────────────────────────────────────────────────────
 const enxuto = (p) => ({
   ...p,
-  saidas: p.saidas.map((s) => ({ id: s.id, nome: s.nome, cnpj: s.cnpj, data_entrada: s.data_entrada, data_saida: s.data_saida, tipo: s.tipo, origem: s.origem, na_base: s.na_base })),
+  saidas: p.saidas.map((s) => ({ id: s.id, nome: s.nome, cnpj: s.cnpj, data_entrada: s.data_entrada, data_saida: s.data_saida, tipo: s.tipo, origem: s.origem, na_base: s.na_base, motivo_churn: s.motivo_churn || null, motivo_saida: s.motivo_saida || null })),
   menos_de_90_dias: p.saidas.filter((s) => s.data_entrada && s.data_saida && churn.somarDias(s.data_entrada, 90) >= s.data_saida).length,
 });
 

@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -282,6 +282,23 @@ const semLixo = (e, nome) => {
     semLixo(x, 'cs/atendimento');
     assert.deepStrictEqual(x.linhas.map((l) => [l[0], l[3], l[7], l[8]]), [['ALFA LTDA', 12, '', ''], ['BETA LTDA', 4, 9, 2]]);
     assert.strictEqual(x.linhas[1][9], 'dptofiscal@escritorial.com.br: 2');
+  });
+  await teste('cs: churn por motivo — motivo efetivo, seleção e cartão com sem motivo', () => {
+    const E = C.t.estado;
+    E.motivosChurn = [{ id: '1', nome: 'Churn por experiência técnica' }, { id: '2', nome: 'Churn motivado por decisão pessoal' }];
+    E.dados.usuario = { nome: 'Teste', papel: 'administrador' };
+    assert.strictEqual(C.t.motivoDaSaida({ motivo_churn: 'Churn por experiência técnica' }), 'Churn por experiência técnica');
+    assert.strictEqual(C.t.motivoDaSaida({ motivo_saida: 'churn motivado por decisao pessoal' }), 'Churn motivado por decisão pessoal');
+    assert.strictEqual(C.t.motivoDaSaida({ motivo_saida: 'Baixa de empresa' }), null);
+    assert.ok(/<select class="gp-select q-motivo" data-id="x1"/.test(C.t.selectMotivoChurn({ id: 'x1', motivo_churn: null })));
+    const html = C.t.cartaoMotivosChurn([
+      { id: 'a', tipo: 'transferida', na_base: true, motivo_churn: 'Churn por experiência técnica' },
+      { id: 'b', tipo: 'transferida', na_base: true, motivo_churn: null },
+      { id: 'c', tipo: 'baixa', na_base: true, motivo_churn: 'Churn por experiência técnica' },     // baixa não conta
+    ]);
+    assert.ok(html.includes('2 saída(s) que contam') && html.includes('1 sem motivo classificado'), html.slice(0, 400));
+    E.dados.usuario = { nome: 'Teste', papel: 'colaborador' };
+    assert.ok(!/<select/.test(C.t.selectMotivoChurn({ id: 'x1', motivo_churn: 'Churn por experiência técnica' })));   // sem permissão: só texto
   });
   await teste('cs: risco e churn trazem os campos certos', () => {
     const r = C.t.dadosExport('risco');
