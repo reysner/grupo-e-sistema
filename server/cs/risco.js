@@ -144,8 +144,9 @@ async function calcularTodos({ detalhes = false } = {}) {
 
   // Considerações de Qualidade (ficha do cliente): entram no termômetro de Atendimento. Tabela ausente = segue sem.
   const qualidade = new Map();
-  ((await consultar(`SELECT cliente_id, tipo, status, (CURRENT_DATE - criado_em::date)::int AS dias FROM cs_qualidade_registros WHERE criado_em >= NOW() - INTERVAL '90 days' AND status <> 'cancelado'`, [], 'qualidade')) || [])
-    .forEach((q) => { (qualidade.get(q.cliente_id) || qualidade.set(q.cliente_id, []).get(q.cliente_id)).push({ tipo: q.tipo, status: q.status, dias: q.dias }); });
+  ((await consultar(`SELECT r.cliente_id, r.tipo, r.status, (CURRENT_DATE - r.criado_em::date)::int AS dias, t.peso FROM cs_qualidade_registros r LEFT JOIN cs_qualidade_tipos t ON t.nome = r.tipo WHERE r.criado_em >= NOW() - INTERVAL '90 days' AND r.status <> 'cancelado'`, [], 'qualidade'))
+    || (await consultar(`SELECT cliente_id, tipo, status, (CURRENT_DATE - criado_em::date)::int AS dias, NULL::int AS peso FROM cs_qualidade_registros WHERE criado_em >= NOW() - INTERVAL '90 days' AND status <> 'cancelado'`, [], 'qualidade (sem tipos)')) || [])
+    .forEach((q) => { (qualidade.get(q.cliente_id) || qualidade.set(q.cliente_id, []).get(q.cliente_id)).push({ tipo: q.tipo, status: q.status, dias: q.dias, peso: q.peso }); });
 
   const entregas = new Map(((await consultar(`SELECT doc, total, atrasadas_entregues, vencidas_pendentes FROM cliente_entregas_resumo`, [], 'entregas')) || []).map((r) => [r.doc, r]));
 

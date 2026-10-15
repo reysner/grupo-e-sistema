@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -55,6 +55,16 @@ teste('situação: aberto ou em tratamento com prazo vencido vira "vencido"; res
 teste('o nome do login casa com o analista sem acento nem caixa', () => {
   assert.strictEqual(semAcento('  Denísa  XAVIER '), 'denisa xavier');
 });
+teste('tipos: aceita um tipo novo na lista permitida; nome e peso são validados', () => {
+  assert.strictEqual(validarRegistro(Object.assign({}, base, { tipo: 'Retrabalho' }), HOJE, ['Retrabalho', 'Erro']).ok, true);
+  assert.strictEqual(validarRegistro(Object.assign({}, base, { tipo: 'Multa' }), HOJE, ['Retrabalho', 'Erro']).ok, false);
+  assert.strictEqual(validarTipo({ nome: 'Retrabalho', peso: '12' }).valores.peso, 12);
+  assert.strictEqual(validarTipo({ nome: 'R' }).ok, false);
+  assert.strictEqual(validarTipo({ nome: 'x'.repeat(41) }).ok, false);
+  assert.strictEqual(validarTipo({ peso: 51 }).ok, false);
+  assert.strictEqual(validarTipo({ peso: 0 }).ok, true);
+});
+
 teste('mesmo nome: igual sem acento, ou o primeiro nome contra o nome completo; nomes diferentes não casam', () => {
   assert.strictEqual(mesmoNome('Guilherme', 'Guilherme de Barros Amaro'), true);
   assert.strictEqual(mesmoNome('Nathânia Andrade Conceição', 'nathania andrade conceicao'), true);

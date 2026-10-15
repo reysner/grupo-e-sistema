@@ -1150,7 +1150,7 @@
     var deps = o.departamentos.map(function (d) { return '<label class="qa-dep"><input type="checkbox" class="qa-dep-ck" value="' + esc(d) + '"> ' + esc(d) + '</label>'; }).join('');
     return '<div class="qa-form">' +
       '<div class="qa-linha">' +
-        '<div class="qa-campo"><label for="qa-tipo">Tipo de registro <span class="req">*</span></label><select id="qa-tipo">' + optTipos + '</select></div>' +
+        '<div class="qa-campo"><label for="qa-tipo">Tipo de registro <span class="req">*</span>' + (ehAdminPainel() ? ' <a href="#" id="qa-editar-tipos" class="qa-lnk">(editar lista)</a>' : '') + '</label><select id="qa-tipo">' + optTipos + '</select></div>' +
         '<div class="qa-campo"><label for="qa-analista">Analista <span class="req">*</span>' + (ehAdminPainel() ? ' <a href="#" id="qa-editar-an" class="qa-lnk">(editar lista)</a>' : '') + '</label><select id="qa-analista">' + optAn + '</select></div>' +
         '<div class="qa-campo"><label for="qa-prazo">Prazo para execução <span class="req">*</span></label><input type="date" id="qa-prazo" min="' + hojeIsoLocal() + '"></div>' +
       '</div>' +
@@ -1177,6 +1177,7 @@
         k.addEventListener('change', function () { todos.checked = document.querySelectorAll('.qa-dep-ck:checked').length === o.departamentos.length; });
       });
       var ed = $('qa-editar-an'); if (ed) ed.addEventListener('click', function (ev) { ev.preventDefault(); abrirGerenciarAnalistas(function () { montarConsideracoes(c); }); });
+      var et = $('qa-editar-tipos'); if (et) et.addEventListener('click', function (ev) { ev.preventDefault(); abrirGerenciarTipos(function () { montarConsideracoes(c); }); });
       $('qa-salvar').addEventListener('click', async function () {
         var erro = $('qa-erro'); erro.textContent = '';
         var deps = Array.prototype.map.call(document.querySelectorAll('.qa-dep-ck:checked'), function (k) { return k.value; });
@@ -1252,6 +1253,57 @@
     try { await desenhar(); } catch (e) { ov.innerHTML = '<div class="qa-modal"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; }
   }
 
+  /** Janela do administrador para incluir, renomear, ajustar o peso no risco, desativar e excluir os tipos de registro. */
+  async function abrirGerenciarTipos(aoFechar) {
+    var ov = document.createElement('div'); ov.className = 'qa-overlay';
+    document.body.appendChild(ov);
+    var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); estado.qOpcoes = null; estado.qResumo = null; if (aoFechar) aoFechar(); };
+    var desenhar = async function () {
+      var j = await api('/api/cs/painel/qualidade/tipos');
+      ov.innerHTML = '<div class="qa-modal" role="dialog" aria-label="Gerenciar tipos de registro"><div class="qa-modal-topo"><strong>Gerenciar tipos de registro</strong><button type="button" class="qa-x" id="qt-fechar" aria-label="Fechar">✕</button></div>' +
+        '<div class="cinza" style="font-size:12px;margin-bottom:10px">O <strong>peso</strong> é quantos pontos o registro soma no termômetro de Atendimento do risco do cliente (0 só registra, sem pesar; máximo 50).</div>' +
+        '<div class="qa-modal-novo"><input id="qt-novo" type="text" maxlength="40" placeholder="Novo tipo (ex.: Retrabalho)"><input id="qt-peso-novo" type="number" min="0" max="50" value="10" style="max-width:70px" title="Peso no risco (pontos)"><button type="button" class="gp-footer-btn" id="qt-add" style="width:auto">+ Adicionar</button></div>' +
+        '<div class="qa-modal-lista">' + j.tipos.map(function (t) {
+          return '<div class="qa-an-linha" data-id="' + t.id + '"><span style="display:flex;gap:6px;align-items:center;flex:1;min-width:0">' +
+            '<input class="qt-nome" type="text" maxlength="40" value="' + esc(t.nome) + '" style="flex:1;min-width:0;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:13px' + (t.ativo ? '' : ';text-decoration:line-through;color:var(--text2)') + '">' +
+            '<input class="qt-peso" type="number" min="0" max="50" value="' + t.peso + '" style="width:62px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:13px" title="Peso no risco (pontos)"></span>' +
+            '<span class="qa-an-acoes"><span class="cinza" style="font-size:11px" title="Registros que usam este tipo">' + t.usos + ' uso(s)</span>' +
+            '<button type="button" class="gp-footer-btn" data-qsalvar="' + t.id + '" style="width:auto">Salvar</button>' +
+            '<button type="button" class="gp-footer-btn" data-qtog="' + t.id + '" data-ativo="' + (t.ativo ? '1' : '0') + '" style="width:auto">' + (t.ativo ? 'Desativar' : 'Reativar') + '</button>' +
+            '<button type="button" class="gp-footer-btn qa-excluir" data-qdel="' + t.id + '" data-nome="' + esc(t.nome) + '" style="width:auto">Excluir</button></span></div>';
+        }).join('') + '</div><div class="pop-erro" id="qt-erro" role="alert"></div></div>';
+      $('qt-fechar').addEventListener('click', fechar);
+      var falha = function (m) { $('qt-erro').textContent = m; };
+      var enviar = async function (metodo, url, corpo) {
+        var r = await chamarApi(url, { method: metodo, headers: { 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined });
+        var x = await r.json().catch(function () { return {}; });
+        if (!r.ok) { falha(x.error || 'Não foi possível salvar.'); return false; }
+        return true;
+      };
+      $('qt-add').addEventListener('click', async function () {
+        var nome = $('qt-novo').value.replace(/\s+/g, ' ').trim();
+        if (!nome) { falha('Digite o nome do tipo.'); return; }
+        if (await enviar('POST', '/api/cs/painel/qualidade/tipos', { nome: nome, peso: $('qt-peso-novo').value })) desenhar();
+      });
+      Array.prototype.forEach.call(ov.querySelectorAll('[data-qsalvar]'), function (b) {
+        b.addEventListener('click', async function () {
+          var linha = b.closest('[data-id]');
+          if (await enviar('PATCH', '/api/cs/painel/qualidade/tipos/' + b.getAttribute('data-qsalvar'), { nome: linha.querySelector('.qt-nome').value.replace(/\s+/g, ' ').trim(), peso: linha.querySelector('.qt-peso').value })) desenhar();
+        });
+      });
+      Array.prototype.forEach.call(ov.querySelectorAll('[data-qtog]'), function (b) {
+        b.addEventListener('click', async function () { if (await enviar('PATCH', '/api/cs/painel/qualidade/tipos/' + b.getAttribute('data-qtog'), { ativo: b.getAttribute('data-ativo') !== '1' })) desenhar(); });
+      });
+      Array.prototype.forEach.call(ov.querySelectorAll('[data-qdel]'), function (b) {
+        b.addEventListener('click', async function () {
+          if (!window.confirm('Excluir o tipo "' + b.getAttribute('data-nome') + '"? Isso não pode ser desfeito.')) return;
+          if (await enviar('DELETE', '/api/cs/painel/qualidade/tipos/' + b.getAttribute('data-qdel'))) desenhar();
+        });
+      });
+    };
+    try { await desenhar(); } catch (e) { ov.innerHTML = '<div class="qa-modal"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; }
+  }
+
   // ── Módulo Qualidade: uma linha por analista ───────────────────────────────────
   function filtroQ() { return estado.filtroQ || (estado.filtroQ = { busca: '', todos: false }); }
   async function carregarResumoQ() { estado.qResumo = await api('/api/cs/painel/qualidade/resumo'); }
@@ -1286,13 +1338,14 @@
         'Cada consideração também pesa no termômetro de Atendimento do risco de churn do cliente.' + (r.sem_analista ? ' <span style="color:#b91c1c">' + r.sem_analista + ' registro(s) sem analista na lista.</span>' : '') + '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="q-busca" placeholder="Nome do analista" value="' + esc(f.busca) + '">' +
         '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="q-todos"' + (f.todos ? ' checked' : '') + '> mostrar analistas sem registro</label>' +
-        (ehAdminPainel() ? '<button type="button" class="gp-footer-btn" id="q-gerenciar" style="width:auto">Gerenciar analistas</button>' : '') + '</div>' +
+        (ehAdminPainel() ? '<button type="button" class="gp-footer-btn" id="q-gerenciar" style="width:auto">Gerenciar analistas</button><button type="button" class="gp-footer-btn" id="q-tipos" style="width:auto">Gerenciar tipos de registro</button>' : '') + '</div>' +
         '<div class="card-sub">' + lista.length + ' analista(s) · ordem alfabética. Clique no nome para ver os registros.</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Analista</th><th class="c">Em aberto</th><th class="c">Em tratamento</th><th class="c">Vencidos</th><th class="c">Resolvidos</th><th class="c">Último lançamento</th><th class="c">Próximo prazo</th><th class="c">Login</th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
           : '<div class="vazio">Nenhum registro de qualidade ainda. Registre a primeira consideração na ficha de um cliente (Gestão da Permanência).</div>') + '</div>';
     var campo = $('q-busca'); if (campo) campo.addEventListener('input', function () { f.busca = campo.value; var pos = campo.selectionStart; desenharQualidadeMod(); var n = $('q-busca'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* sem seleção */ } });
     var st = $('q-todos'); if (st) st.addEventListener('change', function () { f.todos = st.checked; desenharQualidadeMod(); });
     var g = $('q-gerenciar'); if (g) g.addEventListener('click', function () { abrirGerenciarAnalistas(function () { estado.qResumo = null; desenharQualidadeMod(); }); });
+    var gt = $('q-tipos'); if (gt) gt.addEventListener('click', function () { abrirGerenciarTipos(function () { desenharQualidadeMod(); }); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-qan]'), function (bt) { bt.addEventListener('click', function () { abrirFichaAnalistaQ(bt.getAttribute('data-qan')); }); });
   }
 

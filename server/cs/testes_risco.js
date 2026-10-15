@@ -62,6 +62,8 @@ teste('atendimento: considerações de Qualidade pesam pelo tipo, resolvida e an
   assert.strictEqual(t([{ tipo: 'Multa', status: 'cancelado', dias: 1 }]).pontos, 0);
   assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 1 }, { tipo: 'Multa', status: 'aberto', dias: 1 }]).pontos, 40);   // teto
   assert.ok(t([{ tipo: 'Atraso', status: 'aberto', dias: 2 }]).detalhe[0].includes('consideração de qualidade'));
+  assert.strictEqual(t([{ tipo: 'Tipo novo', status: 'aberto', dias: 2, peso: 18 }]).pontos, 18);       // peso vem do cadastro de tipos
+  assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 2, peso: 0 }]).pontos, 0);            // peso 0 = só registra, não pesa
 });
 
 teste('atendimento: abandono de atendimento não conta mais (decisão de 16/10/2026)', () => {

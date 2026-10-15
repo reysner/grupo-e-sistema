@@ -42,12 +42,12 @@ function hojeBrasilia() {
 function somarDias(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
 
 /** Valida o corpo de um novo registro. Devolve { ok, valores } ou { ok:false, erro }. */
-function validarRegistro(corpo, hoje) {
+function validarRegistro(corpo, hoje, tiposPermitidos) {
   const b = corpo || {};
   const h = hoje || hojeBrasilia();
   const cliente_id = texto(b.cliente_id, 80);
   if (!cliente_id) return { ok: false, erro: 'Escolha o cliente.' };
-  const tipo = TIPOS.find((t) => t === b.tipo);
+  const tipo = (tiposPermitidos || TIPOS).find((t) => t === b.tipo);
   if (!tipo) return { ok: false, erro: 'Escolha o tipo de registro.' };
   let deps = Array.isArray(b.departamentos) ? b.departamentos.map((d) => String(d)) : [];
   if (deps.includes('Todos')) deps = DEPARTAMENTOS.slice();
@@ -150,7 +150,18 @@ function garantirSchema() {
         id BIGSERIAL PRIMARY KEY, registro_id UUID NOT NULL REFERENCES cs_qualidade_registros(id) ON DELETE CASCADE,
         em TIMESTAMPTZ NOT NULL DEFAULT NOW(), por TEXT, acao TEXT NOT NULL, texto TEXT)`))
       .then(() => pool.query('ALTER TABLE cs_qualidade_historico ENABLE ROW LEVEL SECURITY'))
+      .then(() => pool.query(`CREATE TABLE IF NOT EXISTS cs_qualidade_tipos (
+        id SERIAL PRIMARY KEY, nome TEXT NOT NULL, peso INT NOT NULL DEFAULT 10, ativo BOOLEAN NOT NULL DEFAULT TRUE, ordem INT NOT NULL DEFAULT 0)`))
+      .then(() => pool.query('CREATE UNIQUE INDEX IF NOT EXISTS cs_qualidade_tipos_nome_idx ON cs_qualidade_tipos (lower(nome))'))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_tipos ENABLE ROW LEVEL SECURITY'))
+      .then(async () => {
+        // sementes: os sete tipos combinados, com o peso que entra no termômetro de Atendimento do risco
+        const iniciais = [['Multa', 25], ['Erro', 15], ['Reclamação', 20], ['Atraso', 10], ['Falha de atendimento', 20], ['Falha técnica', 10], ['Outros', 5]];
+        const n = (await pool.query('SELECT COUNT(*)::int AS n FROM cs_qualidade_tipos')).rows[0].n;
+        if (!n) for (let i = 0; i < iniciais.length; i++) await pool.query('INSERT INTO cs_qualidade_tipos (nome, peso, ordem) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [iniciais[i][0], iniciais[i][1], i + 1]);
+      })
       .then(() => pool.query('ALTER TABLE analistas ADD COLUMN IF NOT EXISTS user_id TEXT'))
+      .then(() => require('./analistasNomes').aplicar(pool))   // ajuste único dos nomes completos (planilha de 15/10/2026)
       .catch((e) => { _schema = null; throw e; });
   }
   return _schema;
@@ -175,7 +186,99 @@ async function registrar(registroId, por, acao, txt) {
 const router = express.Router();
 router.use(requireAuth, soEquipe);
 
-router.get('/opcoes', (req, res) => res.json({ tipos: TIPOS, departamentos: DEPARTAMENTOS, status: STATUS, max_detalhe: MAX_DETALHE, max_tratativa: MAX_TRATATIVA }));
+/** Tipos de registro ativos, na ordem de exibição. */
+async function tiposAtivos() {
+  await garantirSchema();
+  return (await pool.query('SELECT id, nome, peso, ativo, ordem FROM cs_qualidade_tipos WHERE ativo ORDER BY ordem, nome')).rows;
+}
+/** Valida nome e peso de um tipo. */
+function validarTipo(b) {
+  const o = {};
+  if (b.nome !== undefined) {
+    const nome = texto(b.nome, 41);
+    if (nome.length < 2) return { ok: false, erro: 'O nome do tipo precisa de ao menos 2 caracteres.' };
+    if (nome.length > 40) return { ok: false, erro: 'O nome do tipo passa de 40 caracteres.' };
+    o.nome = nome;
+  }
+  if (b.peso !== undefined) {
+    const p = Math.round(Number(String(b.peso).replace(',', '.')));
+    if (!Number.isFinite(p) || p < 0 || p > 50) return { ok: false, erro: 'O peso no risco vai de 0 a 50 pontos.' };
+    o.peso = p;
+  }
+  if (b.ativo !== undefined) o.ativo = !!b.ativo;
+  return { ok: true, valores: o };
+}
+const soAdmin = (req, res, next) => {
+  if (!req.user || req.user.role !== 'administrador') return res.status(403).json({ error: 'Só o administrador gerencia os tipos de registro.' });
+  next();
+};
+
+router.get('/opcoes', async (req, res) => {
+  try {
+    const tipos = await tiposAtivos();
+    res.json({ tipos: tipos.map((t) => t.nome), departamentos: DEPARTAMENTOS, status: STATUS, max_detalhe: MAX_DETALHE, max_tratativa: MAX_TRATATIVA });
+  } catch (e) { console.error('[qualidade] GET /opcoes falhou:', e); res.status(500).json({ error: 'Erro ao ler as opções.' }); }
+});
+
+router.get('/tipos', soAdmin, async (req, res) => {
+  try {
+    await garantirSchema();
+    const { rows } = await pool.query(`SELECT t.id, t.nome, t.peso, t.ativo, t.ordem, (SELECT COUNT(*)::int FROM cs_qualidade_registros r WHERE r.tipo = t.nome) AS usos FROM cs_qualidade_tipos t ORDER BY t.ordem, t.nome`);
+    res.json({ tipos: rows });
+  } catch (e) { console.error('[qualidade] GET /tipos falhou:', e); res.status(500).json({ error: 'Erro ao ler os tipos.' }); }
+});
+
+router.post('/tipos', soAdmin, async (req, res) => {
+  const v = validarTipo({ nome: req.body && req.body.nome, peso: req.body && req.body.peso !== undefined ? req.body.peso : 10 });
+  if (!v.ok) return res.status(400).json({ error: v.erro });
+  try {
+    await garantirSchema();
+    const ordem = (await pool.query('SELECT COALESCE(MAX(ordem), 0) + 1 AS o FROM cs_qualidade_tipos')).rows[0].o;
+    const { rows } = await pool.query('INSERT INTO cs_qualidade_tipos (nome, peso, ordem) VALUES ($1, $2, $3) RETURNING id, nome, peso, ativo, ordem', [v.valores.nome, v.valores.peso, ordem]);
+    res.status(201).json({ tipo: rows[0] });
+  } catch (e) {
+    if (e && e.code === '23505') return res.status(409).json({ error: 'Já existe um tipo com esse nome.' });
+    console.error('[qualidade] POST /tipos falhou:', e); res.status(500).json({ error: 'Erro ao criar o tipo.' });
+  }
+});
+
+router.patch('/tipos/:id', soAdmin, async (req, res) => {
+  const v = validarTipo(req.body || {});
+  if (!v.ok) return res.status(400).json({ error: v.erro });
+  if (!Object.keys(v.valores).length) return res.status(400).json({ error: 'Nada para alterar.' });
+  const client = await pool.connect();
+  try {
+    await garantirSchema();
+    await client.query('BEGIN');
+    const atual = (await client.query('SELECT id, nome FROM cs_qualidade_tipos WHERE id = $1 FOR UPDATE', [parseInt(req.params.id, 10) || 0])).rows[0];
+    if (!atual) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Tipo não encontrado.' }); }
+    const sets = [], vals = [];
+    Object.keys(v.valores).forEach((k) => { vals.push(v.valores[k]); sets.push(k + ' = $' + vals.length); });
+    vals.push(atual.id);
+    await client.query('UPDATE cs_qualidade_tipos SET ' + sets.join(', ') + ' WHERE id = $' + vals.length, vals);
+    // renomear leva junto os registros que já usam o nome antigo
+    if (v.valores.nome && v.valores.nome !== atual.nome) await client.query('UPDATE cs_qualidade_registros SET tipo = $1 WHERE tipo = $2', [v.valores.nome, atual.nome]);
+    await client.query('COMMIT');
+    const { rows } = await pool.query('SELECT id, nome, peso, ativo, ordem FROM cs_qualidade_tipos WHERE id = $1', [atual.id]);
+    res.json({ tipo: rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (e && e.code === '23505') return res.status(409).json({ error: 'Já existe um tipo com esse nome.' });
+    console.error('[qualidade] PATCH /tipos falhou:', e); res.status(500).json({ error: 'Erro ao atualizar o tipo.' });
+  } finally { client.release(); }
+});
+
+router.delete('/tipos/:id', soAdmin, async (req, res) => {
+  try {
+    await garantirSchema();
+    const t = (await pool.query('SELECT id, nome FROM cs_qualidade_tipos WHERE id = $1', [parseInt(req.params.id, 10) || 0])).rows[0];
+    if (!t) return res.status(404).json({ error: 'Tipo não encontrado.' });
+    const usos = (await pool.query('SELECT COUNT(*)::int AS n FROM cs_qualidade_registros WHERE tipo = $1', [t.nome])).rows[0].n;
+    if (usos > 0) return res.status(409).json({ error: 'Esse tipo tem ' + usos + ' registro(s). Desative-o em vez de excluir, para não perder o histórico.' });
+    await pool.query('DELETE FROM cs_qualidade_tipos WHERE id = $1', [t.id]);
+    res.json({ ok: true });
+  } catch (e) { console.error('[qualidade] DELETE /tipos falhou:', e); res.status(500).json({ error: 'Erro ao excluir o tipo.' }); }
+});
 
 router.get('/analistas', async (req, res) => {
   try {
@@ -195,10 +298,10 @@ router.get('/cliente/:clienteId', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const v = validarRegistro(req.body);
-  if (!v.ok) return res.status(400).json({ error: v.erro });
   try {
-    await garantirSchema();
+    const tipos = (await tiposAtivos()).map((t) => t.nome);
+    const v = validarRegistro(req.body, undefined, tipos);
+    if (!v.ok) return res.status(400).json({ error: v.erro });
     const cli = await pool.query(`SELECT id::text AS id, nome_empresa, regexp_replace(cnpj, '\\D', '', 'g') AS cnpj FROM clientes WHERE id::text = $1`, [v.valores.cliente_id]);
     if (!cli.rows.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
     const an = await pool.query('SELECT id, nome, ativo FROM analistas WHERE id::text = $1', [v.valores.analista_id]);
@@ -413,4 +516,4 @@ routerAnalista.patch('/:id/tratar', async (req, res) => {
   } catch (e) { console.error('[qualidade] PATCH /tratar falhou:', e); res.status(500).json({ error: 'Erro ao registrar a tratativa.' }); }
 });
 
-module.exports = { router, routerAnalista, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { router, routerAnalista, validarTipo, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };

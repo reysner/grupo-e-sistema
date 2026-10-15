@@ -30,6 +30,7 @@ try {
 
 router.get('/', requireAuth, async (req, res) => {
   try {
+    await require('../cs/analistasNomes').aplicar(pool);   // ajuste único dos nomes completos (planilha de 15/10/2026); depois disso não faz nada
     const somenteAtivos = req.query.ativo === 'true';
     const { rows } = await pool.query(
       somenteAtivos
