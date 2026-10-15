@@ -1202,12 +1202,12 @@
 
     var sinais = (r.motivos || []).map(function (m) { return '<span class="chip" style="color:#dc2626;border-color:#dc262655">' + esc(m) + '</span>'; }).join('') || '<span class="cinza">nenhum sinal de atenção</span>';
 
+    // 16/10/2026: a ficha fica só com risco, categoria, sinais de atenção e financeiro. Atendimento e e-mails vivem no módulo Atendimento;
+    // insatisfações e entregas saíram daqui por pedido do Reysner (as variáveis acima seguem montadas para quando a próxima etapa as reaproveitar).
     $('ficha-corpo').innerHTML = blocos1 + blocos2 +
       '<div class="ficha-sec">Sinais de atenção</div><div>' + sinais + '</div>' +
       '<div class="ficha-sec">Financeiro</div>' + fin +
-      '<div class="ficha-sec">Atendimento (Zappy, 90 dias)</div>' + resumoAt + tick + emailSec +
-      '<div class="ficha-sec">Insatisfações registradas (180 dias)</div>' + insat + sens + (pesq ? '<div class="ficha-sec">Pesquisas de satisfação</div>' + pesq : '') +
-      '<div class="ficha-sec">Operacional (entregas do Acessórias)</div>' + oper;
+      '<div class="nota" style="margin-top:10px">Atendimentos do Zappy e e-mails (recebidos e sem resposta, por destinatário) estão no módulo <strong>Atendimento</strong>.</div>';
   }
 
   function fecharFicha() { $('ficha').style.display = 'none'; document.querySelector('.ficha-box').classList.remove('larga'); }
