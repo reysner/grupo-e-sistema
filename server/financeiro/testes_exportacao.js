@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -259,6 +259,29 @@ const semLixo = (e, nome) => {
     assert.ok(C.t.dadosExport('anual').linhas.every((l) => l[5] === 'oculto' || l[5] === 'sem dado'), 'valores ocultos vazaram na análise anual');
     E.ocultar = false;
     E.anual = null;
+  });
+  await teste('cs: módulo Atendimento — lista, dica de e-mails por destinatário, filtro e exportação', () => {
+    const E = C.t.estado;
+    E.atend = { janela_dias: 180, email_lido_em: '2026-10-12T11:00:00Z', email_janela_dias: 180, clientes: [
+      { id: '2', nome: 'BETA LTDA', cnpj: '22.333.444/0001-55', categoria: 'Prata', atendimentos: 4, sla_vermelho: 1, notas_baixas: 0, ultimo: '2026-10-10',
+        email: { recebidos: 9, sem_resposta: 2, destinatarios: [{ nome: 'dptofiscal@escritorial.com.br', grupo: true, recebidos: 5, sem: 2 }, { nome: 'Guilherme', grupo: false, recebidos: 4, sem: 0 }] } },
+      { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', categoria: 'Ouro', atendimentos: 12, sla_vermelho: 0, notas_baixas: 1, ultimo: '2026-10-14', email: null },
+    ] };
+    E.filtroAtend = { busca: '', soSem: false, pag: 1 };
+    assert.deepStrictEqual(C.t.linhasAtend().map((l) => l.nome), ['ALFA LTDA', 'BETA LTDA']);               // ordem alfabética
+    E.filtroAtend.soSem = true;
+    assert.deepStrictEqual(C.t.linhasAtend().map((l) => l.nome), ['BETA LTDA']);                              // só com e-mail sem resposta
+    E.filtroAtend.soSem = false;
+    const dica = C.t.dicaEmails(E.atend.clientes[0].email);
+    assert.ok(dica.includes('• dptofiscal@escritorial.com.br (grupo): 5') && dica.includes('• Guilherme: 4'), dica);
+    assert.ok(dica.includes('Sem resposta:\n• dptofiscal@escritorial.com.br: 2 (grupo do escritório: pode ter sido respondido por outro e-mail)'), dica);
+    assert.ok(!/Guilherme: 0/.test(dica));
+    assert.ok(/sem resposta/i.test(C.t.dicaEmails(null)) || /Sem e-mails/.test(C.t.dicaEmails(null)));
+    assert.doesNotThrow(() => C.t.desenharAtendimento());
+    const x = C.t.dadosExport('atendimento');
+    semLixo(x, 'cs/atendimento');
+    assert.deepStrictEqual(x.linhas.map((l) => [l[0], l[3], l[7], l[8]]), [['ALFA LTDA', 12, '', ''], ['BETA LTDA', 4, 9, 2]]);
+    assert.strictEqual(x.linhas[1][9], 'dptofiscal@escritorial.com.br: 2');
   });
   await teste('cs: risco e churn trazem os campos certos', () => {
     const r = C.t.dadosExport('risco');

@@ -3,7 +3,7 @@
 const assert = require('assert');
 // o módulo abre o pool ao ser carregado; um DATABASE_URL de mentira basta (nenhuma consulta é feita aqui)
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { validarPayload } = require('./emailSinais');
+const { validarPayload, validarAtendimento } = require('./emailSinais');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -39,6 +39,17 @@ teste('números ruins viram zero; corpo vazio não quebra', () => {
   assert.strictEqual(v.clientes[0].contatos_ativos, 100000);
   const vazio = validarPayload(null);
   assert.deepStrictEqual([vazio.clientes.length, vazio.dominios.length, vazio.janela_dias], [0, 0, 14]);
+});
+
+teste('histórico 180 dias: aceita nomes e endereços do escritório; endereço de fora nunca entra', () => {
+  const v = validarAtendimento({ janela_dias: 180, caixas_lidas: 41, clientes: [{ cnpj: '11.222.333/0001-81', recebidos: 9, sem_resposta: 2, destinatarios: [
+    { nome: 'dptofiscal@escritorial.com.br', grupo: true, recebidos: 5, sem: 2 }, { nome: 'legalizacao@escritorialcontabil.com.br', grupo: true, recebidos: 1, sem: 0 },
+    { nome: 'Guilherme', recebidos: 3, sem: 0 }, { nome: 'joao@padaria.com.br', recebidos: 4, sem: 1 }, { nome: '', recebidos: 1, sem: 0 }] },
+    { cnpj: '123', recebidos: 1 }, { cnpj: '11222333000181', recebidos: 1 }] });
+  assert.strictEqual(v.clientes.length, 1);                                  // CNPJ inválido e repetido saem
+  assert.deepStrictEqual(v.clientes[0].destinatarios.map((d) => d.nome), ['dptofiscal@escritorial.com.br', 'legalizacao@escritorialcontabil.com.br', 'Guilherme']);
+  assert.deepStrictEqual([v.clientes[0].recebidos, v.clientes[0].sem_resposta, v.janela_dias], [9, 2, 180]);
+  assert.strictEqual(validarAtendimento(null).clientes.length, 0);
 });
 
 console.log(`\n${ok} testes passaram.`);

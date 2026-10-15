@@ -18,6 +18,7 @@
   };
   var TITULOS = {
     analise: ['Análise Inteligente', 'Regime tributário, faturamento, honorários e funcionários de cada cliente; grupos de empresas e matriz com filiais somados, com a lupa para ver cada empresa, para uma análise completa.'],
+    atendimento: ['Atendimento', 'Atendimentos do Zappy e e-mails dos últimos 180 dias de cada cliente ativo. Clique na empresa para ver cada atendimento e os e-mails por destinatário.'],
     anual: ['Análise Anual', 'Faturamento ano a ano de cada cliente ativo no Acessórias, para avaliar se o honorário precisa de ajuste. Clique na empresa para ver a evolução.'],
     visao: ['Visão Geral', 'Clientes ativos, saídas por transferência e risco de perda — só CNPJ. Material da reunião semanal das lideranças.'],
     risco: ['Gestão da Permanência', 'Quem está em risco de sair e por quê: Financeiro, Atendimento e Operacional. Clique no nome da empresa para ver a ficha.'],
@@ -118,16 +119,17 @@
     $('app').style.display = 'block';
     var u = null; try { u = JSON.parse(ls(K_USER) || 'null'); } catch (e) { u = null; }
     if (u && u.name) montarMenuUsuario(u);
-    ['visao', 'analise', 'anual', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="vazio">Carregando…</div>'; });
+    ['visao', 'analise', 'anual', 'atendimento', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="vazio">Carregando…</div>'; });
     try {
       estado.dados = await api('/api/cs/painel/dados' + (forcar === true ? '?forcar=1' : ''));
       try { estado.honorario = await api('/api/cs/painel/honorario-sugerido'); } catch (e) { estado.honorario = null; }
+      try { estado.atend = await api('/api/cs/painel/atendimentos'); } catch (e) { estado.atend = null; }   // o módulo Atendimento avisa quando não chega
       try { estado.anual = await api('/api/cs/painel/anual'); } catch (e) { estado.anual = null; }   // a Análise Anual avisa quando não chega   // sem o percentual, as colunas novas mostram "—"
       pintarBotaoValores();
       estado.churnLivre = null;
       desenharTudo();
     } catch (e) {
-      ['visao', 'analise', 'anual', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; });
+      ['visao', 'analise', 'anual', 'atendimento', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; });
     }
   }
 
@@ -143,7 +145,7 @@
     $('badge-risco').textContent = t.risco.Alto || '';
     $('badge-churn').textContent = periodoAtual().saidas_contadas;
     $('atualizado').textContent = 'Atualizado em ' + new Date(d.gerado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
-    desenharVisao(); desenharAnalise(); desenharAnual(); desenharRisco(); desenharChurn(); desenharCategorias(); desenharQualidade();
+    desenharVisao(); desenharAnalise(); desenharAnual(); desenharAtendimento(); desenharRisco(); desenharChurn(); desenharCategorias(); desenharQualidade();
     irPara(estado.secao);
   }
 
@@ -991,6 +993,121 @@
     var bf = $('btn-pct-ficha'); if (bf) bf.addEventListener('click', function (ev) { ev.stopPropagation(); abrirPopPct(bf); });
   }
 
+// ── ATENDIMENTO (módulo) ─────────────────────────────────────────────────────
+  // Clientes ativos com os atendimentos do Zappy e os e-mails dos últimos 180 dias; ao clicar, a lista de atendimentos e os e-mails por destinatário.
+  function filtroAtend() { return estado.filtroAtend || (estado.filtroAtend = { busca: '', soSem: false, pag: 1 }); }
+  var ROT_DEST_GRUPO = 'grupo do escritório: pode ter sido respondido por outro e-mail';
+  /** Texto de passar o mouse: e-mails por destinatário e quais estão sem resposta. */
+  function dicaEmails(em) {
+    if (!em) return 'Sem e-mails deste cliente na leitura';
+    var ds = (em.destinatarios || []).slice().sort(function (a, b) { return b.recebidos - a.recebidos || a.nome.localeCompare(b.nome); });
+    var l = [em.recebidos + ' e-mail(s) recebido(s) · ' + em.sem_resposta + ' sem resposta', ''];
+    if (ds.length) { l.push('Recebidos por destinatário:'); ds.forEach(function (d) { l.push('• ' + d.nome + (d.grupo ? ' (grupo)' : '') + ': ' + d.recebidos); }); }
+    var sem = ds.filter(function (d) { return d.sem > 0; });
+    l.push('');
+    if (sem.length) { l.push('Sem resposta:'); sem.forEach(function (d) { l.push('• ' + d.nome + ': ' + d.sem + (d.grupo ? ' (' + ROT_DEST_GRUPO + ')' : '')); }); }
+    else l.push('Nenhum destinatário com e-mail sem resposta');
+    return l.join('\n');
+  }
+  function linhasAtend() {
+    var a = estado.atend, f = filtroAtend(), b = f.busca.trim().toLowerCase();
+    var lista = ((a && a.clientes) || []).filter(function (c) {
+      if (f.soSem && !(c.email && c.email.sem_resposta > 0)) return false;
+      if (b && (c.nome || '').toLowerCase().indexOf(b) < 0 && soDig(c.cnpj).indexOf(b.replace(/\D/g, '') || '§') < 0) return false;
+      return true;
+    });
+    lista.sort(function (x, y) { return (x.nome || '').localeCompare(y.nome || '', 'pt-BR', { sensitivity: 'base' }); });
+    return lista;
+  }
+  function desenharAtendimento() {
+    var alvo = $('sec-atendimento'); if (!alvo) return;
+    var a = estado.atend, f = filtroAtend();
+    if (!a) { alvo.innerHTML = '<div class="card"><div class="vazio">Não foi possível carregar o módulo Atendimento agora.</div></div>'; return; }
+    var todos = a.clientes || [], lista = linhasAtend();
+    var pag = Math.max(1, Math.ceil(lista.length / ANALISE_POR_PAGINA)); if (f.pag > pag) f.pag = pag; if (f.pag < 1) f.pag = 1;
+    var totAt = 0, totRec = 0, totSem = 0, comSem = 0;
+    todos.forEach(function (c) { totAt += c.atendimentos; if (c.email) { totRec += c.email.recebidos; totSem += c.email.sem_resposta; if (c.email.sem_resposta > 0) comSem++; } });
+    var temEmail = !!a.email_lido_em;
+    var corpo = lista.slice((f.pag - 1) * ANALISE_POR_PAGINA, f.pag * ANALISE_POR_PAGINA).map(function (c) {
+      var em = c.email, tip = esc(dicaEmails(em));
+      return '<tr><td style="white-space:normal;min-width:220px"><button class="link" data-atend="' + esc(c.id) + '">' + esc(c.nome) + '</button><div class="sub">' + esc(c.cnpj || '') + '</div></td>' +
+        '<td class="c">' + pillCat(c) + '</td>' +
+        '<td class="c"><strong>' + c.atendimentos + '</strong></td>' +
+        '<td class="c">' + (c.sla_vermelho ? '<span style="color:#dc2626"><strong>' + c.sla_vermelho + '</strong></span>' : '0') + '</td>' +
+        '<td class="c">' + (c.notas_baixas ? '<span style="color:#dc2626"><strong>' + c.notas_baixas + '</strong></span>' : '0') + '</td>' +
+        '<td class="c">' + data(c.ultimo) + '</td>' +
+        '<td class="c"><span class="hon-sug" tabindex="0" title="' + tip + '" aria-label="' + tip + '">' + (em ? em.recebidos : '<span class="cinza">—</span>') + '</span></td>' +
+        '<td class="c"><span class="hon-sug" tabindex="0" title="' + tip + '" aria-label="' + tip + '">' + (em ? (em.sem_resposta ? '<strong style="color:#dc2626">' + em.sem_resposta + '</strong>' : '0') : '<span class="cinza">—</span>') + '</span></td></tr>';
+    }).join('');
+    alvo.innerHTML =
+      '<div class="gp-kpi-row">' +
+        kpi('#256050', 'Clientes ativos', todos.length, 'com atendimento ou não, nos últimos ' + a.janela_dias + ' dias') +
+        kpi('#0f766e', 'Atendimentos (' + a.janela_dias + ' dias)', totAt, 'conversas no Zappy') +
+        kpi('#b45309', 'E-mails recebidos', temEmail ? totRec : '—', temEmail ? 'de clientes, nos últimos ' + (a.email_janela_dias || 180) + ' dias' : 'leitura de e-mails ainda não carregada') +
+        kpi('#b91c1c', 'E-mails sem resposta', temEmail ? totSem : '—', temEmail ? comSem + ' cliente(s) com e-mail sem resposta' : 'aguardando a primeira leitura') +
+      '</div>' +
+      '<div class="nota"><strong>Como ler.</strong> Atendimentos: conversas do Zappy com o cliente, depois da revisão da Gamificação. E-mails: leitura dos cabeçalhos das caixas do escritório (assunto e texto nunca são lidos); ' +
+        'passe o mouse nos números de e-mail para ver quantos e-mails chegaram para cada destinatário e quais estão sem resposta. Os endereços de grupo (dptofiscal@, dptocontabil@, cs@ e outros) podem ser respondidos por outro endereço do escritório: ' +
+        'a resposta de qualquer pessoa encerra a espera.' + (temEmail ? ' Última leitura de e-mails: ' + esc(new Date(a.email_lido_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })) + '.' : '') + '</div>' +
+      '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="at-busca" placeholder="Empresa ou CNPJ" value="' + esc(f.busca) + '">' +
+        '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="at-sem"' + (f.soSem ? ' checked' : '') + '> só com e-mail sem resposta</label></div>' +
+        '<div class="card-sub">' + lista.length + ' cliente(s) · ordem alfabética. Clique na empresa para ver os atendimentos e os e-mails.</div>' +
+        (lista.length ? '<div class="table-wrap"><table class="tab-analise"><colgroup><col style="width:30%"><col style="width:10%"><col style="width:10%"><col style="width:9%"><col style="width:9%"><col style="width:12%"><col style="width:10%"><col style="width:10%"></colgroup>' +
+          '<thead><tr><th>Razão social</th><th class="c">Categoria</th><th class="c">Atendimentos</th><th class="c">SLA vermelho</th><th class="c">Notas baixas</th><th class="c">Último atendimento</th><th class="c">E-mails recebidos</th><th class="c">Sem resposta</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' + paginacaoHtml(lista.length, f.pag, ANALISE_POR_PAGINA)
+          : '<div class="vazio">Nenhum cliente neste filtro.</div>') + '</div>';
+    var campo = $('at-busca'); if (campo) campo.addEventListener('input', function () { f.busca = campo.value; f.pag = 1; var pos = campo.selectionStart; desenharAtendimento(); var n = $('at-busca'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* sem seleção */ } });
+    var ss = $('at-sem'); if (ss) ss.addEventListener('change', function () { f.soSem = ss.checked; f.pag = 1; desenharAtendimento(); });
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-atendimento [data-atend]'), function (bt) { bt.addEventListener('click', function () { abrirFichaAtendimento(bt.getAttribute('data-atend')); }); });
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-atendimento [data-pag]'), function (bt) {
+      bt.addEventListener('click', function () {
+        f.pag = parseInt(bt.getAttribute('data-pag'), 10) || 1; desenharAtendimento();
+        var topo = document.querySelector('#sec-atendimento .filter-group'); if (topo && topo.scrollIntoView) topo.scrollIntoView({ block: 'start' });
+      });
+    });
+  }
+  /** Tabela data, setor, atendente, nota e SLA (a mesma que ficava na ficha da Gestão da Permanência). */
+  function tabelaAtendimentos(tickets) {
+    if (!tickets.length) return '<div class="linha-item"><span class="x">Nenhum atendimento no Zappy nos últimos 180 dias.</span></div>';
+    return '<div class="table-wrap"><table><thead><tr><th>Data</th><th>Setor</th><th>Atendente</th><th class="c">Nota</th><th class="c">SLA</th></tr></thead><tbody>' + tickets.map(function (t) {
+      var cor = { vermelho: '#dc2626', amarelo: '#d97706', verde: '#10b981' }[t.pior_status] || '#9ca3af';
+      return '<tr><td>' + data(t.abertura) + '</td><td>' + esc(t.departamento || '—') + '</td><td>' + esc(t.analista || '—') + '</td><td class="c">' + (t.nota_avaliacao != null ? t.nota_avaliacao : '—') + '</td><td class="c"><span class="pill" style="color:' + cor + ';border-color:' + cor + '55;background:' + cor + '14">' + esc(t.pior_status || '—') + '</span></td></tr>';
+    }).join('') + '</tbody></table></div>';
+  }
+  function tabelaDestinatarios(em) {
+    var ds = ((em && em.destinatarios) || []).slice().sort(function (a, b) { return b.sem - a.sem || b.recebidos - a.recebidos || a.nome.localeCompare(b.nome); });
+    if (!ds.length) return '<div class="linha-item"><span class="x">Sem e-mails deste cliente na leitura.</span></div>';
+    return '<div class="table-wrap"><table><thead><tr><th>Destinatário</th><th class="c">Tipo</th><th class="c">E-mails recebidos</th><th class="c">Sem resposta</th></tr></thead><tbody>' + ds.map(function (d) {
+      return '<tr><td>' + esc(d.nome) + '</td><td class="c">' + (d.grupo ? '<span class="cinza" title="' + esc(ROT_DEST_GRUPO) + '">grupo</span>' : 'pessoa') + '</td><td class="c">' + d.recebidos + '</td>' +
+        '<td class="c">' + (d.sem ? '<strong style="color:#dc2626" title="' + esc(d.grupo ? ROT_DEST_GRUPO : 'Nenhum e-mail do escritório para este contato depois desse(s)') + '">' + d.sem + '</strong>' : '0') + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+  }
+  async function abrirFichaAtendimento(id) {
+    document.querySelector('.ficha-box').classList.add('larga');
+    $('ficha').style.display = 'flex';
+    $('ficha-nome').textContent = 'Carregando…'; $('ficha-sub').textContent = ''; $('ficha-passo').style.display = 'none'; $('ficha-corpo').innerHTML = '';
+    try {
+      var f = await api('/api/cs/painel/atendimento/' + encodeURIComponent(id));
+      var c = f.cliente, t = f.tickets, em = f.email;
+      var vermelhos = t.filter(function (x) { return x.pior_status === 'vermelho'; }).length;
+      var notasBaixas = t.filter(function (x) { return x.nota_avaliacao != null && x.nota_avaliacao <= 2; }).length;
+      $('ficha-nome').textContent = c.nome;
+      $('ficha-sub').innerHTML = esc(c.cnpj || '') + (c.grupo ? ' · Grupo ' + esc(c.grupo) : '') + (c.unidade ? ' · ' + esc(c.unidade) : '') + ' · cliente desde ' + data(c.entrada);
+      var temEmail = !!f.email_lido_em;
+      var tip = esc(dicaEmails(em));
+      var blocoTip = function (t1, v, det, cor) { return bloco(t1, v, det, cor).replace('<div class="bloco">', '<div class="bloco" title="' + tip + '">'); };
+      $('ficha-corpo').innerHTML =
+        '<div class="blocos">' + bloco('Atendimentos (' + f.janela_dias + ' dias)', t.length, 'conversas no Zappy', null) +
+          bloco('SLA vermelho', vermelhos, 'antes da revisão da Gamificação', vermelhos ? '#dc2626' : null) +
+          bloco('Notas baixas', notasBaixas, 'nota 1 ou 2', notasBaixas ? '#dc2626' : null) +
+          blocoTip('E-mails recebidos', temEmail ? (em ? em.recebidos : 0) : '—', temEmail ? 'últimos ' + (f.email_janela_dias || 180) + ' dias' : 'leitura ainda não carregada', null) +
+          blocoTip('E-mails sem resposta', temEmail ? (em ? em.sem_resposta : 0) : '—', temEmail ? 'passe o mouse para ver por destinatário' : '', em && em.sem_resposta ? '#dc2626' : null) + '</div>' +
+        '<div class="ficha-sec">Atendimentos (Zappy, ' + f.janela_dias + ' dias)</div>' + tabelaAtendimentos(t) +
+        '<div class="ficha-sec">E-mails por destinatário</div>' + tabelaDestinatarios(em) +
+        '<div class="nota" style="margin-top:10px">Os e-mails vêm da leitura dos cabeçalhos das caixas do escritório' + (temEmail ? ' (última leitura em ' + esc(new Date(f.email_lido_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })) + ')' : '') +
+        '; assunto e texto nunca são lidos. Um e-mail conta como sem resposta quando ninguém do escritório escreveu para aquele contato depois dele, em nenhuma caixa. Endereços de grupo (dptofiscal@, dptocontabil@, contabil.fiscal@, escritorial@, gestao@, pralegal@, hands@, legalizacao@, deptopessoal@, dctfweb@, cs@) podem ser respondidos por outro endereço.</div>';
+    } catch (e) { $('ficha-nome').textContent = 'Não foi possível abrir o atendimento'; $('ficha-corpo').innerHTML = '<div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div>'; }
+  }
+
   // ── QUALIDADE DOS DADOS ──────────────────────────────────────────────────────
   function desenharQualidade() {
     var d = estado.dados, t = d.totais;
@@ -1050,10 +1167,23 @@
     var notasBaixas = f.tickets.filter(function (t) { return t.nota_avaliacao != null && t.nota_avaliacao <= 2; }).length;
     var vermelhos = f.tickets.filter(function (t) { return t.pior_status === 'vermelho'; }).length;
     var resumoAt = '<div class="blocos">' + bloco('Atendimentos (90 dias)', f.tickets.length, 'conversas no Zappy', null) + bloco('SLA vermelho', vermelhos, 'antes da revisão da Gamificação', vermelhos ? '#dc2626' : null) + bloco('Notas baixas', notasBaixas, 'nota 1 ou 2', notasBaixas ? '#dc2626' : null) + '</div>';
-    var tick = f.tickets.length ? '<div class="table-wrap"><table><thead><tr><th>Data</th><th>Setor</th><th>Atendente</th><th class="c">Nota</th><th class="c">SLA</th></tr></thead><tbody>' + f.tickets.slice(0, 10).map(function (t) {
-      var cor = { vermelho: '#dc2626', amarelo: '#d97706', verde: '#10b981' }[t.pior_status] || '#9ca3af';
-      return '<tr><td>' + data(t.abertura) + '</td><td>' + esc(t.departamento || '—') + '</td><td>' + esc(t.analista || '—') + '</td><td class="c">' + (t.nota_avaliacao != null ? t.nota_avaliacao : '—') + '</td><td class="c"><span class="pill" style="color:' + cor + ';border-color:' + cor + '55;background:' + cor + '14">' + esc(t.pior_status || '—') + '</span></td></tr>';
-    }).join('') + '</tbody></table></div>' : '';
+    // a lista de atendimentos (data, setor, atendente, nota, SLA) agora vive no módulo Atendimento
+    var tick = '<div class="nota" style="margin-top:8px">A lista completa dos atendimentos e dos e-mails por destinatário está no módulo <strong>Atendimento</strong>.</div>';
+    // e-mails: pedidos esperando resposta (leitura semanal) e histórico de 180 dias, quando a leitura existir
+    var emailSec = '';
+    if (f.emails) {
+      var es = f.emails.sinais, eh = f.emails.historico, ep = [];
+      var tipEm = eh ? esc(dicaEmails(eh)) : '';
+      if (es) {
+        var aguard = es.aguardando_4h + es.aguardando_compartilhado;
+        ep.push(bloco('E-mails aguardando resposta', aguard, aguard ? 'o mais antigo há ' + (es.mais_antigo_h >= 48 ? Math.round(es.mais_antigo_h / 24) + ' dias' : es.mais_antigo_h + ' h') : 'nenhum pedido esperando (últimos 14 dias)', aguard ? '#dc2626' : null));
+      }
+      if (eh) {
+        ep.push(bloco('E-mails recebidos (180 dias)', eh.recebidos, 'cópias em várias caixas contam uma vez', null).replace('<div class="bloco">', '<div class="bloco" title="' + tipEm + '">'));
+        ep.push(bloco('Sem resposta (180 dias)', eh.sem_resposta, 'passe o mouse para ver por destinatário', eh.sem_resposta ? '#dc2626' : null).replace('<div class="bloco">', '<div class="bloco" title="' + tipEm + '">'));
+      }
+      if (ep.length) emailSec = '<div class="ficha-sec">E-mails</div><div class="blocos">' + ep.join('') + '</div>';
+    }
     var insat = f.insatisfacoes.length ? f.insatisfacoes.map(function (i) {
       return '<div class="linha-item"><span class="q">⚠️</span><span class="r">' + data(i.created_at) + ' · ' + esc(i.gravidade) + '</span><span class="x">' + esc(i.reclamacao) + (i.reclamado ? ' <span class="cinza">(reclamado: ' + esc(i.reclamado) + ')</span>' : '') + ' <span class="cinza">— registrado por ' + esc(i.analista) + '</span></span></div>';
     }).join('') : '<div class="linha-item"><span class="x">Nenhuma insatisfação registrada nos últimos 180 dias.</span></div>';
@@ -1075,7 +1205,7 @@
     $('ficha-corpo').innerHTML = blocos1 + blocos2 +
       '<div class="ficha-sec">Sinais de atenção</div><div>' + sinais + '</div>' +
       '<div class="ficha-sec">Financeiro</div>' + fin +
-      '<div class="ficha-sec">Atendimento (Zappy, 90 dias)</div>' + resumoAt + tick +
+      '<div class="ficha-sec">Atendimento (Zappy, 90 dias)</div>' + resumoAt + tick + emailSec +
       '<div class="ficha-sec">Insatisfações registradas (180 dias)</div>' + insat + sens + (pesq ? '<div class="ficha-sec">Pesquisas de satisfação</div>' + pesq : '') +
       '<div class="ficha-sec">Operacional (entregas do Acessórias)</div>' + oper;
   }
@@ -1085,7 +1215,7 @@
   // ── EXPORTAÇÃO (CSV e PDF) ───────────────────────────────────────────────────
   // Exporta TODAS as linhas do filtro atual da seção aberta (não só a página). Os dados já vieram do servidor com as permissões e os
   // valores ocultos aplicados; com "Ocultar valores" ligado, os valores em R$ saem como "oculto".
-  var SEC_EXPORTA = { visao: 1, analise: 1, anual: 1, risco: 1, churn: 1, categorias: 1 };
+  var SEC_EXPORTA = { visao: 1, analise: 1, anual: 1, atendimento: 1, risco: 1, churn: 1, categorias: 1 };
   function moedaExp(v) { return valoresOcultos() ? 'oculto' : (v == null ? '' : Math.round(v * 100) / 100); }
   function fatExp(q) {
     if (valoresOcultos()) return 'oculto';
@@ -1157,6 +1287,18 @@
             { nao: 'Sem reajuste', sim: 'Reajustado', 'sem-dado': 'Sem dado no Omie' }[reajusteLinha(l)] || ''];
         }),
         alinhar: ['left', 'left', 'center', 'left', 'left', 'right', 'right', 'right', 'center', 'center', 'right', 'center', 'left', 'right', 'right', 'right', 'center'], fonte: 6 };
+    }
+    if (sec === 'atendimento') {
+      if (!estado.atend) return null;
+      var fat = filtroAtend(), la = linhasAtend(), fx2 = []; if (fat.busca) fx2.push('Busca: ' + fat.busca); if (fat.soSem) fx2.push('Só com e-mail sem resposta');
+      return { arquivo: 'cs-atendimento', titulo: 'Painel do Sucesso do Cliente - Atendimento (' + estado.atend.janela_dias + ' dias)',
+        filtros: [la.length + ' cliente(s)' + (fx2.length ? ' · ' + fx2.join(' · ') : '') + ' · ordem alfabética', aviso],
+        colunas: ['Razão social', 'Documento', 'Categoria', 'Atendimentos', 'SLA vermelho', 'Notas baixas', 'Último atendimento', 'E-mails recebidos', 'E-mails sem resposta', 'Sem resposta por destinatário'],
+        linhas: la.map(function (c) {
+          var sem = c.email ? (c.email.destinatarios || []).filter(function (d) { return d.sem > 0; }).map(function (d) { return d.nome + ': ' + d.sem; }).join(' | ') : '';
+          return [c.nome, c.cnpj || '', c.categoria || '', c.atendimentos, c.sla_vermelho, c.notas_baixas, c.ultimo ? data(c.ultimo) : '', c.email ? c.email.recebidos : '', c.email ? c.email.sem_resposta : '', sem];
+        }),
+        alinhar: ['left', 'left', 'left', 'center', 'center', 'center', 'center', 'center', 'center', 'left'], fonte: 7 };
     }
     if (sec === 'risco') {
       var fr = estado.filtroRisco, lr = filtrarRisco();

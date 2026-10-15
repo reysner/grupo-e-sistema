@@ -47,6 +47,46 @@ function validarPayload(corpo) {
   return { janela_dias: int(b.janela_dias) || 14, caixas_lidas: int(b.caixas_lidas), caixas_com_erro: int(b.caixas_com_erro), totais, clientes, dominios };
 }
 
+/**
+ * Histórico para o módulo Atendimento (janela longa, 180 dias): por cliente, quantos e-mails chegaram, quantos ficaram sem resposta e,
+ * por destinatário INTERNO (pessoa ou grupo do escritório), a mesma contagem. Nenhum endereço de cliente, assunto ou texto é recebido.
+ * Endereços só são aceitos se forem do próprio escritório (domínios abaixo): são os grupos citados (dptofiscal@ etc.).
+ */
+const DOMINIOS_INTERNOS = ['escritorial.com.br', 'escritorialcontabil.com.br'];
+const enderecoInterno = (n) => { const m = /^[a-z0-9._%+'-]+@([a-z0-9.-]+\.[a-z]{2,})$/i.exec(n); return !!m && DOMINIOS_INTERNOS.includes(m[1].toLowerCase()); };
+
+function validarAtendimento(corpo) {
+  const b = corpo || {};
+  const clientes = []; const vistos = new Set();
+  (Array.isArray(b.clientes) ? b.clientes : []).forEach((c) => {
+    const cnpj = soDigitos(c && c.cnpj);
+    if (![11, 14].includes(cnpj.length) || vistos.has(cnpj)) return;
+    vistos.add(cnpj);
+    const destinatarios = (Array.isArray(c.destinatarios) ? c.destinatarios : []).slice(0, 60).map((d) => {
+      const nome = texto(d && d.nome, 80).trim();
+      if (!nome || (/@/.test(nome) && !enderecoInterno(nome))) return null;     // endereço de fora do escritório nunca entra
+      return { nome, grupo: !!d.grupo, recebidos: int(d.recebidos), sem: int(d.sem) };
+    }).filter(Boolean);
+    clientes.push({ cnpj, recebidos: int(c.recebidos), sem_resposta: int(c.sem_resposta), destinatarios });
+  });
+  return { janela_dias: int(b.janela_dias) || 180, caixas_lidas: int(b.caixas_lidas), caixas_com_erro: int(b.caixas_com_erro), clientes };
+}
+
+let _schemaAt = null;
+function garantirSchemaAtend() {
+  if (!_schemaAt) {
+    // RLS ligado e sem policy: só o servidor lê (regra do projeto para tabela nova).
+    _schemaAt = pool.query(`CREATE TABLE IF NOT EXISTS cs_email_atendimento (
+        cnpj TEXT PRIMARY KEY, recebidos INT NOT NULL DEFAULT 0, sem_resposta INT NOT NULL DEFAULT 0, destinatarios JSONB NOT NULL DEFAULT '[]')`)
+      .then(() => pool.query('ALTER TABLE cs_email_atendimento ENABLE ROW LEVEL SECURITY'))
+      .then(() => pool.query(`CREATE TABLE IF NOT EXISTS cs_email_atendimento_leitura (
+        id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1), lido_em TIMESTAMPTZ NOT NULL DEFAULT NOW(), janela_dias INT NOT NULL DEFAULT 180, caixas_lidas INT NOT NULL DEFAULT 0)`))
+      .then(() => pool.query('ALTER TABLE cs_email_atendimento_leitura ENABLE ROW LEVEL SECURITY'))
+      .catch((e) => { _schemaAt = null; throw e; });
+  }
+  return _schemaAt;
+}
+
 let _schema = null;
 function garantirSchema() {
   if (!_schema) {
@@ -118,6 +158,40 @@ router.post('/', async (req, res) => {
   } finally { if (client) client.release(); }
 });
 
+/** Grava o histórico de 180 dias (token de sincronização). Leitura incompleta nunca substitui a anterior. */
+router.post('/atendimento', async (req, res) => {
+  if (!tokenSyncOk(req, res)) return;
+  const b = req.body || {};
+  if (!Array.isArray(b.clientes)) return res.status(400).json({ error: 'Informe a lista de clientes.' });
+  if (b.clientes.length > 5000) return res.status(413).json({ error: 'Lista grande demais.' });
+  if (int(b.caixas_com_erro) > 0) return res.status(422).json({ error: 'Leitura incompleta: há caixas com erro. Nada foi gravado.' });
+  const v = validarAtendimento(b);
+  let client = null;
+  try {
+    await garantirSchemaAtend();
+    client = await pool.connect();
+    await client.query('BEGIN');
+    await client.query('DELETE FROM cs_email_atendimento');
+    if (v.clientes.length) {
+      const C = v.clientes;
+      await client.query(
+        `INSERT INTO cs_email_atendimento (cnpj, recebidos, sem_resposta, destinatarios)
+         SELECT cnpj, r, s, d::jsonb FROM unnest($1::text[], $2::int[], $3::int[], $4::text[]) AS x(cnpj, r, s, d)`,
+        [C.map((c) => c.cnpj), C.map((c) => c.recebidos), C.map((c) => c.sem_resposta), C.map((c) => JSON.stringify(c.destinatarios))]);
+    }
+    await client.query(
+      `INSERT INTO cs_email_atendimento_leitura (id, lido_em, janela_dias, caixas_lidas) VALUES (1, NOW(), $1, $2)
+       ON CONFLICT (id) DO UPDATE SET lido_em = NOW(), janela_dias = EXCLUDED.janela_dias, caixas_lidas = EXCLUDED.caixas_lidas`,
+      [v.janela_dias, v.caixas_lidas]);
+    await client.query('COMMIT');
+    res.json({ ok: true, clientes: v.clientes.length });
+  } catch (err) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    console.error('[email-atendimento] POST falhou:', err);
+    res.status(500).json({ error: 'Erro ao gravar o histórico de e-mails.', detalhe: String(err && err.message).slice(0, 300) });
+  } finally { if (client) client.release(); }
+});
+
 router.get('/', requireAuth, async (req, res) => {
   if (!podeVer(req.user)) return res.status(403).json({ error: 'Acesso restrito à equipe autorizada.' });
   try {
@@ -138,4 +212,4 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
-module.exports = { router, validarPayload };
+module.exports = { router, validarPayload, validarAtendimento, garantirSchemaAtend };

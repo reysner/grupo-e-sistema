@@ -234,4 +234,73 @@ function naoIdentificados(contatos, minHoras) {
   return Object.values(por).sort((a, b) => b.aguardando - a.aguardando || b.contatos - a.contatos);
 }
 
-module.exports = { enderecos, dominio, dominiosDeCliente, normalizarMensagem, sinaisPorContato, consolidar, naoIdentificados, aprenderContatos, mesclarAprendidos, mapaComAprendidos, lerIgnorados, dominioIgnorado, LIVRES, LIMITE_CURTA, JANELA_COPIA_MS };
+/**
+ * HISTÓRICO de e-mails por cliente em janela longa (módulo Atendimento): para cada contato externo, quantos e-mails ele mandou
+ * (cópias em várias caixas viram um só), quais ficaram SEM resposta e por qual endereço INTERNO (Para/Cc) cada um entrou.
+ *
+ * Um e-mail está sem resposta quando o escritório não escreveu para aquele contato depois dele, em NENHUMA caixa: a resposta de
+ * um colega, ou de outro endereço do mesmo grupo (dptofiscal@, cs@ etc.), encerra a espera. Ficam de fora: e-mail com menos de
+ * 4 h e o último e-mail curto, sem anexo, de quem já tinha recebido resposta (provável "obrigado").
+ *
+ * Só contatos LIGADOS a empresa entram. Nenhum endereço do cliente sai daqui; os endereços internos devem ser trocados por nomes
+ * por quem chama.
+ */
+function atendimentoPorContato(msgs, ctx) {
+  const agora = ctx.agora || Date.now();
+  const corte = (ctx.minHoras == null ? 4 : ctx.minHoras) * 3600000;
+  const dominios = ctx.dominiosCliente || {}, mapa = ctx.mapaEmails || {}, internos = ctx.internos || new Set(), ignorar = ctx.ignorarDominios || [];
+  const enviosPara = {};
+  (msgs || []).forEach((m) => { if (m.interno) (m.para || []).forEach((a) => { (enviosPara[a] = enviosPara[a] || []).push(m.t); }); });
+  const porContato = {};
+  (msgs || []).forEach((m) => { if (!m.interno && !m.auto && m.de && !dominioIgnorado(dominio(m.de), ignorar, dominios)) (porContato[m.de] = porContato[m.de] || []).push(m); });
+  const out = [];
+  Object.keys(porContato).forEach((de) => {
+    const cnpjs = new Set();
+    (mapa[de] || []).forEach((c) => cnpjs.add(c));
+    if (!cnpjs.size && dominios[dominio(de)]) dominios[dominio(de)].forEach((c) => cnpjs.add(c));
+    if (!cnpjs.size) return;
+    const arr = porContato[de].slice().sort((a, b) => a.t - b.t);
+    const emails = [];
+    arr.forEach((m) => {
+      const dest = (m.para || []).filter((a) => internos.has(dominio(a)));
+      const ult = emails[emails.length - 1];
+      if (ult && m.t - ult.t <= JANELA_COPIA_MS) { ult.t = m.t; ult.tamanho = m.tamanho; ult.anexo = m.anexo; dest.forEach((a) => ult.dest.add(a)); }
+      else emails.push({ t: m.t, dest: new Set(dest), tamanho: m.tamanho, anexo: m.anexo });
+    });
+    const envios = enviosPara[de] || [];
+    let ultimoEnvio = -Infinity; envios.forEach((t) => { if (t > ultimoEnvio) ultimoEnvio = t; });
+    const ultimo = emails[emails.length - 1];
+    const jaRespondemosAntes = envios.some((t) => t < ultimo.t);
+    const encerra = jaRespondemosAntes && ultimo.tamanho > 0 && ultimo.tamanho <= LIMITE_CURTA && !ultimo.anexo;
+    const sem = emails.filter((e) => e.t > ultimoEnvio && agora - e.t >= corte && !(encerra && e === ultimo));
+    const porDest = {};
+    emails.forEach((e) => {
+      const abre = sem.indexOf(e) >= 0;
+      e.dest.forEach((a) => { const r = (porDest[a] = porDest[a] || { recebidos: 0, sem: 0 }); r.recebidos++; if (abre) r.sem++; });
+    });
+    out.push({ cnpjs: Array.from(cnpjs), recebidos: emails.length, semResposta: sem.length, porDest,
+      aguardando: sem.indexOf(ultimo) >= 0, horas: Math.max(0, (agora - ultimo.t) / 3600000), ultimaT: ultimo.t });
+  });
+  return out;
+}
+
+/** Soma por cliente (CNPJ): { cnpj, recebidos, sem_resposta, destinatarios: { endereco: { recebidos, sem } } }. Contato ligado a várias empresas entra em cada uma. */
+function consolidarAtendimento(contatos) {
+  const por = {};
+  (contatos || []).forEach((s) => {
+    s.cnpjs.forEach((c) => {
+      const r = (por[c] = por[c] || { cnpj: c, recebidos: 0, sem_resposta: 0, destinatarios: {} });
+      const resolvido = !!s.resolvidoZappy;          // o escritório já falou com o cliente pelo Zappy depois do e-mail
+      r.recebidos += s.recebidos;
+      if (!resolvido) r.sem_resposta += s.semResposta;
+      Object.keys(s.porDest).forEach((a) => {
+        const d = (r.destinatarios[a] = r.destinatarios[a] || { recebidos: 0, sem: 0 });
+        d.recebidos += s.porDest[a].recebidos;
+        if (!resolvido) d.sem += s.porDest[a].sem;
+      });
+    });
+  });
+  return Object.values(por);
+}
+
+module.exports = { enderecos, dominio, dominiosDeCliente, normalizarMensagem, sinaisPorContato, consolidar, naoIdentificados, atendimentoPorContato, consolidarAtendimento, aprenderContatos, mesclarAprendidos, mapaComAprendidos, lerIgnorados, dominioIgnorado, LIVRES, LIMITE_CURTA, JANELA_COPIA_MS };

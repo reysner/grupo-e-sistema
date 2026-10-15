@@ -1,7 +1,7 @@
 'use strict';
 // Rodar: node server/emailSinais/testes_email_sinais.js  (lógica pura, sem rede e sem banco)
 const assert = require('assert');
-const { enderecos, dominiosDeCliente, normalizarMensagem, sinaisPorContato, consolidar, naoIdentificados,
+const { enderecos, dominiosDeCliente, normalizarMensagem, sinaisPorContato, consolidar, naoIdentificados, atendimentoPorContato, consolidarAtendimento,
   aprenderContatos, mesclarAprendidos, mapaComAprendidos, lerIgnorados, dominioIgnorado } = require('./calculo');
 
 let ok = 0;
@@ -205,6 +205,44 @@ teste('domínios ignorados: exato, subdomínio e sufixo; domínio de cliente nun
   assert.strictEqual(dominioIgnorado('indeed.com', regras, { 'indeed.com': new Set(['1']) }), false);
   const s = sinaisPorContato([rec('vagas@indeed.com', 30), rec('joao@padaria.com.br', 30)], Object.assign({}, ctx, { ignorarDominios: regras }));
   assert.strictEqual(s.length, 1);
+});
+
+
+// ── histórico por destinatário (módulo Atendimento) ──
+const internosAt = new Set(['escritorial.com.br']);
+const ctxAt = Object.assign({ internos: internosAt }, ctx);
+const recPara = (de, horasAtras, para, extra) => rec(de, horasAtras, 'Bruno', Object.assign({ para }, extra || {}));
+teste('histórico: conta e-mails por destinatário interno e marca os sem resposta; cópia em várias caixas é um e-mail só', () => {
+  const m = [
+    recPara('joao@padaria.com.br', 100, ['dptofiscal@escritorial.com.br', 'bruno@escritorial.com.br']),
+    recPara('joao@padaria.com.br', 100, ['dptofiscal@escritorial.com.br']),                    // cópia em outra caixa, mesma hora
+    env('joao@padaria.com.br', 90),                                                             // alguém respondeu
+    recPara('joao@padaria.com.br', 30, ['dptofiscal@escritorial.com.br'], { tamanho: 50000 }),
+    recPara('joao@padaria.com.br', 10, ['bruno@escritorial.com.br'], { tamanho: 50000 }),
+  ];
+  const c = atendimentoPorContato(m, ctxAt);
+  assert.strictEqual(c.length, 1);
+  assert.strictEqual(c[0].recebidos, 3);
+  assert.strictEqual(c[0].semResposta, 2);
+  assert.deepStrictEqual(c[0].porDest['dptofiscal@escritorial.com.br'], { recebidos: 2, sem: 1 });
+  assert.deepStrictEqual(c[0].porDest['bruno@escritorial.com.br'], { recebidos: 2, sem: 1 });
+  const por = consolidarAtendimento(c);
+  assert.deepStrictEqual([por[0].cnpj, por[0].recebidos, por[0].sem_resposta], ['11111111000111', 3, 2]);
+});
+teste('histórico: resposta de qualquer endereço do escritório encerra; menos de 4 h e "obrigado" curto não contam', () => {
+  const resp = atendimentoPorContato([recPara('joao@padaria.com.br', 50, ['cs@escritorial.com.br']), env('joao@padaria.com.br', 40)], ctxAt);
+  assert.strictEqual(resp[0].semResposta, 0);
+  const novo = atendimentoPorContato([recPara('joao@padaria.com.br', 2, ['cs@escritorial.com.br'])], ctxAt);   // 2 h: ainda dentro do prazo
+  assert.strictEqual(novo[0].semResposta, 0);
+  const obrig = atendimentoPorContato([recPara('joao@padaria.com.br', 50, ['cs@escritorial.com.br']), env('joao@padaria.com.br', 40), recPara('joao@padaria.com.br', 30, ['cs@escritorial.com.br'], { tamanho: 3000 })], ctxAt);
+  assert.strictEqual(obrig[0].semResposta, 0);
+});
+teste('histórico: contato sem empresa não entra; resolvido pelo Zappy zera a espera mas mantém os recebidos', () => {
+  assert.strictEqual(atendimentoPorContato([recPara('fulano@desconhecido.com', 50, ['cs@escritorial.com.br'])], ctxAt).length, 0);
+  const c = atendimentoPorContato([recPara('joao@padaria.com.br', 50, ['cs@escritorial.com.br'])], ctxAt);
+  c[0].resolvidoZappy = true;
+  const por = consolidarAtendimento(c);
+  assert.deepStrictEqual([por[0].recebidos, por[0].sem_resposta, por[0].destinatarios['cs@escritorial.com.br'].sem], [1, 0, 0]);
 });
 
 console.log(`\n${ok} testes passaram.`);

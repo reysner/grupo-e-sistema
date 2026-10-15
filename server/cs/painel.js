@@ -8,7 +8,9 @@
  *
  *   GET /api/cs/painel/dados          -> tudo que a página precisa para abrir (clientes, risco, categoria, churn)
  *   GET /api/cs/painel/churn?ini&fim  -> churn de um período livre
- *   GET /api/cs/painel/cliente/:id    -> ficha do cliente (por que está em risco, títulos, atendimentos, entregas)
+ *   GET /api/cs/painel/cliente/:id    -> ficha do cliente (por que está em risco, títulos, atendimentos, entregas, e-mails)
+ *   GET /api/cs/painel/atendimentos   -> módulo Atendimento: clientes ativos com atendimentos e e-mails dos últimos 180 dias
+ *   GET /api/cs/painel/atendimento/:id -> atendimentos de um cliente (180 dias) e e-mails por destinatário
  */
 const express = require('express');
 const { pool } = require('../db');
@@ -213,6 +215,70 @@ function proximoPasso(c, extra) {
   return 'Conferir com a equipe responsável as entregas atrasadas ou vencidas no Acessórias e combinar a regularização.';
 }
 
+/** Tickets do Zappy por cliente nos últimos N dias (com a revisão da nota da Gamificação, se a coluna existir). */
+async function ticketsPorCliente(dias) {
+  const sql = (comRevisao) => `SELECT v.cliente_id, COUNT(*)::int AS atendimentos,
+        COUNT(*) FILTER (WHERE t.pior_status = 'vermelho')::int AS sla_vermelho,
+        COUNT(*) FILTER (WHERE t.nota_avaliacao <= 2${comRevisao ? " AND COALESCE(t.revisao_nota_status, 'pendente') <> 'indevida'" : ''})::int AS notas_baixas,
+        to_char(MAX(t.abertura) AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS ultimo
+      FROM cs_tickets t JOIN cs_vinculos v ON v.id = t.vinculo_id
+     WHERE v.tipo = 'cliente' AND v.cliente_id IS NOT NULL AND t.abertura >= NOW() - ($1 || ' days')::interval
+     GROUP BY v.cliente_id`;
+  const linhas = (await consultar(sql(true), [String(dias)], 'atendimentos')) || (await consultar(sql(false), [String(dias)], 'atendimentos (sem revisão)')) || [];
+  return new Map(linhas.map((r) => [r.cliente_id, r]));
+}
+
+const JANELA_ATENDIMENTO = 180;
+
+/** Módulo Atendimento: uma linha por cliente ativo, com os atendimentos do Zappy e os e-mails (recebidos e sem resposta, por destinatário). */
+router.get('/atendimentos', async (req, res) => {
+  try {
+    const base = await montarBase(false, TTL_FICHA_MS);
+    const tk = await ticketsPorCliente(JANELA_ATENDIMENTO);
+    const emRows = (await consultar('SELECT cnpj, recebidos, sem_resposta, destinatarios FROM cs_email_atendimento', [], 'email atendimento')) || [];
+    const em = new Map(emRows.map((r) => [r.cnpj, r]));
+    const leitura = ((await consultar('SELECT lido_em, janela_dias FROM cs_email_atendimento_leitura WHERE id = 1', [], 'email atendimento leitura')) || [])[0] || null;
+    const clientes = base.clientes.concat(base.clientes_outros || []).map((c) => {
+      const t = tk.get(c.id) || {}, e = em.get(soDigitos(c.cnpj));
+      return {
+        id: c.id, nome: c.nome, cnpj: c.cnpj, tipo_doc: c.tipo_doc || 'CNPJ', categoria: c.categoria || null, grupo: c.grupo || null,
+        atendimentos: t.atendimentos || 0, sla_vermelho: t.sla_vermelho || 0, notas_baixas: t.notas_baixas || 0, ultimo: t.ultimo || null,
+        email: e ? { recebidos: e.recebidos, sem_resposta: e.sem_resposta, destinatarios: e.destinatarios } : null,
+      };
+    });
+    res.json({ janela_dias: JANELA_ATENDIMENTO, email_lido_em: leitura ? leitura.lido_em : null, email_janela_dias: leitura ? leitura.janela_dias : null, clientes });
+  } catch (err) {
+    console.error('[painel] GET /atendimentos falhou:', err);
+    res.status(500).json({ error: 'Erro ao montar o módulo Atendimento.' });
+  }
+});
+
+/** Detalhe de um cliente no módulo Atendimento: os atendimentos dos últimos 180 dias (data, setor, atendente, nota, SLA) e os e-mails por destinatário. */
+router.get('/atendimento/:id', async (req, res) => {
+  try {
+    const base = await montarBase(false, TTL_FICHA_MS);
+    const c = base.clientes.concat(base.clientes_outros || []).find((x) => x.id === req.params.id);
+    if (!c) return res.status(404).json({ error: 'Cliente não encontrado (o painel só mostra clientes ativos).' });
+    const doc = soDigitos(c.cnpj);
+    const tickets = (await consultar(
+      `SELECT t.id, t.abertura, t.departamento, t.analista, t.status, t.nota_avaliacao, t.pior_status
+         FROM cs_tickets t JOIN cs_vinculos v ON v.id = t.vinculo_id
+        WHERE v.tipo = 'cliente' AND v.cliente_id = $1 AND t.abertura >= NOW() - INTERVAL '180 days'
+        ORDER BY t.abertura DESC LIMIT 500`, [c.id], 'tickets 180d')) || [];
+    const e = ((await consultar('SELECT recebidos, sem_resposta, destinatarios FROM cs_email_atendimento WHERE cnpj = $1', [doc], 'email atendimento cliente')) || [])[0] || null;
+    const leitura = ((await consultar('SELECT lido_em, janela_dias FROM cs_email_atendimento_leitura WHERE id = 1', [], 'email atendimento leitura')) || [])[0] || null;
+    res.json({
+      cliente: { id: c.id, nome: c.nome, cnpj: c.cnpj, grupo: c.grupo || null, unidade: c.unidade || null, entrada: c.entrada, categoria: c.categoria || null },
+      janela_dias: JANELA_ATENDIMENTO, tickets,
+      email: e ? { recebidos: e.recebidos, sem_resposta: e.sem_resposta, destinatarios: e.destinatarios } : null,
+      email_lido_em: leitura ? leitura.lido_em : null, email_janela_dias: leitura ? leitura.janela_dias : null,
+    });
+  } catch (err) {
+    console.error('[painel] GET /atendimento/:id falhou:', err);
+    res.status(500).json({ error: 'Erro ao carregar o atendimento do cliente.' });
+  }
+});
+
 router.get('/cliente/:id', async (req, res) => {
   try {
     const base = await montarBase(false, TTL_FICHA_MS);
@@ -239,8 +305,12 @@ router.get('/cliente/:id', async (req, res) => {
         WHERE regexp_replace(cnpj, '\\D', '', 'g') = $1 AND created_at >= NOW() - INTERVAL '180 days' ORDER BY created_at DESC LIMIT 10`, [doc], 'pesquisas')) || [];
     const entregas = ((await consultar(
       `SELECT total, atrasadas_entregues, vencidas_pendentes, atualizado_em, janela_ini, janela_fim FROM cliente_entregas_resumo WHERE doc = $1`, [doc], 'entregas')) || [])[0] || null;
+    // e-mails: pedidos esperando resposta (leitura semanal, 14 dias) e o histórico de 180 dias; ausentes se o job ainda não rodou
+    const emailSinais = ((await consultar(
+      `SELECT mensagens_recebidas, aguardando_4h, aguardando_24h, aguardando_48h, aguardando_7d, aguardando_compartilhado, mais_antigo_h, provaveis_encerramentos FROM cs_email_sinais WHERE cnpj = $1`, [doc], 'email sinais')) || [])[0] || null;
+    const emailHist = ((await consultar('SELECT recebidos, sem_resposta, destinatarios FROM cs_email_atendimento WHERE cnpj = $1', [doc], 'email atendimento')) || [])[0] || null;
 
-    const ficha = { cliente: c, proximo_passo: proximoPasso(c, { financeiro }), financeiro, tickets, insatisfacoes, sensiveis, pesquisas, entregas };
+    const ficha = { cliente: c, proximo_passo: proximoPasso(c, { financeiro }), financeiro, tickets, insatisfacoes, sensiveis, pesquisas, entregas, emails: (emailSinais || emailHist) ? { sinais: emailSinais, historico: emailHist } : null };
     res.json(veValores(req.user.role) ? ficha : mascararFicha(ficha));
   } catch (err) {
     console.error('[painel] GET /cliente falhou:', err);

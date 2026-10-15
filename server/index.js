@@ -41,7 +41,7 @@ app.use(cors({
 app.use(cookieParser());
 app.use('/api/cs/questor/anual', express.json({ limit: '5mb' }));   // faturamento por ano da carteira (rotina local; só totais por CNPJ e ano)
 app.use('/api/cs/omie/honorarios', express.json({ limit: '3mb' }));   // honorário cobrado por cliente e ano, lido do Omie (carga manual; só totais por CNPJ e ano)
-app.use('/api/cs/email-sinais', express.json({ limit: '1mb' }));   // leitura diária dos sinais de e-mail (job local; só contagens por cliente)
+app.use('/api/cs/email-sinais', express.json({ limit: '4mb' }));   // leitura diária dos sinais de e-mail (job local; só contagens por cliente)
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: false }));
 app.set('trust proxy', 1);
