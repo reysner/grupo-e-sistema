@@ -86,6 +86,11 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
 
 router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
+    // Analista com registros de Qualidade não some: o histórico ficaria sem nome. Nesse caso, desative em vez de excluir.
+    try {
+      const q = await pool.query(`SELECT COUNT(*)::int AS n FROM cs_qualidade_registros WHERE analista_id = $1`, [String(req.params.id)]);
+      if (q.rows[0].n > 0) return res.status(409).json({ error: `Esse analista tem ${q.rows[0].n} registro(s) de Qualidade. Desative-o em vez de excluir, para não perder o histórico.` });
+    } catch (e) { /* a tabela de Qualidade ainda não existe: nada a proteger */ }
     await pool.query(`DELETE FROM analistas WHERE id = $1`, [req.params.id]);
     res.json({ ok: true });
   } catch (e) {

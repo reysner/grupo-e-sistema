@@ -1209,7 +1209,8 @@
         '<div class="qa-modal-lista">' + j.analistas.map(function (a) {
           return '<div class="qa-an-linha"><span class="' + (a.ativo ? '' : 'qa-an-inativo') + '">' + esc(a.nome) + '</span><span class="qa-an-acoes">' +
             '<button type="button" class="gp-footer-btn" data-ren="' + esc(a.id) + '" data-nome="' + esc(a.nome) + '" style="width:auto">Editar nome</button>' +
-            '<button type="button" class="gp-footer-btn" data-tog="' + esc(a.id) + '" data-ativo="' + (a.ativo ? '1' : '0') + '" style="width:auto">' + (a.ativo ? 'Desativar' : 'Reativar') + '</button></span></div>';
+            '<button type="button" class="gp-footer-btn" data-tog="' + esc(a.id) + '" data-ativo="' + (a.ativo ? '1' : '0') + '" style="width:auto">' + (a.ativo ? 'Desativar' : 'Reativar') + '</button>' +
+            '<button type="button" class="gp-footer-btn qa-excluir" data-del="' + esc(a.id) + '" data-nome="' + esc(a.nome) + '" style="width:auto" title="Tira o analista da lista de vez">Excluir</button></span></div>';
         }).join('') + '</div><div class="pop-erro" id="qa-an-erro" role="alert"></div></div>';
       $('qa-fechar').addEventListener('click', fechar);
       var falha = function (m) { $('qa-an-erro').textContent = m; };
@@ -1232,6 +1233,15 @@
           if (novo == null) return; novo = novo.replace(/\s+/g, ' ').trim();
           if (!novo || novo === b.getAttribute('data-nome')) return;
           if (await patch(b.getAttribute('data-ren'), { nome: novo })) desenhar();
+        });
+      });
+      Array.prototype.forEach.call(ov.querySelectorAll('[data-del]'), function (b) {
+        b.addEventListener('click', async function () {
+          if (!window.confirm('Excluir "' + b.getAttribute('data-nome') + '" da lista de analistas? Isso não pode ser desfeito.')) return;
+          var r = await chamarApi('/api/analistas/' + encodeURIComponent(b.getAttribute('data-del')), { method: 'DELETE' });
+          var x = await r.json().catch(function () { return {}; });
+          if (!r.ok) { falha(x.error || 'Não foi possível excluir.'); return; }
+          desenhar();
         });
       });
       Array.prototype.forEach.call(ov.querySelectorAll('[data-tog]'), function (b) {
