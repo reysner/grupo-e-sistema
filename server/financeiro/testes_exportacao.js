@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, regimeMudou: regimeMudou }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -183,6 +183,14 @@ const semLixo = (e, nome) => {
       ],
     };
     E.filtroAnual = { busca: '', ano: null, soDestaque: false, regra: 'ambos', pag: 1 };
+    // fontes diferentes não geram mudança falsa: 'Fora do Simples' (sem detalhe) contra um regime específico não conta
+    assert.strictEqual(C.t.regimeMudou('Lucro Presumido', 'Fora do Simples'), false);
+    assert.strictEqual(C.t.regimeMudou('Fora do Simples', 'Lucro Presumido'), false);
+    assert.strictEqual(C.t.regimeMudou('Simples Nacional', 'Fora do Simples'), true);
+    assert.strictEqual(C.t.regimeMudou('Simples Nacional', 'Lucro Presumido'), true);
+    assert.strictEqual(C.t.regimeMudou('Lucro Presumido', 'Lucro Real'), true);
+    assert.strictEqual(C.t.regimeMudou('Lucro Real', 'Lucro Real'), false);
+    assert.strictEqual(C.t.regimeMudou(null, 'Lucro Real'), false);
     assert.deepStrictEqual([...C.t.anosAnual().completos], [2024, 2025]);                  // 2026 é parcial (8 meses) e fica de fora
     assert.strictEqual(C.t.varPct(1000, 1400), 40);
     assert.strictEqual(C.t.varPct(0, 500), null);

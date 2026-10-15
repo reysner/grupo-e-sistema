@@ -28,9 +28,12 @@ async function lerReceita(docs) {
   let cache = {}; try { cache = JSON.parse(fs.readFileSync(CACHE_RECEITA, 'utf8')); } catch (e) { cache = {}; }
   const validade = 20 * 86400000;
   let buscados = 0, falhas = 0;
-  for (const d of docs) {
-    if (d.length !== 14) continue;
-    const c = cache[d]; if (c && Date.now() - c.t < validade) continue;
+  // 4 consultas ao mesmo tempo: CNPJ novo na BrasilAPI leva uns 5 s para ser buscado na origem; em fila, 600 CNPJs levariam quase uma hora
+  const fila = docs.filter((d) => d.length === 14 && !(cache[d] && Date.now() - cache[d].t < validade));
+  let proximo = 0;
+  const trabalhar = async () => {
+  while (proximo < fila.length) {
+    const d = fila[proximo++];
     let ok = false;
     for (let t = 0; t < 4 && !ok; t++) {
       try {
@@ -46,8 +49,10 @@ async function lerReceita(docs) {
     if (!ok) falhas++;
     buscados++;
     if (buscados % 50 === 0) { fs.writeFileSync(CACHE_RECEITA, JSON.stringify(cache)); console.log('  Receita: ' + buscados + ' consultados'); }
-    await esperar(250);
+    await esperar(150);
   }
+  };
+  await Promise.all([trabalhar(), trabalhar(), trabalhar(), trabalhar()]);
   fs.writeFileSync(CACHE_RECEITA, JSON.stringify(cache));
   console.log('Receita (BrasilAPI): ' + buscados + ' consultados nesta rodada, ' + falhas + ' sem resposta');
   return cache;

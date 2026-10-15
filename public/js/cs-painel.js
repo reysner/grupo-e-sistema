@@ -653,6 +653,18 @@
   function pctAnual(v) { return v == null ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + pctTxt(Math.abs(v)) + '%'; }
   function funcDoAno(anos, ano) { var x = anos && anos[ano]; return x && x.funcionarios != null ? x.funcionarios : null; }
   function regimeDoAnoAnual(anos, ano) { var x = anos && anos[ano]; return x && x.regime ? x.regime : null; }
+  /**
+   * Mudança de regime entre dois anos. Os anos vêm de fontes diferentes (ECF da Receita, opção pelo Simples, ou o cadastro do Questor),
+   * então "Fora do Simples" (sem detalhe) contra "Lucro Presumido" NÃO é mudança: só conta passar de/para o Simples, ou trocar entre
+   * dois regimes específicos (Presumido, Real, Arbitrado...).
+   */
+  function regimeMudou(a, b) {
+    if (!a || !b || a === b) return false;
+    var simples = function (r) { return r === 'Simples Nacional' || r === 'MEI'; };
+    if (simples(a) !== simples(b)) return true;
+    if (simples(a) && simples(b)) return a !== b;                  // Simples <-> MEI
+    return a !== 'Fora do Simples' && b !== 'Fora do Simples';     // dois regimes específicos e diferentes
+  }
   var ROT_REGRA = { ambos: 'faturamento e funcionários', fat: 'faturamento', func: 'funcionários' };
   /** Destaque pela regra escolhida: "ambos" exige que as DUAS variações (faturamento e funcionários) estejam no limite ou acima. */
   function destaqueLinha(l, regra) {
@@ -670,7 +682,7 @@
       var prev = anos && anos[ano - 1] ? anos[ano - 1].faturamento : null, cur = anos && anos[ano] ? anos[ano].faturamento : null;
       var fp = funcDoAno(anos, ano - 1), fc = funcDoAno(anos, ano);
       var rp = regimeDoAnoAnual(anos, ano - 1), rc = regimeDoAnoAnual(anos, ano);
-      return { c: c, doc: doc, anos: anos, prev: prev, cur: cur, v: varPct(prev, cur), fp: fp, fc: fc, vf: varPct(fp, fc), rp: rp, rc: rc, mudouRegime: !!(rp && rc && rp !== rc) };
+      return { c: c, doc: doc, anos: anos, prev: prev, cur: cur, v: varPct(prev, cur), fp: fp, fc: fc, vf: varPct(fp, fc), rp: rp, rc: rc, mudouRegime: regimeMudou(rp, rc) };
     });
     var comDado = linhas.filter(function (l) { return l.anos; }).length;
     var todas = linhas.length;
@@ -799,7 +811,7 @@
       var x = anos[y], ant = i > 0 ? anos[lista[i - 1]] : null, v = ant ? varPct(ant.faturamento, x.faturamento) : null, vf = ant ? varPct(ant.funcionarios, x.funcionarios) : null;
       var parcial = ac.parcial && y === ac.parcial.ano, fat = x.faturamento == null ? 0 : x.faturamento;
       var larg = Math.max(2, Math.round(Math.abs(fat) / max * 100));
-      var mud = ant && ant.regime && x.regime && ant.regime !== x.regime;
+      var mud = ant && regimeMudou(ant.regime, x.regime);
       return '<tr><td><strong>' + y + '</strong>' + (parcial ? ' <span class="cinza">até ' + String(ac.parcial.mes).padStart(2, '0') + '/' + y + '</span>' : '') + '</td>' +
         '<td class="c" style="font-family:var(--mono)">' + (x.faturamento == null ? '<span class="cinza">sem dado</span>' : reais(x.faturamento)) + '</td>' +
         '<td class="c">' + (parcial ? '<span class="cinza">parcial</span>' : celVar(v, destaqueAnual(v))) + '</td>' +
