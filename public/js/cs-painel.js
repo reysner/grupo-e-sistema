@@ -18,7 +18,6 @@
   };
   var TITULOS = {
     analise: ['Análise Inteligente', 'Regime tributário, faturamento, honorários e funcionários de cada cliente; grupos de empresas e matriz com filiais somados, com a lupa para ver cada empresa, para uma análise completa.'],
-    fechamento: ['Fechamento do mês', 'Churn do mês, retenção, saídas com menos de 90 dias e o motivo de cada saída. Escolha o mês nas abas.'],
     consideracoes: ['Qualidade', 'Considerações registradas por analista (multa, erro, reclamação, atraso, falha): data do lançamento, prazo e status. O analista trata pela página Minhas tratativas.'],
     atendimento: ['Atendimento', 'Atendimentos do Zappy e e-mails dos últimos 180 dias de cada cliente ativo. Clique na empresa para ver cada atendimento e os e-mails por destinatário.'],
     anual: ['Análise Anual', 'Faturamento ano a ano de cada cliente ativo no Acessórias, para avaliar se o honorário precisa de ajuste. Clique na empresa para ver a evolução.'],
@@ -121,7 +120,7 @@
     $('app').style.display = 'block';
     var u = null; try { u = JSON.parse(ls(K_USER) || 'null'); } catch (e) { u = null; }
     if (u && u.name) montarMenuUsuario(u);
-    ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'risco', 'churn', 'fechamento', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="vazio">Carregando…</div>'; });
+    ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="vazio">Carregando…</div>'; });
     try {
       estado.dados = await api('/api/cs/painel/dados' + (forcar === true ? '?forcar=1' : ''));
       try { estado.honorario = await api('/api/cs/painel/honorario-sugerido'); } catch (e) { estado.honorario = null; }
@@ -132,7 +131,7 @@
       estado.churnLivre = null;
       desenharTudo();
     } catch (e) {
-      ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'risco', 'churn', 'fechamento', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; });
+      ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; });
     }
   }
 
@@ -161,7 +160,6 @@
     $('filtro-periodo').style.display = (sec === 'visao' || sec === 'churn') ? 'flex' : 'none';
     var ativa = $('sec-' + sec); if (ativa) ativa.scrollTop = 0;
     if (sec === 'consideracoes' && estado.dados && !estado.qResumo) desenharQualidadeMod();   // recarrega depois de um registro novo
-    if (sec === 'fechamento' && estado.dados) desenharFechamento(estado.mesFechamento);       // sempre atual: o motivo pode ter mudado em Churn
     ['btn-csv', 'btn-pdf'].forEach(function (id) { var b = $(id); if (b) b.style.display = SEC_EXPORTA[sec] ? 'inline-flex' : 'none'; });
   }
 
@@ -261,6 +259,7 @@
         '<div class="risco-blocos">' + blocoRisco('Alto', 'a partir de ' + c.alto + ' pontos') + blocoRisco('Médio', c.medio + ' a ' + (c.alto - 1) + ' pontos') + blocoRisco('Baixo', 'abaixo de ' + c.medio + ' pontos') + '</div>' +
         '<div class="sub">Os pesos dos três termômetros hoje são ' + ['financeiro', 'atendimento', 'operacional'].map(function (k) { return NOME_TERM[k] + ' ' + d.config.pesos[k]; }).join(' · ') + ' (serão calibrados rodando, a partir das reuniões semanais).</div></div>' +
       '<div class="ficha-sec" style="margin-top:6px">Detalhamento do risco</div><div class="tres">' + tres + '</div>' +
+      '<div id="visao-fechamento" style="margin-top:14px"></div>' +
       '<div class="gp-charts-row">' +
         '<div class="gp-chart-card"><div class="gp-chart-title">Churn mês a mês — últimos 12 meses</div><div class="gp-chart-wrap"><canvas id="g-churn"></canvas></div></div>' +
         '<div class="gp-chart-card"><div class="gp-chart-title">Clientes por categoria</div><div class="gp-chart-wrap"><canvas id="g-cat"></canvas></div></div>' +
@@ -268,6 +267,7 @@
       '<div class="gp-bullets"><div class="gp-bullets-title">Pontos para a reunião</div>' + pontos.map(function (x) { return '<div class="gp-bullet"><span>•</span><span>' + x + '</span></div>'; }).join('') + '</div>' +
       '<div class="nota"><strong>Clientes</strong> = empresas com CNPJ ativas na carteira. Risco, churn e categorias consideram só CNPJ: CPF, CAEPF e CNO (' + t.desconsiderados_nao_cnpj + ' cadastros) ficam de fora desses indicadores e só aparecem na Análise Inteligente.</div>';
 
+    desenharFechamento(estado.mesFechamento);   // Fechamento do mês: bloco entre o detalhamento do risco e os gráficos
     var ev = d.churn.evolucao;
     graf('g-churn', { data: { labels: ev.map(function (m) { return m.mes.slice(5) + '/' + m.mes.slice(2, 4); }), datasets: [
       { type: 'bar', label: 'Saídas', data: ev.map(function (m) { return m.saidas; }), backgroundColor: '#dc262688', yAxisID: 'y' },
@@ -496,7 +496,7 @@
   // ── Fechamento do mês ────────────────────────────────────────────────────────
   var MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
   async function desenharFechamento(mes) {
-    var alvo = $('sec-fechamento'); if (!alvo) return;
+    var alvo = $('visao-fechamento'); if (!alvo) return;
     alvo.innerHTML = '<div class="vazio">Carregando…</div>';
     try {
       await carregarMotivosChurn();
@@ -536,7 +536,7 @@
           (f.lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Entrada</th><th class="c">Saída</th><th>Motivo do churn</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhuma saída que conta no mês.</div>') + '</div>';
       Array.prototype.forEach.call(document.querySelectorAll('#abas-fech button'), function (b) { b.addEventListener('click', function () { desenharFechamento(b.getAttribute('data-mes')); }); });
       var g = $('btn-gerenciar-motivos-f'); if (g) g.addEventListener('click', function () { abrirGerenciarMotivosChurn(function () { desenharFechamento(f.mes); }); });
-      ligarSelectsMotivo('#sec-fechamento', function () { desenharFechamento(f.mes); desenharChurn(); });
+      ligarSelectsMotivo('#visao-fechamento', function () { desenharFechamento(f.mes); desenharChurn(); });
     } catch (e) { alvo.innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; }
   }
 
