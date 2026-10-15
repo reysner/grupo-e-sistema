@@ -89,9 +89,9 @@ function termometroAtendimento(e) {
   const qs = (x.qualidade || []).filter((q) => q && q.status !== 'cancelado' && (q.dias == null || q.dias <= 90));
   if (qs.length) {
     let pq = 0;
-    qs.forEach((q) => { pq += (Number.isFinite(Number(q.peso)) && q.peso !== null && q.peso !== undefined ? Number(q.peso) : (PESO_QUALIDADE[norm(q.tipo)] ?? 5)) * (q.status === 'resolvido' ? 0.5 : 1) * ((q.dias || 0) > 45 ? 0.5 : 1); });
+    qs.forEach((q) => { pq += (Number.isFinite(Number(q.peso)) && q.peso !== null && q.peso !== undefined ? Number(q.peso) : (PESO_QUALIDADE[norm(q.tipo)] ?? 5)) * (q.status === 'resolvido' || q.status === 'finalizada' ? 0.5 : 1) * ((q.dias || 0) > 45 ? 0.5 : 1); });
     pontos += Math.min(TETO_QUALIDADE, Math.round(pq));
-    const abertas = qs.filter((q) => q.status !== 'resolvido').length;
+    const abertas = qs.filter((q) => q.status !== 'resolvido' && q.status !== 'finalizada').length;
     detalhe.push(`${plural(qs.length, 'consideração de qualidade registrada', 'considerações de qualidade registradas')} nos últimos 90 dias${abertas ? ` (${abertas} em aberto)` : ''}`);
   }
 

@@ -1825,7 +1825,7 @@ const Notificacoes = (() => {
       list.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:13px;padding:20px">Sem notificações</p>';
       return;
     }
-    const icons = { insatisfacao_alta: '🚨', reajuste: '⚠️', novo_cliente: '🎉', novo_cliente_acessorias: '🆕', pesquisa: '📊', churn_acessorias: '📉', default: '🔔' };
+    const icons = { insatisfacao_alta: '🚨', reajuste: '⚠️', novo_cliente: '🎉', novo_cliente_acessorias: '🆕', pesquisa: '📊', churn_acessorias: '📉', qualidade_finalizada: '✅', default: '🔔' };
     list.innerHTML = data.map(function(n) {
       const icon = icons[n.tipo] || icons.default;
       const bg = n.lida ? '' : 'background:#f0fff4;';
@@ -1908,6 +1908,15 @@ const Notificacoes = (() => {
       if (panel) panel.hidden = true;
       _open = false;
       abrirCompletarEntrada(clienteId, id, el.querySelector('.notif-msg')?.textContent || '');
+      return;
+    }
+    // Tratativa finalizada pelo analista: abre o módulo Qualidade do painel /cs, onde a liderança dá o processo como finalizado.
+    if (tipo === 'qualidade_finalizada') {
+      marcarLida(id);
+      const painel = document.getElementById('notif-panel');
+      if (painel) painel.hidden = true;
+      _open = false;
+      window.open('/cs?aba=consideracoes', '_blank');
       return;
     }
     if (modulo) irPara(modulo, id);

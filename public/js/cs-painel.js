@@ -32,6 +32,7 @@
 
   // ── utilidades ───────────────────────────────────────────────────────────────
   function $(id) { return document.getElementById(id); }
+  try { var abaUrl = new URLSearchParams(window.location.search).get('aba'); if (abaUrl && TITULOS[abaUrl]) estado.secao = abaUrl; } catch (e) { /* sem parâmetro */ }
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
   function data(s) { return s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) + '/' + String(s).slice(0, 4) : '—'; }
   // Valores em R$: o perfil "Usuário" recebe tudo oculto do servidor (dados.valores_ocultos); o administrador pode ocultar na tela (botão "Valores ocultos").
@@ -1266,8 +1267,16 @@
   // ── QUALIDADE: considerações por cliente (ficha) e módulo por analista ───────────
   // Registro feito na ficha do cliente pelo Sucesso do Cliente / Time Operacional (tipo, departamentos, descrição, analista e prazo).
   // O nome do analista vem sempre da lista de analistas (renomear lá renomeia aqui). Entra no termômetro de Atendimento do risco.
-  var ROT_STATUS_Q = { aberto: 'Aberto', em_tratamento: 'Em tratamento', resolvido: 'Resolvido', cancelado: 'Cancelado', vencido: 'Vencido' };
-  var COR_STATUS_Q = { aberto: '#b45309', em_tratamento: '#2563eb', resolvido: '#166534', cancelado: '#6b7280', vencido: '#b91c1c' };
+  var ROT_STATUS_Q = { aberto: 'Aberto', em_tratamento: 'Em tratamento', finalizada: 'Finalizada · validar', resolvido: 'Resolvido', cancelado: 'Cancelado', vencido: 'Vencido' };
+  var COR_STATUS_Q = { aberto: '#b45309', em_tratamento: '#2563eb', finalizada: '#7c3aed', resolvido: '#166534', cancelado: '#6b7280', vencido: '#b91c1c' };
+  var ROT_ACAO_Q = { nota: 'Nota', iniciada: 'Iniciou a tratativa', finalizada: 'Finalizou', devolvida: 'Devolvida ao analista', validada: 'Encerrada pela liderança' };
+  /** Linha do tempo (notas e eventos) de um registro. */
+  function notasHtml(r) {
+    var n = r.notas || []; if (!n.length) return '';
+    return '<div class="qa-reg-trat">' + n.map(function (x) {
+      return '<div><strong>' + esc(ROT_ACAO_Q[x.acao] || x.acao) + '</strong> · ' + data(x.em) + (x.por ? ' · ' + esc(x.por) : '') + (x.texto ? ': ' + esc(x.texto) : '') + '</div>';
+    }).join('') + '</div>';
+  }
   function pillStatusQ(sit) {
     var c = COR_STATUS_Q[sit] || '#6b7280';
     return '<span class="pill" style="color:' + c + ';border-color:' + c + '55;background:' + c + '14">' + esc(ROT_STATUS_Q[sit] || sit) + '</span>';
@@ -1292,7 +1301,7 @@
         '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
         '<div class="qa-reg-rod">Analista: <strong>' + esc(r.analista_nome || '—') + '</strong> · lançado em ' + data(r.criado_em) + ' por ' + esc(r.criado_por || '—') + ' · prazo ' + data(r.prazo) +
           (r.resolvido_em ? ' · resolvido em ' + data(r.resolvido_em) : '') + '</div>' +
-        (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + '</div>';
+        (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '</div>';
     }).join('');
   }
 
@@ -1465,14 +1474,23 @@
     try { if (!estado.qResumo) { alvo.innerHTML = '<div class="vazio">Carregando…</div>'; await carregarResumoQ(); } }
     catch (e) { alvo.innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; return; }
     var r = estado.qResumo, b = f.busca.trim().toLowerCase();
-    var tot = { abertos: 0, em_tratamento: 0, vencidos: 0, resolvidos: 0 };
-    r.analistas.forEach(function (a) { tot.abertos += a.abertos; tot.em_tratamento += a.em_tratamento; tot.vencidos += a.vencidos; tot.resolvidos += a.resolvidos; });
+    var tot = { abertos: 0, em_tratamento: 0, vencidos: 0, resolvidos: 0, a_validar: 0 };
+    r.analistas.forEach(function (a) { tot.abertos += a.abertos; tot.em_tratamento += a.em_tratamento; tot.vencidos += a.vencidos; tot.resolvidos += a.resolvidos; tot.a_validar += a.a_validar || 0; });
+    var bq = $('badge-qualmod'); if (bq) bq.textContent = tot.a_validar || '';          // aviso no menu: tratativas finalizadas aguardando validação
+    var aviso = '';
+    if (tot.a_validar) {
+      var quem = r.analistas.filter(function (a) { return a.a_validar > 0; });
+      aviso = '<div class="qa-aviso" role="alert"><div><strong>' + tot.a_validar + ' tratativa(s) finalizada(s) aguardando a sua validação.</strong> ' +
+        'O analista informou que concluiu: abra o analista, confira o que foi feito e clique em "Dar como finalizado" para encerrar o processo (ou "Devolver ao analista").</div><div class="qa-aviso-acoes">' +
+        quem.map(function (a) { return '<button type="button" class="gp-footer-btn" data-qan="' + esc(a.id) + '" style="width:auto">' + esc(a.nome) + ' (' + a.a_validar + ')</button>'; }).join('') + '</div></div>';
+    }
     var lista = r.analistas.filter(function (a) {
       if (!f.todos && !a.total) return false;
       return !b || (a.nome || '').toLowerCase().indexOf(b) >= 0;
     });
     var corpo = lista.map(function (a) {
       return '<tr><td><button class="link" data-qan="' + esc(a.id) + '">' + esc(a.nome) + '</button>' + (a.ativo ? '' : ' <span class="cinza">(desativado)</span>') + '</td>' +
+        '<td class="c">' + (a.a_validar ? '<span class="pill" style="color:#7c3aed;border-color:#7c3aed55;background:#7c3aed14"><strong>' + a.a_validar + '</strong></span>' : '0') + '</td>' +
         '<td class="c">' + (a.abertos ? '<strong>' + a.abertos + '</strong>' : '0') + '</td><td class="c">' + (a.em_tratamento || 0) + '</td>' +
         '<td class="c">' + (a.vencidos ? '<strong style="color:#b91c1c">' + a.vencidos + '</strong>' : '0') + '</td><td class="c">' + (a.resolvidos || 0) + '</td>' +
         '<td class="c">' + data(a.ultimo_lancamento) + '</td><td class="c">' + data(a.proximo_prazo) + '</td>' +
@@ -1480,11 +1498,13 @@
     }).join('');
     alvo.innerHTML =
       '<div class="gp-kpi-row">' +
+        kpi('#7c3aed', 'A validar', tot.a_validar, 'finalizadas pelo analista, aguardando você') +
         kpi('#b45309', 'Em aberto', tot.abertos, 'aguardando o analista começar') +
         kpi('#2563eb', 'Em tratamento', tot.em_tratamento, 'o analista já está tratando') +
         kpi('#b91c1c', 'Vencidos', tot.vencidos, 'prazo passou e ainda não foi resolvido') +
         kpi('#166534', 'Resolvidos', tot.resolvidos, 'considerações encerradas') +
       '</div>' +
+      aviso +
       '<div class="nota"><strong>Como funciona.</strong> A consideração é registrada na ficha do cliente (Gestão da Permanência) pelo Sucesso do Cliente ou pelo Time Operacional, com analista e prazo. ' +
         'Aqui a lista é por analista: clique no nome para ver cada registro, o prazo e o status. O analista trata pela página <strong>Minhas tratativas</strong> (/qualidade). ' +
         'Cada consideração também pesa no termômetro de Atendimento do risco de churn do cliente.' + (r.sem_analista ? ' <span style="color:#b91c1c">' + r.sem_analista + ' registro(s) sem analista na lista.</span>' : '') + '</div>' +
@@ -1492,7 +1512,7 @@
         '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="q-todos"' + (f.todos ? ' checked' : '') + '> mostrar analistas sem registro</label>' +
         (ehAdminPainel() ? '<button type="button" class="gp-footer-btn" id="q-gerenciar" style="width:auto">Gerenciar analistas</button><button type="button" class="gp-footer-btn" id="q-tipos" style="width:auto">Gerenciar tipos de registro</button>' : '') + '</div>' +
         '<div class="card-sub">' + lista.length + ' analista(s) · ordem alfabética. Clique no nome para ver os registros.</div>' +
-        (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Analista</th><th class="c">Em aberto</th><th class="c">Em tratamento</th><th class="c">Vencidos</th><th class="c">Resolvidos</th><th class="c">Último lançamento</th><th class="c">Próximo prazo</th><th class="c">Login</th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
+        (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Analista</th><th class="c">A validar</th><th class="c">Em aberto</th><th class="c">Em tratamento</th><th class="c">Vencidos</th><th class="c">Resolvidos</th><th class="c">Último lançamento</th><th class="c">Próximo prazo</th><th class="c">Login</th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
           : '<div class="vazio">Nenhum registro de qualidade ainda. Registre a primeira consideração na ficha de um cliente (Gestão da Permanência).</div>') + '</div>';
     var campo = $('q-busca'); if (campo) campo.addEventListener('input', function () { f.busca = campo.value; var pos = campo.selectionStart; desenharQualidadeMod(); var n = $('q-busca'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* sem seleção */ } });
     var st = $('q-todos'); if (st) st.addEventListener('change', function () { f.todos = st.checked; desenharQualidadeMod(); });
@@ -1515,8 +1535,10 @@
         return '<tr><td>' + data(r.criado_em) + '</td><td>' + data(r.prazo) + '</td><td>' + pillStatusQ(r.situacao) + '</td>' +
           '<td style="white-space:normal">' + esc(r.cliente_nome || '—') + '<div class="sub">' + esc(r.cnpj || '') + '</div></td>' +
           '<td>' + esc(r.tipo) + '<div class="sub">' + esc((r.departamentos || []).join(', ')) + '</div></td>' +
-          '<td style="white-space:normal;min-width:220px">' + esc(r.detalhe) + (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + '<div class="sub">lançado por ' + esc(r.criado_por || '—') + '</div></td>' +
-          '<td style="white-space:normal">' + (abertos ?
+          '<td style="white-space:normal;min-width:220px">' + esc(r.detalhe) + (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '<div class="sub">lançado por ' + esc(r.criado_por || '—') + '</div></td>' +
+          '<td style="white-space:normal">' + (r.status === 'finalizada' ?
+            '<button type="button" class="login-btn" data-qvalida="' + esc(r.id) + '" style="width:auto;margin:0;padding:6px 12px">Dar como finalizado</button> ' +
+            '<button type="button" class="gp-footer-btn" data-qdevolve="' + esc(r.id) + '" style="width:auto">Devolver ao analista</button>' : abertos ?
             (r.status === 'aberto' ? '<button type="button" class="gp-footer-btn" data-qst="' + esc(r.id) + '" data-novo="em_tratamento" style="width:auto">Em tratamento</button> ' : '') +
             '<button type="button" class="gp-footer-btn" data-qst="' + esc(r.id) + '" data-novo="resolvido" style="width:auto">Resolver</button> ' +
             '<button type="button" class="gp-footer-btn" data-qpz="' + esc(r.id) + '" data-prazo="' + esc(r.prazo) + '" style="width:auto">Prazo</button> ' +
@@ -1531,6 +1553,7 @@
       }
       $('ficha-corpo').innerHTML =
         '<div class="blocos">' + bloco('Em aberto', cont('aberto'), 'aguardando o analista começar', cont('aberto') ? '#b45309' : null) +
+          bloco('A validar', cont('finalizada'), 'finalizadas pelo analista', cont('finalizada') ? '#7c3aed' : null) +
           bloco('Em tratamento', cont('em_tratamento'), 'o analista já está tratando', null) +
           bloco('Vencidos', cont('vencido'), 'prazo passou sem resolver', cont('vencido') ? '#b91c1c' : null) +
           bloco('Resolvidos', cont('resolvido'), 'encerradas', null) + '</div>' + adminLogin +
@@ -1554,6 +1577,15 @@
           if (novo === 'resolvido') { var t = window.prompt('O que foi feito para resolver?'); if (t == null) return; mudar(rid, { status: 'resolvido', tratativa: t }); }
           else if (novo === 'cancelado') { if (window.confirm('Cancelar esta consideração? Ela deixa de pesar no risco do cliente.')) mudar(rid, { status: 'cancelado' }); }
           else mudar(rid, { status: novo });
+        });
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('#ficha-corpo [data-qvalida]'), function (b) {
+        b.addEventListener('click', function () { if (window.confirm('Dar esta tratativa como finalizada e encerrar o processo?')) mudar(b.getAttribute('data-qvalida'), { status: 'resolvido' }); });
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('#ficha-corpo [data-qdevolve]'), function (b) {
+        b.addEventListener('click', function () {
+          var m = window.prompt('O que falta? (o analista vai ver este motivo)'); if (m == null) return;
+          mudar(b.getAttribute('data-qdevolve'), { status: 'em_tratamento', motivo: m });
         });
       });
       Array.prototype.forEach.call(document.querySelectorAll('#ficha-corpo [data-qpz]'), function (b) {

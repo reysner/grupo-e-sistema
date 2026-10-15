@@ -25,8 +25,8 @@ const { requireAuth } = require('../auth');
 
 const TIPOS = ['Multa', 'Erro', 'Reclamação', 'Atraso', 'Falha de atendimento', 'Falha técnica', 'Outros'];
 const DEPARTAMENTOS = ['Comercial', 'Contábil', 'Financeiro', 'Fiscal', 'Legalização', 'Pessoal', 'Sucesso'];
-const STATUS = ['aberto', 'em_tratamento', 'resolvido', 'cancelado'];
-const ROTULO_STATUS = { aberto: 'Aberto', em_tratamento: 'Em tratamento', resolvido: 'Resolvido', cancelado: 'Cancelado' };
+const STATUS = ['aberto', 'em_tratamento', 'finalizada', 'resolvido', 'cancelado'];
+const ROTULO_STATUS = { aberto: 'Aberto', em_tratamento: 'Em tratamento', finalizada: 'Finalizada (aguardando validação)', resolvido: 'Resolvido', cancelado: 'Cancelado' };
 const MAX_DETALHE = 600;
 const MAX_TRATATIVA = 600;
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -66,7 +66,7 @@ function validarRegistro(corpo, hoje, tiposPermitidos) {
 }
 
 /** Valida a mudança de um registro: status, prazo e/ou tratativa. */
-function validarMudanca(corpo, hoje) {
+function validarMudanca(corpo, hoje, opts) {
   const b = corpo || {};
   const v = {};
   if (b.status !== undefined) {
@@ -85,7 +85,8 @@ function validarMudanca(corpo, hoje) {
     v.tratativa = t;
   }
   if (!Object.keys(v).length) return { ok: false, erro: 'Nada para alterar.' };
-  if (v.status === 'resolvido' && (v.tratativa || '').length < 5) return { ok: false, erro: 'Para resolver, descreva o que foi feito (mínimo de 5 caracteres).' };
+  if (v.status === 'finalizada' && (v.tratativa || '').length < 5) return { ok: false, erro: 'Para finalizar, descreva o que foi feito (mínimo de 5 caracteres).' };
+  if (v.status === 'resolvido' && (v.tratativa || '').length < 5 && !(opts && opts.jaTemTratativa)) return { ok: false, erro: 'Para resolver, descreva o que foi feito (mínimo de 5 caracteres).' };
   return { ok: true, valores: v };
 }
 
@@ -143,6 +144,8 @@ function garantirSchema() {
         analista_id TEXT NOT NULL, prazo DATE NOT NULL, status TEXT NOT NULL DEFAULT 'aberto',
         criado_por TEXT, criado_por_id TEXT, criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(), resolvido_em TIMESTAMPTZ, resolvido_por TEXT, tratativa TEXT)`)
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS validado_em TIMESTAMPTZ'))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS validado_por TEXT'))
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ENABLE ROW LEVEL SECURITY'))
       .then(() => pool.query('CREATE INDEX IF NOT EXISTS cs_qualidade_cliente_idx ON cs_qualidade_registros (cliente_id)'))
       .then(() => pool.query('CREATE INDEX IF NOT EXISTS cs_qualidade_analista_idx ON cs_qualidade_registros (analista_id)'))
@@ -174,9 +177,33 @@ function soEquipe(req, res, next) {
 }
 
 const COLUNAS = `r.id, r.cliente_id, r.cnpj, r.cliente_nome, r.tipo, r.departamentos, r.detalhe, r.analista_id, a.nome AS analista_nome,
-       to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.status, r.criado_por, r.criado_em, r.resolvido_em, r.resolvido_por, r.tratativa`;
+       to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.status, r.criado_por, r.criado_em, r.resolvido_em, r.resolvido_por, r.tratativa, r.validado_em, r.validado_por`;
 const DE = `FROM cs_qualidade_registros r LEFT JOIN analistas a ON a.id::text = r.analista_id`;
 const comSituacao = (rows) => rows.map((r) => ({ ...r, situacao: situacao(r.status, r.prazo), status_rotulo: ROTULO_STATUS[r.status] }));
+
+/** Anexa a cada registro a linha do tempo de notas e eventos (nota, iniciada, finalizada, devolvida, validada). */
+async function anexarNotas(lista) {
+  if (!lista.length) return lista;
+  try {
+    const { rows } = await pool.query(
+      `SELECT registro_id, em, por, acao, texto FROM cs_qualidade_historico WHERE registro_id = ANY($1::uuid[]) AND acao IN ('nota', 'iniciada', 'finalizada', 'devolvida', 'validada') ORDER BY em ASC`,
+      [lista.map((r) => r.id)]);
+    const por = {}; rows.forEach((h) => { (por[h.registro_id] = por[h.registro_id] || []).push({ em: h.em, por: h.por, acao: h.acao, texto: h.texto }); });
+    return lista.map((r) => ({ ...r, notas: por[r.id] || [] }));
+  } catch (e) { return lista.map((r) => ({ ...r, notas: [] })); }
+}
+
+/** Aviso no sino do administrador quando o analista finaliza: a liderança valida para encerrar o processo. */
+async function notificarFinalizacao(reg, analistaNome, tratativa) {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS notificacoes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(), tipo TEXT NOT NULL, titulo TEXT NOT NULL, mensagem TEXT NOT NULL,
+      lida BOOLEAN DEFAULT false, link_modulo TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`);
+    await pool.query(
+      `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ('qualidade_finalizada', $1, $2, 'cs-qualidade')`,
+      ['Tratativa finalizada: ' + reg.tipo, analistaNome + ' finalizou a tratativa de "' + (reg.cliente_nome || 'cliente') + '" (' + reg.tipo + '). Valide para encerrar o processo.' + (tratativa ? ' Resumo: ' + String(tratativa).slice(0, 160) : '')]);
+  } catch (e) { console.warn('[qualidade] aviso de finalização não gravado:', e.message); }
+}
 
 async function registrar(registroId, por, acao, txt) {
   await pool.query('INSERT INTO cs_qualidade_historico (registro_id, por, acao, texto) VALUES ($1, $2, $3, $4)', [registroId, por || null, acao, txt || null]);
@@ -293,7 +320,7 @@ router.get('/cliente/:clienteId', async (req, res) => {
   try {
     await garantirSchema();
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.cliente_id = $1 ORDER BY r.criado_em DESC LIMIT 100`, [String(req.params.clienteId)]);
-    res.json({ registros: comSituacao(rows) });
+    res.json({ registros: await anexarNotas(comSituacao(rows)) });
   } catch (e) { console.error('[qualidade] GET /cliente falhou:', e); res.status(500).json({ error: 'Erro ao ler os registros do cliente.' }); }
 });
 
@@ -328,6 +355,7 @@ router.get('/resumo', async (req, res) => {
               COUNT(r.id) FILTER (WHERE r.status = 'em_tratamento')::int AS em_tratamento,
               COUNT(r.id) FILTER (WHERE r.status IN ('aberto', 'em_tratamento') AND r.prazo < $1::date)::int AS vencidos,
               COUNT(r.id) FILTER (WHERE r.status = 'resolvido')::int AS resolvidos,
+              COUNT(r.id) FILTER (WHERE r.status = 'finalizada')::int AS a_validar,
               COUNT(r.id) FILTER (WHERE r.status <> 'cancelado')::int AS total,
               to_char(MAX(r.criado_em) AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS ultimo_lancamento,
               to_char(MIN(r.prazo) FILTER (WHERE r.status IN ('aberto', 'em_tratamento')), 'YYYY-MM-DD') AS proximo_prazo
@@ -344,27 +372,33 @@ router.get('/analista/:id', async (req, res) => {
     const a = await pool.query('SELECT id, nome, ativo, user_id FROM analistas WHERE id::text = $1', [String(req.params.id)]);
     if (!a.rows.length) return res.status(404).json({ error: 'Analista não encontrado.' });
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.analista_id = $1 ORDER BY r.criado_em DESC LIMIT 300`, [String(req.params.id)]);
-    res.json({ analista: a.rows[0], registros: comSituacao(rows) });
+    res.json({ analista: a.rows[0], registros: await anexarNotas(comSituacao(rows)) });
   } catch (e) { console.error('[qualidade] GET /analista falhou:', e); res.status(500).json({ error: 'Erro ao ler os registros do analista.' }); }
 });
 
 router.patch('/:id', async (req, res) => {
-  const v = validarMudanca(req.body);
-  if (!v.ok) return res.status(400).json({ error: v.erro });
   try {
     await garantirSchema();
+    const atual = (await pool.query('SELECT id, status, tratativa FROM cs_qualidade_registros WHERE id::text = $1', [String(req.params.id)])).rows[0];
+    if (!atual) return res.status(404).json({ error: 'Registro não encontrado.' });
+    const v = validarMudanca(req.body, undefined, { jaTemTratativa: !!(atual.tratativa && atual.tratativa.length >= 5) });
+    if (!v.ok) return res.status(400).json({ error: v.erro });
     const x = v.valores, sets = [], vals = [];
     const add = (col, val) => { vals.push(val); sets.push(col + ' = $' + vals.length); };
-    if (x.status) { add('status', x.status); if (x.status === 'resolvido') { add('resolvido_em', new Date()); add('resolvido_por', req.user.name || null); } }
+    if (x.status) {
+      add('status', x.status);
+      if (x.status === 'resolvido') { add('validado_em', new Date()); add('validado_por', req.user.name || null); sets.push('resolvido_em = COALESCE(resolvido_em, NOW())'); }
+      if (x.status === 'em_tratamento' && atual.status === 'finalizada') { sets.push('resolvido_em = NULL', 'resolvido_por = NULL'); }   // devolvida ao analista
+    }
     if (x.prazo) add('prazo', x.prazo);
     if (x.tratativa !== undefined) add('tratativa', x.tratativa);
     sets.push('atualizado_em = NOW()');
-    vals.push(String(req.params.id));
-    const up = await pool.query(`UPDATE cs_qualidade_registros SET ${sets.join(', ')} WHERE id::text = $${vals.length} RETURNING id`, vals);
-    if (!up.rows.length) return res.status(404).json({ error: 'Registro não encontrado.' });
-    await registrar(up.rows[0].id, req.user.name, x.status ? 'status:' + x.status : (x.prazo ? 'prazo' : 'tratativa'), x.tratativa || x.prazo || null);
-    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [up.rows[0].id]);
-    res.json({ registro: comSituacao(rows)[0] });
+    vals.push(atual.id);
+    await pool.query(`UPDATE cs_qualidade_registros SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
+    const acao = x.status === 'resolvido' ? 'validada' : (x.status === 'em_tratamento' && atual.status === 'finalizada' ? 'devolvida' : (x.status ? 'status:' + x.status : (x.prazo ? 'prazo' : 'tratativa')));
+    await registrar(atual.id, req.user.name, acao, x.tratativa || x.prazo || (req.body && req.body.motivo ? texto(req.body.motivo, MAX_TRATATIVA) : null));
+    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [atual.id]);
+    res.json({ registro: (await anexarNotas(comSituacao(rows)))[0] });
   } catch (e) { console.error('[qualidade] PATCH falhou:', e); res.status(500).json({ error: 'Erro ao atualizar o registro.' }); }
 });
 
@@ -419,7 +453,7 @@ routerAnalista.get('/painel', async (req, res) => {
     if (!analista) return res.json({ analista: null, aviso: 'Seu login ainda não está ligado a um analista da lista. Peça à liderança para ligar (Qualidade > seu nome > Login).' });
 
     const regs = (await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.analista_id = $1 AND r.status <> 'cancelado' ORDER BY r.prazo ASC LIMIT 300`, [String(analista.id)])).rows;
-    const registros = comSituacao(regs);
+    const registros = await anexarNotas(comSituacao(regs));
 
     // Atendimentos do Zappy (180 dias) do analista, pelo usuário do Zappy ligado na Gamificação
     let atend = { vinculado: !!(colab && colab.zappy_user_id), colaborador: colab ? colab.nome : null, janela_dias: 180, lista: [], semanas: [], total: 0, sla_vermelho: 0, notas_baixas: 0, media_nota: null };
@@ -488,15 +522,42 @@ routerAnalista.get('/minhas', async (req, res) => {
     } else analista = await analistaDoLogin(req.user);
     if (!analista) return res.json({ analista: null, registros: [], aviso: 'Seu login ainda não está ligado a um analista da lista. Peça à liderança para ligar (Qualidade > seu nome > Login).' });
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.analista_id = $1 AND r.status <> 'cancelado' ORDER BY (r.status IN ('resolvido')) ASC, r.prazo ASC LIMIT 300`, [String(analista.id)]);
-    res.json({ analista, registros: comSituacao(rows) });
+    res.json({ analista, registros: await anexarNotas(comSituacao(rows)) });
   } catch (e) { console.error('[qualidade] GET /minhas falhou:', e); res.status(500).json({ error: 'Erro ao carregar suas tratativas.' }); }
 });
 
 routerAnalista.patch('/:id/tratar', async (req, res) => {
   const b = req.body || {};
-  if (!['em_tratamento', 'resolvido'].includes(b.status)) return res.status(400).json({ error: 'Escolha iniciar a tratativa ou resolver.' });
-  const v = validarMudanca({ status: b.status, tratativa: b.tratativa });
+  // "resolvido" vindo de páginas antigas vale como finalizar: quem encerra de fato é a liderança
+  const status = b.status === 'resolvido' ? 'finalizada' : b.status;
+  if (!['em_tratamento', 'finalizada'].includes(status)) return res.status(400).json({ error: 'Escolha iniciar a tratativa ou finalizar.' });
+  const v = validarMudanca({ status, tratativa: b.tratativa });
   if (!v.ok) return res.status(400).json({ error: v.erro });
+  try {
+    await garantirSchema();
+    const analista = await analistaDoLogin(req.user);
+    if (!analista) return res.status(403).json({ error: 'Seu login não está ligado a um analista.' });
+    const r = await pool.query('SELECT id, analista_id, status, tipo, cliente_nome FROM cs_qualidade_registros WHERE id::text = $1', [String(req.params.id)]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Registro não encontrado.' });
+    if (String(r.rows[0].analista_id) !== String(analista.id)) return res.status(403).json({ error: 'Esse registro é de outro analista.' });
+    if (['finalizada', 'resolvido', 'cancelado'].includes(r.rows[0].status)) return res.status(409).json({ error: 'Esse registro já foi finalizado ou encerrado.' });
+    const x = v.valores, sets = ['status = $1', 'atualizado_em = NOW()'], vals = [x.status];
+    if (x.tratativa !== undefined) { vals.push(x.tratativa); sets.push('tratativa = $' + vals.length); }
+    if (x.status === 'finalizada') { vals.push(req.user.name || analista.nome); sets.push('resolvido_em = NOW()', 'resolvido_por = $' + vals.length); }
+    vals.push(r.rows[0].id);
+    await pool.query(`UPDATE cs_qualidade_registros SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
+    await registrar(r.rows[0].id, req.user.name || analista.nome, x.status === 'finalizada' ? 'finalizada' : 'iniciada', x.tratativa || null);
+    if (x.status === 'finalizada') await notificarFinalizacao(r.rows[0], req.user.name || analista.nome, x.tratativa);
+    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [r.rows[0].id]);
+    res.json({ registro: (await anexarNotas(comSituacao(rows)))[0] });
+  } catch (e) { console.error('[qualidade] PATCH /tratar falhou:', e); res.status(500).json({ error: 'Erro ao registrar a tratativa.' }); }
+});
+
+/** Nota ou observação do analista durante a tratativa (fica no histórico, visível para a liderança). */
+routerAnalista.post('/:id/nota', async (req, res) => {
+  const t = texto(req.body && req.body.texto, MAX_TRATATIVA + 1);
+  if (t.length < 3) return res.status(400).json({ error: 'Escreva a nota (mínimo de 3 caracteres).' });
+  if (t.length > MAX_TRATATIVA) return res.status(400).json({ error: 'A nota passa de ' + MAX_TRATATIVA + ' caracteres.' });
   try {
     await garantirSchema();
     const analista = await analistaDoLogin(req.user);
@@ -505,15 +566,11 @@ routerAnalista.patch('/:id/tratar', async (req, res) => {
     if (!r.rows.length) return res.status(404).json({ error: 'Registro não encontrado.' });
     if (String(r.rows[0].analista_id) !== String(analista.id)) return res.status(403).json({ error: 'Esse registro é de outro analista.' });
     if (['resolvido', 'cancelado'].includes(r.rows[0].status)) return res.status(409).json({ error: 'Esse registro já foi encerrado.' });
-    const x = v.valores, sets = ['status = $1', 'atualizado_em = NOW()'], vals = [x.status];
-    if (x.tratativa !== undefined) { vals.push(x.tratativa); sets.push('tratativa = $' + vals.length); }
-    if (x.status === 'resolvido') { vals.push(req.user.name || analista.nome); sets.push('resolvido_em = NOW()', 'resolvido_por = $' + vals.length); }
-    vals.push(r.rows[0].id);
-    await pool.query(`UPDATE cs_qualidade_registros SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
-    await registrar(r.rows[0].id, req.user.name || analista.nome, 'status:' + x.status, x.tratativa || null);
+    await registrar(r.rows[0].id, req.user.name || analista.nome, 'nota', t);
+    await pool.query('UPDATE cs_qualidade_registros SET atualizado_em = NOW() WHERE id = $1', [r.rows[0].id]);
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [r.rows[0].id]);
-    res.json({ registro: comSituacao(rows)[0] });
-  } catch (e) { console.error('[qualidade] PATCH /tratar falhou:', e); res.status(500).json({ error: 'Erro ao registrar a tratativa.' }); }
+    res.status(201).json({ registro: (await anexarNotas(comSituacao(rows)))[0] });
+  } catch (e) { console.error('[qualidade] POST /nota falhou:', e); res.status(500).json({ error: 'Erro ao salvar a nota.' }); }
 });
 
 module.exports = { router, routerAnalista, validarTipo, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };

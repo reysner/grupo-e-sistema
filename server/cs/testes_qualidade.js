@@ -65,6 +65,14 @@ teste('tipos: aceita um tipo novo na lista permitida; nome e peso são validados
   assert.strictEqual(validarTipo({ peso: 0 }).ok, true);
 });
 
+teste('fluxo: finalizar exige o que foi feito; a liderança encerra (resolvido) sem novo texto se a tratativa já existe', () => {
+  assert.strictEqual(validarMudanca({ status: 'finalizada' }, HOJE).ok, false);
+  assert.strictEqual(validarMudanca({ status: 'finalizada', tratativa: 'Retificação enviada ao cliente' }, HOJE).ok, true);
+  assert.strictEqual(validarMudanca({ status: 'resolvido' }, HOJE).ok, false);
+  assert.strictEqual(validarMudanca({ status: 'resolvido' }, HOJE, { jaTemTratativa: true }).ok, true);
+  assert.strictEqual(situacao('finalizada', '2026-10-01', HOJE), 'finalizada');   // aguardando validação não vira "vencido"
+});
+
 teste('mesmo nome: igual sem acento, ou o primeiro nome contra o nome completo; nomes diferentes não casam', () => {
   assert.strictEqual(mesmoNome('Guilherme', 'Guilherme de Barros Amaro'), true);
   assert.strictEqual(mesmoNome('Nathânia Andrade Conceição', 'nathania andrade conceicao'), true);

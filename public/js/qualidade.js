@@ -4,12 +4,12 @@
   'use strict';
 
   var K_TOKEN = 'ql_token', K_REFRESH = 'ql_refresh', K_USER = 'ql_user';
-  var ROT = { aberto: 'Aberto', em_tratamento: 'Em tratamento', resolvido: 'Resolvido', cancelado: 'Cancelado', vencido: 'Vencido' };
-  var COR = { aberto: '#b45309', em_tratamento: '#2563eb', resolvido: '#166534', cancelado: '#6b7280', vencido: '#b91c1c' };
+  var ROT = { aberto: 'Aberto', em_tratamento: 'Em tratamento', finalizada: 'Aguardando validação', resolvido: 'Encerrado', cancelado: 'Cancelado', vencido: 'Vencido' };
+  var COR = { aberto: '#b45309', em_tratamento: '#2563eb', finalizada: '#7c3aed', resolvido: '#166534', cancelado: '#6b7280', vencido: '#b91c1c' };
   var TITULOS = {
     visao: ['Visão Geral', 'Seu resumo do dia: o que vence, o que está sem resposta e como vão os atendimentos.'],
     prioridades: ['Prioridades', 'O que pede ação hoje, da mais urgente para a menos.'],
-    tratativas: ['Tratativas', 'Considerações de qualidade registradas para você. Inicie a tratativa e resolva descrevendo o que foi feito.'],
+    tratativas: ['Tratativas', 'Inicie a tratativa, registre notas e observações e, ao concluir, finalize: a liderança é avisada e encerra o processo.'],
     nota: ['Minha nota', 'A composição da sua nota de atendimento do mês (Gamificação).'],
     atendimentos: ['Meus atendimentos', 'Suas conversas do Zappy dos últimos 180 dias: data, empresa, setor, nota e SLA.'],
     emails: ['Meus e-mails', 'E-mails de clientes que chegaram para você nos últimos 180 dias e os que estão sem resposta.'],
@@ -179,18 +179,32 @@
   }
 
   // ── Tratativas ───────────────────────────────────────────────────────────────
+  var ROT_ACAO = { nota: 'Nota', iniciada: 'Iniciou a tratativa', finalizada: 'Finalizou', devolvida: 'Devolvida pela liderança', validada: 'Encerrada pela liderança' };
+  function linhaTempo(r) {
+    var n = r.notas || []; if (!n.length) return '';
+    return '<div class="qa-reg-trat">' + n.map(function (x) {
+      return '<div><strong>' + esc(ROT_ACAO[x.acao] || x.acao) + '</strong> · ' + dt(x.em) + (x.por ? ' · ' + esc(x.por) : '') + (x.texto ? ': ' + esc(x.texto) : '') + '</div>';
+    }).join('') + '</div>';
+  }
   function cartaoTrat(r) {
-    var aberto = r.status === 'aberto' || r.status === 'em_tratamento';
+    var trabalhando = r.status === 'aberto' || r.status === 'em_tratamento';
+    var meu = !estado.analistaVer;
     var h = '<div class="qa-reg" id="r-' + esc(r.id) + '"><div class="qa-reg-topo">' + pill(r.situacao) + ' <strong>' + esc(r.tipo) + '</strong> <span class="cinza">· ' + esc((r.departamentos || []).join(', ')) + '</span></div>' +
       '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
-      '<div class="qa-reg-rod"><strong>' + esc(r.cliente_nome || 'Cliente') + '</strong> · lançado em ' + dt(r.criado_em) + ' por ' + esc(r.criado_por || '—') + ' · prazo <strong>' + dt(r.prazo) + '</strong>' + (r.resolvido_em ? ' · resolvido em ' + dt(r.resolvido_em) : '') + '</div>' +
-      (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '');
-    if (aberto && !estado.analistaVer) {
+      '<div class="qa-reg-rod"><strong>' + esc(r.cliente_nome || 'Cliente') + '</strong> · lançado em ' + dt(r.criado_em) + ' por ' + esc(r.criado_por || '—') + ' · prazo <strong>' + dt(r.prazo) + '</strong>' +
+        (r.resolvido_em ? ' · finalizado em ' + dt(r.resolvido_em) : '') + (r.validado_em ? ' · encerrado em ' + dt(r.validado_em) + (r.validado_por ? ' por ' + esc(r.validado_por) : '') : '') + '</div>' +
+      (r.tratativa ? '<div class="qa-reg-trat"><strong>O que foi feito:</strong> ' + esc(r.tratativa) + '</div>' : '') + linhaTempo(r);
+    if (r.status === 'finalizada') h += '<div class="qa-reg-trat" style="border-left:3px solid #7c3aed"><strong>Aguardando validação da liderança.</strong> Você será avisado se ela devolver para ajuste.</div>';
+    if (trabalhando && meu) {
       h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
-        (r.status === 'aberto' ? '<button type="button" class="gp-footer-btn" style="width:auto" data-ini="' + esc(r.id) + '">Iniciar tratativa</button>' : '') +
-        '<button type="button" class="login-btn" style="width:auto;margin:0;padding:7px 16px" data-res="' + esc(r.id) + '">Resolver</button></div>' +
-        '<div id="t-' + esc(r.id) + '" style="display:none;margin-top:10px"><textarea id="tx-' + esc(r.id) + '" rows="3" maxlength="600" class="gp-input" style="width:100%" placeholder="O que foi feito? (mínimo de 5 caracteres)"></textarea>' +
-        '<div style="margin-top:6px"><button type="button" class="login-btn" style="width:auto;margin:0;padding:7px 16px" data-conf="' + esc(r.id) + '">Confirmar resolução</button> <span class="pop-erro" id="e-' + esc(r.id) + '"></span></div></div>';
+        (r.status === 'aberto' ? '<button type="button" class="gp-footer-btn" style="width:auto" data-ini="' + esc(r.id) + '">▶ Iniciar tratativa</button>' : '') +
+        '<button type="button" class="gp-footer-btn" style="width:auto" data-nota="' + esc(r.id) + '">📝 Adicionar nota</button>' +
+        '<button type="button" class="login-btn" style="width:auto;margin:0;padding:7px 16px" data-res="' + esc(r.id) + '">✔ Finalizar tratativa</button></div>' +
+        '<div id="n-' + esc(r.id) + '" style="display:none;margin-top:10px"><textarea id="nx-' + esc(r.id) + '" rows="2" maxlength="600" class="gp-input" style="width:100%" placeholder="Nota ou observação sobre a tratativa (ex.: liguei para o cliente, aguardando retorno)"></textarea>' +
+        '<div style="margin-top:6px"><button type="button" class="gp-footer-btn" style="width:auto" data-nsalvar="' + esc(r.id) + '">Salvar nota</button> <span class="pop-erro" id="ne-' + esc(r.id) + '"></span></div></div>' +
+        '<div id="t-' + esc(r.id) + '" style="display:none;margin-top:10px"><textarea id="tx-' + esc(r.id) + '" rows="3" maxlength="600" class="gp-input" style="width:100%" placeholder="O que foi feito para resolver? (mínimo de 5 caracteres)"></textarea>' +
+        '<div style="margin-top:6px"><button type="button" class="login-btn" style="width:auto;margin:0;padding:7px 16px" data-conf="' + esc(r.id) + '">Confirmar finalização</button> <span class="pop-erro" id="e-' + esc(r.id) + '"></span></div>' +
+        '<div class="cinza" style="font-size:11px;margin-top:4px">A liderança é avisada e dá o processo como finalizado.</div></div>';
     }
     return h + '</div>';
   }
@@ -199,30 +213,41 @@
     var regs = p.registros.filter(function (r) {
       if (f === 'pendentes') return r.status === 'aberto' || r.status === 'em_tratamento';
       if (f === 'vencidas') return r.situacao === 'vencido';
+      if (f === 'validar') return r.status === 'finalizada';
       if (f === 'resolvidas') return r.status === 'resolvido';
       return true;
     });
     var cont = function (fn) { return p.registros.filter(fn).length; };
     var abas = [['pendentes', 'Pendentes', cont(function (r) { return r.status === 'aberto' || r.status === 'em_tratamento'; })], ['vencidas', 'Vencidas', cont(function (r) { return r.situacao === 'vencido'; })],
-      ['resolvidas', 'Resolvidas', cont(function (r) { return r.status === 'resolvido'; })], ['todas', 'Todas', p.registros.length]];
+      ['validar', 'Aguardando validação', cont(function (r) { return r.status === 'finalizada'; })], ['resolvidas', 'Encerradas', cont(function (r) { return r.status === 'resolvido'; })], ['todas', 'Todas', p.registros.length]];
     $('sec-tratativas').innerHTML = '<div class="card"><div class="filter-group" style="margin-bottom:14px">' + abas.map(function (a) {
       return '<button type="button" class="gp-footer-btn" style="width:auto;' + (a[0] === f ? 'background:var(--green,#1a4233);color:#fff' : '') + '" data-aba="' + a[0] + '">' + a[1] + ' (' + a[2] + ')</button>';
     }).join('') + '</div>' + (regs.length ? regs.map(cartaoTrat).join('') : '<div class="vazio">Nada nesta lista.</div>') + '</div>';
     Array.prototype.forEach.call(document.querySelectorAll('#sec-tratativas [data-aba]'), function (b) { b.addEventListener('click', function () { estado.filtroTrat = b.getAttribute('data-aba'); desenharTratativas(); }); });
-    var tratar = async function (id, corpo, erroEl) {
-      var r = await chamar('/api/qualidade/' + encodeURIComponent(id) + '/tratar', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+    var enviar = async function (url, metodo, corpo, erroEl) {
+      var r = await chamar(url, { method: metodo, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
       var j = await r.json().catch(function () { return {}; });
       if (!r.ok) { if (erroEl) erroEl.textContent = j.error || 'Não foi possível salvar.'; else window.alert(j.error || 'Não foi possível salvar.'); return false; }
       return true;
     };
-    Array.prototype.forEach.call(document.querySelectorAll('#sec-tratativas [data-ini]'), function (b) { b.addEventListener('click', async function () { if (await tratar(b.getAttribute('data-ini'), { status: 'em_tratamento' })) carregar(); }); });
+    var base = function (id) { return '/api/qualidade/' + encodeURIComponent(id); };
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-tratativas [data-ini]'), function (b) { b.addEventListener('click', async function () { if (await enviar(base(b.getAttribute('data-ini')) + '/tratar', 'PATCH', { status: 'em_tratamento' })) carregar(); }); });
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-tratativas [data-nota]'), function (b) { b.addEventListener('click', function () { var t = $('n-' + b.getAttribute('data-nota')); t.style.display = t.style.display === 'none' ? 'block' : 'none'; }); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-tratativas [data-res]'), function (b) { b.addEventListener('click', function () { var t = $('t-' + b.getAttribute('data-res')); t.style.display = t.style.display === 'none' ? 'block' : 'none'; }); });
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-tratativas [data-nsalvar]'), function (b) {
+      b.addEventListener('click', async function () {
+        var id = b.getAttribute('data-nsalvar'), erro = $('ne-' + id); erro.textContent = '';
+        var tx = $('nx-' + id).value.trim();
+        if (tx.length < 3) { erro.textContent = 'Escreva a nota (mínimo de 3 caracteres).'; return; }
+        if (await enviar(base(id) + '/nota', 'POST', { texto: tx }, erro)) { estado.filtroTrat = estado.filtroTrat; carregar(); }
+      });
+    });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-tratativas [data-conf]'), function (b) {
       b.addEventListener('click', async function () {
         var id = b.getAttribute('data-conf'), erro = $('e-' + id); erro.textContent = '';
         var tx = $('tx-' + id).value.trim();
         if (tx.length < 5) { erro.textContent = 'Descreva o que foi feito (mínimo de 5 caracteres).'; return; }
-        if (await tratar(id, { status: 'resolvido', tratativa: tx }, erro)) carregar();
+        if (await enviar(base(id) + '/tratar', 'PATCH', { status: 'finalizada', tratativa: tx }, erro)) carregar();
       });
     });
   }
