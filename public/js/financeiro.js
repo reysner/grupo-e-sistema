@@ -93,7 +93,7 @@
     if (!r.ok) throw new Error(j.error || 'Erro ' + r.status);
     return j;
   }
-  function podeEntrar(u) { return !!u && (['administrador', 'usuario'].indexOf(u.role) >= 0 || !!u.acesso_financeiro || !!u.acesso_cs); }
+  function podeEntrar(u) { return !!u && (['administrador', 'usuario'].indexOf(u.role) >= 0 || !!u.acesso_financeiro || !!u.acesso_cs || !!u.acesso_financeiro_sv); }
   async function entrar(ev) {
     ev.preventDefault();
     var btn = $('login-btn'); btn.disabled = true; btn.textContent = 'Entrando…';

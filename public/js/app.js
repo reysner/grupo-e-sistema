@@ -1366,10 +1366,10 @@ const App = (() => {
         return `<tr style="${!ativo?'opacity:.55':''}">
           <td style="font-weight:600">${u.name}</td>
           <td style="font-size:12px;color:var(--gray-500)">${u.email}</td>
-          <td><span class="role-pill ${u.role==='administrador'?'admin':'user'}">${ROLE_LABEL[u.role] || u.role}</span>${u.acesso_minha_nota ? ' <span title="Também acessa Minha Nota" style="font-size:12px">🏆</span>' : ''}${u.acesso_legalizacao ? ' <span title="Também acessa Legalização" style="font-size:12px">📋</span>' : ''}${u.acesso_cs ? ' <span title="Acessa o Painel CS (/cs)" style="font-size:12px">🎯</span>' : ''}${u.acesso_financeiro ? ' <span title="Acessa o Financeiro (/financeiro)" style="font-size:12px">💰</span>' : ''}${u.acesso_qualidade ? ' <span title="Acessa Minhas tratativas (/qualidade)" style="font-size:12px">✅</span>' : ''}${u.role==='contabil' && (u.regimes_atendidos||[]).length ? '<div style="font-size:10.5px;color:var(--gray-400);margin-top:2px">' + u.regimes_atendidos.join(' · ') + '</div>' : ''}</td>
+          <td><span class="role-pill ${u.role==='administrador'?'admin':'user'}">${ROLE_LABEL[u.role] || u.role}</span>${u.acesso_minha_nota ? ' <span title="Também acessa Minha Nota" style="font-size:12px">🏆</span>' : ''}${u.acesso_legalizacao ? ' <span title="Também acessa Legalização" style="font-size:12px">📋</span>' : ''}${u.acesso_cs ? ' <span title="Acessa o Painel CS (/cs)" style="font-size:12px">🎯</span>' : ''}${u.acesso_financeiro ? ' <span title="Acessa o Financeiro (/financeiro)" style="font-size:12px">💰</span>' : ''}${u.acesso_qualidade ? ' <span title="Acessa Minhas tratativas (/qualidade)" style="font-size:12px">✅</span>' : ''}${u.acesso_financeiro_sv ? ' <span title="Acessa o Financeiro sem valores em R$" style="font-size:12px">🔒</span>' : ''}${u.role==='contabil' && (u.regimes_atendidos||[]).length ? '<div style="font-size:10.5px;color:var(--gray-400);margin-top:2px">' + u.regimes_atendidos.join(' · ') + '</div>' : ''}</td>
           <td><span style="background:${ativo?'#f0fff4':'#fff5f5'};color:${ativo?'#38a169':'#e53e3e'};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${ativo?'Ativo':'Inativo'}</span></td>
           <td style="white-space:nowrap;display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditProfile('${u.id}','${u.name}','${u.email}','${u.role}',${!!u.acesso_minha_nota},${!!u.acesso_legalizacao},'${(u.regimes_atendidos||[]).join(',')}',${!!u.acesso_cs},${!!u.acesso_financeiro},${!!u.acesso_qualidade})">✏️ Editar</button>
+            <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditProfile('${u.id}','${u.name}','${u.email}','${u.role}',${!!u.acesso_minha_nota},${!!u.acesso_legalizacao},'${(u.regimes_atendidos||[]).join(',')}',${!!u.acesso_cs},${!!u.acesso_financeiro},${!!u.acesso_qualidade},${!!u.acesso_financeiro_sv})">✏️ Editar</button>
             <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditPass('${u.id}')">🔑 Senha</button>
             <button class="btn btn-sm" style="background:${ativo?'#fff5f5':'#f0fff4'};color:${ativo?'#e53e3e':'#38a169'};border:1px solid ${ativo?'#fed7d7':'#c6f6d5'}" onclick="App.Admin.toggleAtivo('${u.id}','${u.name}',${ativo})">${ativo?'⏸ Desativar':'▶ Ativar'}</button>
             <button class="btn btn-danger btn-sm" onclick="App.Admin.deleteUser('${u.id}','${u.name}')">🗑 Excluir</button>
@@ -1448,11 +1448,13 @@ const App = (() => {
         ['minha-nota', '🏆', 'Minha Nota', 'Gamificação: a própria nota do mês'],
         ['legalizacao', '📋', 'Legalização', 'Alvarás, certificados e solicitar inativação de cliente'],
         ['qualidade', '✅', 'Qualidade', 'Minhas tratativas (/qualidade): o analista vê e trata os registros dele'],
-        ['cs', '🎯', 'Sucesso do Cliente', 'Painel /cs e Financeiro (/financeiro) sem valores em R$'],
+        ['cs', '🎯', 'Sucesso do Cliente', 'Painel /cs (e também o Financeiro, sem valores em R$)'],
+        ['financeiro-sv', '🔒', 'Financeiro sem valores', 'Só o Financeiro (/financeiro), sem valores em R$ e sem o painel /cs'],
         ['financeiro', '💰', 'Financeiro com valores', 'Financeiro (/financeiro) com R$: inadimplência, honorários, cobranças'],
+        ['contabil', '📒', 'Portal Contábil', 'Perfil próprio: acesso só ao Portal Contábil (tickets). Não combina com Usuário/Administrador'],
       ];
       const chips = lista.map(([k, ic, t, d]) =>
-        '<label class="acesso-chip" title="' + d + '"><input type="checkbox" id="' + p + '-' + k + '"' + (v[k] ? ' checked' : '') + ' /><span>' + ic + ' ' + t + '</span></label>').join('');
+        '<label class="acesso-chip" title="' + d + '"><input type="checkbox" id="' + p + '-' + k + '"' + (v[k] ? ' checked' : '') + (k === 'contabil' ? ' onchange="App.Admin._toggleRegimesWrap(\'' + p + '\')"' : '') + ' /><span>' + ic + ' ' + t + '</span></label>').join('');
       return '<div class="field"><label>Acessos adicionais</label><div class="acessos-chips">' + chips + '</div>' +
         '<div class="acessos-dica">Somam-se ao perfil. Sem perfil, a pessoa entra só nas telas marcadas. Passe o mouse para ver o que cada acesso libera.</div></div>';
     },
@@ -1463,11 +1465,10 @@ const App = (() => {
         <div class="field" style="margin-top:12px"><label>E-mail</label><input id="m-email" type="email" placeholder="email@dominio.com" /></div>
         <div class="field" style="margin-top:12px"><label>Senha</label><input id="m-pass" type="password" placeholder="Mín. 6 caracteres" /></div>
         <div class="field" style="margin-top:12px"><label>Perfil</label>
-          <select id="m-role" onchange="App.Admin._toggleRegimesWrap('m')">
+          <select id="m-role">
             <option value="" selected>Escolha o perfil</option>
             <option value="usuario">Usuário</option>
             <option value="administrador">Administrador</option>
-            <option value="contabil">Contábil — acesso só ao Portal Contábil</option>
           </select>
         </div>
         <div style="margin-top:12px">${Admin._acessosHtml('m', {})}</div>
@@ -1486,13 +1487,15 @@ const App = (() => {
       const acesso_cs = document.getElementById('m-cs')?.checked || false;
       const acesso_financeiro = document.getElementById('m-financeiro')?.checked || false;
       const acesso_qualidade = document.getElementById('m-qualidade')?.checked || false;
+      const acesso_financeiro_sv = document.getElementById('m-financeiro-sv')?.checked || false;
+      if (document.getElementById('m-contabil')?.checked) role = 'contabil';   // Portal Contábil é um perfil próprio (chip de acesso)
       const regimes_atendidos = [...document.querySelectorAll('.m-regime-check:checked')].map(c => c.value);
       if (!name||!email||!password) { Toast.err('Preencha todos os campos.'); return; }
       if (!role) {
-        if (!acesso_minha_nota && !acesso_legalizacao && !acesso_cs && !acesso_financeiro && !acesso_qualidade) { Toast.err('Escolha um perfil, ou marque um dos acessos abaixo.'); return; }
+        if (!acesso_minha_nota && !acesso_legalizacao && !acesso_cs && !acesso_financeiro && !acesso_qualidade && !acesso_financeiro_sv) { Toast.err('Escolha um perfil, ou marque um dos acessos abaixo.'); return; }
         role = 'colaborador'; // sem perfil + algum acesso marcado = acesso só àquela(s) tela(s)
       }
-      const res  = await API.post('/api/users', { name, email, password, role, acesso_minha_nota, acesso_legalizacao, acesso_cs, acesso_financeiro, acesso_qualidade, regimes_atendidos });
+      const res  = await API.post('/api/users', { name, email, password, role, acesso_minha_nota, acesso_legalizacao, acesso_cs, acesso_financeiro, acesso_qualidade, acesso_financeiro_sv, regimes_atendidos });
       const data = await res.json();
       if (!res.ok) { Toast.err(data.error); return; }
       Modal.close(); Toast.ok('Usuário criado!'); Admin.load();
@@ -1501,27 +1504,29 @@ const App = (() => {
     // Mostra os checkboxes de regime só quando o perfil escolhido é Contábil (prefixo 'm' no Adicionar, 'eu' no Editar).
     _toggleRegimesWrap(prefixo) {
       const wrap = document.getElementById(prefixo + '-regimes-wrap');
-      const role = document.getElementById(prefixo + '-role')?.value;
-      if (wrap) wrap.hidden = role !== 'contabil';
+      const chip = document.getElementById(prefixo + '-contabil');
+      const sel = document.getElementById(prefixo + '-role');
+      const contabil = !!(chip && chip.checked);
+      if (wrap) wrap.hidden = !contabil;
+      if (sel) { if (contabil) sel.value = ''; sel.disabled = contabil; }   // Contábil é um perfil próprio: o Perfil fica em branco
     },
 
-    openEditProfile(id, name, email, role, acessoMinhaNota, acessoLegalizacao, regimesCsv, acessoCs, acessoFinanceiro, acessoQualidade) {
+    openEditProfile(id, name, email, role, acessoMinhaNota, acessoLegalizacao, regimesCsv, acessoCs, acessoFinanceiro, acessoQualidade, acessoFinanceiroSv) {
       // 'colaborador' é representado no dropdown como "Escolha o perfil" (vazio)
       // + checkbox marcada — não é mais uma opção própria na lista.
-      const roleParaExibir = role === 'colaborador' ? '' : role;
-      const minhaNotaMarcada = acessoMinhaNota || (role === 'colaborador' && !acessoLegalizacao && !acessoCs && !acessoFinanceiro && !acessoQualidade);
+      const roleParaExibir = (role === 'colaborador' || role === 'contabil') ? '' : role;
+      const minhaNotaMarcada = acessoMinhaNota || (role === 'colaborador' && !acessoLegalizacao && !acessoCs && !acessoFinanceiro && !acessoQualidade && !acessoFinanceiroSv);
       const regimesMarcados = (regimesCsv || '').split(',').filter(Boolean);
       App.Modal.open('Editar usuário', '<div style="display:grid;gap:12px">' +
         '<div class="field"><label>Nome</label><input id="eu-name" type="text" value="' + (name||'') + '" /></div>' +
         '<div class="field"><label>E-mail</label><input id="eu-email" type="email" value="' + (email||'') + '" /></div>' +
-        '<div class="field"><label>Perfil</label><select id="eu-role" onchange="App.Admin._toggleRegimesWrap(\'eu\')">' +
+        '<div class="field"><label>Perfil</label><select id="eu-role"' + (role === 'contabil' ? ' disabled' : '') + '>' +
           '<option value=""' + (!roleParaExibir?' selected':'') + '>Escolha o perfil</option>' +
           '<option value="usuario"' + (roleParaExibir==='usuario'?' selected':'') + '>Usuário</option>' +
           '<option value="administrador"' + (roleParaExibir==='administrador'?' selected':'') + '>Administrador</option>' +
-          '<option value="contabil"' + (roleParaExibir==='contabil'?' selected':'') + '>Contábil — só Portal Contábil</option>' +
         '</select></div>' +
-        App.Admin._acessosHtml('eu', { 'minha-nota': minhaNotaMarcada, legalizacao: acessoLegalizacao, cs: acessoCs, financeiro: acessoFinanceiro, qualidade: acessoQualidade }) +
-        '<div class="field" id="eu-regimes-wrap"' + (roleParaExibir==='contabil'?'':' hidden') + ' style="background:#f8fafc;border-radius:8px;padding:10px 14px">' +
+        App.Admin._acessosHtml('eu', { 'minha-nota': minhaNotaMarcada, legalizacao: acessoLegalizacao, cs: acessoCs, financeiro: acessoFinanceiro, qualidade: acessoQualidade, 'financeiro-sv': acessoFinanceiroSv, contabil: role === 'contabil' }) +
+        '<div class="field" id="eu-regimes-wrap"' + (role === 'contabil' ? '' : ' hidden') + ' style="background:#f8fafc;border-radius:8px;padding:10px 14px">' +
           '<label style="margin:0 0 4px">Regimes que atende</label>' +
           '<div style="font-size:11px;color:var(--gray-400);margin-bottom:6px">Quando um cliente é dado como baixa/saída no Acessórias, o ticket abre sozinho pro Contábil marcado no regime dele. Ninguém marcado = todos os Contábeis são avisados.</div>' +
           REGIMES_TICKET.map(r => '<label style="display:flex;align-items:center;gap:8px;padding:2px 0;cursor:pointer"><input type="checkbox" value="' + r + '" class="eu-regime-check" style="width:auto"' + (regimesMarcados.includes(r)?' checked':'') + '> <span style="font-size:13px">' + r + '</span></label>').join('') +
@@ -1539,13 +1544,15 @@ const App = (() => {
       const acesso_cs = document.getElementById('eu-cs')?.checked || false;
       const acesso_financeiro = document.getElementById('eu-financeiro')?.checked || false;
       const acesso_qualidade = document.getElementById('eu-qualidade')?.checked || false;
+      const acesso_financeiro_sv = document.getElementById('eu-financeiro-sv')?.checked || false;
+      if (document.getElementById('eu-contabil')?.checked) role = 'contabil';   // Portal Contábil é um perfil próprio (chip de acesso)
       const regimes_atendidos = [...document.querySelectorAll('.eu-regime-check:checked')].map(c => c.value);
       if (!name) { App.Toast.err('Nome obrigatório.'); return; }
       if (!role) {
-        if (!acesso_minha_nota && !acesso_legalizacao && !acesso_cs && !acesso_financeiro && !acesso_qualidade) { App.Toast.err('Escolha um perfil, ou marque um dos acessos abaixo.'); return; }
+        if (!acesso_minha_nota && !acesso_legalizacao && !acesso_cs && !acesso_financeiro && !acesso_qualidade && !acesso_financeiro_sv) { App.Toast.err('Escolha um perfil, ou marque um dos acessos abaixo.'); return; }
         role = 'colaborador';
       }
-      const res = await API.patch('/api/users/' + id + '/profile', { name, email, role, acesso_minha_nota, acesso_legalizacao, acesso_cs, acesso_financeiro, acesso_qualidade, regimes_atendidos });
+      const res = await API.patch('/api/users/' + id + '/profile', { name, email, role, acesso_minha_nota, acesso_legalizacao, acesso_cs, acesso_financeiro, acesso_qualidade, acesso_financeiro_sv, regimes_atendidos });
       if (res && res.ok) { App.Modal.close(); App.Toast.ok('Usuário atualizado!'); Admin.load(); }
       else App.Toast.err('Erro ao atualizar.');
     },

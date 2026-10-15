@@ -131,6 +131,8 @@ async function init() {
   // acesso_financeiro = vê o /financeiro com valores. Ver server/auth.js e server/financeiro/.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS acesso_cs BOOLEAN NOT NULL DEFAULT false`).catch(()=>{});
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS acesso_financeiro BOOLEAN NOT NULL DEFAULT false`).catch(()=>{});
+  // acesso_financeiro_sv = só o /financeiro, SEM valores em R$ e sem o /cs (pedido do Reysner, 16/10/2026).
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS acesso_financeiro_sv BOOLEAN NOT NULL DEFAULT false`).catch(()=>{});
   // acesso_qualidade = página /qualidade (Minhas tratativas: o analista vê e trata os registros de Qualidade dele). Pedido do Reysner, 16/10/2026.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS acesso_qualidade BOOLEAN NOT NULL DEFAULT false`).catch(()=>{});
 }

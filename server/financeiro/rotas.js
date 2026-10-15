@@ -6,7 +6,7 @@
  * Quem entra (decidido no servidor, nunca no navegador):
  *   - administrador                       -> tudo, com valores em R$ (e o botão "Ocultar valores" na tela, para apresentações)
  *   - acesso_financeiro (Usuários)        -> tudo, com valores em R$
- *   - usuário ou acesso_cs                -> a mesma página SEM valores em R$ (os valores saem do servidor ocultos)
+ *   - usuário, acesso_cs ou acesso_financeiro_sv -> a mesma página SEM valores em R$ (os valores saem do servidor ocultos); só o acesso_financeiro_sv não abre o /cs
  *   - contábil/colaborador sem as marcas  -> 403
  *
  *   GET  /api/financeiro/dados           -> carteira inteira (KPIs, aging, clientes, suspensos, cobranças)
@@ -27,7 +27,7 @@ const r2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
 const COBRANCAS_DESDE = '2026-05-01';
 
 const veValores = (user) => !!user && (user.role === 'administrador' || !!user.acessoFinanceiro);
-const podeEntrar = (user) => !!user && (PAPEIS.includes(user.role) || !!user.acessoFinanceiro || !!user.acessoCs);
+const podeEntrar = (user) => !!user && (PAPEIS.includes(user.role) || !!user.acessoFinanceiro || !!user.acessoCs || !!user.acessoFinanceiroSv);
 
 function soFinanceiro(req, res, next) {
   if (!podeEntrar(req.user)) return res.status(403).json({ error: 'Acesso restrito à equipe autorizada para o Financeiro.' });

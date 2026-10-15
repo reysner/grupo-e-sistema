@@ -32,7 +32,7 @@ const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function signAccess(user) {
   return jwt.sign(
-    { sub: user.id, name: user.name, role: user.role, acesso_minha_nota: !!user.acesso_minha_nota, acesso_legalizacao: !!user.acesso_legalizacao, acesso_cs: !!user.acesso_cs, acesso_financeiro: !!user.acesso_financeiro, acesso_qualidade: !!user.acesso_qualidade },
+    { sub: user.id, name: user.name, role: user.role, acesso_minha_nota: !!user.acesso_minha_nota, acesso_legalizacao: !!user.acesso_legalizacao, acesso_cs: !!user.acesso_cs, acesso_financeiro: !!user.acesso_financeiro, acesso_qualidade: !!user.acesso_qualidade, acesso_financeiro_sv: !!user.acesso_financeiro_sv },
     ACCESS_SECRET,
     { expiresIn: ACCESS_TTL, issuer: 'grupo-e' }
   );
@@ -72,12 +72,12 @@ function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Não autenticado.' });
   try {
     const payload = jwt.verify(token, ACCESS_SECRET, { issuer: 'grupo-e' });
-    req.user = { id: payload.sub, name: payload.name, role: payload.role, acessoMinhaNota: !!payload.acesso_minha_nota, acessoLegalizacao: !!payload.acesso_legalizacao, acessoCs: !!payload.acesso_cs, acessoFinanceiro: !!payload.acesso_financeiro, acessoQualidade: !!payload.acesso_qualidade };
+    req.user = { id: payload.sub, name: payload.name, role: payload.role, acessoMinhaNota: !!payload.acesso_minha_nota, acessoLegalizacao: !!payload.acesso_legalizacao, acessoCs: !!payload.acesso_cs, acessoFinanceiro: !!payload.acesso_financeiro, acessoQualidade: !!payload.acesso_qualidade, acessoFinanceiroSv: !!payload.acesso_financeiro_sv };
     // Páginas /cs e /financeiro (13/10/2026): Contábil e Colaborador só chegam nelas pela permissão própria (acesso_cs / acesso_financeiro).
     // O que cada pessoa VÊ lá dentro é decidido na própria rota (server/cs/painel.js e server/financeiro/), nunca no front-end.
     const rotaCompleta = (req.baseUrl || '') + (req.path || '');
     const isCsPainelRoute = rotaCompleta.startsWith('/api/cs/painel') && !!payload.acesso_cs;
-    const isFinanceiroRoute = rotaCompleta.startsWith('/api/financeiro') && !!(payload.acesso_financeiro || payload.acesso_cs);
+    const isFinanceiroRoute = rotaCompleta.startsWith('/api/financeiro') && !!(payload.acesso_financeiro || payload.acesso_cs || payload.acesso_financeiro_sv);
     const isAuthOuPerfil = req.path && (req.path.includes('/auth') || req.path.includes('/perfil'));
     // Minhas tratativas (16/10/2026): o analista (login com acesso_qualidade) vê e trata só os registros de Qualidade dele; quem é "ele" a rota decide.
     const isQualidadeRoute = rotaCompleta.startsWith('/api/qualidade/') && !!payload.acesso_qualidade;
