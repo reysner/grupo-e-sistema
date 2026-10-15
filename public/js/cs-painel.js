@@ -632,7 +632,7 @@
   // Faturamento por ano civil de cada cliente ATIVO (lido do Questor por rotina local; só administrador vê valores). Destaca quem subiu pelo menos
   // X% sobre o ano anterior, para avaliar reajuste de honorário. Funcionários e regime POR ANO ainda não estão na API do Questor: hoje só o atual.
   function cfgAnual() { return (estado.anual && estado.anual.config) || { percentual: 30, pode_editar: false }; }
-  function filtroAnual() { return estado.filtroAnual || (estado.filtroAnual = { busca: '', ano: null, soDestaque: false, pag: 1 }); }
+  function filtroAnual() { return estado.filtroAnual || (estado.filtroAnual = { busca: '', ano: null, soDestaque: false, regra: 'ambos', pag: 1 }); }
   function soDig(s) { return String(s || '').replace(/\D/g, ''); }
   /** Anos completos disponíveis (do segundo ano da série até o último ano fechado) e o ano parcial em curso, se houver. */
   function anosAnual() {
@@ -651,6 +651,16 @@
   function varPct(a, b) { return a == null || b == null || !(a > 0) ? null : (b - a) / a * 100; }
   function destaqueAnual(v) { return v != null && v >= cfgAnual().percentual; }
   function pctAnual(v) { return v == null ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + pctTxt(Math.abs(v)) + '%'; }
+  function funcDoAno(anos, ano) { var x = anos && anos[ano]; return x && x.funcionarios != null ? x.funcionarios : null; }
+  function regimeDoAnoAnual(anos, ano) { var x = anos && anos[ano]; return x && x.regime ? x.regime : null; }
+  var ROT_REGRA = { ambos: 'faturamento e funcionários', fat: 'faturamento', func: 'funcionários' };
+  /** Destaque pela regra escolhida: "ambos" exige que as DUAS variações (faturamento e funcionários) estejam no limite ou acima. */
+  function destaqueLinha(l, regra) {
+    var r = regra || filtroAnual().regra || 'ambos';
+    if (r === 'fat') return destaqueAnual(l.v);
+    if (r === 'func') return destaqueAnual(l.vf);
+    return destaqueAnual(l.v) && destaqueAnual(l.vf);
+  }
   function linhasAnual() {
     var d = estado.dados, f = filtroAnual(), ac = anosAnual(), mapa = mapaAnual();
     var ano = f.ano || (ac.completos.length ? ac.completos[ac.completos.length - 1] : null);
@@ -658,61 +668,77 @@
     var linhas = base.map(function (c) {
       var doc = soDig(c.cnpj), anos = mapa[doc] || null;
       var prev = anos && anos[ano - 1] ? anos[ano - 1].faturamento : null, cur = anos && anos[ano] ? anos[ano].faturamento : null;
-      return { c: c, doc: doc, anos: anos, prev: prev, cur: cur, v: varPct(prev, cur) };
+      var fp = funcDoAno(anos, ano - 1), fc = funcDoAno(anos, ano);
+      var rp = regimeDoAnoAnual(anos, ano - 1), rc = regimeDoAnoAnual(anos, ano);
+      return { c: c, doc: doc, anos: anos, prev: prev, cur: cur, v: varPct(prev, cur), fp: fp, fc: fc, vf: varPct(fp, fc), rp: rp, rc: rc, mudouRegime: !!(rp && rc && rp !== rc) };
     });
     var comDado = linhas.filter(function (l) { return l.anos; }).length;
     var todas = linhas.length;
     if (b) linhas = linhas.filter(function (l) { return (l.c.nome || '').toLowerCase().indexOf(b) >= 0 || l.doc.indexOf(b.replace(/\D/g, '') || '§') >= 0; });
-    var subiram = linhas.filter(function (l) { return destaqueAnual(l.v); });
+    var subiram = linhas.filter(function (l) { return destaqueLinha(l); });
+    var mudaram = linhas.filter(function (l) { return l.mudouRegime; }).length;
     if (f.soDestaque) linhas = subiram;
     linhas.sort(function (x, y) { return (y.v == null ? -1e9 : y.v) - (x.v == null ? -1e9 : x.v) || (x.c.nome || '').localeCompare(y.c.nome || ''); });
-    return { ano: ano, linhas: linhas, comDado: comDado, todas: todas, subiram: subiram.length };
+    return { ano: ano, linhas: linhas, comDado: comDado, todas: todas, subiram: subiram.length, mudaram: mudaram };
+  }
+  function celVar(v, dest) {
+    if (v == null) return '<span class="cinza">—</span>';
+    return '<span class="' + (dest ? 'an-baixo-up' : (v < 0 ? 'an-baixo' : '')) + '"><strong>' + esc(pctAnual(v)) + '</strong></span>';
   }
   function desenharAnual() {
     var alvo = $('sec-anual'); if (!alvo) return;
     var a = estado.anual, f = filtroAnual(), ac = anosAnual();
-    if (!a) { alvo.innerHTML = '<div class="card"><div class="vazio">Não foi possível carregar o faturamento por ano agora.</div></div>'; return; }
+    if (!a) { alvo.innerHTML = '<div class="card"><div class="vazio">Não foi possível carregar a análise anual agora.</div></div>'; return; }
     if (a.valores_ocultos) { alvo.innerHTML = '<div class="card"><div class="vazio">O perfil Usuário não vê valores em R$. A Análise Anual compara faturamento, então fica disponível só para o administrador.</div></div>'; return; }
     if (!a.itens || !a.itens.length || !ac.completos.length) {
       alvo.innerHTML = '<div class="nota" style="border-color:#d97706"><strong>Faturamento por ano ainda não carregado.</strong> A rotina que lê o Questor (server/questor/extrairAnual.js) roda no computador com a VPN e envia os totais por ano. Assim que chegar, a lista aparece aqui.</div>'; return;
     }
     var r = linhasAnual(), ano = r.ano, pag = Math.max(1, Math.ceil(r.linhas.length / ANALISE_POR_PAGINA)); if (f.pag > pag) f.pag = pag; if (f.pag < 1) f.pag = 1;
-    var X = cfgAnual().percentual;
+    var X = cfgAnual().percentual, regra = f.regra || 'ambos';
     var totPrev = 0, totCur = 0; r.linhas.forEach(function (l) { if (l.prev != null && l.cur != null) { totPrev += l.prev; totCur += l.cur; } });
+    var comFunc = r.linhas.filter(function (l) { return l.fp != null && l.fc != null; }).length;
     var corpo = r.linhas.slice((f.pag - 1) * ANALISE_POR_PAGINA, f.pag * ANALISE_POR_PAGINA).map(function (l) {
-      var c = l.c, q = c.questor, dest = destaqueAnual(l.v);
-      var vTxt = l.v != null ? '<span class="' + (dest ? 'an-baixo-up' : (l.v < 0 ? 'an-baixo' : '')) + '"><strong>' + esc(pctAnual(l.v)) + '</strong></span>' : (l.prev === 0 && l.cur > 0 ? '<span class="pill" style="color:#2563eb;border-color:#2563eb55;background:#2563eb14">novo</span>' : '<span class="cinza">—</span>');
-      return '<tr><td style="white-space:normal;min-width:220px"><button class="link" data-anual="' + esc(l.doc) + '">' + esc(c.nome) + '</button><div class="sub">' + esc(c.cnpj || '') + '</div></td>' +
+      var c = l.c, dest = destaqueLinha(l);
+      var vTxt = l.v != null ? celVar(l.v, destaqueAnual(l.v)) : (l.prev === 0 && l.cur > 0 ? '<span class="pill" style="color:#2563eb;border-color:#2563eb55;background:#2563eb14">novo</span>' : '<span class="cinza">—</span>');
+      var funcTxt = l.fp == null && l.fc == null ? '<span class="cinza">sem folha</span>' : (l.fp == null ? '—' : l.fp) + ' → ' + (l.fc == null ? '—' : l.fc);
+      var regTxt = l.rp || l.rc ? (l.mudouRegime ? '<span class="pill" style="color:#7c3aed;border-color:#7c3aed55;background:#7c3aed14" title="O regime mudou entre ' + (ano - 1) + ' e ' + ano + '">' + esc(l.rp) + ' → ' + esc(l.rc) + '</span>' : esc(l.rc || l.rp)) : (c.regime ? esc(c.regime) : '<span class="cinza">—</span>');
+      return '<tr><td style="white-space:normal;min-width:200px"><button class="link" data-anual="' + esc(l.doc) + '">' + esc(c.nome) + '</button><div class="sub">' + esc(c.cnpj || '') + '</div></td>' +
         '<td class="c">' + pillCat(c) + '</td>' +
-        '<td class="c">' + (c.regime ? esc(c.regime) : '<span class="cinza">—</span>') + '</td>' +
-        '<td class="c" style="font-family:var(--mono)">' + (l.anos ? reais(l.prev) : '<span class="cinza">sem dado</span>') + '</td>' +
-        '<td class="c" style="font-family:var(--mono)">' + (l.anos ? reais(l.cur) : '<span class="cinza">sem dado</span>') + '</td>' +
+        '<td class="c" style="white-space:normal">' + regTxt + '</td>' +
+        '<td class="c" style="font-family:var(--mono)">' + (l.anos && l.prev != null ? reais(l.prev) : '<span class="cinza">sem dado</span>') + '</td>' +
+        '<td class="c" style="font-family:var(--mono)">' + (l.anos && l.cur != null ? reais(l.cur) : '<span class="cinza">sem dado</span>') + '</td>' +
         '<td class="c">' + vTxt + '</td>' +
-        '<td class="c">' + (q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : '<span class="cinza">sem dado</span>') + '</td>' +
+        '<td class="c">' + funcTxt + '</td>' +
+        '<td class="c">' + celVar(l.vf, destaqueAnual(l.vf)) + '</td>' +
         '<td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td>' +
-        '<td class="c">' + (dest ? '<span class="pill" style="color:#b45309;border-color:#b4530955;background:#b4530914" title="Faturamento subiu ' + esc(pctTxt(l.v)) + '% (limite ' + esc(pctTxt(X)) + '%): avaliar reajuste do honorário">Rever honorário</span>' : '') + '</td></tr>';
+        '<td class="c">' + (dest ? '<span class="pill" style="color:#b45309;border-color:#b4530955;background:#b4530914" title="' + esc(pctTxt(X)) + '% ou mais em ' + esc(ROT_REGRA[regra]) + ': avaliar reajuste do honorário">Rever honorário</span>' : '') + '</td></tr>';
     }).join('');
     var optAnos = ac.completos.map(function (y) { return '<option value="' + y + '"' + (y === ano ? ' selected' : '') + '>' + y + ' × ' + (y - 1) + '</option>'; }).join('');
+    var optRegra = Object.keys(ROT_REGRA).map(function (k) { return '<option value="' + k + '"' + (k === regra ? ' selected' : '') + '>' + esc(ROT_REGRA[k].charAt(0).toUpperCase() + ROT_REGRA[k].slice(1)) + '</option>'; }).join('');
     var parcial = ac.parcial ? ' O ano de ' + ac.parcial.ano + ' tem só ' + ac.parcial.mes + ' mês(es) lançado(s) e por isso fica de fora da comparação.' : '';
     var pctDelta = totPrev > 0 ? (totCur - totPrev) / totPrev * 100 : null;
     alvo.innerHTML =
       '<div class="gp-kpi-row">' +
-        kpi('#256050', 'Clientes com histórico', r.comDado + ' de ' + r.todas, 'ativos no Acessórias com faturamento lido do Questor') +
-        kpi('#b45309', 'Rever honorário', r.subiram, 'subiram ' + pctTxt(X) + '% ou mais em ' + ano + ' sobre ' + (ano - 1)) +
-        kpi('#7c3aed', 'Faturamento ' + ano, valoresOcultos() ? reais(null) : reais(totCur), pctDelta == null ? 'sem base para comparar' : pctAnual(pctDelta) + ' sobre ' + (ano - 1) + ' (clientes da lista)') +
+        kpi('#256050', 'Clientes com histórico', r.comDado + ' de ' + r.todas, 'ativos no Acessórias com dados do Questor') +
+        kpi('#b45309', 'Rever honorário', r.subiram, 'subiram ' + pctTxt(X) + '% ou mais em ' + ROT_REGRA[regra] + ' (' + ano + ' sobre ' + (ano - 1) + ')') +
+        kpi('#7c3aed', 'Mudaram de regime', r.mudaram, 'entre ' + (ano - 1) + ' e ' + ano + ', pelos dados da Receita') +
+        kpi('#0f766e', 'Faturamento ' + ano, valoresOcultos() ? reais(null) : reais(totCur), pctDelta == null ? 'sem base para comparar' : pctAnual(pctDelta) + ' sobre ' + (ano - 1) + ' (clientes da lista)') +
       '</div>' +
-      '<div class="nota">Faturamento por <strong>ano civil</strong> lido do Questor (módulo Fiscal), de ' + ac.ini + ' em diante; só clientes <strong>ativos no Acessórias</strong> (quem foi inativado não aparece, mesmo tendo histórico).' + esc(parcial) +
-        ' <strong>Funcionários e regime tributário por ano</strong> ainda não estão disponíveis na API do Questor: as colunas mostram a situação de hoje, e a regra de destaque usa só o faturamento por enquanto. O limite de ' + esc(pctTxt(X)) + '% é um só para a equipe' + (cfgAnual().pode_editar ? ' (botão % no título da coluna Variação)' : '') + '.</div>' +
+      '<div class="nota"><strong>Fontes.</strong> Faturamento por ano civil: Questor (módulo Fiscal). Funcionários: total de empregados ativos no <strong>último mês com folha</strong> de cada ano (Questor, Folha); a contagem é por empresa e fica na matriz. ' +
+        'Regime: <strong>Receita Federal</strong> (ECF e opção pelo Simples); onde a Receita não informa, vale o cadastro do Questor, que pode estar desatualizado (fica indicado na ficha). ' +
+        'Só clientes <strong>ativos no Acessórias</strong>.' + esc(parcial) + ' Com a regra "faturamento e funcionários", clientes sem folha não são destacados. O limite de ' + esc(pctTxt(X)) + '% é um só para a equipe' + (cfgAnual().pode_editar ? ' (botão % no título da coluna Variação).' : '.') + '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="n-busca" placeholder="Empresa ou CNPJ" value="' + esc(f.busca) + '">' +
         '<span class="filter-label">Comparar</span><select class="gp-select" id="n-ano">' + optAnos + '</select>' +
-        '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="n-dest"' + (f.soDestaque ? ' checked' : '') + '> só os que subiram ' + esc(pctTxt(X)) + '% ou mais</label></div>' +
-        '<div class="card-sub">' + r.linhas.length + ' cliente(s) · ordem: maior alta primeiro. Clique na empresa para ver ano a ano.</div>' +
-        (r.linhas.length ? '<div class="table-wrap"><table class="tab-analise"><colgroup><col style="width:24%"><col style="width:10%"><col style="width:11%"><col style="width:12%"><col style="width:12%"><col style="width:9%"><col style="width:8%"><col style="width:7%"><col style="width:7%"></colgroup>' +
-          '<thead><tr><th>Razão social</th><th class="c">Categoria</th><th class="c">Regime (hoje)</th><th class="c">Faturamento ' + (ano - 1) + '</th><th class="c">Faturamento ' + ano + '</th>' +
-          '<th class="c">Variação ' + botaoPctAnual() + '</th><th class="c">Funcionários (hoje)</th><th class="c">Honorário mensal</th><th class="c">Análise</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' + paginacaoHtml(r.linhas.length, f.pag, ANALISE_POR_PAGINA)
+        '<span class="filter-label">Destacar quem subiu</span><select class="gp-select" id="n-regra">' + optRegra + '</select>' +
+        '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="n-dest"' + (f.soDestaque ? ' checked' : '') + '> só os destacados</label></div>' +
+        '<div class="card-sub">' + r.linhas.length + ' cliente(s) · ' + comFunc + ' com folha nos dois anos · ordem: maior alta de faturamento primeiro. Clique na empresa para ver ano a ano.</div>' +
+        (r.linhas.length ? '<div class="table-wrap"><table class="tab-analise"><colgroup><col style="width:21%"><col style="width:9%"><col style="width:13%"><col style="width:10%"><col style="width:10%"><col style="width:7%"><col style="width:8%"><col style="width:6%"><col style="width:8%"><col style="width:8%"></colgroup>' +
+          '<thead><tr><th>Razão social</th><th class="c">Categoria</th><th class="c">Regime ' + (ano - 1) + ' → ' + ano + '</th><th class="c">Faturamento ' + (ano - 1) + '</th><th class="c">Faturamento ' + ano + '</th>' +
+          '<th class="c">Variação ' + botaoPctAnual() + '</th><th class="c">Funcionários</th><th class="c">Variação</th><th class="c">Honorário mensal</th><th class="c">Análise</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' + paginacaoHtml(r.linhas.length, f.pag, ANALISE_POR_PAGINA)
           : '<div class="vazio">Nenhum cliente neste filtro.</div>') + '</div>';
     var campo = $('n-busca'); if (campo) campo.addEventListener('input', function () { f.busca = campo.value; f.pag = 1; var pos = campo.selectionStart; desenharAnual(); var n = $('n-busca'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* sem seleção */ } });
     var sa = $('n-ano'); if (sa) sa.addEventListener('change', function () { f.ano = parseInt(sa.value, 10); f.pag = 1; desenharAnual(); });
+    var sr = $('n-regra'); if (sr) sr.addEventListener('change', function () { f.regra = sr.value; f.pag = 1; desenharAnual(); });
     var sd = $('n-dest'); if (sd) sd.addEventListener('change', function () { f.soDestaque = sd.checked; f.pag = 1; desenharAnual(); });
     var bp = $('btn-pct-anual'); if (bp) bp.addEventListener('click', function (ev) { ev.stopPropagation(); abrirPopAnual(bp); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-anual [data-anual]'), function (bt) { bt.addEventListener('click', function () { abrirFichaAnual(bt.getAttribute('data-anual')); }); });
@@ -766,33 +792,45 @@
     $('ficha-nome').textContent = c.nome;
     $('ficha-sub').innerHTML = esc(c.cnpj || '') + (c.grupo ? ' · Grupo ' + esc(c.grupo) : '') + ' · cliente desde ' + data(c.entrada);
     var lista = Object.keys(anos).map(Number).sort();
-    // o ano em que o cliente começou a faturar: tira os anos zerados do começo da série
-    while (lista.length && !(anos[lista[0]].faturamento > 0)) lista.shift();
-    var max = Math.max.apply(null, lista.map(function (y) { return Math.abs(anos[y].faturamento); }).concat([1]));
+    // começa no primeiro ano em que o cliente apareceu com faturamento, folha ou regime informado
+    while (lista.length && !(anos[lista[0]].faturamento > 0) && anos[lista[0]].funcionarios == null) lista.shift();
+    var max = Math.max.apply(null, lista.map(function (y) { return Math.abs(anos[y].faturamento || 0); }).concat([1]));
     var linhas = lista.map(function (y, i) {
-      var x = anos[y], ant = i > 0 ? anos[lista[i - 1]].faturamento : null, v = varPct(ant, x.faturamento);
-      var parcial = ac.parcial && y === ac.parcial.ano;
-      var larg = Math.max(2, Math.round(Math.abs(x.faturamento) / max * 100));
+      var x = anos[y], ant = i > 0 ? anos[lista[i - 1]] : null, v = ant ? varPct(ant.faturamento, x.faturamento) : null, vf = ant ? varPct(ant.funcionarios, x.funcionarios) : null;
+      var parcial = ac.parcial && y === ac.parcial.ano, fat = x.faturamento == null ? 0 : x.faturamento;
+      var larg = Math.max(2, Math.round(Math.abs(fat) / max * 100));
+      var mud = ant && ant.regime && x.regime && ant.regime !== x.regime;
       return '<tr><td><strong>' + y + '</strong>' + (parcial ? ' <span class="cinza">até ' + String(ac.parcial.mes).padStart(2, '0') + '/' + y + '</span>' : '') + '</td>' +
-        '<td class="c" style="font-family:var(--mono)">' + reais(x.faturamento) + '</td>' +
-        '<td class="c">' + (parcial ? '<span class="cinza">parcial</span>' : (v == null ? '<span class="cinza">—</span>' : '<span class="' + (destaqueAnual(v) ? 'an-baixo-up' : (v < 0 ? 'an-baixo' : '')) + '"><strong>' + esc(pctAnual(v)) + '</strong></span>')) + '</td>' +
-        '<td style="min-width:120px"><div class="barra-ano" style="width:' + larg + '%"></div></td></tr>';
+        '<td class="c" style="font-family:var(--mono)">' + (x.faturamento == null ? '<span class="cinza">sem dado</span>' : reais(x.faturamento)) + '</td>' +
+        '<td class="c">' + (parcial ? '<span class="cinza">parcial</span>' : celVar(v, destaqueAnual(v))) + '</td>' +
+        '<td style="min-width:90px"><div class="barra-ano" style="width:' + larg + '%"></div></td>' +
+        '<td class="c">' + (x.funcionarios == null ? '<span class="cinza">sem folha</span>' : x.funcionarios) + '</td>' +
+        '<td class="c">' + (parcial ? '' : celVar(vf, destaqueAnual(vf))) + '</td>' +
+        '<td class="c" style="white-space:normal">' + (x.regime ? (mud ? '<strong>' + esc(x.regime) + '</strong>' : esc(x.regime)) + (x.regime_fonte ? '<div class="sub">' + esc(x.regime_fonte) + '</div>' : '') : '<span class="cinza">—</span>') + '</td></tr>';
     }).join('');
     var ultComp = ac.completos.length ? ac.completos[ac.completos.length - 1] : null;
-    var a1 = ultComp && anos[ultComp - 1] ? anos[ultComp - 1].faturamento : null, a2 = ultComp && anos[ultComp] ? anos[ultComp].faturamento : null, v = varPct(a1, a2);
+    var A1 = ultComp && anos[ultComp - 1] ? anos[ultComp - 1] : null, A2 = ultComp && anos[ultComp] ? anos[ultComp] : null;
+    var v = A1 && A2 ? varPct(A1.faturamento, A2.faturamento) : null, vf = A1 && A2 ? varPct(A1.funcionarios, A2.funcionarios) : null;
     var passo = $('ficha-passo'); passo.style.display = 'block';
-    var sug = a2 != null ? honSugerido(a2) : null;
-    passo.innerHTML = '<strong>Leitura:</strong> ' + (v == null ? 'sem base para comparar ' + (ultComp || '') + ' com o ano anterior.' :
-      'em ' + ultComp + ' o faturamento ' + (v >= 0 ? 'subiu ' : 'caiu ') + esc(pctTxt(Math.abs(v))) + '% sobre ' + (ultComp - 1) + (destaqueAnual(v) ? ' (acima do limite de ' + esc(pctTxt(X)) + '%): vale avaliar reajuste do honorário.' : '.')) +
+    var sug = A2 && A2.faturamento != null ? honSugerido(A2.faturamento) : null;
+    var partes = [];
+    if (v == null) partes.push('sem base para comparar o faturamento de ' + (ultComp || '') + ' com o ano anterior');
+    else partes.push('o faturamento ' + (v >= 0 ? 'subiu ' : 'caiu ') + esc(pctTxt(Math.abs(v))) + '%');
+    if (vf != null) partes.push('os funcionários ' + (vf >= 0 ? 'subiram ' : 'caíram ') + esc(pctTxt(Math.abs(vf))) + '% (' + A1.funcionarios + ' → ' + A2.funcionarios + ')');
+    else partes.push('sem folha nos dois anos para comparar funcionários');
+    var ambos = destaqueAnual(v) && destaqueAnual(vf);
+    passo.innerHTML = '<strong>Leitura:</strong> em ' + ultComp + ' sobre ' + (ultComp - 1) + ', ' + partes.join('; ') + '.' +
+      (ambos ? ' Os dois passaram do limite de ' + esc(pctTxt(X)) + ': vale avaliar reajuste do honorário.' : (destaqueAnual(v) ? ' O faturamento passou do limite de ' + esc(pctTxt(X)) + '%, sem acompanhamento de funcionários.' : '')) +
       (sug != null && c.honorario != null && !valoresOcultos() ? ' Com o faturamento de ' + ultComp + ', o honorário sugerido é ' + esc(moedaTxt(sug)) + ' por mês (hoje cobra ' + esc(moedaTxt(c.honorario)) + ').' : '');
     var q = c.questor;
     var blocos = '<div class="blocos">' +
       bloco('Honorário mensal', reais(c.honorario), 'cobrado hoje', null) +
-      bloco('Funcionários (hoje)', q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : 'sem dado', 'histórico por ano ainda indisponível', null) +
-      bloco('Regime tributário (hoje)', c.regime ? esc(c.regime) : '—', 'histórico por ano ainda indisponível', null) + '</div>';
-    $('ficha-corpo').innerHTML = blocos + '<div class="ficha-sec">Faturamento por ano</div>' +
-      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Ano</th><th class="c">Faturamento</th><th class="c">Variação</th><th></th></tr></thead><tbody>' + linhas + '</tbody></table></div>'
-        : '<div class="linha-item"><span class="x">Este cliente ainda não tem faturamento lido do Questor.</span></div>');
+      bloco('Funcionários (hoje)', q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : 'sem dado', 'Questor, folha atual', null) +
+      bloco('Regime tributário (hoje)', c.regime ? esc(c.regime) : '—', 'cadastro do Acessórias', null) + '</div>';
+    $('ficha-corpo').innerHTML = blocos + '<div class="ficha-sec">Ano a ano</div>' +
+      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Ano</th><th class="c">Faturamento</th><th class="c">Variação</th><th></th><th class="c">Funcionários</th><th class="c">Variação</th><th class="c">Regime tributário</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' +
+        '<div class="nota" style="margin-top:10px">Funcionários: total do último mês com folha de cada ano. Regime: dados da Receita Federal; sem informação dela, vale o cadastro do Questor (indicado abaixo do nome do regime).</div>'
+        : '<div class="linha-item"><span class="x">Este cliente ainda não tem dados do Questor por ano.</span></div>');
   }
 
   // Ficha do grupo (mesmo modelo da ficha do cliente): números consolidados e, abaixo, cada empresa com os seus.
@@ -969,15 +1007,17 @@
     if (sec === 'anual') {
       if (!estado.anual || estado.anual.valores_ocultos || !estado.anual.itens || !estado.anual.itens.length || !anosAnual().completos.length) return null;   // sem carga: nada para exportar
       var ra = linhasAnual(), fa = filtroAnual(), Xa = cfgAnual().percentual;
-      var fan = []; if (fa.busca) fan.push('Busca: ' + fa.busca); if (fa.soDestaque) fan.push('Só os que subiram ' + pctTxt(Xa) + '% ou mais');
+      var fan = []; if (fa.busca) fan.push('Busca: ' + fa.busca); if (fa.soDestaque) fan.push('Só os destacados');
       return { arquivo: 'cs-analise-anual', titulo: 'Painel do Sucesso do Cliente - Análise Anual (' + ra.ano + ' × ' + (ra.ano - 1) + ')',
-        filtros: [ra.linhas.length + ' cliente(s) · limite de destaque: ' + pctTxt(Xa) + '%' + (fan.length ? ' · ' + fan.join(' · ') : '') + ' · ordem: maior alta primeiro', aviso],
-        colunas: ['Razão social', 'Documento', 'Categoria', 'Regime (hoje)', 'Faturamento ' + (ra.ano - 1) + ' (R$)', 'Faturamento ' + ra.ano + ' (R$)', 'Variação (%)', 'Funcionários (hoje)', 'Honorário mensal (R$)', 'Rever honorário'],
+        filtros: [ra.linhas.length + ' cliente(s) · rever honorário: ' + pctTxt(Xa) + '% ou mais em ' + ROT_REGRA[fa.regra || 'ambos'] + (fan.length ? ' · ' + fan.join(' · ') : '') + ' · ordem: maior alta de faturamento primeiro', aviso],
+        colunas: ['Razão social', 'Documento', 'Categoria', 'Regime ' + (ra.ano - 1), 'Regime ' + ra.ano, 'Faturamento ' + (ra.ano - 1) + ' (R$)', 'Faturamento ' + ra.ano + ' (R$)', 'Variação faturamento (%)',
+          'Funcionários ' + (ra.ano - 1), 'Funcionários ' + ra.ano, 'Variação funcionários (%)', 'Honorário mensal (R$)', 'Rever honorário'],
         linhas: ra.linhas.map(function (l) {
-          return [l.c.nome, l.c.cnpj || '', l.c.categoria || '', l.c.regime || '', l.anos ? moedaExp(l.prev) : 'sem dado', l.anos ? moedaExp(l.cur) : 'sem dado',
-            l.v == null ? '' : Math.round(l.v * 10) / 10, funcExp(l.c.questor), moedaExp(l.c.honorario), destaqueAnual(l.v) ? 'Sim' : ''];
+          return [l.c.nome, l.c.cnpj || '', l.c.categoria || '', l.rp || '', l.rc || '', l.anos ? moedaExp(l.prev) : 'sem dado', l.anos ? moedaExp(l.cur) : 'sem dado',
+            l.v == null ? '' : Math.round(l.v * 10) / 10, l.fp == null ? '' : l.fp, l.fc == null ? '' : l.fc, l.vf == null ? '' : Math.round(l.vf * 10) / 10,
+            moedaExp(l.c.honorario), destaqueLinha(l) ? 'Sim' : ''];
         }),
-        alinhar: ['left', 'left', 'center', 'left', 'right', 'right', 'right', 'center', 'right', 'center'], fonte: 7 };
+        alinhar: ['left', 'left', 'center', 'left', 'left', 'right', 'right', 'right', 'center', 'center', 'right', 'right', 'center'], fonte: 6 };
     }
     if (sec === 'risco') {
       var fr = estado.filtroRisco, lr = filtrarRisco();
