@@ -3843,11 +3843,14 @@ const Atendimento = (() => {
     }
   }
 
+  let _analistasLista = [];
   function _renderAnalistasModal(lista) {
+    _analistasLista = lista;
     const linhas = lista.map(a => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-100)">
         <span style="${a.ativo ? '' : 'color:var(--gray-400);text-decoration:line-through'}">${a.nome}</span>
         <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="Atendimento._renomearAnalista('${a.id}')" title="Editar o nome (aparece também no módulo Qualidade)">Editar</button>
           <button class="btn btn-ghost btn-sm" onclick="Atendimento._toggleAnalista('${a.id}', ${!a.ativo})">${a.ativo ? 'Desativar' : 'Reativar'}</button>
           <button class="btn btn-sm" style="background:none;border:none;color:#e53e3e;cursor:pointer" onclick="Atendimento._excluirAnalista('${a.id}')" title="Excluir de vez">🗑</button>
         </div>
@@ -3875,6 +3878,29 @@ const Atendimento = (() => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao criar.');
       App.Toast.ok('Analista adicionado!');
+      await gerenciarAnalistas();
+      await _carregarAnalistasSelect();
+    } catch (e) {
+      App.Toast.err(e.message);
+    }
+  }
+
+  async function _renomearAnalista(id) {
+    const a = _analistasLista.find((x) => String(x.id) === String(id));
+    if (!a) return;
+    const novo = window.prompt('Nome completo do analista:', a.nome);
+    if (novo == null) return;
+    const nome = novo.replace(/s+/g, ' ').trim();
+    if (!nome || nome === a.nome) return;
+    try {
+      const res = await fetch(`/api/analistas/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${_token()}` },
+        body: JSON.stringify({ nome }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || 'Erro ao renomear.');
+      App.Toast.ok('Nome atualizado!');
       await gerenciarAnalistas();
       await _carregarAnalistasSelect();
     } catch (e) {
@@ -4000,7 +4026,7 @@ const Atendimento = (() => {
   }
 
   function goPage(p) { _page = p; const f = _filterData(_allData); const pg = App.Util.paginate(f, p); _renderGrid(pg.items); App.Util.renderPagination('at-pagination', pg.page, pg.pages, pg.total, 'Atendimento.goPage'); }
-  return { loadGrid, exportCSV, exportPDF, limpar, excluir, goPage, gerenciarAnalistas, _criarAnalista, _toggleAnalista, _excluirAnalista };
+  return { loadGrid, exportCSV, exportPDF, limpar, excluir, goPage, gerenciarAnalistas, _criarAnalista, _toggleAnalista, _renomearAnalista, _excluirAnalista };
 })();
 
 window.Atendimento = Atendimento;

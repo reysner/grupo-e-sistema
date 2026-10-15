@@ -12,7 +12,7 @@
  * Endpoints:
  *   GET    /api/analistas?ativo=true   -> lista (todos, ou só ativos com ?ativo=true)
  *   POST   /api/analistas              -> cria { nome }  (reativa se já existir com esse nome)
- *   PATCH  /api/analistas/:id          -> ativa/desativa { ativo: true|false }
+ *   PATCH  /api/analistas/:id          -> ativa/desativa e/ou renomeia { ativo?: true|false, nome?: string }
  *   DELETE /api/analistas/:id          -> apaga de vez (uso raro — prefira desativar)
  */
 const express = require('express');
@@ -60,15 +60,25 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+/** PATCH /:id  { ativo?, nome? }  -> ativa/desativa e/ou renomeia (o novo nome aparece em todos os módulos que leem a lista, como o Qualidade). */
 router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      `UPDATE analistas SET ativo = $1 WHERE id = $2 RETURNING id, nome, ativo`,
-      [!!req.body.ativo, req.params.id]
-    );
+    const b = req.body || {};
+    const sets = []; const vals = [];
+    if (b.ativo !== undefined) { vals.push(!!b.ativo); sets.push('ativo = $' + vals.length); }
+    if (b.nome !== undefined) {
+      const nome = String(b.nome || '').replace(/s+/g, ' ').trim();
+      if (!nome) return res.status(400).json({ error: 'O nome não pode ficar vazio.' });
+      if (nome.length > 80) return res.status(400).json({ error: 'Nome longo demais (até 80 caracteres).' });
+      vals.push(nome); sets.push('nome = $' + vals.length);
+    }
+    if (!sets.length) return res.status(400).json({ error: 'Informe nome e/ou ativo.' });
+    vals.push(req.params.id);
+    const { rows } = await pool.query(`UPDATE analistas SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING id, nome, ativo`, vals);
     if (!rows.length) return res.status(404).json({ error: 'Analista não encontrado.' });
     res.json({ analista: rows[0] });
   } catch (e) {
+    if (e && e.code === '23505') return res.status(409).json({ error: 'Já existe um analista com esse nome.' });
     console.error('[analistas] PATCH /:id falhou:', e);
     res.status(500).json({ error: e.message });
   }
