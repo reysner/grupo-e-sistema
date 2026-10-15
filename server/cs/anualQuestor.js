@@ -30,13 +30,19 @@ function validarCarga(corpo) {
     const doc = soDigitos(it && it.cnpj);
     if (![11, 12, 14].includes(doc.length)) continue;
     for (const a of (Array.isArray(it.anos) ? it.anos : [])) {
-      const ano = parseInt(a && a.ano, 10), fat = Number(a && a.faturamento);
-      const meses = parseInt(a && a.meses, 10), mv = parseInt(a && a.meses_com_valor, 10);
-      if (!(ano >= 1990 && ano <= 2100) || !Number.isFinite(fat) || !(meses >= 0 && meses <= 12)) throw new Error(`Valor inválido para o documento ${doc} no ano ${a && a.ano}.`);
+      const ano = parseInt(a && a.ano, 10);
+      const fat = a && a.faturamento != null ? Number(a.faturamento) : null;          // null = faturamento não lido para este ano
+      const meses = a && a.meses != null ? parseInt(a.meses, 10) : 0, mv = parseInt(a && a.meses_com_valor, 10);
+      const fun = a && a.funcionarios != null ? parseInt(a.funcionarios, 10) : null;
+      const media = a && a.funcionarios_media != null ? Number(a.funcionarios_media) : null;
+      const regime = a && a.regime ? String(a.regime).slice(0, 40) : null;
+      if (!(ano >= 1990 && ano <= 2100) || (fat !== null && !Number.isFinite(fat)) || !(meses >= 0 && meses <= 12)
+        || (fun !== null && !(fun >= 0 && fun <= 100000)) || (media !== null && !Number.isFinite(media))) throw new Error(`Valor inválido para o documento ${doc} no ano ${a && a.ano}.`);
       const chave = doc + '|' + ano;
       if (vistos.has(chave)) continue;
       vistos.add(chave);
-      linhas.push({ doc, ano, fat: Math.round(fat * 100) / 100, meses, mv: Number.isFinite(mv) ? Math.min(Math.max(mv, 0), meses) : meses });
+      linhas.push({ doc, ano, fat: fat === null ? null : Math.round(fat * 100) / 100, meses, mv: Number.isFinite(mv) ? Math.min(Math.max(mv, 0), meses) : meses,
+        fun, media: media === null ? null : Math.round(media * 10) / 10, regime });
     }
   }
   if (!linhas.length) throw new Error('Nenhum documento válido na carga.');
@@ -54,8 +60,12 @@ function garantirSchema() {
   if (!_schema) {
     // RLS ligado e sem policy: só o servidor lê (regra do projeto para tabela nova).
     _schema = pool.query(`CREATE TABLE IF NOT EXISTS questor_cliente_anual (
-        doc TEXT NOT NULL, ano INT NOT NULL, faturamento NUMERIC(16,2) NOT NULL, meses INT NOT NULL DEFAULT 12, meses_com_valor INT NOT NULL DEFAULT 12,
+        doc TEXT NOT NULL, ano INT NOT NULL, faturamento NUMERIC(16,2), meses INT NOT NULL DEFAULT 12, meses_com_valor INT NOT NULL DEFAULT 12,
         atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (doc, ano))`)
+      .then(() => pool.query(`ALTER TABLE questor_cliente_anual ALTER COLUMN faturamento DROP NOT NULL`))
+      .then(() => pool.query(`ALTER TABLE questor_cliente_anual ADD COLUMN IF NOT EXISTS funcionarios INT`))
+      .then(() => pool.query(`ALTER TABLE questor_cliente_anual ADD COLUMN IF NOT EXISTS funcionarios_media NUMERIC(8,1)`))
+      .then(() => pool.query(`ALTER TABLE questor_cliente_anual ADD COLUMN IF NOT EXISTS regime TEXT`))
       .then(() => pool.query(`ALTER TABLE questor_cliente_anual ENABLE ROW LEVEL SECURITY`))
       .then(() => pool.query(`CREATE TABLE IF NOT EXISTS cs_painel_config (
         chave TEXT PRIMARY KEY, valor JSONB NOT NULL, atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(), atualizado_por TEXT)`))
@@ -88,9 +98,9 @@ router.post('/', async (req, res) => {
     await client.query('DELETE FROM questor_cliente_anual');
     const L = v.linhas;
     await client.query(
-      `INSERT INTO questor_cliente_anual (doc, ano, faturamento, meses, meses_com_valor)
-       SELECT * FROM unnest($1::text[], $2::int[], $3::numeric[], $4::int[], $5::int[])`,
-      [L.map((l) => l.doc), L.map((l) => l.ano), L.map((l) => l.fat), L.map((l) => l.meses), L.map((l) => l.mv)]);
+      `INSERT INTO questor_cliente_anual (doc, ano, faturamento, meses, meses_com_valor, funcionarios, funcionarios_media, regime)
+       SELECT * FROM unnest($1::text[], $2::int[], $3::numeric[], $4::int[], $5::int[], $6::int[], $7::numeric[], $8::text[])`,
+      [L.map((l) => l.doc), L.map((l) => l.ano), L.map((l) => l.fat), L.map((l) => l.meses), L.map((l) => l.mv), L.map((l) => l.fun), L.map((l) => l.media), L.map((l) => l.regime)]);
     await client.query(
       `INSERT INTO cs_painel_config (chave, valor, atualizado_em, atualizado_por) VALUES ($1, $2::jsonb, NOW(), 'extrairAnual')
        ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW(), atualizado_por = EXCLUDED.atualizado_por`,
@@ -116,14 +126,14 @@ router.get('/', requireAuth, async (req, res) => {
     if (u.role !== 'administrador') return res.json({ valores_ocultos: true, ate: meta && meta.ate, ano_inicial: meta && meta.ano_inicial, config, itens: [] });
     // só clientes ATIVOS: quem foi inativado no Acessórias não aparece, mesmo tendo histórico
     const { rows } = await pool.query(
-      `SELECT a.doc, a.ano, a.faturamento::float AS faturamento, a.meses, a.meses_com_valor
+      `SELECT a.doc, a.ano, a.faturamento::float AS faturamento, a.meses, a.meses_com_valor, a.funcionarios, a.funcionarios_media::float AS funcionarios_media, a.regime
          FROM questor_cliente_anual a
         WHERE EXISTS (SELECT 1 FROM clientes c WHERE c.status = 'ativo' AND regexp_replace(c.cnpj, '\\D', '', 'g') = a.doc)
         ORDER BY a.doc, a.ano`);
     const itens = []; let atual = null;
     rows.forEach((r) => {
       if (!atual || atual.cnpj !== r.doc) { atual = { cnpj: r.doc, anos: [] }; itens.push(atual); }
-      atual.anos.push({ ano: r.ano, faturamento: r.faturamento, meses: r.meses, meses_com_valor: r.meses_com_valor });
+      atual.anos.push({ ano: r.ano, faturamento: r.faturamento, meses: r.meses, meses_com_valor: r.meses_com_valor, funcionarios: r.funcionarios, funcionarios_media: r.funcionarios_media, regime: r.regime });
     });
     res.json({ valores_ocultos: false, ate: meta && meta.ate, ano_inicial: meta && meta.ano_inicial, lido_em: por[CHAVE_META] ? por[CHAVE_META].atualizado_em : null, config, itens });
   } catch (err) {

@@ -18,7 +18,7 @@ const { Pool } = require('pg');
 const nweb = require('./nwebClient');
 const { periodoDeExtracao, hojeBrasilia } = require('./periodo');
 const { parseFaturamento, dig } = require('./faturamentoParse');
-const { agregarPorAno, mesesEsperados } = require('./anual');
+const { agregarPorAno, mesesEsperados, parseAtivos, parseOptantes, funcionariosDoAno, rotuloRegime } = require('./anual');
 
 const arg = (n) => { const a = process.argv.find((x) => x.startsWith('--' + n + '=')); return a ? a.slice(n.length + 3) : null; };
 const simular = process.argv.includes('--simular');
@@ -91,10 +91,45 @@ async function main() {
   }
   console.log(`lidos: ${Object.keys(resultado).length} | falhas: ${falhas.length}${falhas.length ? ' (' + falhas.slice(0, 5).map((f) => f.doc + ': ' + f.motivo).join(' | ') + ')' : ''}`);
 
-  const itens = Object.keys(resultado).map((cnpj) => ({
-    cnpj,
-    anos: Object.keys(resultado[cnpj].anos).sort().map((a) => ({ ano: Number(a), faturamento: resultado[cnpj].anos[a].faturamento, meses: resultado[cnpj].anos[a].meses, meses_com_valor: resultado[cnpj].anos[a].meses_com_valor })),
-  }));
+  // ── Funcionários por mês (relatório "Empregados Ativos", agrupado por Empresa e Competência): um relatório por ano, todas as empresas ──
+  const [anoFim, mesFim] = fim.split('-').map(Number);
+  const ultimoDia = (a, m) => new Date(Date.UTC(a, m, 0)).getUTCDate();
+  const ativosPorEmp = {};
+  for (let ano = ANO_INICIAL; ano <= anoFim; ano++) {
+    const ate = ano === anoFim ? `${ultimoDia(anoFim, mesFim)}/${String(mesFim).padStart(2, '0')}/${anoFim}` : `31/12/${ano}`;
+    const j = await nweb.chamar('/TnWebDMRelatorio/Executar?_AActionName=nfpaRRFuncAtivo&_ABase64=False&_ATipoRetorno=nrwexCSV',
+      { PCOMPETINICIAL: `01/01/${ano}`, PCOMPETFIN: ate, PQUEBRA: '2', PORDENAR: '0' }, { timeoutMs: 240000 });
+    if (/Insufficient memory/i.test(j.Message || '')) throw new Error('o nWeb ficou sem memória no relatório de funcionários. Feche e abra o nWeb de novo e rode outra vez. Nada foi enviado.');
+    const r = parseAtivos(j.Data || '');
+    Object.keys(r).forEach((emp) => { ativosPorEmp[emp] = Object.assign(ativosPorEmp[emp] || {}, r[emp]); });
+  }
+  console.log(`funcionários: ${Object.keys(ativosPorEmp).length} empresas com folha processada`);
+
+  // ── Regime por ano: relações de optantes com Data Base (31/12 de cada ano; no ano corrente, o último dia do mês fechado) ──
+  const opcoes = {};   // ano -> { simples, presumido, real }
+  for (let ano = ANO_INICIAL; ano <= anoFim; ano++) {
+    const base = ano === anoFim ? `${ultimoDia(anoFim, mesFim)}/${String(mesFim).padStart(2, '0')}/${anoFim}` : `31/12/${ano}`;
+    const ler = async (acao) => parseOptantes(((await nweb.chamar(`/TnWebDMRelatorio/Executar?_AActionName=${acao}&_ABase64=False&_ATipoRetorno=nrwexCSV`, { PMODELO: '1', PDATABASE: base }, { timeoutMs: 240000 })).Data) || '');
+    opcoes[ano] = { simples: await ler('nFisRROpcaoSSimplesFederal'), presumido: await ler('nFisRROpcaoLucroPresumido'), real: await ler('nFisRROpcaoLalur') };
+  }
+  console.log('regime: ' + Object.keys(opcoes).map((a) => `${a}:${opcoes[a].simples.size}S`).join(' '));
+
+  // a contagem de funcionários é por EMPRESA do Questor: fica no documento do estabelecimento de menor código (a matriz) entre os clientes lidos
+  const donoDaEmpresa = new Map();
+  for (const d of presentes) { const m = noQuestor.get(d); const atual = donoDaEmpresa.get(m.emp); if (!atual || Number(m.est) < Number(noQuestor.get(atual).est)) donoDaEmpresa.set(m.emp, d); }
+  const itens = presentes.map((cnpj) => {
+    const m = noQuestor.get(cnpj), fat = resultado[cnpj] ? resultado[cnpj].anos : {};
+    const meses = donoDaEmpresa.get(m.emp) === cnpj ? (ativosPorEmp[m.emp] || {}) : null;
+    const anos = [];
+    for (let ano = ANO_INICIAL; ano <= anoFim; ano++) {
+      const f = fat[ano], fn = meses ? funcionariosDoAno(meses, ano) : { funcionarios: null, funcionarios_media: null };
+      anos.push({
+        ano, faturamento: f ? f.faturamento : null, meses: f ? f.meses : 0, meses_com_valor: f ? f.meses_com_valor : 0,
+        funcionarios: fn.funcionarios, funcionarios_media: fn.funcionarios_media, regime: rotuloRegime(cnpj, opcoes[ano]),
+      });
+    }
+    return { cnpj, anos };
+  });
   const corpo = { ate: fim, ano_inicial: ANO_INICIAL, itens };
   if (arg('arquivo')) fs.writeFileSync(arg('arquivo'), JSON.stringify({ ate: fim, ano_inicial: ANO_INICIAL, resultado, corpo }));
   if (simular) { console.log('(simulação — nada enviado)'); return; }

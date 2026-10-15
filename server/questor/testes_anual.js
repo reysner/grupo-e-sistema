@@ -43,5 +43,40 @@ teste('mesesEsperados conta de janeiro do ano inicial até o mês final', () => 
   assert.strictEqual(mesesEsperados(2025, '2025-12'), 12);
 });
 
+const { parseAtivos, parseOptantes, funcionariosDoAno, rotuloRegime } = require('./anual');
+teste('parseAtivos lê o total de empregados por empresa e competência', () => {
+  const csv = [
+    '"Relação de Empregados Ativos";"14/10/2026 22:31";"Pág:0001"', '"Código Empresa";"Nome Empresa";;', '',
+    '1271;"CARDOSO ADEGA LTDA";', '"Compet.";"Total Empregados"', '05/2025;"       61";', '12/2025;"       63";', '',
+    '1272;"OUTRA LTDA";', '"Compet.";"Total Empregados"', '12/2025;"        2";',
+  ].join('\n');
+  const r = parseAtivos(csv);
+  assert.deepStrictEqual({ ...r['1271'] }, { '2025-05': 61, '2025-12': 63 });
+  assert.deepStrictEqual({ ...r['1272'] }, { '2025-12': 2 });
+});
+teste('funcionariosDoAno: último mês com folha do ano e média; sem folha = null', () => {
+  const m = { '2025-05': 61, '2025-06': 59, '2025-12': 63, '2024-12': 40 };
+  assert.deepStrictEqual({ ...funcionariosDoAno(m, 2025) }, { funcionarios: 63, funcionarios_media: 61, meses_com_folha: 3 });
+  assert.strictEqual(funcionariosDoAno(m, 2023).funcionarios, null);
+});
+teste('parseOptantes pega só quem tem opção "Sim" e o documento da linha da empresa', () => {
+  const csv = [
+    '"Fiscal";"14/10/2026 22:27 Pág:0001"', '"Data Base: 31/12/2025"',
+    '"Empresa: 0003  LUZIA REGINA DE OLIVEIRA DOMINGUES - ME, CNPJ: 21.266.796/0001-07"',
+    '"Sim";01/01/2018;"6106/3  SIMPLES Nacional";"Competência";"Microempresa";"Junto SIMPLES";;"Junto SIMPLES";', '""',
+    '"Empresa: 0008  OUTRA - ME, CNPJ: 23.922.390/0001-52"',
+    '"Não";01/01/2018;"6106/3  SIMPLES Nacional";"Competência";"Microempresa";"Junto SIMPLES";;"Junto SIMPLES";',
+  ].join('\n');
+  const r = parseOptantes(csv);
+  assert.deepStrictEqual([...r], ['21266796000107']);
+});
+teste('rotuloRegime: Simples vence; depois Real, Presumido; senão "Fora do Simples"', () => {
+  const c = { simples: new Set(['1']), real: new Set(['2']), presumido: new Set(['3']) };
+  assert.strictEqual(rotuloRegime('1', c), 'Simples Nacional');
+  assert.strictEqual(rotuloRegime('2', c), 'Lucro Real');
+  assert.strictEqual(rotuloRegime('3', c), 'Lucro Presumido');
+  assert.strictEqual(rotuloRegime('4', c), 'Fora do Simples');
+});
+
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);
