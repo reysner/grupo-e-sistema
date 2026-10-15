@@ -53,6 +53,17 @@ teste('atendimento: notas baixas, SLA vermelho, detratores e sensíveis somam e 
   assert.strictEqual(termometroAtendimento({ notasBaixas: 3, slaVermelho: 4, detratores: 2 }).pontos, 100); // 60+20+30 = 110 -> 100
 });
 
+teste('atendimento: considerações de Qualidade pesam pelo tipo, resolvida e antiga valem metade, cancelada não entra, teto de 40', () => {
+  const t = (qualidade) => termometroAtendimento({ qualidade });
+  assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 5 }]).pontos, 25);
+  assert.strictEqual(t([{ tipo: 'Erro', status: 'em_tratamento', dias: 5 }]).pontos, 15);
+  assert.strictEqual(t([{ tipo: 'Reclamação', status: 'resolvido', dias: 5 }]).pontos, 10);          // resolvida: metade
+  assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 60 }]).pontos, 13);                  // passou de 45 dias: metade (arredondado)
+  assert.strictEqual(t([{ tipo: 'Multa', status: 'cancelado', dias: 1 }]).pontos, 0);
+  assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 1 }, { tipo: 'Multa', status: 'aberto', dias: 1 }]).pontos, 40);   // teto
+  assert.ok(t([{ tipo: 'Atraso', status: 'aberto', dias: 2 }]).detalhe[0].includes('consideração de qualidade'));
+});
+
 teste('atendimento: abandono de atendimento não conta mais (decisão de 16/10/2026)', () => {
   assert.strictEqual(termometroAtendimento({ abandonos: 1 }).pontos, 0);
   assert.strictEqual(termometroAtendimento({ abandonos: 5 }).pontos, 0);

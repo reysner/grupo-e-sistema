@@ -142,6 +142,11 @@ async function calcularTodos({ detalhes = false } = {}) {
   if (!zappyRows) zappyRows = await consultar(zappySemRevisao, [], 'zappy sem revisão') || [];
   const zappy = new Map(zappyRows.map((r) => [r.cliente_id, r]));
 
+  // Considerações de Qualidade (ficha do cliente): entram no termômetro de Atendimento. Tabela ausente = segue sem.
+  const qualidade = new Map();
+  ((await consultar(`SELECT cliente_id, tipo, status, (CURRENT_DATE - criado_em::date)::int AS dias FROM cs_qualidade_registros WHERE criado_em >= NOW() - INTERVAL '90 days' AND status <> 'cancelado'`, [], 'qualidade')) || [])
+    .forEach((q) => { (qualidade.get(q.cliente_id) || qualidade.set(q.cliente_id, []).get(q.cliente_id)).push({ tipo: q.tipo, status: q.status, dias: q.dias }); });
+
   const entregas = new Map(((await consultar(`SELECT doc, total, atrasadas_entregues, vencidas_pendentes FROM cliente_entregas_resumo`, [], 'entregas')) || []).map((r) => [r.doc, r]));
 
   // Suspensos = contrato com situação "Suspenso" no Omie (decisão do Reysner, 08/10/2026: só o Omie vale, não a TAG do Acessórias).
@@ -160,7 +165,7 @@ async function calcularTodos({ detalhes = false } = {}) {
       financeiro: calc.termometroFinanceiro({ temDado: coberto.has(doc) || !!ab, qtdAtrasados: ab ? ab.qtd : 0, valorAtrasado: ab ? ab.valor : 0, maisAntigo: ab ? ab.mais_antigo : null, cronico: c.cronico, hoje }),
       atendimento: calc.termometroAtendimento({
         insatisfacoes: insat.get(doc) || [], sensiveis: sensiveis.get(doc) || [], notasBaixas: z.notas_baixas || 0,
-        slaVermelho: z.sla_vermelho || 0, detratores: detratores.get(doc) || 0, tickets90: z.tickets90 || 0,
+        slaVermelho: z.sla_vermelho || 0, qualidade: qualidade.get(String(c.id)) || [], detratores: detratores.get(doc) || 0, tickets90: z.tickets90 || 0,
       }),
       operacional: calc.termometroOperacional({ temDado: !!e, total: e ? e.total : 0, atrasadasEntregues: e ? e.atrasadas_entregues : 0, vencidasPendentes: e ? e.vencidas_pendentes : 0, suspenso }),
     };

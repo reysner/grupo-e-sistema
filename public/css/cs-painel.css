@@ -289,3 +289,30 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 /* botão do percentual abaixo do título da coluna */
 .th-sub{margin-top:4px;}
 .th-sub .mini-pct{margin-left:0;}
+
+/* Qualidade: considerações na ficha do cliente e janela de analistas */
+.qa-form{border:1px solid var(--border);border-radius:12px;padding:14px;margin:6px 0 12px;background:var(--surface);}
+.qa-linha{display:flex;gap:12px;flex-wrap:wrap;}
+.qa-campo{flex:1;min-width:190px;margin-bottom:10px;}
+.qa-campo label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:4px;}
+.qa-campo select,.qa-campo input[type=date],.qa-campo textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:13px;}
+.qa-campo textarea{resize:vertical;}
+.qa-campo .req{color:#dc2626;}
+.qa-deps{display:flex;gap:6px 14px;flex-wrap:wrap;}
+.qa-dep{display:inline-flex;gap:5px;align-items:center;font-size:12.5px;font-weight:500;color:var(--text);margin:0 !important;}
+.qa-lnk{font-size:11px;font-weight:500;}
+.qa-acoes{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;}
+.qa-reg{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;}
+.qa-reg-topo{font-size:13px;margin-bottom:4px;}
+.qa-reg-txt{font-size:13px;color:var(--text);margin-bottom:4px;white-space:pre-wrap;}
+.qa-reg-rod{font-size:11.5px;color:var(--text2);}
+.qa-reg-trat{font-size:12px;margin-top:6px;padding:6px 8px;border-radius:8px;background:rgba(0,0,0,.04);}
+.qa-overlay{position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;}
+.qa-modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:100%;max-width:520px;max-height:85vh;overflow-y:auto;padding:18px;}
+.qa-modal-topo{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:15px;}
+.qa-x{background:none;border:none;font-size:18px;cursor:pointer;color:var(--text2);}
+.qa-modal-novo{display:flex;gap:8px;margin-bottom:12px;}
+.qa-modal-novo input{flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:13px;}
+.qa-an-linha{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
+.qa-an-inativo{color:var(--text2);text-decoration:line-through;}
+.qa-an-acoes{display:flex;gap:6px;flex-shrink:0;}

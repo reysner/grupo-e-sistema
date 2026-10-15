@@ -64,6 +64,8 @@ app.use('/api/auth',   authRoutes);
 app.use('/api/data',   dataRoutes);
 app.use('/api/users',  usersRoutes);
 app.use('/api/cs/categorias', require('./cs/categorias').router);  // Categorias Diamante/Ouro/Prata/Bronze (antes de /api/cs)
+app.use('/api/cs/painel/qualidade', require('./cs/qualidade').router);   // Qualidade: considerações por cliente e analista (antes de /api/cs/painel)
+app.use('/api/qualidade', require('./cs/qualidade').routerAnalista);       // Minhas tratativas: o analista logado vê e trata os próprios registros
 app.use('/api/cs/churn', require('./cs/churnSaidas').router);  // Churn por saídas (as três 'Transferida por…')
 app.use('/api/cs/risco', require('./cs/risco').router);        // Risco de perda: termômetros Financeiro, Atendimento e Operacional
 app.use('/api/cs/questor/anual', require('./cs/anualQuestor').router);   // Análise Anual: POST do job local (token de sincronização)
@@ -108,6 +110,11 @@ app.get('/contabil', (req, res) => {
 // ── Minha Nota — self-service da Gamificação, role 'colaborador' (login próprio) ──
 app.get('/minha-nota', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'minha-nota.html'));
+});
+
+// ── Minhas tratativas (Qualidade): o analista vê e trata as considerações registradas para ele (login próprio) ──
+app.get('/qualidade', (req, res) => {
+  res.sendFile(path.join(PUBLIC, 'qualidade.html'));
 });
 
 // ── Legalização pública — colaborador com acesso_legalizacao (login próprio),

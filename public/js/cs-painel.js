@@ -18,6 +18,7 @@
   };
   var TITULOS = {
     analise: ['Análise Inteligente', 'Regime tributário, faturamento, honorários e funcionários de cada cliente; grupos de empresas e matriz com filiais somados, com a lupa para ver cada empresa, para uma análise completa.'],
+    consideracoes: ['Qualidade', 'Considerações registradas por analista (multa, erro, reclamação, atraso, falha): data do lançamento, prazo e status. O analista trata pela página Minhas tratativas.'],
     atendimento: ['Atendimento', 'Atendimentos do Zappy e e-mails dos últimos 180 dias de cada cliente ativo. Clique na empresa para ver cada atendimento e os e-mails por destinatário.'],
     anual: ['Análise Anual', 'Faturamento ano a ano de cada cliente ativo no Acessórias, para avaliar se o honorário precisa de ajuste. Clique na empresa para ver a evolução.'],
     visao: ['Visão Geral', 'Clientes ativos, saídas por transferência e risco de perda — só CNPJ. Material da reunião semanal das lideranças.'],
@@ -119,7 +120,7 @@
     $('app').style.display = 'block';
     var u = null; try { u = JSON.parse(ls(K_USER) || 'null'); } catch (e) { u = null; }
     if (u && u.name) montarMenuUsuario(u);
-    ['visao', 'analise', 'anual', 'atendimento', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="vazio">Carregando…</div>'; });
+    ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="vazio">Carregando…</div>'; });
     try {
       estado.dados = await api('/api/cs/painel/dados' + (forcar === true ? '?forcar=1' : ''));
       try { estado.honorario = await api('/api/cs/painel/honorario-sugerido'); } catch (e) { estado.honorario = null; }
@@ -129,7 +130,7 @@
       estado.churnLivre = null;
       desenharTudo();
     } catch (e) {
-      ['visao', 'analise', 'anual', 'atendimento', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; });
+      ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; });
     }
   }
 
@@ -145,7 +146,7 @@
     $('badge-risco').textContent = t.risco.Alto || '';
     $('badge-churn').textContent = periodoAtual().saidas_contadas;
     $('atualizado').textContent = 'Atualizado em ' + new Date(d.gerado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
-    desenharVisao(); desenharAnalise(); desenharAnual(); desenharAtendimento(); desenharRisco(); desenharChurn(); desenharCategorias(); desenharQualidade();
+    desenharVisao(); desenharAnalise(); desenharAnual(); desenharAtendimento(); desenharQualidadeMod(); desenharRisco(); desenharChurn(); desenharCategorias(); desenharQualidade();
     irPara(estado.secao);
   }
 
@@ -157,6 +158,7 @@
     $('subtitulo').textContent = TITULOS[sec][1];
     $('filtro-periodo').style.display = (sec === 'visao' || sec === 'churn') ? 'flex' : 'none';
     var ativa = $('sec-' + sec); if (ativa) ativa.scrollTop = 0;
+    if (sec === 'consideracoes' && estado.dados && !estado.qResumo) desenharQualidadeMod();   // recarrega depois de um registro novo
     ['btn-csv', 'btn-pdf'].forEach(function (id) { var b = $(id); if (b) b.style.display = SEC_EXPORTA[sec] ? 'inline-flex' : 'none'; });
   }
 
@@ -308,7 +310,7 @@
       '<details class="card leg" style="padding:12px 20px"><summary><span class="seta">▶</span> 📏 Legenda — como o risco é calculado <span style="font-weight:500;text-transform:none;letter-spacing:0">(clique para expandir)</span></summary><div class="corpo">' +
         '<div><strong style="color:#dc2626">Risco de perda</strong><br>Média dos termômetros que têm dado, de 0 a 100. Médio a partir de ' + d.config.cortes.medio + ', Alto a partir de ' + d.config.cortes.alto + '. Um termômetro muito alto sozinho gera alerta e sobe o cliente para Médio.</div>' +
         '<div><strong style="color:' + COR_TERM.financeiro + '">Financeiro</strong><br>Dias de atraso do título mais antigo (até 15 dias = 25 pontos; acima de 90 = 90), mais 10 pontos com 3 ou mais títulos. Cliente marcado como inadimplente crônico fica em 70, no mínimo.</div>' +
-        '<div><strong style="color:' + COR_TERM.atendimento + '">Atendimento</strong><br>Insatisfações registradas (pesam pela gravidade e diminuem depois de 90 dias), notas baixas, e SLA vermelho do Zappy <em>depois da revisão da Gamificação</em>, e detratores das pesquisas.</div>' +
+        '<div><strong style="color:' + COR_TERM.atendimento + '">Atendimento</strong><br>Insatisfações registradas (pesam pela gravidade e diminuem depois de 90 dias), notas baixas, e SLA vermelho do Zappy <em>depois da revisão da Gamificação</em>, considerações de qualidade registradas na ficha (multa, erro, reclamação, atraso, falha), e detratores das pesquisas.</div>' +
         '<div><strong style="color:' + COR_TERM.operacional + '">Operacional</strong><br>Proporção das entregas do Acessórias (últimos 90 dias) que chegam ao cliente e foram entregues com atraso ou venceram sem entrega: guias e declarações com multa, folha, FGTS, DCTFWeb, INSS e envios ao cliente. Tarefas internas (balancete, renovação de certificado, aniversário de sócio, cadastros) não contam. Entrega dentro do prazo técnico ou do prazo legal não é atraso. Só conta com <strong>5 entregas ou mais</strong> no período (com menos, a taxa não é confiável: fica sem dado). Empresa com contrato <strong>Suspenso no Omie</strong> (selo ⏸) também fica fora do Operacional: o atraso dela já pesa no Financeiro.</div>' +
       '</div></details>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px">' +
@@ -1108,6 +1110,245 @@
     } catch (e) { $('ficha-nome').textContent = 'Não foi possível abrir o atendimento'; $('ficha-corpo').innerHTML = '<div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div>'; }
   }
 
+  // ── QUALIDADE: considerações por cliente (ficha) e módulo por analista ───────────
+  // Registro feito na ficha do cliente pelo Sucesso do Cliente / Time Operacional (tipo, departamentos, descrição, analista e prazo).
+  // O nome do analista vem sempre da lista de analistas (renomear lá renomeia aqui). Entra no termômetro de Atendimento do risco.
+  var ROT_STATUS_Q = { aberto: 'Aberto', em_tratamento: 'Em tratamento', resolvido: 'Resolvido', cancelado: 'Cancelado', vencido: 'Vencido' };
+  var COR_STATUS_Q = { aberto: '#b45309', em_tratamento: '#2563eb', resolvido: '#166534', cancelado: '#6b7280', vencido: '#b91c1c' };
+  function pillStatusQ(sit) {
+    var c = COR_STATUS_Q[sit] || '#6b7280';
+    return '<span class="pill" style="color:' + c + ';border-color:' + c + '55;background:' + c + '14">' + esc(ROT_STATUS_Q[sit] || sit) + '</span>';
+  }
+  function hojeIsoLocal() {
+    var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function usuarioLogadoNome() { try { var u = JSON.parse(ls(K_USER) || 'null'); return (u && u.name) || ''; } catch (e) { return ''; } }
+  function ehAdminPainel() { return !!(estado.dados && estado.dados.usuario && estado.dados.usuario.papel === 'administrador'); }
+
+  async function carregarOpcoesQ(forcarAnalistas) {
+    if (!estado.qOpcoes) estado.qOpcoes = await api('/api/cs/painel/qualidade/opcoes');
+    if (!estado.qAnalistas || forcarAnalistas) estado.qAnalistas = (await api('/api/cs/painel/qualidade/analistas?ativo=true')).analistas;
+    return estado.qOpcoes;
+  }
+
+  /** Lista de registros (cartões) usada na ficha do cliente. */
+  function listaRegistrosQ(regs) {
+    if (!regs.length) return '<div class="linha-item"><span class="x">Nenhuma consideração registrada para este cliente.</span></div>';
+    return regs.map(function (r) {
+      return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao) + ' <strong>' + esc(r.tipo) + '</strong> <span class="cinza">· ' + esc((r.departamentos || []).join(', ')) + '</span></div>' +
+        '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
+        '<div class="qa-reg-rod">Analista: <strong>' + esc(r.analista_nome || '—') + '</strong> · lançado em ' + data(r.criado_em) + ' por ' + esc(r.criado_por || '—') + ' · prazo ' + data(r.prazo) +
+          (r.resolvido_em ? ' · resolvido em ' + data(r.resolvido_em) : '') + '</div>' +
+        (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + '</div>';
+    }).join('');
+  }
+
+  function formularioQ(o) {
+    var optTipos = '<option value="">Selecione</option>' + o.tipos.map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('');
+    var optAn = '<option value="">Selecione</option>' + (estado.qAnalistas || []).map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.nome) + '</option>'; }).join('');
+    var deps = o.departamentos.map(function (d) { return '<label class="qa-dep"><input type="checkbox" class="qa-dep-ck" value="' + esc(d) + '"> ' + esc(d) + '</label>'; }).join('');
+    return '<div class="qa-form">' +
+      '<div class="qa-linha">' +
+        '<div class="qa-campo"><label for="qa-tipo">Tipo de registro <span class="req">*</span></label><select id="qa-tipo">' + optTipos + '</select></div>' +
+        '<div class="qa-campo"><label for="qa-analista">Analista <span class="req">*</span>' + (ehAdminPainel() ? ' <a href="#" id="qa-editar-an" class="qa-lnk">(editar lista)</a>' : '') + '</label><select id="qa-analista">' + optAn + '</select></div>' +
+        '<div class="qa-campo"><label for="qa-prazo">Prazo para execução <span class="req">*</span></label><input type="date" id="qa-prazo" min="' + hojeIsoLocal() + '"></div>' +
+      '</div>' +
+      '<div class="qa-campo"><label>Departamentos envolvidos <span class="req">*</span></label><div class="qa-deps"><label class="qa-dep"><input type="checkbox" id="qa-dep-todos"> <strong>Todos</strong></label>' + deps + '</div></div>' +
+      '<div class="qa-campo"><label for="qa-detalhe">Descreva a ocorrência <span class="req">*</span> <span class="cinza" id="qa-cont">0/' + o.max_detalhe + '</span></label>' +
+        '<textarea id="qa-detalhe" maxlength="' + o.max_detalhe + '" rows="3" placeholder="Ex.: guia do Simples enviada com valor errado; cliente pagou a diferença e pediu retificação."></textarea></div>' +
+      '<div class="qa-acoes"><button type="button" class="login-btn" id="qa-salvar" style="width:auto;margin:0;padding:9px 22px">Salvar</button>' +
+        '<span class="cinza">Registra com a data de hoje e o seu nome (' + esc(usuarioLogadoNome() || 'você') + ').</span></div>' +
+      '<div class="pop-erro" id="qa-erro" role="alert"></div></div>';
+  }
+
+  async function montarConsideracoes(c) {
+    var alvo = $('qa-secao'); if (!alvo) return;
+    alvo.innerHTML = '<div class="cinza">Carregando…</div>';
+    try {
+      var o = await carregarOpcoesQ();
+      var lista = await api('/api/cs/painel/qualidade/cliente/' + encodeURIComponent(c.id));
+      alvo.innerHTML = formularioQ(o) + '<div class="qa-lista">' + listaRegistrosQ(lista.registros) + '</div>';
+      var cont = $('qa-cont'), det = $('qa-detalhe');
+      det.addEventListener('input', function () { cont.textContent = det.value.length + '/' + o.max_detalhe; });
+      var todos = $('qa-dep-todos');
+      todos.addEventListener('change', function () { Array.prototype.forEach.call(document.querySelectorAll('.qa-dep-ck'), function (k) { k.checked = todos.checked; }); });
+      Array.prototype.forEach.call(document.querySelectorAll('.qa-dep-ck'), function (k) {
+        k.addEventListener('change', function () { todos.checked = document.querySelectorAll('.qa-dep-ck:checked').length === o.departamentos.length; });
+      });
+      var ed = $('qa-editar-an'); if (ed) ed.addEventListener('click', function (ev) { ev.preventDefault(); abrirGerenciarAnalistas(function () { montarConsideracoes(c); }); });
+      $('qa-salvar').addEventListener('click', async function () {
+        var erro = $('qa-erro'); erro.textContent = '';
+        var deps = Array.prototype.map.call(document.querySelectorAll('.qa-dep-ck:checked'), function (k) { return k.value; });
+        var corpo = { cliente_id: c.id, tipo: $('qa-tipo').value, departamentos: deps, detalhe: det.value, analista_id: $('qa-analista').value, prazo: $('qa-prazo').value };
+        if (!corpo.tipo) { erro.textContent = 'Escolha o tipo de registro.'; return; }
+        if (!deps.length) { erro.textContent = 'Escolha ao menos um departamento envolvido.'; return; }
+        if (!corpo.analista_id) { erro.textContent = 'Escolha o analista responsável.'; return; }
+        if (!corpo.prazo) { erro.textContent = 'Informe o prazo para execução.'; return; }
+        if (det.value.trim().length < 5) { erro.textContent = 'Descreva a ocorrência (mínimo de 5 caracteres).'; return; }
+        $('qa-salvar').disabled = true;
+        try {
+          var resp = await chamarApi('/api/cs/painel/qualidade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+          var j = await resp.json().catch(function () { return {}; });
+          if (!resp.ok) { erro.textContent = j.error || 'Não foi possível salvar.'; $('qa-salvar').disabled = false; return; }
+          estado.qResumo = null;       // o módulo Qualidade recarrega ao abrir
+          await montarConsideracoes(c);
+        } catch (e) { erro.textContent = 'Sem conexão com o servidor. Tente de novo.'; $('qa-salvar').disabled = false; }
+      });
+    } catch (e) { alvo.innerHTML = '<div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div>'; }
+  }
+
+  /** Janela simples para o administrador editar o nome completo, ativar/desativar e incluir analistas (a mesma lista do módulo Atendimento). */
+  async function abrirGerenciarAnalistas(aoFechar) {
+    var ov = document.createElement('div'); ov.className = 'qa-overlay';
+    document.body.appendChild(ov);
+    var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); estado.qAnalistas = null; if (aoFechar) aoFechar(); };
+    var desenhar = async function () {
+      var j = await api('/api/cs/painel/qualidade/analistas');
+      ov.innerHTML = '<div class="qa-modal" role="dialog" aria-label="Gerenciar analistas"><div class="qa-modal-topo"><strong>Gerenciar analistas</strong><button type="button" class="qa-x" id="qa-fechar" aria-label="Fechar">✕</button></div>' +
+        '<div class="qa-modal-novo"><input id="qa-novo" type="text" placeholder="Nome completo do novo analista"><button type="button" class="gp-footer-btn" id="qa-add" style="width:auto">+ Adicionar</button></div>' +
+        '<div class="qa-modal-lista">' + j.analistas.map(function (a) {
+          return '<div class="qa-an-linha"><span class="' + (a.ativo ? '' : 'qa-an-inativo') + '">' + esc(a.nome) + '</span><span class="qa-an-acoes">' +
+            '<button type="button" class="gp-footer-btn" data-ren="' + esc(a.id) + '" data-nome="' + esc(a.nome) + '" style="width:auto">Editar nome</button>' +
+            '<button type="button" class="gp-footer-btn" data-tog="' + esc(a.id) + '" data-ativo="' + (a.ativo ? '1' : '0') + '" style="width:auto">' + (a.ativo ? 'Desativar' : 'Reativar') + '</button></span></div>';
+        }).join('') + '</div><div class="pop-erro" id="qa-an-erro" role="alert"></div></div>';
+      $('qa-fechar').addEventListener('click', fechar);
+      var falha = function (m) { $('qa-an-erro').textContent = m; };
+      var patch = async function (id, corpo) {
+        var r = await chamarApi('/api/analistas/' + encodeURIComponent(id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+        var x = await r.json().catch(function () { return {}; });
+        if (!r.ok) { falha(x.error || 'Não foi possível salvar.'); return false; }
+        return true;
+      };
+      $('qa-add').addEventListener('click', async function () {
+        var nome = $('qa-novo').value.replace(/\s+/g, ' ').trim(); if (!nome) { falha('Digite o nome.'); return; }
+        var r = await chamarApi('/api/analistas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: nome }) });
+        var x = await r.json().catch(function () { return {}; });
+        if (!r.ok) { falha(x.error || 'Não foi possível adicionar.'); return; }
+        desenhar();
+      });
+      Array.prototype.forEach.call(ov.querySelectorAll('[data-ren]'), function (b) {
+        b.addEventListener('click', async function () {
+          var novo = window.prompt('Nome completo do analista:', b.getAttribute('data-nome'));
+          if (novo == null) return; novo = novo.replace(/\s+/g, ' ').trim();
+          if (!novo || novo === b.getAttribute('data-nome')) return;
+          if (await patch(b.getAttribute('data-ren'), { nome: novo })) desenhar();
+        });
+      });
+      Array.prototype.forEach.call(ov.querySelectorAll('[data-tog]'), function (b) {
+        b.addEventListener('click', async function () { if (await patch(b.getAttribute('data-tog'), { ativo: b.getAttribute('data-ativo') !== '1' })) desenhar(); });
+      });
+    };
+    try { await desenhar(); } catch (e) { ov.innerHTML = '<div class="qa-modal"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; }
+  }
+
+  // ── Módulo Qualidade: uma linha por analista ───────────────────────────────────
+  function filtroQ() { return estado.filtroQ || (estado.filtroQ = { busca: '', todos: false }); }
+  async function carregarResumoQ() { estado.qResumo = await api('/api/cs/painel/qualidade/resumo'); }
+  async function desenharQualidadeMod() {
+    var alvo = $('sec-consideracoes'); if (!alvo) return;
+    var f = filtroQ();
+    try { if (!estado.qResumo) { alvo.innerHTML = '<div class="vazio">Carregando…</div>'; await carregarResumoQ(); } }
+    catch (e) { alvo.innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; return; }
+    var r = estado.qResumo, b = f.busca.trim().toLowerCase();
+    var tot = { abertos: 0, em_tratamento: 0, vencidos: 0, resolvidos: 0 };
+    r.analistas.forEach(function (a) { tot.abertos += a.abertos; tot.em_tratamento += a.em_tratamento; tot.vencidos += a.vencidos; tot.resolvidos += a.resolvidos; });
+    var lista = r.analistas.filter(function (a) {
+      if (!f.todos && !a.total) return false;
+      return !b || (a.nome || '').toLowerCase().indexOf(b) >= 0;
+    });
+    var corpo = lista.map(function (a) {
+      return '<tr><td><button class="link" data-qan="' + esc(a.id) + '">' + esc(a.nome) + '</button>' + (a.ativo ? '' : ' <span class="cinza">(desativado)</span>') + '</td>' +
+        '<td class="c">' + (a.abertos ? '<strong>' + a.abertos + '</strong>' : '0') + '</td><td class="c">' + (a.em_tratamento || 0) + '</td>' +
+        '<td class="c">' + (a.vencidos ? '<strong style="color:#b91c1c">' + a.vencidos + '</strong>' : '0') + '</td><td class="c">' + (a.resolvidos || 0) + '</td>' +
+        '<td class="c">' + data(a.ultimo_lancamento) + '</td><td class="c">' + data(a.proximo_prazo) + '</td>' +
+        '<td class="c">' + (a.user_id ? '<span title="Este analista tem login ligado e vê as próprias tratativas">✔</span>' : '<span class="cinza" title="Sem login ligado: abra o analista para ligar">—</span>') + '</td></tr>';
+    }).join('');
+    alvo.innerHTML =
+      '<div class="gp-kpi-row">' +
+        kpi('#b45309', 'Em aberto', tot.abertos, 'aguardando o analista começar') +
+        kpi('#2563eb', 'Em tratamento', tot.em_tratamento, 'o analista já está tratando') +
+        kpi('#b91c1c', 'Vencidos', tot.vencidos, 'prazo passou e ainda não foi resolvido') +
+        kpi('#166534', 'Resolvidos', tot.resolvidos, 'considerações encerradas') +
+      '</div>' +
+      '<div class="nota"><strong>Como funciona.</strong> A consideração é registrada na ficha do cliente (Gestão da Permanência) pelo Sucesso do Cliente ou pelo Time Operacional, com analista e prazo. ' +
+        'Aqui a lista é por analista: clique no nome para ver cada registro, o prazo e o status. O analista trata pela página <strong>Minhas tratativas</strong> (/qualidade). ' +
+        'Cada consideração também pesa no termômetro de Atendimento do risco de churn do cliente.' + (r.sem_analista ? ' <span style="color:#b91c1c">' + r.sem_analista + ' registro(s) sem analista na lista.</span>' : '') + '</div>' +
+      '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="q-busca" placeholder="Nome do analista" value="' + esc(f.busca) + '">' +
+        '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="q-todos"' + (f.todos ? ' checked' : '') + '> mostrar analistas sem registro</label>' +
+        (ehAdminPainel() ? '<button type="button" class="gp-footer-btn" id="q-gerenciar" style="width:auto">Gerenciar analistas</button>' : '') + '</div>' +
+        '<div class="card-sub">' + lista.length + ' analista(s) · ordem alfabética. Clique no nome para ver os registros.</div>' +
+        (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Analista</th><th class="c">Em aberto</th><th class="c">Em tratamento</th><th class="c">Vencidos</th><th class="c">Resolvidos</th><th class="c">Último lançamento</th><th class="c">Próximo prazo</th><th class="c">Login</th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
+          : '<div class="vazio">Nenhum registro de qualidade ainda. Registre a primeira consideração na ficha de um cliente (Gestão da Permanência).</div>') + '</div>';
+    var campo = $('q-busca'); if (campo) campo.addEventListener('input', function () { f.busca = campo.value; var pos = campo.selectionStart; desenharQualidadeMod(); var n = $('q-busca'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* sem seleção */ } });
+    var st = $('q-todos'); if (st) st.addEventListener('change', function () { f.todos = st.checked; desenharQualidadeMod(); });
+    var g = $('q-gerenciar'); if (g) g.addEventListener('click', function () { abrirGerenciarAnalistas(function () { estado.qResumo = null; desenharQualidadeMod(); }); });
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-qan]'), function (bt) { bt.addEventListener('click', function () { abrirFichaAnalistaQ(bt.getAttribute('data-qan')); }); });
+  }
+
+  async function abrirFichaAnalistaQ(id) {
+    $('ficha').style.display = 'flex';
+    $('ficha-nome').textContent = 'Carregando…'; $('ficha-sub').textContent = ''; $('ficha-passo').style.display = 'none'; $('ficha-corpo').innerHTML = '';
+    try {
+      var j = await api('/api/cs/painel/qualidade/analista/' + encodeURIComponent(id));
+      var a = j.analista, regs = j.registros;
+      var cont = function (s) { return regs.filter(function (r) { return r.situacao === s; }).length; };
+      $('ficha-nome').textContent = a.nome;
+      $('ficha-sub').textContent = 'Considerações registradas para este analista (Sucesso do Cliente / Time Operacional)';
+      var linhas = regs.map(function (r) {
+        var abertos = r.status === 'aberto' || r.status === 'em_tratamento';
+        return '<tr><td>' + data(r.criado_em) + '</td><td>' + data(r.prazo) + '</td><td>' + pillStatusQ(r.situacao) + '</td>' +
+          '<td style="white-space:normal">' + esc(r.cliente_nome || '—') + '<div class="sub">' + esc(r.cnpj || '') + '</div></td>' +
+          '<td>' + esc(r.tipo) + '<div class="sub">' + esc((r.departamentos || []).join(', ')) + '</div></td>' +
+          '<td style="white-space:normal;min-width:220px">' + esc(r.detalhe) + (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + '<div class="sub">lançado por ' + esc(r.criado_por || '—') + '</div></td>' +
+          '<td style="white-space:normal">' + (abertos ?
+            (r.status === 'aberto' ? '<button type="button" class="gp-footer-btn" data-qst="' + esc(r.id) + '" data-novo="em_tratamento" style="width:auto">Em tratamento</button> ' : '') +
+            '<button type="button" class="gp-footer-btn" data-qst="' + esc(r.id) + '" data-novo="resolvido" style="width:auto">Resolver</button> ' +
+            '<button type="button" class="gp-footer-btn" data-qpz="' + esc(r.id) + '" data-prazo="' + esc(r.prazo) + '" style="width:auto">Prazo</button> ' +
+            '<button type="button" class="gp-footer-btn" data-qst="' + esc(r.id) + '" data-novo="cancelado" style="width:auto">Cancelar</button>' : '') + '</td></tr>';
+      }).join('');
+      var adminLogin = '';
+      if (ehAdminPainel()) {
+        var us = [];
+        try { us = (await api('/api/users')).users || []; } catch (e) { us = []; }
+        adminLogin = '<div class="qa-linha" style="margin:10px 0"><div class="qa-campo"><label for="qa-login">Login deste analista (para a página Minhas tratativas)</label><select id="qa-login"><option value="">Sem login ligado</option>' +
+          us.filter(function (u) { return u.ativo !== false; }).map(function (u) { return '<option value="' + esc(u.id) + '"' + (String(a.user_id) === String(u.id) ? ' selected' : '') + '>' + esc(u.name) + ' · ' + esc(u.email) + '</option>'; }).join('') + '</select></div></div>';
+      }
+      $('ficha-corpo').innerHTML =
+        '<div class="blocos">' + bloco('Em aberto', cont('aberto'), 'aguardando o analista começar', cont('aberto') ? '#b45309' : null) +
+          bloco('Em tratamento', cont('em_tratamento'), 'o analista já está tratando', null) +
+          bloco('Vencidos', cont('vencido'), 'prazo passou sem resolver', cont('vencido') ? '#b91c1c' : null) +
+          bloco('Resolvidos', cont('resolvido'), 'encerradas', null) + '</div>' + adminLogin +
+        '<div class="ficha-sec">Registros</div>' +
+        (regs.length ? '<div class="table-wrap"><table><thead><tr><th>Lançamento</th><th>Prazo</th><th>Status</th><th>Empresa</th><th>Tipo / departamentos</th><th>Ocorrência</th><th>Ações</th></tr></thead><tbody>' + linhas + '</tbody></table></div>'
+          : '<div class="linha-item"><span class="x">Nenhuma consideração registrada para este analista.</span></div>');
+      var lg = $('qa-login');
+      if (lg) lg.addEventListener('change', async function () {
+        var r = await chamarApi('/api/cs/painel/qualidade/vinculo/' + encodeURIComponent(a.id), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: lg.value || null }) });
+        if (!r.ok) { var x = await r.json().catch(function () { return {}; }); window.alert(x.error || 'Não foi possível ligar o login.'); } else estado.qResumo = null;
+      });
+      var mudar = async function (rid, corpo) {
+        var r = await chamarApi('/api/cs/painel/qualidade/' + encodeURIComponent(rid), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+        var x = await r.json().catch(function () { return {}; });
+        if (!r.ok) { window.alert(x.error || 'Não foi possível atualizar.'); return; }
+        estado.qResumo = null; abrirFichaAnalistaQ(id); desenharQualidadeMod();
+      };
+      Array.prototype.forEach.call(document.querySelectorAll('#ficha-corpo [data-qst]'), function (b) {
+        b.addEventListener('click', function () {
+          var novo = b.getAttribute('data-novo'), rid = b.getAttribute('data-qst');
+          if (novo === 'resolvido') { var t = window.prompt('O que foi feito para resolver?'); if (t == null) return; mudar(rid, { status: 'resolvido', tratativa: t }); }
+          else if (novo === 'cancelado') { if (window.confirm('Cancelar esta consideração? Ela deixa de pesar no risco do cliente.')) mudar(rid, { status: 'cancelado' }); }
+          else mudar(rid, { status: novo });
+        });
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('#ficha-corpo [data-qpz]'), function (b) {
+        b.addEventListener('click', function () {
+          var p = window.prompt('Novo prazo (AAAA-MM-DD):', b.getAttribute('data-prazo')); if (p == null) return;
+          mudar(b.getAttribute('data-qpz'), { prazo: p.trim() });
+        });
+      });
+    } catch (e) { $('ficha-nome').textContent = 'Não foi possível abrir o analista'; $('ficha-corpo').innerHTML = '<div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div>'; }
+  }
+
   // ── QUALIDADE DOS DADOS ──────────────────────────────────────────────────────
   function desenharQualidade() {
     var d = estado.dados, t = d.totais;
@@ -1206,8 +1447,10 @@
     // insatisfações e entregas saíram daqui por pedido do Reysner (as variáveis acima seguem montadas para quando a próxima etapa as reaproveitar).
     $('ficha-corpo').innerHTML = blocos1 + blocos2 +
       '<div class="ficha-sec">Sinais de atenção</div><div>' + sinais + '</div>' +
+      '<div class="ficha-sec">Considerações Sucesso do Cliente / Time Operacional</div><div id="qa-secao"></div>' +
       '<div class="ficha-sec">Financeiro</div>' + fin +
       '<div class="nota" style="margin-top:10px">Atendimentos do Zappy e e-mails (recebidos e sem resposta, por destinatário) estão no módulo <strong>Atendimento</strong>.</div>';
+    montarConsideracoes(c);
   }
 
   function fecharFicha() { $('ficha').style.display = 'none'; document.querySelector('.ficha-box').classList.remove('larga'); }

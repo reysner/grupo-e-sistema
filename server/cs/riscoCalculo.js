@@ -55,10 +55,15 @@ function termometroFinanceiro(e) {
  * Atendimento. entrada: {
  *   insatisfacoes:[{gravidade, dias}], sensiveis:[{gravidade, dias}], notasBaixas:n (≤2 nos últimos 90d),
  *   slaVermelho:n (tickets com SLA vermelho nos últimos 90d),   (abandono de atendimento NÃO entra mais: decisão do Reysner, 16/10/2026)
- *   detratores:n (NPS ≤ 6 nos últimos 180d), tickets90:n }
+ *   detratores:n (NPS ≤ 6 nos últimos 180d), tickets90:n,
+ *   qualidade:[{tipo, status, dias}] (considerações registradas na ficha pelo Sucesso do Cliente / Time Operacional, últimos 90d) }
  * Notas baixas e SLA vermelho chegam JÁ DEPOIS da revisão da Gamificação (o que foi marcado "indevida" não entra).
  * Sempre tem dado: ausência de ocorrências = 0 pontos.
  */
+/** Pontos de cada tipo de consideração de Qualidade (decisão do Reysner, 16/10/2026: entra como um dos indicadores do risco; pesos ajustáveis aqui). */
+const PESO_QUALIDADE = { 'multa': 25, 'reclamacao': 20, 'falha de atendimento': 20, 'erro': 15, 'atraso': 10, 'falha tecnica': 10, 'outros': 5 };
+const TETO_QUALIDADE = 40;
+
 function termometroAtendimento(e) {
   const x = e || {};
   const detalhe = [];
@@ -79,6 +84,16 @@ function termometroAtendimento(e) {
 
   const sla = Number(x.slaVermelho) || 0;
   if (sla) { pontos += Math.min(20, sla * 5); detalhe.push(`${plural(sla, 'ticket', 'tickets')} com SLA vermelho nos últimos 90 dias`); }
+
+  // Qualidade: cada consideração pesa pelo tipo; resolvida vale metade e, passados 45 dias, também metade; cancelada não entra.
+  const qs = (x.qualidade || []).filter((q) => q && q.status !== 'cancelado' && (q.dias == null || q.dias <= 90));
+  if (qs.length) {
+    let pq = 0;
+    qs.forEach((q) => { pq += (PESO_QUALIDADE[norm(q.tipo)] ?? 5) * (q.status === 'resolvido' ? 0.5 : 1) * ((q.dias || 0) > 45 ? 0.5 : 1); });
+    pontos += Math.min(TETO_QUALIDADE, Math.round(pq));
+    const abertas = qs.filter((q) => q.status !== 'resolvido').length;
+    detalhe.push(`${plural(qs.length, 'consideração de qualidade registrada', 'considerações de qualidade registradas')} nos últimos 90 dias${abertas ? ` (${abertas} em aberto)` : ''}`);
+  }
 
   const det = Number(x.detratores) || 0;
   if (det) { pontos += Math.min(30, det * 15); detalhe.push(`${plural(det, 'pesquisa de detrator', 'pesquisas de detrator')} (NPS até 6) nos últimos 180 dias`); }

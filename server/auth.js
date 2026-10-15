@@ -79,6 +79,8 @@ function requireAuth(req, res, next) {
     const isCsPainelRoute = rotaCompleta.startsWith('/api/cs/painel') && !!payload.acesso_cs;
     const isFinanceiroRoute = rotaCompleta.startsWith('/api/financeiro') && !!(payload.acesso_financeiro || payload.acesso_cs);
     const isAuthOuPerfil = req.path && (req.path.includes('/auth') || req.path.includes('/perfil'));
+    // Minhas tratativas (16/10/2026): o analista (login com acesso_minha_nota) vê e trata só os registros de Qualidade dele; quem é "ele" a rota decide.
+    const isQualidadeRoute = rotaCompleta.startsWith('/api/qualidade/') && !!payload.acesso_minha_nota;
     // Minha Nota (28/08/2026, self-service da Gamificação): rotas
     // /gam/minha-* e /gam/meus-* — a nota/tickets da PRÓPRIA pessoa,
     // resolvida no backend a partir do login (nunca aceita um
@@ -107,7 +109,7 @@ function requireAuth(req, res, next) {
       const permitido = isTicketRoute || isAuthOuPerfil
         || (payload.acesso_minha_nota && isMinhaNotaRoute)
         || (payload.acesso_legalizacao && isLegalizacaoRoute)
-        || isCsPainelRoute || isFinanceiroRoute;
+        || isCsPainelRoute || isFinanceiroRoute || isQualidadeRoute;
       if (!permitido) return res.status(403).json({ error: 'Acesso restrito ao portal contábil.' });
     }
     // Colaborador: só pode ver a própria nota (ou Legalização, se
@@ -115,7 +117,7 @@ function requireAuth(req, res, next) {
     // clientes, outros colaboradores etc. Papel "puro", pra quem não deve
     // ter NENHUM outro acesso (diferente dos checkboxes acima, que
     // ADICIONAM uma tela a um perfil que já tem outra coisa).
-    if (payload.role === 'colaborador' && !(isMinhaNotaRoute || isAuthOuPerfil || (payload.acesso_legalizacao && isLegalizacaoRoute) || isCsPainelRoute || isFinanceiroRoute)) {
+    if (payload.role === 'colaborador' && !(isMinhaNotaRoute || isAuthOuPerfil || (payload.acesso_legalizacao && isLegalizacaoRoute) || isCsPainelRoute || isFinanceiroRoute || isQualidadeRoute)) {
       return res.status(403).json({ error: 'Acesso restrito à sua nota da Gamificação.' });
     }
     next();
