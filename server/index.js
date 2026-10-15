@@ -40,6 +40,7 @@ app.use(cors({
 
 app.use(cookieParser());
 app.use('/api/cs/questor/anual', express.json({ limit: '5mb' }));   // faturamento por ano da carteira (rotina local; só totais por CNPJ e ano)
+app.use('/api/cs/omie/honorarios', express.json({ limit: '3mb' }));   // honorário cobrado por cliente e ano, lido do Omie (carga manual; só totais por CNPJ e ano)
 app.use('/api/cs/email-sinais', express.json({ limit: '1mb' }));   // leitura diária dos sinais de e-mail (job local; só contagens por cliente)
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: false }));
@@ -67,6 +68,7 @@ app.use('/api/cs/churn', require('./cs/churnSaidas').router);  // Churn por saí
 app.use('/api/cs/risco', require('./cs/risco').router);        // Risco de perda: termômetros Financeiro, Atendimento e Operacional
 app.use('/api/cs/questor/anual', require('./cs/anualQuestor').router);   // Análise Anual: POST do job local (token de sincronização)
 app.use('/api/cs/painel/anual', require('./cs/anualQuestor').router);   // ...e leitura/limite para o painel (login)
+app.use('/api/cs/omie/honorarios', require('./cs/omieHonorarios').router);   // POST com token de sincronização
 app.use('/api/cs/questor', require('./cs/questorDados').router);   // Faturamento 12 meses e funcionários vindos do Questor (rotina local na VPN; token de sincronização)
 app.use('/api/financeiro', require('./financeiro/rotas').router);   // Página /financeiro: inadimplência, suspensos e cobranças (login; valores só para administrador e acesso_financeiro)
 app.use('/api/cs/painel/honorario-sugerido', require('./cs/honorarioSugerido').router);   // Análise Inteligente: percentual do honorário sugerido (um valor para a equipe)

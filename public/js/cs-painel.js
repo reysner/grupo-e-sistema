@@ -660,6 +660,14 @@
     });
     return m;
   }
+  /** Honorário cobrado por ano (Omie): { cnpj: { ano: { total, meses, mensal } } }. */
+  function mapaHonAnual() {
+    var m = {};
+    ((estado.anual && estado.anual.itens) || []).forEach(function (it) {
+      var o = {}; (it.honorarios || []).forEach(function (h) { o[h.ano] = h; }); m[it.cnpj] = o;
+    });
+    return m;
+  }
   /** variação % de b sobre a; null quando não há base (a <= 0 ou ausente). */
   function varPct(a, b) { return a == null || b == null || !(a > 0) ? null : (b - a) / a * 100; }
   function destaqueAnual(v) { return v != null && v >= cfgAnual().percentual; }
@@ -857,7 +865,7 @@
   // Ficha de um cliente: ano a ano, desde o primeiro ano lido (mesmo modelo da ficha do outro módulo).
   function abrirFichaAnual(doc) {
     var d = estado.dados, c = d.clientes.concat(d.clientes_outros || []).filter(function (x) { return soDig(x.cnpj) === doc; })[0]; if (!c) return;
-    var anos = (mapaAnual()[doc]) || {}, ac = anosAnual(), X = cfgAnual().percentual;
+    var anos = (mapaAnual()[doc]) || {}, ac = anosAnual(), X = cfgAnual().percentual, hon = mapaHonAnual()[doc] || {};
     document.querySelector('.ficha-box').classList.add('larga');   // janela larga: a tabela ano a ano cabe sem rolagem
     $('ficha').style.display = 'flex';
     $('ficha-nome').textContent = c.nome;
@@ -871,13 +879,16 @@
       var parcial = ac.parcial && y === ac.parcial.ano, fat = x.faturamento == null ? 0 : x.faturamento;
       var larg = Math.max(2, Math.round(Math.abs(fat) / max * 100));
       var mud = ant && regimeMudou(ant.regime, x.regime);
+      var h = hon[y], hAnt = i > 0 ? hon[lista[i - 1]] : null, vh = h && hAnt ? varPct(hAnt.mensal, h.mensal) : null;
       return '<tr><td><strong>' + y + '</strong>' + (parcial ? ' <span class="cinza">até ' + String(ac.parcial.mes).padStart(2, '0') + '/' + y + '</span>' : '') + '</td>' +
         '<td class="c" style="font-family:var(--mono)">' + (x.faturamento == null ? semDadoFat(anos, y) : reais(x.faturamento)) + '</td>' +
         '<td class="c">' + (parcial ? '<span class="cinza">parcial</span>' : celVar(v, destaqueAnual(v))) + '</td>' +
         '<td style="min-width:90px"><div class="barra-ano" style="width:' + larg + '%"></div></td>' +
         '<td class="c">' + (x.funcionarios == null ? '<span class="cinza">sem folha</span>' : x.funcionarios) + '</td>' +
         '<td class="c">' + (parcial ? '' : celVar(vf, destaqueAnual(vf))) + '</td>' +
-        '<td class="c" style="white-space:normal">' + (x.regime ? chipRegime(x.regime) + (mud ? ' <span class="regime-seta" title="Mudou em relação ao ano anterior">●</span>' : '') + (x.regime_fonte ? '<div class="sub">' + esc(x.regime_fonte) + '</div>' : '') : '<span class="cinza">—</span>') + '</td></tr>';
+        '<td class="c" style="white-space:normal">' + (x.regime ? chipRegime(x.regime) + (mud ? ' <span class="regime-seta" title="Mudou em relação ao ano anterior">●</span>' : '') + (x.regime_fonte ? '<div class="sub">' + esc(x.regime_fonte) + '</div>' : '') : '<span class="cinza">—</span>') + '</td>' +
+        '<td class="c" style="font-family:var(--mono)">' + (h ? reais(h.mensal) + '<div class="sub">' + h.meses + (h.meses === 1 ? ' mês' : ' meses') + ' cobrados</div>' : '<span class="cinza">—</span>') + '</td>' +
+        '<td class="c">' + (vh == null ? '' : celVar(vh, false)) + '</td></tr>';
     }).join('');
     var ultComp = ac.completos.length ? ac.completos[ac.completos.length - 1] : null;
     var A1 = ultComp && anos[ultComp - 1] ? anos[ultComp - 1] : null, A2 = ultComp && anos[ultComp] ? anos[ultComp] : null;
@@ -901,8 +912,8 @@
       bloco('Funcionários (hoje)', q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : 'sem dado', 'Questor, folha atual', null) +
       bloco('Regime tributário (hoje)', c.regime ? esc(c.regime) : '—', 'cadastro do Acessórias', null) + '</div>';
     $('ficha-corpo').innerHTML = blocos + '<div class="ficha-sec">Ano a ano</div>' +
-      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Ano</th><th class="c">Faturamento</th><th class="c">Variação</th><th></th><th class="c">Funcionários</th><th class="c">Variação</th><th class="c">Regime tributário</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' +
-        '<div class="nota" style="margin-top:10px">Funcionários: total do último mês com folha de cada ano. Regime: dados da Receita Federal; abaixo de cada regime está a fonte (ECF do ano, opção pelo Simples ou a última ECF conhecida). Faturamento: exatamente o que o Questor devolve.</div>'
+      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Ano</th><th class="c">Faturamento</th><th class="c">Variação</th><th></th><th class="c">Funcionários</th><th class="c">Variação</th><th class="c">Regime tributário</th><th class="c">Honorário mensal</th><th class="c">Variação</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' +
+        '<div class="nota" style="margin-top:10px">Funcionários: total do último mês com folha de cada ano. Regime: dados da Receita Federal; abaixo de cada regime está a fonte (ECF do ano, opção pelo Simples ou a última ECF conhecida). Faturamento: exatamente o que o Questor devolve. Honorário mensal: valor típico cobrado por mês no Omie (categoria Serviços Honorários Contábeis, dois ambientes somados); o histórico do Omie começa no fim de 2023 e o ano em curso é parcial.</div>'
         : '<div class="linha-item"><span class="x">Este cliente ainda não tem dados do Questor por ano.</span></div>');
   }
 

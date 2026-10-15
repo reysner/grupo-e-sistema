@@ -134,9 +134,11 @@ router.get('/', requireAuth, async (req, res) => {
          FROM questor_cliente_anual a
         WHERE EXISTS (SELECT 1 FROM clientes c WHERE c.status = 'ativo' AND regexp_replace(c.cnpj, '\\D', '', 'g') = a.doc)
         ORDER BY a.doc, a.ano`);
+    // honorário cobrado por ano (Omie); sem a carga, a tela só não mostra a evolução
+    const honPor = await require('./omieHonorarios').lerPorDocs([...new Set(rows.map((r) => r.doc))]).catch(() => ({}));
     const itens = []; let atual = null;
     rows.forEach((r) => {
-      if (!atual || atual.cnpj !== r.doc) { atual = { cnpj: r.doc, anos: [] }; itens.push(atual); }
+      if (!atual || atual.cnpj !== r.doc) { atual = { cnpj: r.doc, anos: [], honorarios: honPor[r.doc] || [] }; itens.push(atual); }
       atual.anos.push({ ano: r.ano, faturamento: r.faturamento, meses: r.meses, meses_com_valor: r.meses_com_valor, funcionarios: r.funcionarios, funcionarios_media: r.funcionarios_media, regime: r.regime, regime_fonte: r.regime_fonte, aviso: r.aviso });
     });
     res.json({ valores_ocultos: false, ate: meta && meta.ate, ano_inicial: meta && meta.ano_inicial, lido_em: por[CHAVE_META] ? por[CHAVE_META].atualizado_em : null, config, itens });
