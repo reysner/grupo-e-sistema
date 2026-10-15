@@ -703,13 +703,25 @@
     return av ? '<span class="cinza aviso-fat" tabindex="0" title="' + esc(av) + '" aria-label="' + esc(av) + '">sem dado ⚠</span>' : '<span class="cinza">sem dado</span>';
   }
   /** Destaque pela regra escolhida: "ambos" exige as DUAS variações (faturamento e funcionários) no limite ou acima; quando não há folha para comparar, vale o faturamento. */
-  function destaqueLinha(l, regra) {
+  function destaquePorValores(l, regra) {
     var r = regra || filtroAnual().regra || 'ou';
     if (r === 'fat') return destaqueAnual(l.v);
     if (r === 'func') return destaqueAnual(l.vf);
     if (r === 'ou') return destaqueAnual(l.v) || destaqueAnual(l.vf);        // qualquer um dos dois no limite
     // "ambos": faturamento E funcionários no limite; sem folha nos dois anos (vf nulo) decide só o faturamento
     return destaqueAnual(l.v) && (l.vf == null || destaqueAnual(l.vf));
+  }
+  /** Rever honorário: pelos valores (regra escolhida) OU porque o regime mudou entre os dois anos (muda o trabalho do escritório). */
+  function destaqueLinha(l, regra) { return destaquePorValores(l, regra) || !!l.mudouRegime; }
+  /** Os motivos do destaque, para o tooltip, a ficha e a exportação. */
+  function motivosRever(l) {
+    var m = [];
+    if (destaquePorValores(l)) {
+      if (destaqueAnual(l.v)) m.push('faturamento ' + pctAnual(l.v));
+      if (destaqueAnual(l.vf)) m.push('funcionários ' + pctAnual(l.vf));
+    }
+    if (l.mudouRegime) m.push('mudou de regime (' + l.rp + ' → ' + l.rc + ')');
+    return m;
   }
   function linhasAnual() {
     var d = estado.dados, f = filtroAnual(), ac = anosAnual(), mapa = mapaAnual();
@@ -765,7 +777,7 @@
         '<td class="c">' + vTxt + '</td>' +
         '<td class="c">' + funcTxt + '</td>' +
         '<td class="c">' + celVar(l.vf, destaqueAnual(l.vf)) + '</td>' +
-        '<td class="c">' + (dest ? '<span class="pill" style="color:#b45309;border-color:#b4530955;background:#b4530914" title="' + esc(pctTxt(X)) + '% ou mais em ' + esc(ROT_REGRA[regra]) + (regra === 'ambos' && l.vf == null ? ' (sem folha para comparar: decidido pelo faturamento)' : '') + ': avaliar reajuste do honorário">Rever honorário</span>' : (l.anos ? '<span class="cinza" title="Abaixo do limite de ' + esc(pctTxt(X)) + '% em ' + esc(ROT_REGRA[regra]) + '">Abaixo do limite</span>' : '<span class="cinza">—</span>')) + '</td></tr>';
+        '<td class="c">' + (dest ? '<span class="pill" style="color:#b45309;border-color:#b4530955;background:#b4530914" title="Rever honorário: ' + esc(motivosRever(l).join(' · ')) + (regra === 'ambos' && l.vf == null && destaquePorValores(l) ? ' (sem folha para comparar: decidido pelo faturamento)' : '') + '">Rever honorário</span>' : (l.anos ? '<span class="cinza" title="Abaixo do limite de ' + esc(pctTxt(X)) + '% em ' + esc(ROT_REGRA[regra]) + '">Abaixo do limite</span>' : '<span class="cinza">—</span>')) + '</td></tr>';
     }).join('');
     var optAnos = ac.completos.map(function (y) { return '<option value="' + y + '"' + (y === ano ? ' selected' : '') + '>' + y + ' × ' + (y - 1) + '</option>'; }).join('');
     var optRegra = Object.keys(ROT_REGRA).map(function (k) { return '<option value="' + k + '"' + (k === regra ? ' selected' : '') + '>' + esc(ROT_REGRA[k].charAt(0).toUpperCase() + ROT_REGRA[k].slice(1)) + '</option>'; }).join('');
@@ -780,7 +792,7 @@
       '</div>' +
       '<div class="nota"><strong>Fontes.</strong> Faturamento por ano civil: Questor (módulo Fiscal). Funcionários: total de empregados ativos no <strong>último mês com folha</strong> de cada ano (Questor, Folha); a contagem é por empresa e fica na matriz. ' +
         'Regime: <strong>Receita Federal</strong> (ECF e opção pelo Simples; para anos ainda sem ECF vale a última conhecida, indicada na ficha). O cadastro de regime do Questor não é usado. ' +
-        'Só clientes <strong>ativos no Acessórias</strong>.' + esc(parcial) + ' Com a regra "faturamento e funcionários", quem não tem folha nos dois anos é decidido só pelo faturamento. O limite de ' + esc(pctTxt(X)) + '% é um só para a equipe' + (cfgAnual().pode_editar ? ' (botão % no título da coluna Variação).' : '.') + '</div>' +
+        'Só clientes <strong>ativos no Acessórias</strong>.' + esc(parcial) + ' <strong>A mudança de regime tributário entre os dois anos também gera "Rever honorário"</strong>, qualquer que seja a regra escolhida. Com a regra "faturamento e funcionários", quem não tem folha nos dois anos é decidido só pelo faturamento. O limite de ' + esc(pctTxt(X)) + '% é um só para a equipe' + (cfgAnual().pode_editar ? ' (botão % no título da coluna Variação).' : '.') + '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="n-busca" placeholder="Empresa ou CNPJ" value="' + esc(f.busca) + '">' +
         '<span class="filter-label">Documento</span><select class="gp-select" id="n-tipo"><option value=""' + (!f.tipo ? ' selected' : '') + '>Todos (' + (r.contTipo.CNPJ + r.contTipo.CPF + r.contTipo.CAEPF + r.contTipo.CNO) + ')</option>' + ['CNPJ', 'CPF', 'CAEPF', 'CNO'].map(function (t) { return '<option value="' + t + '"' + (f.tipo === t ? ' selected' : '') + '>Só ' + t + ' (' + r.contTipo[t] + ')</option>'; }).join('') + '</select>' +
         '<span class="filter-label">Comparar</span><select class="gp-select" id="n-ano">' + optAnos + '</select>' +
@@ -878,8 +890,10 @@
     if (vf != null) partes.push('os funcionários ' + (vf >= 0 ? 'subiram ' : 'caíram ') + esc(pctTxt(Math.abs(vf))) + '% (' + A1.funcionarios + ' → ' + A2.funcionarios + ')');
     else partes.push('sem folha nos dois anos para comparar funcionários');
     var ambos = destaqueAnual(v) && destaqueAnual(vf);
+    var mudouReg = A1 && A2 && regimeMudou(A1.regime, A2.regime);
     passo.innerHTML = '<strong>Leitura:</strong> em ' + ultComp + ' sobre ' + (ultComp - 1) + ', ' + partes.join('; ') + '.' +
       (ambos ? ' Os dois passaram do limite de ' + esc(pctTxt(X)) + ': vale avaliar reajuste do honorário.' : (destaqueAnual(v) && vf == null ? ' O faturamento passou do limite de ' + esc(pctTxt(X)) + '% e não há folha para comparar: vale avaliar reajuste do honorário.' : (destaqueAnual(v) ? ' O faturamento passou do limite de ' + esc(pctTxt(X)) + '%, mas os funcionários não acompanharam.' : ''))) +
+      (mudouReg ? ' O regime mudou de ' + esc(A1.regime) + ' para ' + esc(A2.regime) + ': muda o trabalho do escritório, vale avaliar reajuste do honorário.' : '') +
       (sug != null && c.honorario != null && !valoresOcultos() ? ' Com o faturamento de ' + ultComp + ', o honorário sugerido é ' + esc(moedaTxt(sug)) + ' por mês (hoje cobra ' + esc(moedaTxt(c.honorario)) + ').' : '');
     var q = c.questor;
     var blocos = '<div class="blocos">' +
@@ -1070,13 +1084,13 @@
       return { arquivo: 'cs-analise-anual', titulo: 'Painel do Sucesso do Cliente - Análise Anual (' + ra.ano + ' × ' + (ra.ano - 1) + ')',
         filtros: [ra.linhas.length + ' cliente(s) · rever honorário: ' + pctTxt(Xa) + '% ou mais em ' + ROT_REGRA[fa.regra || 'ou'] + (fan.length ? ' · ' + fan.join(' · ') : '') + ' · ' + ROT_ORDEM[fa.ordem || 'alfa'], aviso],
         colunas: ['Razão social', 'Documento', 'Categoria', 'Regime ' + (ra.ano - 1), 'Regime ' + ra.ano, 'Faturamento ' + (ra.ano - 1) + ' (R$)', 'Faturamento ' + ra.ano + ' (R$)', 'Variação faturamento (%)',
-          'Funcionários ' + (ra.ano - 1), 'Funcionários ' + ra.ano, 'Variação funcionários (%)', 'Rever honorário'],
+          'Funcionários ' + (ra.ano - 1), 'Funcionários ' + ra.ano, 'Variação funcionários (%)', 'Rever honorário', 'Motivo'],
         linhas: ra.linhas.map(function (l) {
           return [l.c.nome, l.c.cnpj || '', l.c.categoria || '', l.rp || '', l.rc || '', l.anos ? moedaExp(l.prev) : 'sem dado', l.anos ? moedaExp(l.cur) : 'sem dado',
             l.v == null ? '' : Math.round(l.v * 10) / 10, l.fp == null ? '' : l.fp, l.fc == null ? '' : l.fc, l.vf == null ? '' : Math.round(l.vf * 10) / 10,
-            destaqueLinha(l) ? 'Sim' : ''];
+            destaqueLinha(l) ? 'Sim' : '', destaqueLinha(l) ? motivosRever(l).join(' · ') : ''];
         }),
-        alinhar: ['left', 'left', 'center', 'left', 'left', 'right', 'right', 'right', 'center', 'center', 'right', 'center'], fonte: 7 };
+        alinhar: ['left', 'left', 'center', 'left', 'left', 'right', 'right', 'right', 'center', 'center', 'right', 'center', 'left'], fonte: 7 };
     }
     if (sec === 'risco') {
       var fr = estado.filtroRisco, lr = filtrarRisco();
