@@ -221,6 +221,11 @@ const semLixo = (e, nome) => {
     assert.strictEqual(C.t.reajusteLinha({ v: 5, vf: 0, mudouRegime: false, vh: 1 }), null);        // não é destaque: sem situação
     assert.doesNotThrow(() => C.t.abrirFichaAnual('11222333000181'));                              // ficha com o bloco do honorário do Omie
     assert.doesNotThrow(() => C.t.abrirFichaAnual('77888999000133'));                              // sem honorário no Omie
+    // corte do "sem reajuste" editável: com 30%, +27% passa a contar como sem reajuste; sem valor salvo vale o padrão de 5%
+    E.anual.config.reajuste_min = 30;
+    assert.strictEqual(C.t.reajusteLinha(C.t.linhasAnual().linhas.find((l) => l.c.nome === 'ALFA LTDA')), 'nao');
+    delete E.anual.config.reajuste_min;
+    assert.strictEqual(C.t.reajusteLinha(C.t.linhasAnual().linhas.find((l) => l.c.nome === 'ALFA LTDA')), 'sim');
     // mudança de regime dispara 'Rever honorário' mesmo sem alta de faturamento/funcionários, em qualquer regra
     const semAlta = { v: 5, vf: 0, rp: 'Simples Nacional', rc: 'Lucro Presumido', mudouRegime: true };
     ['ambos', 'fat', 'func', 'ou'].forEach((rg) => assert.strictEqual(C.t.destaqueLinha(semAlta, rg), true, rg));

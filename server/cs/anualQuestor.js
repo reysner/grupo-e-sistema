@@ -5,7 +5,8 @@
  *   POST /api/cs/questor/anual   (token de sincronização) -> { ate:'AAAA-MM', ano_inicial, itens:[{ cnpj, anos:[{ ano, faturamento, meses, meses_com_valor }] }] }
  *                                 substitui TODA a carga anterior.
  *   GET  /api/cs/painel/anual    (login) -> a última carga, só de clientes ATIVOS; só o administrador recebe valores (perfil Usuário: oculto)
- *   PUT  /api/cs/painel/anual    (administrador) { percentual } -> limite de variação que destaca o cliente (padrão 30)
+ *   PUT  /api/cs/painel/anual    (administrador) { percentual?, reajuste_min? } -> limite de variação que destaca o cliente (padrão 30)
+ *                                 e corte do "sem reajuste" do honorário do Omie (padrão 5); devolve a configuração inteira
  *
  * Funcionários por ano e regime por ano ainda não existem na API do Questor que usamos: ver memória do projeto (15/10/2026).
  */
@@ -16,7 +17,7 @@ const { requireAuth } = require('../auth');
 const soDigitos = (s) => String(s || '').replace(/\D/g, '');
 const CHAVE_META = 'anual_leitura';
 const CHAVE_CFG = 'analise_anual';
-const PADRAO = { percentual: 30 };
+const PADRAO = { percentual: 30, reajuste_min: 5 };   // reajuste_min: % que o honorário do Omie precisa ter subido para não contar como "sem reajuste"
 
 /** Valida o corpo do POST. Devolve { ate, ano_inicial, linhas:[{doc, ano, fat, meses, mv}] } ou lança Error com mensagem clara. */
 function validarCarga(corpo) {
@@ -55,6 +56,19 @@ function validarPercentual(v) {
   const n = Number(String(v).replace(',', '.'));
   if (!Number.isFinite(n) || n <= 0 || n > 1000) return { ok: false, erro: 'Informe um percentual maior que 0 e até 1000.' };
   return { ok: true, valor: Math.round(n * 10) / 10 };
+}
+
+/** Corpo do PUT: aceita percentual e/ou reajuste_min; devolve { ok, valores } ou { ok:false, erro }. */
+function validarConfig(corpo) {
+  const b = corpo || {}, valores = {};
+  for (const campo of ['percentual', 'reajuste_min']) {
+    if (b[campo] === undefined) continue;
+    const v = validarPercentual(b[campo]);
+    if (!v.ok) return { ok: false, erro: v.erro };
+    valores[campo] = v.valor;
+  }
+  if (!Object.keys(valores).length) return { ok: false, erro: 'Informe percentual ou reajuste_min.' };
+  return { ok: true, valores };
 }
 
 let _schema = null;
@@ -150,19 +164,21 @@ router.get('/', requireAuth, async (req, res) => {
 
 router.put('/', requireAuth, async (req, res) => {
   if (!req.user || req.user.role !== 'administrador') return res.status(403).json({ error: 'Só o administrador altera o percentual.' });
-  const v = validarPercentual(req.body && req.body.percentual);
-  if (!v.ok) return res.status(400).json({ error: v.erro });
+  const r = validarConfig(req.body);
+  if (!r.ok) return res.status(400).json({ error: r.erro });
   try {
     await garantirSchema();
+    const atual = await pool.query(`SELECT valor FROM cs_painel_config WHERE chave = $1`, [CHAVE_CFG]);
+    const novo = { ...(atual.rows[0] ? atual.rows[0].valor : {}), ...r.valores };           // quem não veio no corpo mantém o valor salvo
     await pool.query(
       `INSERT INTO cs_painel_config (chave, valor, atualizado_em, atualizado_por) VALUES ($1, $2::jsonb, NOW(), $3)
        ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW(), atualizado_por = EXCLUDED.atualizado_por`,
-      [CHAVE_CFG, JSON.stringify({ percentual: v.valor }), req.user.name || req.user.id || null]);
-    res.json({ percentual: v.valor, pode_editar: true });
+      [CHAVE_CFG, JSON.stringify(novo), req.user.name || req.user.id || null]);
+    res.json({ ...PADRAO, ...novo, pode_editar: true });
   } catch (err) {
     console.error('[anual] PUT falhou:', err);
     res.status(500).json({ error: 'Erro ao salvar o percentual.' });
   }
 });
 
-module.exports = { router, validarCarga, validarPercentual };
+module.exports = { router, validarCarga, validarPercentual, validarConfig };

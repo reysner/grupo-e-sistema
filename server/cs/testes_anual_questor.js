@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_anual_questor.js  (validação da carga e do percentual; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { validarCarga, validarPercentual } = require('./anualQuestor');
+const { validarCarga, validarPercentual, validarConfig } = require('./anualQuestor');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -41,6 +41,14 @@ teste('percentual: aceita vírgula, recusa zero, negativo, texto e acima de 1000
   assert.strictEqual(validarPercentual('30').valor, 30);
   assert.strictEqual(validarPercentual('12,5').valor, 12.5);
   ['0', '-5', 'abc', '1001', ''].forEach((p) => assert.strictEqual(validarPercentual(p).ok, false, p));
+});
+teste('config: aceita percentual e/ou corte do reajuste; recusa vazio e valor inválido', () => {
+  assert.deepStrictEqual({ ...validarConfig({ percentual: '25' }).valores }, { percentual: 25 });
+  assert.deepStrictEqual({ ...validarConfig({ reajuste_min: '7,5' }).valores }, { reajuste_min: 7.5 });
+  assert.deepStrictEqual({ ...validarConfig({ percentual: 30, reajuste_min: 5 }).valores }, { percentual: 30, reajuste_min: 5 });
+  assert.strictEqual(validarConfig({}).ok, false);
+  assert.strictEqual(validarConfig({ reajuste_min: 0 }).ok, false);
+  assert.strictEqual(validarConfig({ percentual: 30, reajuste_min: 'abc' }).ok, false);
 });
 
 console.log(`\n${ok} testes passaram.`);

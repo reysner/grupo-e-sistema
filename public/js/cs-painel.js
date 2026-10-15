@@ -670,7 +670,8 @@
     });
     return m;
   }
-  var REAJUSTE_MIN = 5;   // % que o honorário do Omie precisa ter subido (desde o ano anterior) para contar como reajustado
+  var REAJUSTE_PADRAO = 5;   // % que o honorário do Omie precisa ter subido (desde o ano anterior) para contar como reajustado; o administrador altera no botão %
+  function reajusteMin() { var c = (estado.anual && estado.anual.config) || {}; return c.reajuste_min > 0 ? c.reajuste_min : REAJUSTE_PADRAO; }
   /** Honorário mensal típico do Omie: o do ano anterior (hp) e o mais recente (hc, do último ano com cobrança a partir do ano analisado). */
   function honOmie(mh, doc, ano) {
     var hon = mh[doc] || {}, ys = Object.keys(hon).map(Number).filter(function (y) { return y >= ano && hon[y].mensal > 0; }).sort(function (a, b) { return b - a; });
@@ -681,7 +682,7 @@
   function reajusteLinha(l) {
     if (!destaqueLinha(l)) return null;
     if (l.vh == null) return 'sem-dado';
-    return l.vh >= REAJUSTE_MIN ? 'sim' : 'nao';
+    return l.vh >= reajusteMin() ? 'sim' : 'nao';
   }
   /** variação % de b sobre a; null quando não há base (a <= 0 ou ausente). */
   function varPct(a, b) { return a == null || b == null || !(a > 0) ? null : (b - a) / a * 100; }
@@ -813,20 +814,20 @@
       '<div class="gp-kpi-row">' +
         kpi('#256050', 'Clientes com histórico', r.comDado + ' de ' + r.todas, 'ativos no Acessórias com dados do Questor') +
         kpi('#b45309', 'Rever honorário', r.subiram, 'subiram ' + pctTxt(X) + '% ou mais em ' + ROT_REGRA[regra] + ' (' + ano + ' sobre ' + (ano - 1) + ')') +
-        kpi('#b91c1c', 'Rever, sem reajuste', r.semReajuste, 'honorário do Omie subiu menos de ' + REAJUSTE_MIN + '% desde ' + (ano - 1)) +
+        kpi('#b91c1c', 'Rever, sem reajuste', r.semReajuste, 'honorário do Omie subiu menos de ' + pctTxt(reajusteMin()) + '% desde ' + (ano - 1)) +
         kpi('#7c3aed', 'Mudaram de regime', r.mudaram, 'entre ' + (ano - 1) + ' e ' + ano + ', pelos dados da Receita') +
         kpi('#0f766e', 'Faturamento ' + ano, valoresOcultos() ? reais(null) : reais(totCur), pctDelta == null ? 'sem base para comparar' : pctAnual(pctDelta) + ' sobre ' + (ano - 1) + ' (clientes da lista)') +
       '</div>' +
       '<div class="nota"><strong>Fontes.</strong> Faturamento por ano civil: Questor (módulo Fiscal). Funcionários: total de empregados ativos no <strong>último mês com folha</strong> de cada ano (Questor, Folha); a contagem é por empresa e fica na matriz. ' +
         'Regime: <strong>Receita Federal</strong> (ECF e opção pelo Simples; para anos ainda sem ECF vale a última conhecida, indicada na ficha). O cadastro de regime do Questor não é usado. ' +
-        'Só clientes <strong>ativos no Acessórias</strong>.' + esc(parcial) + ' <strong>A mudança de regime tributário entre os dois anos também gera "Rever honorário"</strong>, qualquer que seja a regra escolhida. <strong>Honorário no Omie:</strong> ao clicar na empresa, a ficha compara o honorário mensal cobrado (mediana dos meses, dois ambientes) com a variação do faturamento; o painel "Rever, sem reajuste" e o filtro "só sem reajuste" separam quem subiu menos de ' + REAJUSTE_MIN + '% desde o ano anterior. Com a regra "faturamento e funcionários", quem não tem folha nos dois anos é decidido só pelo faturamento. O limite de ' + esc(pctTxt(X)) + '% é um só para a equipe' + (cfgAnual().pode_editar ? ' (botão % no título da coluna Variação).' : '.') + '</div>' +
+        'Só clientes <strong>ativos no Acessórias</strong>.' + esc(parcial) + ' <strong>A mudança de regime tributário entre os dois anos também gera "Rever honorário"</strong>, qualquer que seja a regra escolhida. <strong>Honorário no Omie:</strong> ao clicar na empresa, a ficha compara o honorário mensal cobrado (mediana dos meses, dois ambientes) com a variação do faturamento; o painel "Rever, sem reajuste" e o filtro "só sem reajuste" separam quem subiu menos de ' + pctTxt(reajusteMin()) + '% desde o ano anterior. Com a regra "faturamento e funcionários", quem não tem folha nos dois anos é decidido só pelo faturamento. O limite de ' + esc(pctTxt(X)) + '% é um só para a equipe' + (cfgAnual().pode_editar ? ' (botão % no título da coluna Variação).' : '.') + '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="n-busca" placeholder="Empresa ou CNPJ" value="' + esc(f.busca) + '">' +
         '<span class="filter-label">Documento</span><select class="gp-select" id="n-tipo"><option value=""' + (!f.tipo ? ' selected' : '') + '>Todos (' + (r.contTipo.CNPJ + r.contTipo.CPF + r.contTipo.CAEPF + r.contTipo.CNO) + ')</option>' + ['CNPJ', 'CPF', 'CAEPF', 'CNO'].map(function (t) { return '<option value="' + t + '"' + (f.tipo === t ? ' selected' : '') + '>Só ' + t + ' (' + r.contTipo[t] + ')</option>'; }).join('') + '</select>' +
         '<span class="filter-label">Comparar</span><select class="gp-select" id="n-ano">' + optAnos + '</select>' +
         '<span class="filter-label">Destacar quem subiu</span><select class="gp-select" id="n-regra">' + optRegra + '</select>' +
         '<span class="filter-label">Ordenar</span><select class="gp-select" id="n-ordem"><option value="alfa"' + ((f.ordem || 'alfa') === 'alfa' ? ' selected' : '') + '>Ordem alfabética</option><option value="alta"' + (f.ordem === 'alta' ? ' selected' : '') + '>Maior alta de faturamento</option></select>' +
         '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="n-dest"' + (f.soDestaque ? ' checked' : '') + '> só os destacados</label>' +
-        '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="n-semrj"' + (f.soSemReajuste ? ' checked' : '') + '> só sem reajuste</label></div>' +
+        '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="n-semrj"' + (f.soSemReajuste ? ' checked' : '') + '> só sem reajuste</label>' + botaoReajuste() + '</div>' +
         '<div class="card-sub">' + r.linhas.length + ' cliente(s) · ' + comFunc + ' com folha nos dois anos · ' + ROT_ORDEM[f.ordem || 'alfa'] + '. Clique na empresa para ver ano a ano.</div>' +
         (r.linhas.length ? '<div class="table-wrap"><table class="tab-analise"><colgroup><col style="width:21%"><col style="width:9%"><col style="width:17%"><col style="width:11%"><col style="width:11%"><col style="width:8%"><col style="width:8%"><col style="width:7%"><col style="width:8%"></colgroup>' +
           '<thead><tr><th>Razão social</th><th class="c">Categoria</th><th class="c">Regime ' + (ano - 1) + ' → ' + ano + '</th><th class="c">Faturamento ' + (ano - 1) + '</th><th class="c">Faturamento ' + ano + '</th>' +
@@ -839,6 +840,7 @@
     var so = $('n-ordem'); if (so) so.addEventListener('change', function () { f.ordem = so.value; f.pag = 1; desenharAnual(); });
     var sd = $('n-dest'); if (sd) sd.addEventListener('change', function () { f.soDestaque = sd.checked; f.pag = 1; desenharAnual(); });
     var sj = $('n-semrj'); if (sj) sj.addEventListener('change', function () { f.soSemReajuste = sj.checked; f.pag = 1; desenharAnual(); });
+    var br = $('btn-pct-rj'); if (br) br.addEventListener('click', function (ev) { ev.stopPropagation(); abrirPopAnual(br, 'reajuste_min'); });
     var bp = $('btn-pct-anual'); if (bp) bp.addEventListener('click', function (ev) { ev.stopPropagation(); abrirPopAnual(bp); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-anual [data-anual]'), function (bt) { bt.addEventListener('click', function () { abrirFichaAnual(bt.getAttribute('data-anual')); }); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-anual [data-pag]'), function (bt) {
@@ -854,13 +856,22 @@
       ? '<button type="button" class="mini-pct" id="btn-pct-anual" title="' + esc(dica) + '" aria-haspopup="dialog">' + esc(pctTxt(c.percentual)) + '%</button>'
       : '<span class="mini-pct fixo" title="' + esc(dica) + '">' + esc(pctTxt(c.percentual)) + '%</span>';
   }
-  function abrirPopAnual(btn) {
+  function botaoReajuste() {
+    var c = cfgAnual(), dica = 'Quem está em "Rever honorário" e teve o honorário do Omie subindo menos que esse percentual desde o ano anterior conta como "sem reajuste"' + (c.pode_editar ? '. Clique para alterar.' : '.');
+    return c.pode_editar
+      ? '<button type="button" class="mini-pct" id="btn-pct-rj" title="' + esc(dica) + '" aria-haspopup="dialog">' + esc(pctTxt(reajusteMin())) + '%</button>'
+      : '<span class="mini-pct fixo" title="' + esc(dica) + '">' + esc(pctTxt(reajusteMin())) + '%</span>';
+  }
+  /** Popover do percentual editável: campo 'percentual' (limite de variação do faturamento) ou 'reajuste_min' (corte do "sem reajuste"). */
+  function abrirPopAnual(btn, campo) {
+    campo = campo || 'percentual';
+    var rj = campo === 'reajuste_min';
     fecharPopPct();
-    var c = cfgAnual(), r = btn.getBoundingClientRect(), p = document.createElement('div');
-    p.id = 'pop-pct'; p.className = 'pop-pct'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Limite de variação do faturamento');
-    p.innerHTML = '<label for="pa-valor">Destacar quem subiu pelo menos</label>' +
-      '<div class="pop-linha"><input id="pa-valor" type="text" inputmode="decimal" value="' + esc(String(c.percentual).replace('.', ',')) + '"><span>%</span></div>' +
-      '<div class="pop-dica">Compara o faturamento do ano escolhido com o ano anterior. Vale para toda a equipe.</div><div class="pop-erro" id="pa-erro" role="alert"></div>' +
+    var c = cfgAnual(), r = btn.getBoundingClientRect(), p = document.createElement('div'), atual = rj ? reajusteMin() : c.percentual;
+    p.id = 'pop-pct'; p.className = 'pop-pct'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', rj ? 'Corte do sem reajuste' : 'Limite de variação do faturamento');
+    p.innerHTML = '<label for="pa-valor">' + (rj ? 'Sem reajuste: honorário subiu menos de' : 'Destacar quem subiu pelo menos') + '</label>' +
+      '<div class="pop-linha"><input id="pa-valor" type="text" inputmode="decimal" value="' + esc(String(atual).replace('.', ',')) + '"><span>%</span></div>' +
+      '<div class="pop-dica">' + (rj ? 'Compara o honorário mensal do Omie de hoje com o do ano anterior. Vale para toda a equipe.' : 'Compara o faturamento do ano escolhido com o ano anterior. Vale para toda a equipe.') + '</div><div class="pop-erro" id="pa-erro" role="alert"></div>' +
       '<div class="pop-acoes"><button type="button" class="gp-footer-btn" id="pa-cancelar" style="width:auto">Cancelar</button>' +
       '<button type="button" class="login-btn" id="pa-salvar" style="width:auto;margin:0;padding:8px 16px">Salvar</button></div>';
     document.body.appendChild(p);
@@ -873,10 +884,10 @@
       if (!(v > 0 && v <= 1000)) { erro.textContent = 'Informe um percentual maior que 0 e até 1000.'; return; }
       $('pa-salvar').disabled = true;
       try {
-        var resp = await chamarApi('/api/cs/painel/anual', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ percentual: v }) });
+        var resp = await chamarApi('/api/cs/painel/anual', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rj ? { reajuste_min: v } : { percentual: v }) });
         var j = await resp.json().catch(function () { return {}; });
         if (!resp.ok) { erro.textContent = j.error || 'Não foi possível salvar.'; $('pa-salvar').disabled = false; return; }
-        estado.anual.config = Object.assign({}, estado.anual.config, { percentual: j.percentual, pode_editar: true });
+        estado.anual.config = Object.assign({}, estado.anual.config, { percentual: j.percentual, reajuste_min: j.reajuste_min, pode_editar: true });
         fecharPopPct(); desenharAnual();
       } catch (e) { erro.textContent = 'Sem conexão com o servidor. Tente de novo.'; $('pa-salvar').disabled = false; }
     };
@@ -927,7 +938,7 @@
     passo.innerHTML = '<strong>Leitura:</strong> em ' + ultComp + ' sobre ' + (ultComp - 1) + ', ' + partes.join('; ') + '.' +
       (ambos ? ' Os dois passaram do limite de ' + esc(pctTxt(X)) + ': vale avaliar reajuste do honorário.' : (destaqueAnual(v) && vf == null ? ' O faturamento passou do limite de ' + esc(pctTxt(X)) + '% e não há folha para comparar: vale avaliar reajuste do honorário.' : (destaqueAnual(v) ? ' O faturamento passou do limite de ' + esc(pctTxt(X)) + '%, mas os funcionários não acompanharam.' : ''))) +
       (mudouReg ? ' O regime mudou de ' + esc(A1.regime) + ' para ' + esc(A2.regime) + ': muda o trabalho do escritório, vale avaliar reajuste do honorário.' : '') +
-      (ho && ho.hp != null && ho.hc != null && !valoresOcultos() ? ' Honorário cobrado no Omie: ' + esc(moedaTxt(ho.hp)) + ' por mês em ' + (ultComp - 1) + ' → ' + esc(moedaTxt(ho.hc)) + ' em ' + ho.hcAno + ' (' + esc(pctAnual(ho.vh)) + (v != null ? ' contra faturamento ' + esc(pctAnual(v)) : '') + (destaqueLinha({ v: v, vf: vf, mudouRegime: mudouReg }) ? (ho.vh >= REAJUSTE_MIN ? ': já reajustado' : ': sem reajuste') : '') + ').' : '') +
+      (ho && ho.hp != null && ho.hc != null && !valoresOcultos() ? ' Honorário cobrado no Omie: ' + esc(moedaTxt(ho.hp)) + ' por mês em ' + (ultComp - 1) + ' → ' + esc(moedaTxt(ho.hc)) + ' em ' + ho.hcAno + ' (' + esc(pctAnual(ho.vh)) + (v != null ? ' contra faturamento ' + esc(pctAnual(v)) : '') + (destaqueLinha({ v: v, vf: vf, mudouRegime: mudouReg }) ? (ho.vh >= reajusteMin() ? ': já reajustado' : ': sem reajuste') : '') + ').' : '') +
       (sug != null && c.honorario != null && !valoresOcultos() ? ' Com o faturamento de ' + ultComp + ', o honorário sugerido é ' + esc(moedaTxt(sug)) + ' por mês (hoje cobra ' + esc(moedaTxt(c.honorario)) + ').' : '');
     var q = c.questor;
     // honorário cobrado no Omie x "Rever honorário": só aparece aqui, ao abrir a empresa
