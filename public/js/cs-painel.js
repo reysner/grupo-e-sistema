@@ -795,10 +795,6 @@
       var vTxt = l.v != null ? celVar(l.v, destaqueAnual(l.v)) : (l.prev === 0 && l.cur > 0 ? '<span class="pill" style="color:#2563eb;border-color:#2563eb55;background:#2563eb14">novo</span>' : '<span class="cinza">—</span>');
       var funcTxt = l.fp == null && l.fc == null ? '<span class="cinza">sem folha</span>' : (l.fp == null ? '—' : l.fp) + ' → ' + (l.fc == null ? '—' : l.fc);
       var regTxt = celRegime(l.rp, l.rc, l.mudouRegime, ano);
-      // etiqueta curta sob "Rever honorário": o detalhe (valores do Omie) fica na ficha, ao clicar na empresa
-      var rj = reajusteLinha(l);
-      var rjTxt = rj === 'nao' ? '<div class="sub" style="color:#b91c1c" title="O honorário do Omie subiu menos de ' + REAJUSTE_MIN + '% desde ' + (ano - 1) + '">Sem reajuste' + (l.vh != null ? ' ' + esc(pctAnual(l.vh)) : '') + '</div>'
-        : rj === 'sem-dado' ? '<div class="sub" title="Sem honorário cobrado no Omie para comparar">sem honorário no Omie</div>' : '';
       return '<tr><td style="white-space:normal;min-width:200px"><button class="link" data-anual="' + esc(l.doc) + '">' + esc(c.nome) + '</button><div class="sub">' + esc(c.cnpj || '') + '</div></td>' +
         '<td class="c">' + pillCat(c) + '</td>' +
         '<td class="c">' + regTxt + '</td>' +
@@ -807,7 +803,7 @@
         '<td class="c">' + vTxt + '</td>' +
         '<td class="c">' + funcTxt + '</td>' +
         '<td class="c">' + celVar(l.vf, destaqueAnual(l.vf)) + '</td>' +
-        '<td class="c">' + (dest ? '<span class="pill" style="color:#b45309;border-color:#b4530955;background:#b4530914" title="Rever honorário: ' + esc(motivosRever(l).join(' · ')) + (regra === 'ambos' && l.vf == null && destaquePorValores(l) ? ' (sem folha para comparar: decidido pelo faturamento)' : '') + '">Rever honorário</span>' : (l.anos ? '<span class="cinza" title="Abaixo do limite de ' + esc(pctTxt(X)) + '% em ' + esc(ROT_REGRA[regra]) + '">Abaixo do limite</span>' : '<span class="cinza">—</span>')) + rjTxt + '</td></tr>';
+        '<td class="c">' + (dest ? '<span class="pill" style="color:#b45309;border-color:#b4530955;background:#b4530914" title="Rever honorário: ' + esc(motivosRever(l).join(' · ')) + (regra === 'ambos' && l.vf == null && destaquePorValores(l) ? ' (sem folha para comparar: decidido pelo faturamento)' : '') + '">Rever honorário</span>' : (l.anos ? '<span class="cinza" title="Abaixo do limite de ' + esc(pctTxt(X)) + '% em ' + esc(ROT_REGRA[regra]) + '">Abaixo do limite</span>' : '<span class="cinza">—</span>')) + '</td></tr>';
     }).join('');
     var optAnos = ac.completos.map(function (y) { return '<option value="' + y + '"' + (y === ano ? ' selected' : '') + '>' + y + ' × ' + (y - 1) + '</option>'; }).join('');
     var optRegra = Object.keys(ROT_REGRA).map(function (k) { return '<option value="' + k + '"' + (k === regra ? ' selected' : '') + '>' + esc(ROT_REGRA[k].charAt(0).toUpperCase() + ROT_REGRA[k].slice(1)) + '</option>'; }).join('');
