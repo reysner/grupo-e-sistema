@@ -285,3 +285,7 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
   :root:not([data-theme="light"]) .rg-presumido{color:#93c5fd;}
   :root:not([data-theme="light"]) .rg-real{color:#c4b5fd;}
 }
+
+/* botão do percentual abaixo do título da coluna */
+.th-sub{margin-top:4px;}
+.th-sub .mini-pct{margin-left:0;}
