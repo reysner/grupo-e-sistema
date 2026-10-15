@@ -647,7 +647,8 @@
     var m = {};
     ((estado.anual && estado.anual.itens) || []).forEach(function (it) {
       var o = {};
-      it.anos.forEach(function (x) { if (x.regime === 'Fora do Simples') x.regime = REGIME_GENERICO; o[x.ano] = x; });   // leitura antiga usava "Fora do Simples"
+      // regime sempre específico (Simples, Presumido ou Real): rótulos genéricos de leituras antigas viram "sem informação"
+      it.anos.forEach(function (x) { if (x.regime === 'Fora do Simples' || x.regime === REGIME_GENERICO) x.regime = null; o[x.ano] = x; });
       m[it.cnpj] = o;
     });
     return m;
@@ -724,7 +725,7 @@
       var c = l.c, dest = destaqueLinha(l);
       var vTxt = l.v != null ? celVar(l.v, destaqueAnual(l.v)) : (l.prev === 0 && l.cur > 0 ? '<span class="pill" style="color:#2563eb;border-color:#2563eb55;background:#2563eb14">novo</span>' : '<span class="cinza">—</span>');
       var funcTxt = l.fp == null && l.fc == null ? '<span class="cinza">sem folha</span>' : (l.fp == null ? '—' : l.fp) + ' → ' + (l.fc == null ? '—' : l.fc);
-      var regTxt = l.rp || l.rc ? (l.mudouRegime ? '<span class="pill" style="color:#7c3aed;border-color:#7c3aed55;background:#7c3aed14" title="O regime mudou entre ' + (ano - 1) + ' e ' + ano + '">' + esc(l.rp) + ' → ' + esc(l.rc) + '</span>' : esc(l.rc || l.rp)) : (c.regime ? esc(c.regime) : '<span class="cinza">—</span>');
+      var regTxt = l.rp || l.rc ? (l.mudouRegime ? '<span class="pill" style="color:#7c3aed;border-color:#7c3aed55;background:#7c3aed14" title="O regime mudou entre ' + (ano - 1) + ' e ' + ano + '">' + esc(l.rp) + ' → ' + esc(l.rc) + '</span>' : esc(l.rc || l.rp)) : '<span class="cinza">—</span>';
       return '<tr><td style="white-space:normal;min-width:200px"><button class="link" data-anual="' + esc(l.doc) + '">' + esc(c.nome) + '</button><div class="sub">' + esc(c.cnpj || '') + '</div></td>' +
         '<td class="c">' + pillCat(c) + '</td>' +
         '<td class="c" style="white-space:normal">' + regTxt + '</td>' +

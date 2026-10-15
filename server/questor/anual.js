@@ -119,7 +119,7 @@ function regimeDaReceita(j, ano) {
   const fimAno = ano + '-12-31';
   const opc = j.data_opcao_pelo_simples ? String(j.data_opcao_pelo_simples).slice(0, 10) : null;
   const exc = j.data_exclusao_do_simples ? String(j.data_exclusao_do_simples).slice(0, 10) : null;
-  if (opc && opc <= fimAno && (!exc || exc > fimAno)) return { regime: j.opcao_pelo_mei ? 'MEI' : 'Simples Nacional', fonte: 'Receita (Simples)' };
+  if (opc && opc <= fimAno && (!exc || exc > fimAno)) return { regime: 'Simples Nacional', fonte: j.opcao_pelo_mei ? 'Receita (MEI, dentro do Simples)' : 'Receita (Simples)' };
   const anteriores = ecf.filter((x) => Number(x.ano) < ano).sort((a, b) => Number(b.ano) - Number(a.ano));
   const saiuDoSimples = exc && exc <= fimAno && opc && exc > opc;                      // período de Simples que já terminou
   if (anteriores.length) {

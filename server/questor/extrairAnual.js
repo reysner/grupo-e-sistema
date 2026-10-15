@@ -86,7 +86,15 @@ async function main() {
   console.log(`nWeb ok (Questor ${versao}) | período: ${competIni} a ${competFim} (${mesesEsperados(ANO_INICIAL, fim)} meses)`);
 
   const pool = new Pool({ connectionString: (process.env.DATABASE_URL || '').trim(), ssl: { rejectUnauthorized: false }, max: 1 });
-  const ativos = [...new Set((await pool.query(`SELECT regexp_replace(cnpj, '\\D', '', 'g') AS d FROM clientes WHERE status = 'ativo'`)).rows.map((r) => r.d).filter((d) => [11, 12, 14].includes(d.length)))];
+  const linhasAtivos = (await pool.query(`SELECT regexp_replace(cnpj, '\\D', '', 'g') AS d, regime_tributario AS regime FROM clientes WHERE status = 'ativo'`)).rows;
+  const ativos = [...new Set(linhasAtivos.map((r) => r.d).filter((d) => [11, 12, 14].includes(d.length)))];
+  // regime atual do cadastro do Acessórias (só as três opções que importam; reserva para o ano corrente e o anterior)
+  const regimeAcessorias = new Map();
+  linhasAtivos.forEach((r) => {
+    const t = String(r.regime || '').toLowerCase();
+    const rot = /presumido/.test(t) ? 'Lucro Presumido' : /lucro real|^real$/.test(t) ? 'Lucro Real' : /simples|mei/.test(t) ? 'Simples Nacional' : null;
+    if (rot) regimeAcessorias.set(r.d, rot);
+  });
   await pool.end();
 
   const est = await nweb.consultar('TnGemDCEstabInscrFederal');
@@ -150,7 +158,12 @@ async function main() {
   // regime só da Receita (o cadastro de regime do Questor não é confiável); sem informação da Receita fica em branco
   const regimeDoAno = (cnpj, ano) => {
     const rec = receita[cnpj] && receita[cnpj].j ? regimeDaReceita(receita[cnpj].j, ano) : null;
-    return rec ? { regime: rec.regime, regime_fonte: rec.fonte } : { regime: null, regime_fonte: null };
+    if (cnpj.length !== 14) return { regime: null, regime_fonte: null };            // CPF, CNO e CAEPF não têm regime: ficam em branco
+    if (rec && rec.regime !== 'Lucro (Presumido/Real)') return { regime: rec.regime, regime_fonte: rec.fonte };
+    // a Receita não define Presumido x Real (sem ECF, ou saiu do Simples): vale o regime ATUAL do Acessórias, só para o ano corrente e o anterior
+    const ac = regimeAcessorias.get(cnpj);
+    if (ac && ano >= anoFim - 1) return { regime: ac, regime_fonte: 'Acessórias (regime atual)' };
+    return { regime: null, regime_fonte: null };
   };
   const itens = presentes.map((cnpj) => {
     const m = noQuestor.get(cnpj), fat = resultado[cnpj] ? resultado[cnpj].anos : {};

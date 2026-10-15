@@ -90,7 +90,7 @@ teste('regime pela Receita: ECF do ano; senão Simples; senão a última ECF; se
   // 2025 ainda sem ECF publicada: vale a última conhecida (2023), indicada
   assert.deepStrictEqual({ ...regimeDaReceita(j, 2025) }, { regime: 'Lucro Real', fonte: 'Receita (última ECF: 2023)' });
   // Simples hoje e sem exclusão: Simples nos anos cobertos
-  assert.strictEqual(regimeDaReceita({ opcao_pelo_simples: true, opcao_pelo_mei: true, data_opcao_pelo_simples: '2020-03-01', data_exclusao_do_simples: null, regime_tributario: [] }, 2024).regime, 'MEI');
+  assert.deepStrictEqual({ ...regimeDaReceita({ opcao_pelo_simples: true, opcao_pelo_mei: true, data_opcao_pelo_simples: '2020-03-01', data_exclusao_do_simples: null, regime_tributario: [] }, 2024) }, { regime: 'Simples Nacional', fonte: 'Receita (MEI, dentro do Simples)' });
   // opção e exclusão no mesmo dia (período zerado): não é Simples
   assert.strictEqual(regimeDaReceita({ opcao_pelo_simples: false, data_opcao_pelo_simples: '2007-07-01', data_exclusao_do_simples: '2007-07-01', regime_tributario: [] }, 2015), null);
   assert.strictEqual(regimeDaReceita(null, 2024), null);
