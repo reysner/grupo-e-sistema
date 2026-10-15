@@ -58,8 +58,9 @@ servidor.listen(0, '127.0.0.1', async () => {
       assert.strictEqual(JSON.parse(r.corpo).ve_valores, true);
       assert.strictEqual((await get(porta, '/api/financeiro/dados', null)).status, 401);
     });
-    await teste('Minhas tratativas: colaborador com acesso_minha_nota chega; sem a marca (ou só com acesso_financeiro) não', async () => {
-      assert.strictEqual((await get(porta, '/api/qualidade/minhas', colab({ acesso_minha_nota: true }))).status, 200);
+    await teste('Minhas tratativas: colaborador com acesso_qualidade chega; Minha Nota sozinha, sem marca ou só com acesso_financeiro não', async () => {
+      assert.strictEqual((await get(porta, '/api/qualidade/minhas', colab({ acesso_qualidade: true }))).status, 200);
+      assert.strictEqual((await get(porta, '/api/qualidade/minhas', colab({ acesso_minha_nota: true }))).status, 403);
       assert.strictEqual((await get(porta, '/api/qualidade/minhas', colab({}))).status, 403);
       assert.strictEqual((await get(porta, '/api/qualidade/minhas', bruno)).status, 403);
     });

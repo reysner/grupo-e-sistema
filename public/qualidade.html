@@ -102,8 +102,8 @@ async function login() {
   var data = await res.json().catch(function () { return {}; });
   if (!res.ok) { err.textContent = data.error || 'Credenciais inválidas.'; err.style.display = 'block'; return; }
   var u = data.user;
-  if (!(u.role === 'colaborador' || u.acesso_minha_nota || u.role === 'administrador' || u.role === 'usuario')) {
-    err.textContent = 'Esse login não tem acesso às tratativas. Fale com a liderança.'; err.style.display = 'block'; return;
+  if (!(u.acesso_qualidade || u.role === 'administrador' || u.role === 'usuario')) {
+    err.textContent = 'Esse login não tem o acesso Qualidade. Fale com a liderança.'; err.style.display = 'block'; return;
   }
   _token = data.token; _user = u;
   try { localStorage.setItem('ql_token', _token); localStorage.setItem('ql_user', JSON.stringify(_user)); } catch (e) { /* sem armazenamento */ }

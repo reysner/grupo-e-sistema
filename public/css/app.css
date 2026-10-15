@@ -679,3 +679,11 @@ body.dark-mode .hoje-titulo { color: var(--gray-800); }
 .hoje-pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--gray-100); color: var(--gray-600); }
 .hoje-nota { font-size: 12px; color: var(--gray-500); line-height: 1.5; margin: 10px 0 0; }
 body.dark-mode .radar-tabela th, body.dark-mode .radar-tabela td { border-color: var(--gray-200); color: var(--gray-700); }
+
+/* Acessos adicionais do cadastro de usuário: chips em vez de uma pilha de caixas de seleção */
+.acessos-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.acesso-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--gray-200,#e2e8f0);border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600;text-transform:none;letter-spacing:0;color:var(--gray-700,#334155);cursor:pointer;background:#fff;margin:0}
+.acesso-chip input{width:auto;margin:0;accent-color:#1a4233}
+.acesso-chip:hover{border-color:#94a3b8}
+.acesso-chip:has(input:checked){background:#e8f4ef;border-color:#1a4233;color:#1a4233}
+.acessos-dica{font-size:11px;color:var(--gray-400,#94a3b8);margin-top:8px;line-height:1.4}
