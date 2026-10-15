@@ -762,7 +762,7 @@
         '<td class="c">' + vTxt + '</td>' +
         '<td class="c">' + funcTxt + '</td>' +
         '<td class="c">' + celVar(l.vf, destaqueAnual(l.vf)) + '</td>' +
-        '<td class="c">' + (dest ? '<span class="pill" style="color:#b45309;border-color:#b4530955;background:#b4530914" title="' + esc(pctTxt(X)) + '% ou mais em ' + esc(ROT_REGRA[regra]) + (regra === 'ambos' && l.vf == null ? ' (sem folha para comparar: decidido pelo faturamento)' : '') + ': avaliar reajuste do honorário">Rever honorário</span>' : '') + '</td></tr>';
+        '<td class="c">' + (dest ? '<span class="pill" style="color:#b45309;border-color:#b4530955;background:#b4530914" title="' + esc(pctTxt(X)) + '% ou mais em ' + esc(ROT_REGRA[regra]) + (regra === 'ambos' && l.vf == null ? ' (sem folha para comparar: decidido pelo faturamento)' : '') + ': avaliar reajuste do honorário">Rever honorário</span>' : (l.anos ? '<span class="cinza" title="Abaixo do limite de ' + esc(pctTxt(X)) + '% em ' + esc(ROT_REGRA[regra]) + '">Abaixo do limite</span>' : '<span class="cinza">—</span>')) + '</td></tr>';
     }).join('');
     var optAnos = ac.completos.map(function (y) { return '<option value="' + y + '"' + (y === ano ? ' selected' : '') + '>' + y + ' × ' + (y - 1) + '</option>'; }).join('');
     var optRegra = Object.keys(ROT_REGRA).map(function (k) { return '<option value="' + k + '"' + (k === regra ? ' selected' : '') + '>' + esc(ROT_REGRA[k].charAt(0).toUpperCase() + ROT_REGRA[k].slice(1)) + '</option>'; }).join('');
