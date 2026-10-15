@@ -13,8 +13,8 @@
   var ROTULOS = { administrador: 'Administrador', usuario: 'Usuário', contabil: 'Contábil', colaborador: 'Colaborador' };
   var CSS = '' +
     '.mu-wrap{position:relative;display:inline-block}' +
-    '.mu-btn{display:flex;align-items:center;gap:8px;background:#1a4233;color:#fff;border:none;padding:7px 12px;border-radius:9px;cursor:pointer;font-weight:600;font-size:13px;line-height:1.2;font-family:inherit}' +
-    '.mu-btn:hover{background:#24604a}' +
+    '.mu-btn{display:flex;align-items:center;gap:8px;background:transparent;color:var(--text,#1e293b);border:1px solid var(--border,#cbd5e1);padding:6px 12px;border-radius:9px;cursor:pointer;font-weight:600;font-size:13px;line-height:1.2;font-family:inherit}' +
+    '.mu-btn:hover{background:var(--surface2,#f1f5f9);border-color:var(--text3,#94a3b8)}' +
     '.mu-btn:focus-visible{outline:2px solid #f5c518;outline-offset:2px}' +
     '.mu-papel{background:#f5c518;color:#1a4233;font-size:10.5px;font-weight:800;letter-spacing:.4px;padding:3px 9px;border-radius:999px;text-transform:uppercase}' +
     '.mu-seta{font-size:10px;opacity:.85}' +
