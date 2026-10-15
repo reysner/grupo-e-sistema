@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -139,10 +139,36 @@ const semLixo = (e, nome) => {
     const nomes = e.linhas.map((l) => l[1].trim());
     assert.ok(nomes.includes('GRUPO GRUPO A') && nomes.includes('ALFA LTDA') && nomes.includes('ALFA FILIAL LTDA') && nomes.includes('JOAO DA SILVA'));
     const grupo = e.linhas.find((l) => l[0] === 'Grupo');
-    assert.deepStrictEqual([grupo[5], grupo[6], grupo[7]], [3, 1300, 120000.5]);
-    assert.strictEqual(e.linhas.find((l) => l[1].trim() === 'ALFA FILIAL LTDA')[7], 'sem faturamento');
-    assert.strictEqual(e.linhas.find((l) => l[1].trim() === 'ALFA FILIAL LTDA')[8], 'Natureza sem configuração de faturamento no Questor');
+    assert.deepStrictEqual([grupo[6], grupo[7], grupo[8]], [3, 1300, 120000.5]);
+    assert.strictEqual(e.linhas.find((l) => l[1].trim() === 'ALFA FILIAL LTDA')[8], 'sem faturamento');
+    assert.strictEqual(e.linhas.find((l) => l[1].trim() === 'ALFA FILIAL LTDA')[11], 'Natureza sem configuração de faturamento no Questor');
     assert.strictEqual(e.linhas.find((l) => l[1] === 'JOAO DA SILVA')[3], 'CPF');
+  });
+  await teste('cs: honorário sugerido = percentual × faturamento médio mensal; análise verde, amarela e vermelha', () => {
+    C.t.estado.honorario = { percentual: 0.5, limite_amarelo: 80, pode_editar: true };
+    assert.strictEqual(C.t.honSugerido(120000), 50);            // 120.000 ÷ 12 = 10.000 × 0,5% = 50
+    assert.strictEqual(C.t.honSugerido(null), null);
+    assert.strictEqual(C.t.honSugerido(0), null);
+    assert.strictEqual(C.t.honAnalise(50, 50), 'ok');
+    assert.strictEqual(C.t.honAnalise(80, 50), 'ok');
+    assert.strictEqual(C.t.honAnalise(45, 50), 'medio');         // 90% do sugerido
+    assert.strictEqual(C.t.honAnalise(40, 50), 'medio');         // exatamente 80%
+    assert.strictEqual(C.t.honAnalise(39, 50), 'baixo');
+    assert.strictEqual(C.t.honAnalise(0, 50), 'baixo');
+    assert.strictEqual(C.t.honAnalise(null, 50), null);
+    C.t.estado.honorario = { percentual: null, limite_amarelo: 80 };
+    assert.strictEqual(C.t.honSugerido(120000), null);          // sem percentual definido
+    C.t.estado.honorario = { percentual: 0.5, limite_amarelo: 80, pode_editar: true };
+    const cel = C.t.celSugerido(12000000, 800);                  // 1.000.000 × 0,5% = 5.000
+    const celTxt = cel.split(String.fromCharCode(160)).join(' ');
+    assert.ok(celTxt.includes('R$ 5.000,00') && celTxt.includes('diferença −R$ 4.200,00'), 'tooltip com a diferença: ' + cel);
+    assert.ok(C.t.celAnalise(12000000, 800).includes('an-baixo'));
+    assert.ok(C.t.celAnalise(12000000, 5000).includes('an-ok'));
+    C.t.estado.ocultar = true;
+    assert.ok(!/5[.]000|4[.]200/.test(C.t.celSugerido(12000000, 800)), 'valores ocultos vazaram na coluna nova');
+    assert.ok(!C.t.celAnalise(12000000, 800).includes('an-'), 'o símbolo revelaria a relação com os valores ocultos');
+    C.t.estado.ocultar = false;
+    C.t.estado.honorario = null;
   });
   await teste('cs: risco e churn trazem os campos certos', () => {
     const r = C.t.dadosExport('risco');
@@ -161,7 +187,8 @@ const semLixo = (e, nome) => {
     }
     C.t.estado.ocultar = false;
     C.t.estado.dados.valores_ocultos = true;                       // perfil Usuário: o servidor já mascarou
-    assert.ok(C.t.dadosExport('analise').linhas.every((l) => l[6] === 'oculto' || l[6] === ''));
+    assert.ok(C.t.dadosExport('analise').linhas.every((l) => l[7] === 'oculto' || l[7] === ''));
+    assert.ok(C.t.dadosExport('analise').linhas.every((l) => l[9] === 'oculto' || l[9] === ''), 'honorário sugerido vazou');
     C.t.estado.dados.valores_ocultos = false;
   });
 

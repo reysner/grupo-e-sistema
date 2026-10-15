@@ -248,3 +248,21 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 .pg-btn:hover{background:var(--surface2);border-color:var(--brand3);}
 .pg-btn.ativo{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:700;cursor:default;}
 .pg-gap{color:var(--text3);padding:0 2px;}
+
+/* ── Análise Inteligente: honorário sugerido, mini botão do percentual e símbolos da Análise ── */
+.mini-pct{display:inline-block;margin-left:6px;padding:1px 8px;border:1px solid var(--border);border-radius:999px;background:var(--surface2);color:var(--text);font-size:11px;font-weight:700;cursor:pointer;vertical-align:middle;font-family:inherit;}
+.mini-pct:hover,.mini-pct:focus-visible{border-color:var(--brand3);outline:none;}
+.mini-pct.fixo{cursor:help;}
+.hon-sug{cursor:help;border-bottom:1px dotted var(--text3);}
+.an-ico{display:inline-block;min-width:22px;font-size:16px;font-weight:700;line-height:1;cursor:help;}
+.an-ok{color:#059669;}
+.an-medio{color:#d97706;}
+.an-baixo{color:#dc2626;}
+.pop-pct{position:fixed;z-index:3000;width:280px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.22);padding:14px;}
+.pop-pct label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin:0 0 4px;}
+.pop-linha{display:flex;align-items:center;gap:6px;margin-bottom:10px;}
+.pop-linha input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;}
+.pop-linha input:focus{outline:none;border-color:var(--brand);}
+.pop-dica{font-size:11px;color:var(--text3);margin:-4px 0 8px;}
+.pop-erro{color:var(--red);font-size:12px;min-height:16px;margin-bottom:6px;}
+.pop-acoes{display:flex;justify-content:flex-end;gap:8px;}

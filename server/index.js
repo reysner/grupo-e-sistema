@@ -66,6 +66,7 @@ app.use('/api/cs/churn', require('./cs/churnSaidas').router);  // Churn por saí
 app.use('/api/cs/risco', require('./cs/risco').router);        // Risco de perda: termômetros Financeiro, Atendimento e Operacional
 app.use('/api/cs/questor', require('./cs/questorDados').router);   // Faturamento 12 meses e funcionários vindos do Questor (rotina local na VPN; token de sincronização)
 app.use('/api/financeiro', require('./financeiro/rotas').router);   // Página /financeiro: inadimplência, suspensos e cobranças (login; valores só para administrador e acesso_financeiro)
+app.use('/api/cs/painel/honorario-sugerido', require('./cs/honorarioSugerido').router);   // Análise Inteligente: percentual do honorário sugerido (um valor para a equipe)
 app.use('/api/cs/email-sinais', require('./cs/emailSinais').router);          // Sinais de e-mail por cliente: POST do job local (token de sincronização)
 app.use('/api/cs/painel/email-sinais', require('./cs/emailSinais').router);   // ...e leitura para o painel (login; administrador, usuário ou acesso_cs)
 app.use('/api/cs/painel', require('./cs/painel').router);      // Painel público /cs (só leitura; administrador e usuário)

@@ -120,6 +120,7 @@
     ['visao', 'analise', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="vazio">Carregando…</div>'; });
     try {
       estado.dados = await api('/api/cs/painel/dados' + (forcar === true ? '?forcar=1' : ''));
+      try { estado.honorario = await api('/api/cs/painel/honorario-sugerido'); } catch (e) { estado.honorario = null; }   // sem o percentual, as colunas novas mostram "—"
       pintarBotaoValores();
       estado.churnLivre = null;
       desenharTudo();
@@ -451,13 +452,108 @@
     if (c.risco) return nomeLink(c);
     return esc(c.nome) + ' <span class="pill" style="color:#6b7280;border-color:#6b728055;background:#6b728014" title="Documento do tipo ' + esc(c.tipo_doc) + ' (fora do risco, que considera só CNPJ)">' + esc(c.tipo_doc) + '</span><div class="sub">' + esc(c.cnpj || '') + '</div>';
   }
+  // ── HONORÁRIO SUGERIDO (pedido do Reysner, 15/10/2026) ─────────────────────────
+  // sugerido (mensal) = percentual × faturamento médio mensal (faturamento de 12 meses ÷ 12). O percentual é um só para a equipe
+  // (guardado no servidor; só o administrador altera). Análise: ✔ cobrado ≥ sugerido · ▲ de L% a 100% do sugerido · ✖ abaixo de L%.
+  function cfgHon() { return estado.honorario || { percentual: null, limite_amarelo: 80, pode_editar: false }; }
+  function honSugerido(fat) {
+    var p = cfgHon().percentual;
+    if (p == null || fat == null || !(fat > 0)) return null;
+    return Math.round(fat / 12 * p) / 100;
+  }
+  function honAnalise(cobrado, sug) {
+    if (sug == null || cobrado == null) return null;
+    var r = cobrado / sug, lim = cfgHon().limite_amarelo / 100;
+    return r >= 1 ? 'ok' : (r >= lim ? 'medio' : 'baixo');
+  }
+  var ICO_HON = { ok: ['✔', 'an-ok', 'No valor sugerido ou acima'], medio: ['▲', 'an-medio', 'Tomando distância do valor sugerido'], baixo: ['✖', 'an-baixo', 'Muito abaixo do valor sugerido'] };
+  function moedaTxt(v) { return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+  function pctTxt(n) { return String(Math.round(n * 10) / 10).replace('.', ','); }
+  function dicaHon(cobrado, sug) {
+    if (cobrado == null) return 'Sem honorário cobrado cadastrado. Sugerido: ' + moedaTxt(sug) + ' por mês.';
+    var dif = cobrado - sug;
+    return 'Cobrado ' + moedaTxt(cobrado) + ' · sugerido ' + moedaTxt(sug) + ' · diferença ' + (dif >= 0 ? '+' : '−') + moedaTxt(Math.abs(dif)) +
+      ' (cobra ' + pctTxt(100 * cobrado / sug) + '% do sugerido)';
+  }
+  function celSugerido(fat, cobrado) {
+    if (valoresOcultos()) return reais(null);
+    var s = honSugerido(fat);
+    if (s == null) return '<span class="cinza">—</span>';
+    var d = dicaHon(cobrado, s);
+    return '<span class="hon-sug" tabindex="0" title="' + esc(d) + '" aria-label="' + esc(d) + '">' + reais(s) + '</span>';
+  }
+  function celAnalise(fat, cobrado) {
+    if (valoresOcultos()) return '<span class="cinza">—</span>';
+    var s = honSugerido(fat), n = honAnalise(cobrado, s);
+    if (!n) return '<span class="cinza">—</span>';
+    var i = ICO_HON[n], d = i[2] + '. ' + dicaHon(cobrado, s);
+    return '<span class="an-ico ' + i[1] + '" role="img" tabindex="0" title="' + esc(d) + '" aria-label="' + esc(d) + '">' + i[0] + '</span>';
+  }
+  function botaoPct() {
+    var c = cfgHon(), rot = c.percentual == null ? '%' : pctTxt(c.percentual) + '%';
+    var dica = 'Honorário sugerido = percentual × faturamento médio mensal (12 meses ÷ 12)' + (c.pode_editar ? '. Clique para alterar o percentual.' : '.');
+    return c.pode_editar
+      ? '<button type="button" class="mini-pct" id="btn-pct" title="' + esc(dica) + '" aria-haspopup="dialog">' + esc(rot) + '</button>'
+      : '<span class="mini-pct fixo" title="' + esc(dica) + '">' + esc(rot) + '</span>';
+  }
+  function legendaHon() {
+    if (valoresOcultos()) return '';
+    var c = cfgHon();
+    if (c.percentual == null) return ' · <span class="cinza">Defina o percentual no botão % da coluna Honorário sugerido para ver a análise.</span>';
+    return ' · Sugerido = ' + pctTxt(c.percentual) + '% do faturamento médio mensal (12 meses ÷ 12). <span class="an-ok">✔</span> cobrado no sugerido ou acima · ' +
+      '<span class="an-medio">▲</span> de ' + pctTxt(c.limite_amarelo) + '% a 100% do sugerido · <span class="an-baixo">✖</span> abaixo de ' + pctTxt(c.limite_amarelo) + '%';
+  }
+  function fecharPopPct() { var p = $('pop-pct'); if (p && p.parentNode) p.parentNode.removeChild(p); }
+  function abrirPopPct(btn) {
+    fecharPopPct();
+    var c = cfgHon(), r = btn.getBoundingClientRect(), p = document.createElement('div');
+    p.id = 'pop-pct'; p.className = 'pop-pct'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Percentual do honorário sugerido');
+    p.innerHTML = '<label for="pct-valor">Percentual sobre o faturamento médio mensal</label>' +
+      '<div class="pop-linha"><input id="pct-valor" type="text" inputmode="decimal" value="' + esc(c.percentual == null ? '' : String(c.percentual).replace('.', ',')) + '" placeholder="Ex.: 0,5"><span>%</span></div>' +
+      '<label for="pct-limite">Amarelo a partir de (% do sugerido)</label>' +
+      '<div class="pop-linha"><input id="pct-limite" type="text" inputmode="decimal" value="' + esc(String(c.limite_amarelo).replace('.', ',')) + '"><span>%</span></div>' +
+      '<div class="pop-dica">Abaixo desse limite o símbolo fica vermelho.</div><div class="pop-erro" id="pct-erro" role="alert"></div>' +
+      '<div class="pop-acoes"><button type="button" class="gp-footer-btn" id="pct-cancelar" style="width:auto">Cancelar</button>' +
+      '<button type="button" class="login-btn" id="pct-salvar" style="width:auto;margin:0;padding:8px 16px">Salvar</button></div>';
+    document.body.appendChild(p);
+    p.style.top = Math.round(r.bottom + 6) + 'px';
+    p.style.left = Math.max(8, Math.min(Math.round(r.left), window.innerWidth - 300)) + 'px';
+    $('pct-valor').focus();
+    $('pct-cancelar').addEventListener('click', fecharPopPct);
+    var salvar = async function () {
+      var v = $('pct-valor').value.trim().replace(',', '.'), l = $('pct-limite').value.trim().replace(',', '.'), erro = $('pct-erro');
+      erro.textContent = '';
+      var corpo = { percentual: v === '' ? null : parseFloat(v), limite_amarelo: parseFloat(l) };
+      if (v !== '' && !(corpo.percentual > 0 && corpo.percentual <= 100)) { erro.textContent = 'Informe um percentual maior que 0 e até 100.'; return; }
+      if (!(corpo.limite_amarelo >= 1 && corpo.limite_amarelo <= 99)) { erro.textContent = 'O limite do amarelo fica entre 1 e 99%.'; return; }
+      $('pct-salvar').disabled = true;
+      try {
+        var resp = await chamarApi('/api/cs/painel/honorario-sugerido', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+        var j = await resp.json().catch(function () { return {}; });
+        if (!resp.ok) { erro.textContent = j.error || 'Não foi possível salvar.'; $('pct-salvar').disabled = false; return; }
+        estado.honorario = Object.assign({}, j, { pode_editar: true });
+        fecharPopPct();
+        desenharAnalise();
+      } catch (e) { erro.textContent = 'Sem conexão com o servidor. Tente de novo.'; $('pct-salvar').disabled = false; }
+    };
+    $('pct-salvar').addEventListener('click', salvar);
+    p.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') salvar(); if (ev.key === 'Escape') fecharPopPct(); });
+  }
+  document.addEventListener('click', function (ev) {
+    var p = $('pop-pct');
+    if (p && !p.contains(ev.target) && !(ev.target.closest && ev.target.closest('#btn-pct'))) fecharPopPct();
+  });
+
   function linhaAnalise(c, filho) {
     var q = c.questor;
     return '<tr class="' + (filho ? 'filho' : '') + '"><td style="padding-left:' + (filho ? '38px' : '12px') + ';white-space:normal;min-width:240px">' + nomeAnalise(c) + '</td>' +
+      '<td class="c">' + pillCat(c) + '</td>' +
       '<td class="c">' + (c.regime ? esc(c.regime) : '<span class="cinza">—</span>') + '</td>' +
       '<td class="c">' + (q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : '<span class="cinza">sem dado</span>') + '</td>' +
       '<td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td>' +
-      '<td class="c" style="font-family:var(--mono)">' + celFat(q) + '</td></tr>';
+      '<td class="c" style="font-family:var(--mono)">' + celFat(q) + '</td>' +
+      '<td class="c" style="font-family:var(--mono)">' + celSugerido(q ? q.faturamento : null, c.honorario) + '</td>' +
+      '<td class="c">' + celAnalise(q ? q.faturamento : null, c.honorario) + '</td></tr>';
   }
   var ANALISE_POR_PAGINA = 50;
   // Paginação no rodapé da tabela: "Total: N registros  [1] [2] [3] ›" (modelo pedido pelo Reysner, 11/10/2026). Mostra só 3 números de página (a atual no meio) mais as setas.
@@ -498,8 +594,9 @@
       var aberto = !!estado.abertosAnalise[e.chave];
       var rotulo = e.tipo === 'grupo' ? 'GRUPO ' + esc(e.nome.toUpperCase()) : esc(e.nome) + ' <span class="cinza">e filiais</span>';
       var topo = '<tr class="grupo"><td style="white-space:normal;min-width:240px"><button class="lupa" data-abre="' + esc(e.chave) + '" title="' + (aberto ? 'Recolher' : 'Ver as ' + e.itens.length + ' empresas') + '" aria-expanded="' + aberto + '">' + (aberto ? '🔽' : '🔍') + '</button> <button class="link" data-grupo="' + esc(e.chave) + '" title="Abrir a ficha do grupo"><strong>' + rotulo + '</strong></button> <span class="pill" style="color:#256050;border-color:#25605055;background:#25605014">' + e.itens.length + ' empresas</span></td>' +
-        '<td class="c"><span class="cinza">—</span></td>' +
-        '<td class="c"><strong>' + celNum(e.funcionarios) + '</strong></td><td class="c" style="font-family:var(--mono)"><strong>' + reais(e.honorario) + '</strong></td><td class="c" style="font-family:var(--mono)"><strong>' + celFatTotal(e.faturamento) + '</strong></td></tr>';
+        '<td class="c"><span class="cinza">—</span></td><td class="c"><span class="cinza">—</span></td>' +
+        '<td class="c"><strong>' + celNum(e.funcionarios) + '</strong></td><td class="c" style="font-family:var(--mono)"><strong>' + reais(e.honorario) + '</strong></td><td class="c" style="font-family:var(--mono)"><strong>' + celFatTotal(e.faturamento) + '</strong></td>' +
+        '<td class="c" style="font-family:var(--mono)"><strong>' + celSugerido(e.faturamento, e.honorario) + '</strong></td><td class="c">' + celAnalise(e.faturamento, e.honorario) + '</td></tr>';
       return topo + (aberto ? e.itens.map(function (c) { return linhaAnalise(c, true); }).join('') : '');
     }).join('');
     var per = t.questor_periodo ? (t.questor_periodo.ini.slice(5) + '/' + t.questor_periodo.ini.slice(0, 4) + ' a ' + t.questor_periodo.fim.slice(5) + '/' + t.questor_periodo.fim.slice(0, 4)) : '12 meses';
@@ -512,9 +609,10 @@
       '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="a-busca" placeholder="Empresa, grupo ou CNPJ" value="' + esc(f.busca) + '">' +
         '<span class="filter-label">Documento</span><select class="gp-select" id="a-tipo"><option value=""' + (!f.tipo ? ' selected' : '') + '>Todos (' + (contTipo.CNPJ + contTipo.CPF + contTipo.CAEPF + contTipo.CNO) + ')</option>' + ['CNPJ', 'CPF', 'CAEPF', 'CNO'].map(function (k) { return '<option value="' + k + '"' + (f.tipo === k ? ' selected' : '') + '>Só ' + k + ' (' + contTipo[k] + ')</option>'; }).join('') + '</select>' +
         '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="a-grupos"' + (f.soGrupos ? ' checked' : '') + '> só grupos e matriz com filiais</label></div>' +
-        '<div class="card-sub">' + ents.length + ' linha(s) · ordem: faturamento, do maior para o menor</div>' +
-        (ents.length ? '<div class="table-wrap"><table class="tab-analise"><colgroup><col style="width:35%"><col style="width:15%"><col style="width:13%"><col style="width:17%"><col style="width:20%"></colgroup><thead><tr><th>Razão social</th><th class="c">Regime tributário</th><th class="c">Funcionários</th><th class="c">Honorários</th><th class="c">Faturamento (12 meses)</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nada encontrado neste filtro.</div>') +
+        '<div class="card-sub">' + ents.length + ' linha(s) · ordem: faturamento, do maior para o menor' + legendaHon() + '</div>' +
+        (ents.length ? '<div class="table-wrap"><table class="tab-analise"><colgroup><col style="width:25%"><col style="width:10%"><col style="width:11%"><col style="width:8%"><col style="width:11%"><col style="width:13%"><col style="width:14%"><col style="width:8%"></colgroup><thead><tr><th>Razão social</th><th class="c">Categoria</th><th class="c">Regime tributário</th><th class="c">Funcionários</th><th class="c">Honorários</th><th class="c">Faturamento (12 meses)</th><th class="c">Honorário sugerido ' + botaoPct() + '</th><th class="c">Análise</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nada encontrado neste filtro.</div>') +
         (ents.length ? paginacaoHtml(ents.length, f.pag, ANALISE_POR_PAGINA) : '') + '</div>';
+    var bpct = $('btn-pct'); if (bpct) bpct.addEventListener('click', function (ev) { ev.stopPropagation(); abrirPopPct(bpct); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-analise [data-abre]'), function (bt) { bt.addEventListener('click', function () { var k = bt.getAttribute('data-abre'); estado.abertosAnalise[k] = !estado.abertosAnalise[k]; desenharAnalise(); }); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-analise [data-grupo]'), function (bt) { bt.addEventListener('click', function () { abrirFichaGrupo(bt.getAttribute('data-grupo')); }); });
     var campo = $('a-busca'); if (campo) { campo.addEventListener('input', function () { f.busca = campo.value; f.pag = 1; var pos = campo.selectionStart; desenharAnalise(); var n = $('a-busca'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* sem seleção */ } }); }
@@ -651,6 +749,17 @@
     return q.faturamento === 0 ? 'sem faturamento' : Math.round(q.faturamento * 100) / 100;
   }
   function funcExp(q) { return q ? (q.funcionarios == null ? 0 : q.funcionarios) : 'sem dado'; }
+  function sugExp(fat) {
+    if (valoresOcultos()) return 'oculto';
+    var s = honSugerido(fat);
+    return s == null ? '' : s;
+  }
+  var ROT_ANALISE_EXP = { ok: 'No sugerido ou acima', medio: 'Tomando distância', baixo: 'Muito abaixo' };
+  function analiseExp(fat, cobrado) {
+    if (valoresOcultos()) return 'oculto';
+    var n = honAnalise(cobrado, honSugerido(fat));
+    return n ? ROT_ANALISE_EXP[n] : '';
+  }
   var ROT_NIVEL = { AltoMedio: 'Alto e Médio', Alto: 'Só Alto', 'Médio': 'Só Médio', Baixo: 'Baixo', Suspenso: 'Suspensos (fora do risco)', todos: 'Todos' };
 
   function dadosExport(sec) {
@@ -675,18 +784,18 @@
       var f = estado.filtroAnalise, a = analiseFiltrada(), linhas = [];
       var linhaEmp = function (c, nivel) {
         var q = c.questor;
-        return [nivel, c.nome, c.cnpj || '', c.tipo_doc || 'CNPJ', c.regime || '', funcExp(q), moedaExp(c.honorario), fatExp(q), q && q.aviso ? 'Natureza sem configuração de faturamento no Questor' : ''];
+        return [nivel, c.nome, c.cnpj || '', c.tipo_doc || 'CNPJ', c.categoria || '', c.regime || '', funcExp(q), moedaExp(c.honorario), fatExp(q), sugExp(q ? q.faturamento : null), analiseExp(q ? q.faturamento : null, c.honorario), q && q.aviso ? 'Natureza sem configuração de faturamento no Questor' : ''];
       };
       a.ents.forEach(function (e) {
         if (e.unico) { linhas.push(linhaEmp(e.itens[0], 'Empresa')); return; }
         var fat = valoresOcultos() ? 'oculto' : (e.faturamento == null ? 'sem dado' : e.faturamento === 0 ? 'sem faturamento' : Math.round(e.faturamento * 100) / 100);
-        linhas.push([e.tipo === 'grupo' ? 'Grupo' : 'Matriz e filiais', e.tipo === 'grupo' ? 'GRUPO ' + e.nome.toUpperCase() : e.nome + ' e filiais', e.itens.length + ' empresas', '', '', e.funcionarios == null ? 'sem dado' : e.funcionarios, moedaExp(e.honorario), fat, '']);
+        linhas.push([e.tipo === 'grupo' ? 'Grupo' : 'Matriz e filiais', e.tipo === 'grupo' ? 'GRUPO ' + e.nome.toUpperCase() : e.nome + ' e filiais', e.itens.length + ' empresas', '', '', '', e.funcionarios == null ? 'sem dado' : e.funcionarios, moedaExp(e.honorario), fat, sugExp(e.faturamento), analiseExp(e.faturamento, e.honorario), '']);
         e.itens.forEach(function (c) { linhas.push(linhaEmp(c, '  Empresa do grupo')); });
       });
       var fl = []; if (f.busca) fl.push('Busca: ' + f.busca); if (f.tipo) fl.push('Documento: ' + f.tipo); if (f.soGrupos) fl.push('Só grupos e matriz com filiais');
       return { arquivo: 'cs-analise-inteligente', titulo: 'Painel do Sucesso do Cliente - Análise Inteligente', filtros: [a.ents.length + ' linha(s)' + (fl.length ? ' · ' + fl.join(' · ') : ' · sem filtro') + ' · ordem: faturamento, do maior para o menor', aviso],
-        colunas: ['Nível', 'Razão social', 'Documento', 'Tipo', 'Regime tributário', 'Funcionários', 'Honorários (R$)', 'Faturamento 12 meses (R$)', 'Aviso do Questor'], linhas: linhas,
-        alinhar: ['left', 'left', 'left', 'center', 'left', 'center', 'right', 'right', 'left'], fonte: 7 };
+        colunas: ['Nível', 'Razão social', 'Documento', 'Tipo', 'Categoria', 'Regime tributário', 'Funcionários', 'Honorários (R$)', 'Faturamento 12 meses (R$)', 'Honorário sugerido (R$)', 'Análise', 'Aviso do Questor'], linhas: linhas,
+        alinhar: ['left', 'left', 'left', 'center', 'center', 'left', 'center', 'right', 'right', 'right', 'center', 'left'], fonte: 7 };
     }
     if (sec === 'risco') {
       var fr = estado.filtroRisco, lr = filtrarRisco();
