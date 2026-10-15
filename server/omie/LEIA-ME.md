@@ -31,3 +31,11 @@ Mesma rodada (tarefa "omie-financeiro-11h"), nas DUAS empresas (**sempre olhar a
 `paginaContratos.js` (SCRIPT 4, só leitura de Serviços → Contratos de Serviço, filtro Situação "Susp") grava
 `tmp/escritorial-suspensos.txt` e `tmp/solucoes-suspensos.txt`; `enviarSuspensos.js` envia a lista inteira ao sistema
 (`POST /api/cs/risco/suspensos-omie`) — só se as duas leituras deram certo. Reativar o contrato no Omie tira o selo na segunda seguinte.
+
+## Títulos em aberto e pontualidade (página /financeiro) — mesma rodada
+O SCRIPT 2 também gera `window.__saida.titulos` (cada honorário em aberto: `rec|cnpj|AAMMDD|aberto|valorDoc|A/P/V`; A atrasado, P parcial,
+V a vencer) e `window.__saida.pontual` (`cnpj|pagos|mediaDias|maxDias`, de quem pagou nos últimos 7 meses). O SCRIPT 3 imprime as duas
+(blocos TIT e PONT). Grave em `tmp/<slug>-titulos.txt` e `tmp/<slug>-pontual.txt` e passe ao importador:
+`--titulos=... --pontual=...`. O envio vai para `POST /api/financeiro/titulos` (token de sincronização) e substitui os títulos DA UNIDADE.
+O importador não envia se o arquivo de títulos vier vazio apesar de haver clientes em aberto (leitura suspeita). Sem esses arquivos a
+página /financeiro continua funcionando com o total por cliente (sem o detalhe mês a mês).

@@ -11,7 +11,7 @@ const corpo = (itens) => ({ ate: '2026-08', ano_inicial: 2015, itens });
 teste('aceita a carga, limpa o CNPJ, arredonda e limita meses_com_valor', () => {
   const v = validarCarga(corpo([{ cnpj: '09.076.689/0001-02', anos: [{ ano: 2025, faturamento: 14186517.074, meses: 12, meses_com_valor: 14 }, { ano: 2026, faturamento: 8904099.6, meses: 8, meses_com_valor: 8 }] }]));
   assert.strictEqual(v.linhas.length, 2);
-  assert.deepStrictEqual({ ...v.linhas[0] }, { doc: '09076689000102', ano: 2025, fat: 14186517.07, meses: 12, mv: 12 });
+  assert.deepStrictEqual({ ...v.linhas[0] }, { doc: '09076689000102', ano: 2025, fat: 14186517.07, meses: 12, mv: 12, fun: null, media: null, regime: null, fonte: null });
 });
 teste('aceita faturamento zero e negativo (devolução); ignora documento inválido e linha repetida', () => {
   const v = validarCarga(corpo([
@@ -20,6 +20,11 @@ teste('aceita faturamento zero e negativo (devolução); ignora documento invál
   ]));
   assert.strictEqual(v.linhas.length, 2);
   assert.strictEqual(v.linhas.find((l) => l.ano === 2024).fat, 0);
+});
+teste('guarda funcionários e regime; faturamento nulo é aceito (não lido no ano)', () => {
+  const v = validarCarga(corpo([{ cnpj: '09076689000102', anos: [{ ano: 2025, faturamento: null, meses: 0, funcionarios: 63, funcionarios_media: 58.46, regime: 'Simples Nacional' }] }]));
+  assert.deepStrictEqual({ ...v.linhas[0] }, { doc: '09076689000102', ano: 2025, fat: null, meses: 0, mv: 0, fun: 63, media: 58.5, regime: 'Simples Nacional', fonte: null });
+  assert.throws(() => validarCarga(corpo([{ cnpj: '09076689000102', anos: [{ ano: 2025, faturamento: 1, meses: 12, funcionarios: -3 }] }])), /inválido/);
 });
 teste('recusa período, ano inicial, lista vazia e valores inválidos', () => {
   assert.throws(() => validarCarga({ ate: '2026', ano_inicial: 2015, itens: [{}] }), /ate/);

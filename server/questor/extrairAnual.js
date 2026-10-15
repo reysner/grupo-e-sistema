@@ -18,7 +18,40 @@ const { Pool } = require('pg');
 const nweb = require('./nwebClient');
 const { periodoDeExtracao, hojeBrasilia } = require('./periodo');
 const { parseFaturamento, dig } = require('./faturamentoParse');
-const { agregarPorAno, mesesEsperados, parseAtivos, parseOptantes, funcionariosDoAno, rotuloRegime } = require('./anual');
+const { agregarPorAno, mesesEsperados, parseAtivos, parseOptantes, funcionariosDoAno, rotuloRegime, regimeDaReceita } = require('./anual');
+
+// Regime tributário: dados abertos da Receita Federal via BrasilAPI (CNPJ é dado público); o Questor fica só como reserva (o cadastro de regime lá não é confiável).
+const os = require('os');
+const CACHE_RECEITA = path.join(os.tmpdir(), 'brasilapi_regime_cache.json');
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+async function lerReceita(docs) {
+  let cache = {}; try { cache = JSON.parse(fs.readFileSync(CACHE_RECEITA, 'utf8')); } catch (e) { cache = {}; }
+  const validade = 20 * 86400000;
+  let buscados = 0, falhas = 0;
+  for (const d of docs) {
+    if (d.length !== 14) continue;
+    const c = cache[d]; if (c && Date.now() - c.t < validade) continue;
+    let ok = false;
+    for (let t = 0; t < 4 && !ok; t++) {
+      try {
+        const r = await fetch('https://brasilapi.com.br/api/cnpj/v1/' + d, { headers: { 'User-Agent': 'grupo-e-sistema' }, signal: AbortSignal.timeout(30000) });
+        if (r.status === 404) { cache[d] = { t: Date.now(), j: null }; ok = true; break; }
+        if (r.status === 429 || r.status >= 500) { await esperar(3000 * (t + 1)); continue; }
+        if (!r.ok) break;
+        const j = await r.json();
+        cache[d] = { t: Date.now(), j: { opcao_pelo_simples: j.opcao_pelo_simples, opcao_pelo_mei: j.opcao_pelo_mei, data_opcao_pelo_simples: j.data_opcao_pelo_simples, data_exclusao_do_simples: j.data_exclusao_do_simples, regime_tributario: j.regime_tributario || [] } };
+        ok = true;
+      } catch (e) { await esperar(2000); }
+    }
+    if (!ok) falhas++;
+    buscados++;
+    if (buscados % 50 === 0) { fs.writeFileSync(CACHE_RECEITA, JSON.stringify(cache)); console.log('  Receita: ' + buscados + ' consultados'); }
+    await esperar(250);
+  }
+  fs.writeFileSync(CACHE_RECEITA, JSON.stringify(cache));
+  console.log('Receita (BrasilAPI): ' + buscados + ' consultados nesta rodada, ' + falhas + ' sem resposta');
+  return cache;
+}
 
 const arg = (n) => { const a = process.argv.find((x) => x.startsWith('--' + n + '=')); return a ? a.slice(n.length + 3) : null; };
 const simular = process.argv.includes('--simular');
@@ -114,9 +147,15 @@ async function main() {
   }
   console.log('regime: ' + Object.keys(opcoes).map((a) => `${a}:${opcoes[a].simples.size}S`).join(' '));
 
+  const receita = await lerReceita(presentes);
   // a contagem de funcionários é por EMPRESA do Questor: fica no documento do estabelecimento de menor código (a matriz) entre os clientes lidos
   const donoDaEmpresa = new Map();
   for (const d of presentes) { const m = noQuestor.get(d); const atual = donoDaEmpresa.get(m.emp); if (!atual || Number(m.est) < Number(noQuestor.get(atual).est)) donoDaEmpresa.set(m.emp, d); }
+  const regimeDoAno = (cnpj, ano) => {
+    const rec = receita[cnpj] && receita[cnpj].j ? regimeDaReceita(receita[cnpj].j, ano) : null;
+    if (rec) return { regime: rec.regime, regime_fonte: rec.fonte };
+    return { regime: rotuloRegime(cnpj, opcoes[ano]), regime_fonte: 'Questor' };
+  };
   const itens = presentes.map((cnpj) => {
     const m = noQuestor.get(cnpj), fat = resultado[cnpj] ? resultado[cnpj].anos : {};
     const meses = donoDaEmpresa.get(m.emp) === cnpj ? (ativosPorEmp[m.emp] || {}) : null;
@@ -125,7 +164,7 @@ async function main() {
       const f = fat[ano], fn = meses ? funcionariosDoAno(meses, ano) : { funcionarios: null, funcionarios_media: null };
       anos.push({
         ano, faturamento: f ? f.faturamento : null, meses: f ? f.meses : 0, meses_com_valor: f ? f.meses_com_valor : 0,
-        funcionarios: fn.funcionarios, funcionarios_media: fn.funcionarios_media, regime: rotuloRegime(cnpj, opcoes[ano]),
+        funcionarios: fn.funcionarios, funcionarios_media: fn.funcionarios_media, ...regimeDoAno(cnpj, ano),
       });
     }
     return { cnpj, anos };

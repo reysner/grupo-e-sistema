@@ -78,5 +78,19 @@ teste('rotuloRegime: Simples vence; depois Real, Presumido; senão "Fora do Simp
   assert.strictEqual(rotuloRegime('4', c), 'Fora do Simples');
 });
 
+const { regimeDaReceita } = require('./anual');
+teste('regime pela Receita: ECF do ano vence; senão o período do Simples; senão nada', () => {
+  const j = { opcao_pelo_simples: false, data_opcao_pelo_simples: '2018-01-01', data_exclusao_do_simples: '2021-06-30', opcao_pelo_mei: false,
+    regime_tributario: [{ ano: 2022, forma_de_tributacao: 'LUCRO PRESUMIDO', cnpj_da_scp: null }, { ano: 2023, forma_de_tributacao: 'LUCRO REAL', cnpj_da_scp: null }, { ano: 2023, forma_de_tributacao: 'LUCRO PRESUMIDO', cnpj_da_scp: '99999999000100' }] };
+  assert.deepStrictEqual({ ...regimeDaReceita(j, 2022) }, { regime: 'Lucro Presumido', fonte: 'Receita (ECF)' });
+  assert.strictEqual(regimeDaReceita(j, 2023).regime, 'Lucro Real');                 // a SCP não vale
+  assert.deepStrictEqual({ ...regimeDaReceita(j, 2019) }, { regime: 'Simples Nacional', fonte: 'Receita (Simples)' });
+  assert.strictEqual(regimeDaReceita(j, 2021), null);                                // excluído em 30/06/2021: no fim do ano já não era Simples
+  assert.strictEqual(regimeDaReceita(j, 2016), null);                                // antes da opção
+  assert.strictEqual(regimeDaReceita({ opcao_pelo_simples: true, opcao_pelo_mei: true, data_opcao_pelo_simples: '2020-03-01', data_exclusao_do_simples: null, regime_tributario: [] }, 2024).regime, 'MEI');
+  assert.strictEqual(regimeDaReceita({ opcao_pelo_simples: false, data_opcao_pelo_simples: '2007-07-01', data_exclusao_do_simples: '2007-07-01', regime_tributario: [] }, 2015), null);
+  assert.strictEqual(regimeDaReceita(null, 2024), null);
+});
+
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);

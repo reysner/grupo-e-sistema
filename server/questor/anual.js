@@ -97,4 +97,27 @@ function rotuloRegime(doc, { simples, presumido, real }) {
   return 'Fora do Simples';
 }
 
-module.exports = { agregarPorAno, mesesEsperados, parseAtivos, parseOptantes, funcionariosDoAno, rotuloRegime };
+/**
+ * Regime tributário do ano pelos dados abertos da Receita Federal (via BrasilAPI /cnpj/v1): 
+ *  1. forma de tributação declarada na ECF daquele ano (regime_tributario[]: LUCRO REAL, LUCRO PRESUMIDO, ISENTO DO IRPJ...);
+ *  2. senão, período de opção pelo Simples Nacional (data_opcao_pelo_simples / data_exclusao_do_simples) que cubra o fim do ano.
+ * Devolve { regime, fonte } ou null (sem informação). Função PURA.
+ */
+const ROTULO_ECF = { 'LUCRO REAL': 'Lucro Real', 'LUCRO PRESUMIDO': 'Lucro Presumido', 'LUCRO ARBITRADO': 'Lucro Arbitrado', 'ISENTO DO IRPJ': 'Isenta do IRPJ', 'IMUNE DO IRPJ': 'Imune do IRPJ' };
+function regimeDaReceita(j, ano) {
+  if (!j || typeof j !== 'object') return null;
+  const lista = Array.isArray(j.regime_tributario) ? j.regime_tributario : [];
+  const doAno = lista.filter((x) => Number(x.ano) === ano && !x.cnpj_da_scp);
+  if (doAno.length) {
+    const f = String(doAno[0].forma_de_tributacao || '').toUpperCase().trim();
+    const rot = ROTULO_ECF[f] || (f ? f.charAt(0) + f.slice(1).toLowerCase() : null);
+    if (rot) return { regime: rot, fonte: 'Receita (ECF)' };
+  }
+  const fimAno = `${ano}-12-31`;
+  const opc = j.data_opcao_pelo_simples ? String(j.data_opcao_pelo_simples).slice(0, 10) : null;
+  const exc = j.data_exclusao_do_simples ? String(j.data_exclusao_do_simples).slice(0, 10) : null;
+  if (opc && opc <= fimAno && (!exc || exc > fimAno)) return { regime: j.opcao_pelo_mei ? 'MEI' : 'Simples Nacional', fonte: 'Receita (Simples)' };
+  return null;
+}
+
+module.exports = { agregarPorAno, mesesEsperados, parseAtivos, parseOptantes, funcionariosDoAno, rotuloRegime, regimeDaReceita };
