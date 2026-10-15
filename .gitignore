@@ -17,3 +17,4 @@ server/emailSinais/aprendidos.json
 server/emailSinais/logs/
 
 server/questor/logs/
+server/emailSinais/cache/

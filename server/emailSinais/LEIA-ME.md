@@ -14,6 +14,17 @@ esperando resposta, há quanto tempo e em qual caixa. Assunto e corpo nunca são
 - **Aprendizado:** um endereço que aparece na mesma conversa de contatos de **uma** empresa passa a valer como contato dela.
   Fica em `aprendidos.json` (só nesta máquina, fora do Git). Apague a entrada para "desaprender" um endereço.
 
+## Histórico de 180 dias por destinatário (módulo Atendimento)
+A mesma leitura lê **180 dias** (`--historico=180`, padrão) e produz, além dos pedidos esperando resposta (14 dias, bloco Hoje), o histórico por cliente:
+e-mails recebidos, **sem resposta** e a mesma contagem por **destinatário interno** (Para/Cc), incluindo os grupos (dptofiscal@, dptocontabil@,
+contabil.fiscal@, escritorial@, gestao@, pralegal@, hands@, legalizacao@ nos dois domínios, deptopessoal@, dctfweb@, cs@).
+- Sem resposta = ninguém do escritório escreveu para aquele contato depois do e-mail, em **nenhuma** caixa: a resposta de uma pessoa, ou de outro
+  endereço do mesmo grupo, encerra a espera. Menos de 4 h e "obrigado" curto não contam; quem o escritório já atendeu pelo Zappy depois também sai.
+- **Cache incremental** em `server/emailSinais/cache/` (um arquivo por caixa; fora do Git, contém endereços): a primeira rodada lê tudo (30 a 60 min);
+  as seguintes só as mensagens novas.
+- Vai ao sistema por `POST /api/cs/email-sinais/atendimento` (tabelas `cs_email_atendimento` e `cs_email_atendimento_leitura`, RLS ligado). Só nomes de pessoas e
+  endereços do próprio escritório; nenhum endereço de cliente, assunto ou texto.
+
 ## Rodar
 ```
 node server/emailSinais/coletar.js                       # prévia: grava arquivo local e imprime resumo (não envia nada)
