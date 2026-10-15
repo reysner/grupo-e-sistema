@@ -286,7 +286,7 @@
       if (f.soAtend && !(c.risco.termometros.atendimento > 0)) return false;
       if (b && (c.nome || '').toLowerCase().indexOf(b) < 0 && String(c.cnpj || '').replace(/\D/g, '').indexOf(b.replace(/\D/g, '') || '§') < 0) return false;
       return true;
-    });
+    }).sort(function (x, y) { return (x.nome || '').localeCompare(y.nome || '', 'pt-BR', { sensitivity: 'base' }); });   // ordem alfabética
   }
   function linhasRisco() {
     var f = estado.filtroRisco, lista = filtrarRisco(), mostrar = f.todos ? lista : lista.slice(0, 150);
@@ -322,7 +322,7 @@
   }
   function pintarListaRisco() {
     var r = linhasRisco();
-    $('r-lista').innerHTML = '<div class="card-sub">' + r.n + ' cliente(s) · ordem: pontos de risco, do maior para o menor</div>' + r.html;
+    $('r-lista').innerHTML = '<div class="card-sub">' + r.n + ' cliente(s) · ordem alfabética</div>' + r.html;
     var b = $('r-todos'); if (b) b.addEventListener('click', function () { estado.filtroRisco.todos = true; pintarListaRisco(); });
   }
 
@@ -491,11 +491,12 @@
     var i = ICO_HON[n], d = i[2] + '. ' + dicaHon(cobrado, s);
     return '<span class="an-ico ' + i[1] + '" role="img" tabindex="0" title="' + esc(d) + '" aria-label="' + esc(d) + '">' + i[0] + '</span>';
   }
-  function botaoPct() {
+  function botaoPct(id) {
+    id = id || 'btn-pct';
     var c = cfgHon(), rot = c.percentual == null ? '%' : pctTxt(c.percentual) + '%';
     var dica = 'Honorário sugerido = percentual × faturamento médio mensal (12 meses ÷ 12)' + (c.pode_editar ? '. Clique para alterar o percentual.' : '.');
     return c.pode_editar
-      ? '<button type="button" class="mini-pct" id="btn-pct" title="' + esc(dica) + '" aria-haspopup="dialog">' + esc(rot) + '</button>'
+      ? '<button type="button" class="mini-pct" id="' + id + '" title="' + esc(dica) + '" aria-haspopup="dialog">' + esc(rot) + '</button>'
       : '<span class="mini-pct fixo" title="' + esc(dica) + '">' + esc(rot) + '</span>';
   }
   function legendaHon() {
@@ -536,6 +537,7 @@
         estado.honorario = Object.assign({}, j, { pode_editar: true });
         fecharPopPct();
         desenharAnalise();
+        if (estado.fichaGrupoAberta && $('ficha').style.display === 'flex') abrirFichaGrupo(estado.fichaGrupoAberta);   // a ficha do grupo aberta acompanha o novo percentual
       } catch (e) { erro.textContent = 'Sem conexão com o servidor. Tente de novo.'; $('pct-salvar').disabled = false; }
     };
     $('pct-salvar').addEventListener('click', salvar);
@@ -543,7 +545,7 @@
   }
   document.addEventListener('click', function (ev) {
     var p = $('pop-pct');
-    if (p && !p.contains(ev.target) && !(ev.target.closest && ev.target.closest('#btn-pct'))) fecharPopPct();
+    if (p && !p.contains(ev.target) && !(ev.target.closest && ev.target.closest('#btn-pct, #btn-pct-ficha'))) fecharPopPct();
   });
 
   /** Categoria da linha de grupo / matriz com filiais: a das empresas (a categoria já é calculada pela soma do grupo); se divergirem, a mais alta. */
@@ -668,6 +670,19 @@
     });
     return m;
   }
+  var REAJUSTE_MIN = 5;   // % que o honorário do Omie precisa ter subido (desde o ano anterior) para contar como reajustado
+  /** Honorário mensal típico do Omie: o do ano anterior (hp) e o mais recente (hc, do último ano com cobrança a partir do ano analisado). */
+  function honOmie(mh, doc, ano) {
+    var hon = mh[doc] || {}, ys = Object.keys(hon).map(Number).filter(function (y) { return y >= ano && hon[y].mensal > 0; }).sort(function (a, b) { return b - a; });
+    var ant = hon[ano - 1] && hon[ano - 1].mensal > 0 ? hon[ano - 1].mensal : null, hoje = ys.length ? hon[ys[0]].mensal : null;
+    return { hp: ant, hc: hoje, hcAno: ys.length ? ys[0] : null, vh: varPct(ant, hoje) };
+  }
+  /** Situação do reajuste de quem está em "Rever honorário": 'nao' (subiu menos que o mínimo), 'sim', 'sem-dado' (sem os dois valores no Omie) ou null (não é destaque). */
+  function reajusteLinha(l) {
+    if (!destaqueLinha(l)) return null;
+    if (l.vh == null) return 'sem-dado';
+    return l.vh >= REAJUSTE_MIN ? 'sim' : 'nao';
+  }
   /** variação % de b sobre a; null quando não há base (a <= 0 ou ausente). */
   function varPct(a, b) { return a == null || b == null || !(a > 0) ? null : (b - a) / a * 100; }
   function destaqueAnual(v) { return v != null && v >= cfgAnual().percentual; }
@@ -738,23 +753,26 @@
     var contTipo = { CNPJ: 0, CPF: 0, CAEPF: 0, CNO: 0 };
     base.forEach(function (c) { if (contTipo[c.tipo_doc] != null) contTipo[c.tipo_doc]++; });
     if (f.tipo) base = base.filter(function (c) { return c.tipo_doc === f.tipo; });                  // filtro Documento: só CNPJ, CPF, CAEPF ou CNO
+    var mh = mapaHonAnual();
     var linhas = base.map(function (c) {
-      var doc = soDig(c.cnpj), anos = mapa[doc] || null;
+      var doc = soDig(c.cnpj), anos = mapa[doc] || null, ho = honOmie(mh, doc, ano);
       var prev = anos && anos[ano - 1] ? anos[ano - 1].faturamento : null, cur = anos && anos[ano] ? anos[ano].faturamento : null;
       var fp = funcDoAno(anos, ano - 1), fc = funcDoAno(anos, ano);
       var rp = regimeDoAnoAnual(anos, ano - 1), rc = regimeDoAnoAnual(anos, ano);
-      return { c: c, doc: doc, anos: anos, prev: prev, cur: cur, v: varPct(prev, cur), fp: fp, fc: fc, vf: varPct(fp, fc), rp: rp, rc: rc, mudouRegime: regimeMudou(rp, rc) };
+      return { c: c, doc: doc, anos: anos, prev: prev, cur: cur, v: varPct(prev, cur), fp: fp, fc: fc, vf: varPct(fp, fc), rp: rp, rc: rc, mudouRegime: regimeMudou(rp, rc), hp: ho.hp, hc: ho.hc, hcAno: ho.hcAno, vh: ho.vh };
     });
     var comDado = linhas.filter(function (l) { return l.anos; }).length;
     var todas = linhas.length;
     if (b) linhas = linhas.filter(function (l) { return (l.c.nome || '').toLowerCase().indexOf(b) >= 0 || l.doc.indexOf(b.replace(/\D/g, '') || '§') >= 0; });
     var subiram = linhas.filter(function (l) { return destaqueLinha(l); });
     var mudaram = linhas.filter(function (l) { return l.mudouRegime; }).length;
+    var semReajuste = subiram.filter(function (l) { return reajusteLinha(l) === 'nao'; }).length;
     if (f.soDestaque) linhas = subiram;
+    if (f.soSemReajuste) linhas = linhas.filter(function (l) { return reajusteLinha(l) === 'nao'; });
     var porNome = function (x, y) { return (x.c.nome || '').localeCompare(y.c.nome || '', 'pt-BR', { sensitivity: 'base' }); };
     if ((f.ordem || 'alfa') === 'alta') linhas.sort(function (x, y) { return (y.v == null ? -1e9 : y.v) - (x.v == null ? -1e9 : x.v) || porNome(x, y); });
     else linhas.sort(porNome);
-    return { ano: ano, linhas: linhas, comDado: comDado, todas: todas, subiram: subiram.length, mudaram: mudaram, contTipo: contTipo };
+    return { ano: ano, linhas: linhas, comDado: comDado, todas: todas, subiram: subiram.length, semReajuste: semReajuste, mudaram: mudaram, contTipo: contTipo };
   }
   function celVar(v, dest) {
     if (v == null) return '<span class="cinza">—</span>';
@@ -777,6 +795,11 @@
       var vTxt = l.v != null ? celVar(l.v, destaqueAnual(l.v)) : (l.prev === 0 && l.cur > 0 ? '<span class="pill" style="color:#2563eb;border-color:#2563eb55;background:#2563eb14">novo</span>' : '<span class="cinza">—</span>');
       var funcTxt = l.fp == null && l.fc == null ? '<span class="cinza">sem folha</span>' : (l.fp == null ? '—' : l.fp) + ' → ' + (l.fc == null ? '—' : l.fc);
       var regTxt = celRegime(l.rp, l.rc, l.mudouRegime, ano);
+      var honTxt = l.hc == null ? '<span class="cinza">—</span>' : '<span title="Valor mensal típico cobrado no Omie: ' + (ano - 1) + ' → ' + l.hcAno + '">' + (l.hp != null ? reais(l.hp) + ' → ' : '') + reais(l.hc) + '</span>' + (l.vh != null ? '<div class="sub">' + esc(pctAnual(l.vh)) + '</div>' : '');
+      var rj = reajusteLinha(l);
+      var rjTxt = rj === 'nao' ? '<div class="sub" style="color:#b91c1c" title="O honorário do Omie subiu menos de ' + REAJUSTE_MIN + '% desde ' + (ano - 1) + '">Sem reajuste</div>'
+        : rj === 'sim' ? '<div class="sub" style="color:#166534" title="Honorário mensal do Omie ' + esc(pctAnual(l.vh)) + ' desde ' + (ano - 1) + '">Reajustado ' + esc(pctAnual(l.vh)) + '</div>'
+        : rj === 'sem-dado' ? '<div class="sub" title="Sem honorário cobrado no Omie para comparar">sem honorário no Omie</div>' : '';
       return '<tr><td style="white-space:normal;min-width:200px"><button class="link" data-anual="' + esc(l.doc) + '">' + esc(c.nome) + '</button><div class="sub">' + esc(c.cnpj || '') + '</div></td>' +
         '<td class="c">' + pillCat(c) + '</td>' +
         '<td class="c">' + regTxt + '</td>' +
@@ -785,7 +808,8 @@
         '<td class="c">' + vTxt + '</td>' +
         '<td class="c">' + funcTxt + '</td>' +
         '<td class="c">' + celVar(l.vf, destaqueAnual(l.vf)) + '</td>' +
-        '<td class="c">' + (dest ? '<span class="pill" style="color:#b45309;border-color:#b4530955;background:#b4530914" title="Rever honorário: ' + esc(motivosRever(l).join(' · ')) + (regra === 'ambos' && l.vf == null && destaquePorValores(l) ? ' (sem folha para comparar: decidido pelo faturamento)' : '') + '">Rever honorário</span>' : (l.anos ? '<span class="cinza" title="Abaixo do limite de ' + esc(pctTxt(X)) + '% em ' + esc(ROT_REGRA[regra]) + '">Abaixo do limite</span>' : '<span class="cinza">—</span>')) + '</td></tr>';
+        '<td class="c" style="font-family:var(--mono)">' + honTxt + '</td>' +
+        '<td class="c">' + (dest ? '<span class="pill" style="color:#b45309;border-color:#b4530955;background:#b4530914" title="Rever honorário: ' + esc(motivosRever(l).join(' · ')) + (regra === 'ambos' && l.vf == null && destaquePorValores(l) ? ' (sem folha para comparar: decidido pelo faturamento)' : '') + '">Rever honorário</span>' : (l.anos ? '<span class="cinza" title="Abaixo do limite de ' + esc(pctTxt(X)) + '% em ' + esc(ROT_REGRA[regra]) + '">Abaixo do limite</span>' : '<span class="cinza">—</span>')) + rjTxt + '</td></tr>';
     }).join('');
     var optAnos = ac.completos.map(function (y) { return '<option value="' + y + '"' + (y === ano ? ' selected' : '') + '>' + y + ' × ' + (y - 1) + '</option>'; }).join('');
     var optRegra = Object.keys(ROT_REGRA).map(function (k) { return '<option value="' + k + '"' + (k === regra ? ' selected' : '') + '>' + esc(ROT_REGRA[k].charAt(0).toUpperCase() + ROT_REGRA[k].slice(1)) + '</option>'; }).join('');
@@ -795,22 +819,24 @@
       '<div class="gp-kpi-row">' +
         kpi('#256050', 'Clientes com histórico', r.comDado + ' de ' + r.todas, 'ativos no Acessórias com dados do Questor') +
         kpi('#b45309', 'Rever honorário', r.subiram, 'subiram ' + pctTxt(X) + '% ou mais em ' + ROT_REGRA[regra] + ' (' + ano + ' sobre ' + (ano - 1) + ')') +
+        kpi('#b91c1c', 'Rever, sem reajuste', r.semReajuste, 'honorário do Omie subiu menos de ' + REAJUSTE_MIN + '% desde ' + (ano - 1)) +
         kpi('#7c3aed', 'Mudaram de regime', r.mudaram, 'entre ' + (ano - 1) + ' e ' + ano + ', pelos dados da Receita') +
         kpi('#0f766e', 'Faturamento ' + ano, valoresOcultos() ? reais(null) : reais(totCur), pctDelta == null ? 'sem base para comparar' : pctAnual(pctDelta) + ' sobre ' + (ano - 1) + ' (clientes da lista)') +
       '</div>' +
       '<div class="nota"><strong>Fontes.</strong> Faturamento por ano civil: Questor (módulo Fiscal). Funcionários: total de empregados ativos no <strong>último mês com folha</strong> de cada ano (Questor, Folha); a contagem é por empresa e fica na matriz. ' +
         'Regime: <strong>Receita Federal</strong> (ECF e opção pelo Simples; para anos ainda sem ECF vale a última conhecida, indicada na ficha). O cadastro de regime do Questor não é usado. ' +
-        'Só clientes <strong>ativos no Acessórias</strong>.' + esc(parcial) + ' <strong>A mudança de regime tributário entre os dois anos também gera "Rever honorário"</strong>, qualquer que seja a regra escolhida. Com a regra "faturamento e funcionários", quem não tem folha nos dois anos é decidido só pelo faturamento. O limite de ' + esc(pctTxt(X)) + '% é um só para a equipe' + (cfgAnual().pode_editar ? ' (botão % no título da coluna Variação).' : '.') + '</div>' +
+        'Só clientes <strong>ativos no Acessórias</strong>.' + esc(parcial) + ' <strong>A mudança de regime tributário entre os dois anos também gera "Rever honorário"</strong>, qualquer que seja a regra escolhida. <strong>Honorário Omie:</strong> valor mensal típico (mediana dos meses cobrados, categoria Serviços Honorários Contábeis, dois ambientes) do ano anterior até o mais recente; quem está em "Rever honorário" e subiu menos de ' + REAJUSTE_MIN + '% aparece como "Sem reajuste". Com a regra "faturamento e funcionários", quem não tem folha nos dois anos é decidido só pelo faturamento. O limite de ' + esc(pctTxt(X)) + '% é um só para a equipe' + (cfgAnual().pode_editar ? ' (botão % no título da coluna Variação).' : '.') + '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="n-busca" placeholder="Empresa ou CNPJ" value="' + esc(f.busca) + '">' +
         '<span class="filter-label">Documento</span><select class="gp-select" id="n-tipo"><option value=""' + (!f.tipo ? ' selected' : '') + '>Todos (' + (r.contTipo.CNPJ + r.contTipo.CPF + r.contTipo.CAEPF + r.contTipo.CNO) + ')</option>' + ['CNPJ', 'CPF', 'CAEPF', 'CNO'].map(function (t) { return '<option value="' + t + '"' + (f.tipo === t ? ' selected' : '') + '>Só ' + t + ' (' + r.contTipo[t] + ')</option>'; }).join('') + '</select>' +
         '<span class="filter-label">Comparar</span><select class="gp-select" id="n-ano">' + optAnos + '</select>' +
         '<span class="filter-label">Destacar quem subiu</span><select class="gp-select" id="n-regra">' + optRegra + '</select>' +
         '<span class="filter-label">Ordenar</span><select class="gp-select" id="n-ordem"><option value="alfa"' + ((f.ordem || 'alfa') === 'alfa' ? ' selected' : '') + '>Ordem alfabética</option><option value="alta"' + (f.ordem === 'alta' ? ' selected' : '') + '>Maior alta de faturamento</option></select>' +
-        '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="n-dest"' + (f.soDestaque ? ' checked' : '') + '> só os destacados</label></div>' +
+        '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="n-dest"' + (f.soDestaque ? ' checked' : '') + '> só os destacados</label>' +
+        '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="n-semrj"' + (f.soSemReajuste ? ' checked' : '') + '> só sem reajuste</label></div>' +
         '<div class="card-sub">' + r.linhas.length + ' cliente(s) · ' + comFunc + ' com folha nos dois anos · ' + ROT_ORDEM[f.ordem || 'alfa'] + '. Clique na empresa para ver ano a ano.</div>' +
-        (r.linhas.length ? '<div class="table-wrap"><table class="tab-analise"><colgroup><col style="width:21%"><col style="width:9%"><col style="width:17%"><col style="width:11%"><col style="width:11%"><col style="width:8%"><col style="width:8%"><col style="width:7%"><col style="width:8%"></colgroup>' +
+        (r.linhas.length ? '<div class="table-wrap"><table class="tab-analise"><colgroup><col style="width:18%"><col style="width:8%"><col style="width:15%"><col style="width:10%"><col style="width:10%"><col style="width:7%"><col style="width:7%"><col style="width:6%"><col style="width:10%"><col style="width:9%"></colgroup>' +
           '<thead><tr><th>Razão social</th><th class="c">Categoria</th><th class="c">Regime ' + (ano - 1) + ' → ' + ano + '</th><th class="c">Faturamento ' + (ano - 1) + '</th><th class="c">Faturamento ' + ano + '</th>' +
-          '<th class="c">Variação ' + botaoPctAnual() + '</th><th class="c">Funcionários</th><th class="c">Variação</th><th class="c">Análise</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' + paginacaoHtml(r.linhas.length, f.pag, ANALISE_POR_PAGINA)
+          '<th class="c">Variação ' + botaoPctAnual() + '</th><th class="c">Funcionários</th><th class="c">Variação</th><th class="c">Honorário Omie<div class="th-sub">mensal ' + (ano - 1) + ' → hoje</div></th><th class="c">Análise</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' + paginacaoHtml(r.linhas.length, f.pag, ANALISE_POR_PAGINA)
           : '<div class="vazio">Nenhum cliente neste filtro.</div>') + '</div>';
     var campo = $('n-busca'); if (campo) campo.addEventListener('input', function () { f.busca = campo.value; f.pag = 1; var pos = campo.selectionStart; desenharAnual(); var n = $('n-busca'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* sem seleção */ } });
     var st = $('n-tipo'); if (st) st.addEventListener('change', function () { f.tipo = st.value; f.pag = 1; desenharAnual(); });
@@ -818,6 +844,7 @@
     var sr = $('n-regra'); if (sr) sr.addEventListener('change', function () { f.regra = sr.value; f.pag = 1; desenharAnual(); });
     var so = $('n-ordem'); if (so) so.addEventListener('change', function () { f.ordem = so.value; f.pag = 1; desenharAnual(); });
     var sd = $('n-dest'); if (sd) sd.addEventListener('change', function () { f.soDestaque = sd.checked; f.pag = 1; desenharAnual(); });
+    var sj = $('n-semrj'); if (sj) sj.addEventListener('change', function () { f.soSemReajuste = sj.checked; f.pag = 1; desenharAnual(); });
     var bp = $('btn-pct-anual'); if (bp) bp.addEventListener('click', function (ev) { ev.stopPropagation(); abrirPopAnual(bp); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-anual [data-anual]'), function (bt) { bt.addEventListener('click', function () { abrirFichaAnual(bt.getAttribute('data-anual')); }); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-anual [data-pag]'), function (bt) {
@@ -902,9 +929,11 @@
     else partes.push('sem folha nos dois anos para comparar funcionários');
     var ambos = destaqueAnual(v) && destaqueAnual(vf);
     var mudouReg = A1 && A2 && regimeMudou(A1.regime, A2.regime);
+    var ho = ultComp ? honOmie(mapaHonAnual(), doc, ultComp) : null;
     passo.innerHTML = '<strong>Leitura:</strong> em ' + ultComp + ' sobre ' + (ultComp - 1) + ', ' + partes.join('; ') + '.' +
       (ambos ? ' Os dois passaram do limite de ' + esc(pctTxt(X)) + ': vale avaliar reajuste do honorário.' : (destaqueAnual(v) && vf == null ? ' O faturamento passou do limite de ' + esc(pctTxt(X)) + '% e não há folha para comparar: vale avaliar reajuste do honorário.' : (destaqueAnual(v) ? ' O faturamento passou do limite de ' + esc(pctTxt(X)) + '%, mas os funcionários não acompanharam.' : ''))) +
       (mudouReg ? ' O regime mudou de ' + esc(A1.regime) + ' para ' + esc(A2.regime) + ': muda o trabalho do escritório, vale avaliar reajuste do honorário.' : '') +
+      (ho && ho.hp != null && ho.hc != null && !valoresOcultos() ? ' Honorário cobrado no Omie: ' + esc(moedaTxt(ho.hp)) + ' por mês em ' + (ultComp - 1) + ' → ' + esc(moedaTxt(ho.hc)) + ' em ' + ho.hcAno + ' (' + esc(pctAnual(ho.vh)) + (v != null ? ' contra faturamento ' + esc(pctAnual(v)) : '') + (destaqueLinha({ v: v, vf: vf, mudouRegime: mudouReg }) ? (ho.vh >= REAJUSTE_MIN ? ': já reajustado' : ': sem reajuste') : '') + ').' : '') +
       (sug != null && c.honorario != null && !valoresOcultos() ? ' Com o faturamento de ' + ultComp + ', o honorário sugerido é ' + esc(moedaTxt(sug)) + ' por mês (hoje cobra ' + esc(moedaTxt(c.honorario)) + ').' : '');
     var q = c.questor;
     var blocos = '<div class="blocos">' +
@@ -920,22 +949,28 @@
   // Ficha do grupo (mesmo modelo da ficha do cliente): números consolidados e, abaixo, cada empresa com os seus.
   function abrirFichaGrupo(chave) {
     var e = estado.entidadesAnalise && estado.entidadesAnalise[chave]; if (!e) return;
+    estado.fichaGrupoAberta = chave;
     document.querySelector('.ficha-box').classList.add('larga');   // janela larga: a tabela das empresas cabe sem rolagem
     $('ficha').style.display = 'flex';
     $('ficha-nome').textContent = e.tipo === 'grupo' ? 'Grupo ' + e.nome : e.nome + ' e filiais';
     $('ficha-sub').textContent = e.itens.length + ' empresas · ' + (e.tipo === 'grupo' ? 'grupo de empresas (Gestão de Clientes)' : 'matriz e filiais (mesma raiz de CNPJ)');
     var passo = $('ficha-passo'); passo.style.display = 'block';
-    var alto = e.itens.filter(function (c) { return c.risco && c.risco.nivel === 'Alto'; }).length, medio = e.itens.filter(function (c) { return c.risco && c.risco.nivel === 'Médio'; }).length;
-    var susp = e.itens.filter(function (c) { return c.risco && c.risco.suspenso; }).length;
-    passo.innerHTML = '<strong>Leitura do grupo:</strong> ' + (alto || medio ? (alto ? alto + ' empresa(s) em risco Alto' : '') + (alto && medio ? ' e ' : '') + (medio ? medio + ' em risco Médio' : '') + '. Abra a ficha de cada uma para ver o que está puxando o risco.' : 'nenhuma empresa do grupo está em risco Alto ou Médio.') + (susp ? ' ' + susp + ' com contrato suspenso no Omie.' : '');
+    var sugG = honSugerido(e.faturamento), anG = honAnalise(e.honorario, sugG);
+    var abaixo = e.itens.filter(function (c) { return honAnalise(c.honorario, honSugerido(c.questor ? c.questor.faturamento : null)) === 'baixo'; }).length;
+    passo.innerHTML = '<strong>Leitura do grupo:</strong> ' + (valoresOcultos() ? 'valores em R$ ocultos.'
+      : (sugG == null || anG == null ? 'sem faturamento ou honorário para comparar o grupo com o honorário sugerido.'
+        : esc(dicaHon(e.honorario, sugG)) + '.' + (abaixo ? ' ' + abaixo + ' empresa(s) do grupo estão abaixo de ' + esc(pctTxt(cfgHon().limite_amarelo)) + '% do sugerido.' : '')));
     var blocos = '<div class="blocos">' + bloco('Funcionários', celNum(e.funcionarios), 'soma das empresas do grupo (Questor)', null) +
-      bloco('Honorários', reais(e.honorario), 'mensal, soma do grupo', null) + bloco('Faturamento', reais(e.faturamento), '12 meses, soma do grupo', null) + '</div>';
+      bloco('Honorários', reais(e.honorario), 'mensal, soma do grupo', null) + bloco('Faturamento', reais(e.faturamento), '12 meses, soma do grupo', null) +
+      bloco('Honorário sugerido', celSugerido(e.faturamento, e.honorario) + ' ' + celAnalise(e.faturamento, e.honorario), cfgHon().percentual == null ? 'defina o percentual na tabela' : pctTxt(cfgHon().percentual) + '% do faturamento médio mensal', null) + '</div>';
     var corpo = e.itens.map(function (c) {
       var q = c.questor;
-      return '<tr><td style="white-space:normal;min-width:220px">' + nomeAnalise(c) + '</td><td class="c">' + pillCat(c) + '</td><td class="c">' + (c.risco ? pillRisco(c.risco) : '<span class="cinza">—</span>') + '</td><td class="c">' + (c.regime ? esc(c.regime) : '<span class="cinza">—</span>') +
-        '</td><td class="c">' + (q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : '<span class="cinza">sem dado</span>') + '</td><td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td><td class="c" style="font-family:var(--mono)">' + celFat(q) + '</td></tr>';
+      return '<tr><td style="white-space:normal;min-width:220px">' + nomeAnalise(c) + '</td><td class="c">' + pillCat(c) + '</td><td class="c">' + (c.regime ? esc(c.regime) : '<span class="cinza">—</span>') +
+        '</td><td class="c">' + (q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : '<span class="cinza">sem dado</span>') + '</td><td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td><td class="c" style="font-family:var(--mono)">' + celFat(q) + '</td><td class="c" style="font-family:var(--mono)">' + celSugerido(q ? q.faturamento : null, c.honorario) + '</td><td class="c">' + celAnalise(q ? q.faturamento : null, c.honorario) + '</td></tr>';
     }).join('');
-    $('ficha-corpo').innerHTML = blocos + '<div class="ficha-sec">Empresas do grupo</div><div class="table-wrap"><table><thead><tr><th>Empresa</th><th class="c">Categoria</th><th class="c">Risco</th><th class="c">Regime</th><th class="c">Funcionários</th><th class="c">Honorário</th><th class="c">Faturamento (12 meses)</th></tr></thead><tbody>' + corpo + '</tbody></table></div>';
+    $('ficha-corpo').innerHTML = blocos + '<div class="ficha-sec">Empresas do grupo</div><div class="table-wrap"><table><thead><tr><th>Empresa</th><th class="c">Categoria</th><th class="c">Regime</th><th class="c">Funcionários</th><th class="c">Honorário</th><th class="c">Faturamento (12 meses)</th><th class="c">Honorário sugerido ' + botaoPct('btn-pct-ficha') + '</th><th class="c">Análise</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' +
+      '<div class="nota" style="margin-top:10px">Sugerido = ' + (cfgHon().percentual == null ? 'percentual definido no botão %' : esc(pctTxt(cfgHon().percentual)) + '% do faturamento médio mensal (12 meses ÷ 12)') + '. <span class="an-ok">✔</span> cobrado no sugerido ou acima · <span class="an-medio">▲</span> de ' + esc(pctTxt(cfgHon().limite_amarelo)) + '% a 100% do sugerido · <span class="an-baixo">✖</span> abaixo de ' + esc(pctTxt(cfgHon().limite_amarelo)) + '%.</div>';
+    var bf = $('btn-pct-ficha'); if (bf) bf.addEventListener('click', function (ev) { ev.stopPropagation(); abrirPopPct(bf); });
   }
 
   // ── QUALIDADE DOS DADOS ──────────────────────────────────────────────────────
@@ -1091,22 +1126,24 @@
     if (sec === 'anual') {
       if (!estado.anual || estado.anual.valores_ocultos || !estado.anual.itens || !estado.anual.itens.length || !anosAnual().completos.length) return null;   // sem carga: nada para exportar
       var ra = linhasAnual(), fa = filtroAnual(), Xa = cfgAnual().percentual;
-      var fan = []; if (fa.busca) fan.push('Busca: ' + fa.busca); if (fa.tipo) fan.push('Documento: ' + fa.tipo); if (fa.soDestaque) fan.push('Só os destacados');
+      var fan = []; if (fa.busca) fan.push('Busca: ' + fa.busca); if (fa.tipo) fan.push('Documento: ' + fa.tipo); if (fa.soDestaque) fan.push('Só os destacados'); if (fa.soSemReajuste) fan.push('Só sem reajuste');
       return { arquivo: 'cs-analise-anual', titulo: 'Painel do Sucesso do Cliente - Análise Anual (' + ra.ano + ' × ' + (ra.ano - 1) + ')',
         filtros: [ra.linhas.length + ' cliente(s) · rever honorário: ' + pctTxt(Xa) + '% ou mais em ' + ROT_REGRA[fa.regra || 'ou'] + (fan.length ? ' · ' + fan.join(' · ') : '') + ' · ' + ROT_ORDEM[fa.ordem || 'alfa'], aviso],
         colunas: ['Razão social', 'Documento', 'Categoria', 'Regime ' + (ra.ano - 1), 'Regime ' + ra.ano, 'Faturamento ' + (ra.ano - 1) + ' (R$)', 'Faturamento ' + ra.ano + ' (R$)', 'Variação faturamento (%)',
-          'Funcionários ' + (ra.ano - 1), 'Funcionários ' + ra.ano, 'Variação funcionários (%)', 'Rever honorário', 'Motivo'],
+          'Funcionários ' + (ra.ano - 1), 'Funcionários ' + ra.ano, 'Variação funcionários (%)', 'Rever honorário', 'Motivo', 'Honorário Omie ' + (ra.ano - 1) + ' (mensal R$)', 'Honorário Omie hoje (mensal R$)', 'Variação honorário (%)', 'Reajuste'],
         linhas: ra.linhas.map(function (l) {
           return [l.c.nome, l.c.cnpj || '', l.c.categoria || '', l.rp || '', l.rc || '', l.anos ? moedaExp(l.prev) : 'sem dado', l.anos ? moedaExp(l.cur) : 'sem dado',
             l.v == null ? '' : Math.round(l.v * 10) / 10, l.fp == null ? '' : l.fp, l.fc == null ? '' : l.fc, l.vf == null ? '' : Math.round(l.vf * 10) / 10,
-            destaqueLinha(l) ? 'Sim' : '', destaqueLinha(l) ? motivosRever(l).join(' · ') : ''];
+            destaqueLinha(l) ? 'Sim' : '', destaqueLinha(l) ? motivosRever(l).join(' · ') : '',
+            moedaExp(l.hp), moedaExp(l.hc), l.vh == null || valoresOcultos() ? '' : Math.round(l.vh * 10) / 10,
+            { nao: 'Sem reajuste', sim: 'Reajustado', 'sem-dado': 'Sem dado no Omie' }[reajusteLinha(l)] || ''];
         }),
-        alinhar: ['left', 'left', 'center', 'left', 'left', 'right', 'right', 'right', 'center', 'center', 'right', 'center', 'left'], fonte: 7 };
+        alinhar: ['left', 'left', 'center', 'left', 'left', 'right', 'right', 'right', 'center', 'center', 'right', 'center', 'left', 'right', 'right', 'right', 'center'], fonte: 6 };
     }
     if (sec === 'risco') {
       var fr = estado.filtroRisco, lr = filtrarRisco();
       var fx = ['Risco: ' + (ROT_NIVEL[fr.nivel] || fr.nivel)]; if (fr.busca) fx.push('Busca: ' + fr.busca); if (fr.cat) fx.push('Categoria: ' + fr.cat); if (fr.term) fx.push('Pesa mais: ' + NOME_TERM[fr.term]); if (fr.soAtend) fx.push('Só com sinal de Atendimento');
-      return { arquivo: 'cs-gestao-da-permanencia', titulo: 'Painel do Sucesso do Cliente - Gestão da Permanência', filtros: [lr.length + ' cliente(s) · ' + fx.join(' · ') + ' · ordem: pontos de risco, do maior para o menor', aviso],
+      return { arquivo: 'cs-gestao-da-permanencia', titulo: 'Painel do Sucesso do Cliente - Gestão da Permanência', filtros: [lr.length + ' cliente(s) · ' + fx.join(' · ') + ' · ordem alfabética', aviso],
         colunas: ['Cliente', 'CNPJ', 'Categoria', 'Risco', 'Pontos', 'Financeiro', 'Atendimento', 'Operacional', 'Suspenso no Omie', 'Honorário (R$)', 'O que está puxando'],
         linhas: lr.map(function (c) {
           var tm = c.risco.termometros, v = function (x) { return x == null ? 'sem dado' : x; };

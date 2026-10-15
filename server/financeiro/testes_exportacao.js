@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -212,6 +212,13 @@ const semLixo = (e, nome) => {
     E.anual.itens[0].honorarios = [{ ano: 2024, total: 4000, meses: 12, mensal: 330 }, { ano: 2025, total: 5000, meses: 12, mensal: 420 }];
     assert.strictEqual(C.t.mapaHonAnual()['11222333000181'][2025].mensal, 420);
     assert.deepStrictEqual({ ...C.t.mapaHonAnual()['11222333000262'] }, {});
+    // cruzamento com o honorário do Omie: ALFA (+40% fat, +40% func) cobrava 330 em 2024 e 420 em 2025 (+27%): reajustado
+    const alfaH = C.t.linhasAnual().linhas.find((l) => l.c.nome === 'ALFA LTDA');
+    assert.deepStrictEqual([alfaH.hp, alfaH.hc, alfaH.hcAno, Math.round(alfaH.vh)], [330, 420, 2025, 27]);
+    assert.strictEqual(C.t.reajusteLinha(alfaH), 'sim');
+    assert.strictEqual(C.t.reajusteLinha({ ...alfaH, hc: 335, vh: 1.5 }), 'nao');                  // destaque, mas o honorário quase não mexeu
+    assert.strictEqual(C.t.reajusteLinha({ ...alfaH, hp: null, vh: null }), 'sem-dado');            // sem os dois valores no Omie
+    assert.strictEqual(C.t.reajusteLinha({ v: 5, vf: 0, mudouRegime: false, vh: 1 }), null);        // não é destaque: sem situação
     // mudança de regime dispara 'Rever honorário' mesmo sem alta de faturamento/funcionários, em qualquer regra
     const semAlta = { v: 5, vf: 0, rp: 'Simples Nacional', rc: 'Lucro Presumido', mudouRegime: true };
     ['ambos', 'fat', 'func', 'ou'].forEach((rg) => assert.strictEqual(C.t.destaqueLinha(semAlta, rg), true, rg));
