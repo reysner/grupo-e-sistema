@@ -221,9 +221,9 @@ const semLixo = (e, nome) => {
     const x = C.t.dadosExport('anual');
     semLixo(x, 'cs/anual');
     const lin = x.linhas.find((l) => l[0] === 'ALFA LTDA');
-    assert.deepStrictEqual([lin[3], lin[4], lin[5], lin[6], lin[7], lin[8], lin[9], lin[10], lin[12]], ['Simples Nacional', 'Lucro Presumido', 1000, 1400, 40, 10, 14, 40, 'Sim']);
-    assert.strictEqual(x.linhas.find((l) => l[0] === 'GAMA LTDA')[12], 'Sim');             // sem folha: decide o faturamento (+50%)
-    assert.strictEqual(x.linhas.find((l) => l[0] === 'ALFA FILIAL LTDA')[12], '');         // fat +25%: abaixo do limite
+    assert.deepStrictEqual([lin[3], lin[4], lin[5], lin[6], lin[7], lin[8], lin[9], lin[10], lin[11]], ['Simples Nacional', 'Lucro Presumido', 1000, 1400, 40, 10, 14, 40, 'Sim']);
+    assert.strictEqual(x.linhas.find((l) => l[0] === 'GAMA LTDA')[11], 'Sim');             // sem folha: decide o faturamento (+50%)
+    assert.strictEqual(x.linhas.find((l) => l[0] === 'ALFA FILIAL LTDA')[11], '');         // fat +25%: abaixo do limite
     E.ocultar = true;
     assert.ok(C.t.dadosExport('anual').linhas.every((l) => l[5] === 'oculto' || l[5] === 'sem dado'), 'valores ocultos vazaram na análise anual');
     E.ocultar = false;
