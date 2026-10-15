@@ -140,6 +140,7 @@ const semLixo = (e, nome) => {
     assert.ok(nomes.includes('GRUPO GRUPO A') && nomes.includes('ALFA LTDA') && nomes.includes('ALFA FILIAL LTDA') && nomes.includes('JOAO DA SILVA'));
     const grupo = e.linhas.find((l) => l[0] === 'Grupo');
     assert.deepStrictEqual([grupo[6], grupo[7], grupo[8]], [3, 1300, 120000.5]);
+    assert.strictEqual(grupo[4], 'Ouro');                                                  // a linha do grupo traz a categoria das empresas
     assert.strictEqual(e.linhas.find((l) => l[1].trim() === 'ALFA FILIAL LTDA')[8], 'sem faturamento');
     assert.strictEqual(e.linhas.find((l) => l[1].trim() === 'ALFA FILIAL LTDA')[11], 'Natureza sem configuração de faturamento no Questor');
     assert.strictEqual(e.linhas.find((l) => l[1] === 'JOAO DA SILVA')[3], 'CPF');

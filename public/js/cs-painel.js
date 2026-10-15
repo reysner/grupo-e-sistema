@@ -546,6 +546,13 @@
     if (p && !p.contains(ev.target) && !(ev.target.closest && ev.target.closest('#btn-pct'))) fecharPopPct();
   });
 
+  /** Categoria da linha de grupo / matriz com filiais: a das empresas (a categoria já é calculada pela soma do grupo); se divergirem, a mais alta. */
+  function categoriaDoGrupo(e) {
+    var ordem = ['Diamante', 'Ouro', 'Prata', 'Bronze'];
+    var cats = (e.itens || []).map(function (i) { return i.categoria; }).filter(Boolean);
+    if (!cats.length) return null;
+    return cats.sort(function (a, b) { return ordem.indexOf(a) - ordem.indexOf(b); })[0];
+  }
   function linhaAnalise(c, filho) {
     var q = c.questor;
     return '<tr class="' + (filho ? 'filho' : '') + '"><td style="padding-left:' + (filho ? '38px' : '12px') + ';white-space:normal;min-width:240px">' + nomeAnalise(c) + '</td>' +
@@ -596,7 +603,7 @@
       var aberto = !!estado.abertosAnalise[e.chave];
       var rotulo = e.tipo === 'grupo' ? 'GRUPO ' + esc(e.nome.toUpperCase()) : esc(e.nome) + ' <span class="cinza">e filiais</span>';
       var topo = '<tr class="grupo"><td style="white-space:normal;min-width:240px"><button class="lupa" data-abre="' + esc(e.chave) + '" title="' + (aberto ? 'Recolher' : 'Ver as ' + e.itens.length + ' empresas') + '" aria-expanded="' + aberto + '">' + (aberto ? '🔽' : '🔍') + '</button> <button class="link" data-grupo="' + esc(e.chave) + '" title="Abrir a ficha do grupo"><strong>' + rotulo + '</strong></button> <span class="pill" style="color:#256050;border-color:#25605055;background:#25605014">' + e.itens.length + ' empresas</span></td>' +
-        '<td class="c"><span class="cinza">—</span></td><td class="c"><span class="cinza">—</span></td>' +
+        '<td class="c">' + pillCat({ categoria: categoriaDoGrupo(e) }) + '</td><td class="c"><span class="cinza">—</span></td>' +
         '<td class="c"><strong>' + celNum(e.funcionarios) + '</strong></td><td class="c" style="font-family:var(--mono)"><strong>' + reais(e.honorario) + '</strong></td><td class="c" style="font-family:var(--mono)"><strong>' + celFatTotal(e.faturamento) + '</strong></td>' +
         '<td class="c" style="font-family:var(--mono)"><strong>' + celSugerido(e.faturamento, e.honorario) + '</strong></td><td class="c">' + celAnalise(e.faturamento, e.honorario) + '</td></tr>';
       return topo + (aberto ? e.itens.map(function (c) { return linhaAnalise(c, true); }).join('') : '');
@@ -1043,7 +1050,7 @@
       a.ents.forEach(function (e) {
         if (e.unico) { linhas.push(linhaEmp(e.itens[0], 'Empresa')); return; }
         var fat = valoresOcultos() ? 'oculto' : (e.faturamento == null ? 'sem dado' : e.faturamento === 0 ? 'sem faturamento' : Math.round(e.faturamento * 100) / 100);
-        linhas.push([e.tipo === 'grupo' ? 'Grupo' : 'Matriz e filiais', e.tipo === 'grupo' ? 'GRUPO ' + e.nome.toUpperCase() : e.nome + ' e filiais', e.itens.length + ' empresas', '', '', '', e.funcionarios == null ? 'sem dado' : e.funcionarios, moedaExp(e.honorario), fat, sugExp(e.faturamento), analiseExp(e.faturamento, e.honorario), '']);
+        linhas.push([e.tipo === 'grupo' ? 'Grupo' : 'Matriz e filiais', e.tipo === 'grupo' ? 'GRUPO ' + e.nome.toUpperCase() : e.nome + ' e filiais', e.itens.length + ' empresas', '', categoriaDoGrupo(e) || '', '', e.funcionarios == null ? 'sem dado' : e.funcionarios, moedaExp(e.honorario), fat, sugExp(e.faturamento), analiseExp(e.faturamento, e.honorario), '']);
         e.itens.forEach(function (c) { linhas.push(linhaEmp(c, '  Empresa do grupo')); });
       });
       var fl = []; if (f.busca) fl.push('Busca: ' + f.busca); if (f.tipo) fl.push('Documento: ' + f.tipo); if (f.soGrupos) fl.push('Só grupos e matriz com filiais');
