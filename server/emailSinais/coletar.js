@@ -149,6 +149,13 @@ async function lerCaixa(usuario, rotulo, internos) {
 
 (async () => {
   const inicio = Date.now();
+  // --reenviar=arquivo.json: manda de novo uma leitura já feita (arquivo gerado por esta rotina), sem reler as caixas.
+  if (argv.reenviar) {
+    const doc = JSON.parse(fs.readFileSync(argv.reenviar, 'utf8'));
+    if ((doc.erros || []).length) { console.log('NÃO ENVIADO: a leitura salva tem caixa(s) com erro.'); process.exitCode = 2; return; }
+    await enviarAoSistema({ janela_dias: doc.janela_dias, caixas_lidas: Object.keys(doc.volume_por_caixa || {}).length, caixas_com_erro: 0, totais: doc.totais, clientes: doc.clientes, nao_identificados: doc.nao_identificados });
+    return;
+  }
   const tkDir = await token(ADMIN, 'https://www.googleapis.com/auth/admin.directory.user.readonly');
   const dir = await api('https://admin.googleapis.com/admin/directory/v1/users?customer=my_customer&maxResults=200&fields=users(primaryEmail,name/fullName,suspended,archived)', tkDir);
   let usuarios = (dir.users || []).filter((u) => !u.suspended && !u.archived);
@@ -208,13 +215,17 @@ async function lerCaixa(usuario, rotulo, internos) {
   if (argv.enviar !== undefined) {
     if (erros.length) { console.log('NÃO ENVIADO: há caixa(s) com erro; leitura incompleta não substitui a anterior.'); process.exitCode = 2; return; }
     if (argv.caixas) { console.log('NÃO ENVIADO: --caixas lê só parte do domínio; envio exige todas as caixas.'); process.exitCode = 2; return; }
-    const url = (process.env.APP_URL || '').replace(/\/$/, '') + '/api/cs/email-sinais';
-    const tokenSync = process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC_TOKEN;
-    if (!process.env.APP_URL || !tokenSync) { console.log('NÃO ENVIADO: faltam APP_URL e o token de sincronização no .env.'); process.exitCode = 2; return; }
-    const corpo = { janela_dias: DIAS, caixas_lidas: usuarios.length, caixas_com_erro: 0, totais: r.totais, clientes: r.clientes, nao_identificados: semLigacao };
-    const resp = await fetch(url, { method: 'POST', headers: { 'X-Sync-Token': tokenSync, 'Content-Type': 'application/json' }, body: JSON.stringify(corpo), signal: AbortSignal.timeout(120000) });
-    const j = await resp.json().catch(() => ({}));
-    console.log(resp.ok ? `ENVIADO: ${j.clientes} cliente(s) gravados no sistema.` : `ERRO NO ENVIO (${resp.status}): ${j.error || ''}`);
-    if (!resp.ok) process.exitCode = 1;
+    await enviarAoSistema({ janela_dias: DIAS, caixas_lidas: usuarios.length, caixas_com_erro: 0, totais: r.totais, clientes: r.clientes, nao_identificados: semLigacao });
   }
 })().catch((e) => { console.error('ERRO', e.message); process.exit(1); });
+
+/** POST das contagens ao sistema (token de sincronização). Só contagens por cliente e por domínio; nunca endereço, assunto ou texto. */
+async function enviarAoSistema(corpo) {
+  const url = (process.env.APP_URL || '').replace(/\/$/, '') + '/api/cs/email-sinais';
+  const tokenSync = process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC_TOKEN;
+  if (!process.env.APP_URL || !tokenSync) { console.log('NÃO ENVIADO: faltam APP_URL e o token de sincronização no .env.'); process.exitCode = 2; return; }
+  const resp = await fetch(url, { method: 'POST', headers: { 'X-Sync-Token': tokenSync, 'Content-Type': 'application/json' }, body: JSON.stringify(corpo), signal: AbortSignal.timeout(120000) });
+  const j = await resp.json().catch(() => ({}));
+  console.log(resp.ok ? `ENVIADO: ${j.clientes} cliente(s) gravados no sistema.` : `ERRO NO ENVIO (${resp.status}): ${j.error || ''}${j.detalhe ? ' — ' + j.detalhe : ''}`);
+  if (!resp.ok) process.exitCode = 1;
+}

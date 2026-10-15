@@ -114,7 +114,7 @@ router.post('/', async (req, res) => {
   } catch (err) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     console.error('[email-sinais] POST falhou:', err);
-    res.status(500).json({ error: 'Erro ao gravar os sinais de e-mail.' });
+    res.status(500).json({ error: 'Erro ao gravar os sinais de e-mail.', detalhe: String(err && err.message).slice(0, 300) });   // rota máquina-a-máquina (token): o detalhe ajuda a achar a causa
   } finally { if (client) client.release(); }
 });
 
