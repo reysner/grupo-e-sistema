@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -169,6 +169,43 @@ const semLixo = (e, nome) => {
     assert.ok(!C.t.celAnalise(12000000, 800).includes('an-'), 'o símbolo revelaria a relação com os valores ocultos');
     C.t.estado.ocultar = false;
     C.t.estado.honorario = null;
+  });
+  await teste('cs: análise anual — variação, destaque pelo limite, só clientes da lista ativa e exportação', () => {
+    const E = C.t.estado;
+    E.anual = {
+      valores_ocultos: false, ate: '2026-08', ano_inicial: 2023, config: { percentual: 30, pode_editar: true },
+      itens: [
+        { cnpj: '11222333000181', anos: [{ ano: 2023, faturamento: 1000, meses: 12 }, { ano: 2024, faturamento: 1000, meses: 12 }, { ano: 2025, faturamento: 1400, meses: 12 }, { ano: 2026, faturamento: 900, meses: 8 }] },   // +40% em 2025
+        { cnpj: '11222333000262', anos: [{ ano: 2024, faturamento: 1000, meses: 12 }, { ano: 2025, faturamento: 1250, meses: 12 }] },                                                                                // +25% (abaixo do limite)
+        { cnpj: '77888999000133', anos: [{ ano: 2024, faturamento: 0, meses: 12 }, { ano: 2025, faturamento: 500, meses: 12 }] },                                                                                     // sem base: "novo"
+        { cnpj: '99999999000199', anos: [{ ano: 2024, faturamento: 100, meses: 12 }, { ano: 2025, faturamento: 900, meses: 12 }] },                                                                                  // não está na lista de ativos
+      ],
+    };
+    E.filtroAnual = { busca: '', ano: null, soDestaque: false, pag: 1 };
+    assert.deepStrictEqual([...C.t.anosAnual().completos], [2024, 2025]);                  // 2026 é parcial (8 meses) e fica de fora
+    assert.strictEqual(C.t.anosAnual().parcial.mes, 8);
+    assert.strictEqual(C.t.varPct(1000, 1400), 40);
+    assert.strictEqual(C.t.varPct(0, 500), null);
+    assert.strictEqual(C.t.destaqueAnual(30), true);
+    assert.strictEqual(C.t.destaqueAnual(29.9), false);
+    const r = C.t.linhasAnual();
+    assert.strictEqual(r.ano, 2025);
+    assert.strictEqual(r.linhas.length, 4);                                                // 3 CNPJ + 1 CPF da lista; o 99999999000199 não aparece
+    assert.strictEqual(r.linhas[0].c.nome, 'ALFA LTDA');                                   // maior alta primeiro
+    assert.strictEqual(r.subiram, 1);
+    assert.strictEqual(r.comDado, 3);
+    E.filtroAnual.soDestaque = true;
+    assert.deepStrictEqual(C.t.linhasAnual().linhas.map((l) => l.c.nome), ['ALFA LTDA']);
+    E.filtroAnual.soDestaque = false;
+    const x = C.t.dadosExport('anual');
+    semLixo(x, 'cs/anual');
+    assert.strictEqual(x.linhas[0][0], 'ALFA LTDA');
+    assert.deepStrictEqual([x.linhas[0][4], x.linhas[0][5], x.linhas[0][6], x.linhas[0][9]], [1000, 1400, 40, 'Sim']);
+    assert.strictEqual(x.linhas.find((l) => l[0] === 'ALFA FILIAL LTDA')[9], '');         // +25% < 30%
+    E.ocultar = true;
+    assert.ok(C.t.dadosExport('anual').linhas.every((l) => l[4] === 'oculto' || l[4] === 'sem dado'), 'valores ocultos vazaram na análise anual');
+    E.ocultar = false;
+    E.anual = null;
   });
   await teste('cs: risco e churn trazem os campos certos', () => {
     const r = C.t.dadosExport('risco');
