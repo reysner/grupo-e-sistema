@@ -33,6 +33,8 @@
     .topbar-user{color:rgba(255,255,255,.85);font-size:13px}
     .btn-sair{background:rgba(255,255,255,.15);color:#fff;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:12.5px}
     .btn-sair:hover{background:rgba(255,255,255,.25)}
+    #menu-usuario .mu-btn{background:#fff;color:#1a4233;border-color:transparent}
+    #menu-usuario .mu-btn:hover{background:#f1f5f9}
     .container{max-width:860px;margin:0 auto;padding:24px 20px 60px}
     .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
     .kpi{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px}
@@ -74,14 +76,14 @@
   <div class="topbar">
     <div class="topbar-title">✅ Minhas tratativas</div>
     <div class="topbar-right">
-      <span class="topbar-user" id="app-nome"></span>
       <button class="btn-sair" onclick="carregar()">Atualizar</button>
-      <button class="btn-sair" onclick="sair()">Sair</button>
+      <div id="menu-usuario"></div>
     </div>
   </div>
   <div class="container" id="conteudo"><p class="vazio">Carregando…</p></div>
 </div>
 
+<script src="/js/menu-usuario.js?v=2"></script>
 <script>
 var _token = null, _user = null;
 var ROT = { aberto: 'Aberto', em_tratamento: 'Em tratamento', resolvido: 'Resolvido', cancelado: 'Cancelado', vencido: 'Vencido' };
@@ -118,7 +120,16 @@ function sair() {
 function mostrarApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-screen').style.display = 'block';
-  document.getElementById('app-nome').textContent = _user.name;
+  if (window.MenuUsuario) {
+    window.MenuUsuario.montar({
+      alvo: document.getElementById('menu-usuario'), usuario: _user, chamar: api,
+      aoSair: sair,
+      aoAtualizar: function (novo) {
+        _user = Object.assign(_user, { name: novo.name, email: novo.email });
+        try { localStorage.setItem('ql_user', JSON.stringify(_user)); } catch (e) { /* sem armazenamento */ }
+      },
+    });
+  }
   carregar();
 }
 
