@@ -798,7 +798,6 @@
       // etiqueta curta sob "Rever honorário": o detalhe (valores do Omie) fica na ficha, ao clicar na empresa
       var rj = reajusteLinha(l);
       var rjTxt = rj === 'nao' ? '<div class="sub" style="color:#b91c1c" title="O honorário do Omie subiu menos de ' + REAJUSTE_MIN + '% desde ' + (ano - 1) + '">Sem reajuste' + (l.vh != null ? ' ' + esc(pctAnual(l.vh)) : '') + '</div>'
-        : rj === 'sim' ? '<div class="sub" style="color:#166534" title="Honorário mensal do Omie ' + esc(pctAnual(l.vh)) + ' desde ' + (ano - 1) + '">Reajustado ' + esc(pctAnual(l.vh)) + '</div>'
         : rj === 'sem-dado' ? '<div class="sub" title="Sem honorário cobrado no Omie para comparar">sem honorário no Omie</div>' : '';
       return '<tr><td style="white-space:normal;min-width:200px"><button class="link" data-anual="' + esc(l.doc) + '">' + esc(c.nome) + '</button><div class="sub">' + esc(c.cnpj || '') + '</div></td>' +
         '<td class="c">' + pillCat(c) + '</td>' +
