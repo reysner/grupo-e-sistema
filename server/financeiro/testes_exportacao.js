@@ -210,6 +210,10 @@ const semLixo = (e, nome) => {
     assert.deepStrictEqual([alfa.fp, alfa.fc, alfa.vf, alfa.rp, alfa.rc, alfa.mudouRegime], [10, 14, 40, 'Simples Nacional', 'Lucro Presumido', true]);
     E.filtroAnual.regra = 'fat';
     assert.strictEqual(C.t.linhasAnual().subiram, 2);                                      // ALFA e GAMA
+    E.filtroAnual.tipo = 'CPF';
+    assert.deepStrictEqual(C.t.linhasAnual().linhas.map((l) => l.c.nome), ['JOAO DA SILVA']);   // filtro Documento
+    assert.deepStrictEqual({ ...C.t.linhasAnual().contTipo }, { CNPJ: 3, CPF: 1, CAEPF: 0, CNO: 0 });
+    E.filtroAnual.tipo = '';
     E.filtroAnual.regra = 'ou';
     assert.strictEqual(C.t.linhasAnual().subiram, 3);                                      // ALFA, ALFA FILIAL (func +30%) e GAMA (fat +50%)
     E.filtroAnual.regra = 'func';

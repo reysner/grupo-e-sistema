@@ -639,7 +639,7 @@
   // Faturamento por ano civil de cada cliente ATIVO (lido do Questor por rotina local; só administrador vê valores). Destaca quem subiu pelo menos
   // X% sobre o ano anterior, para avaliar reajuste de honorário. Funcionários e regime POR ANO ainda não estão na API do Questor: hoje só o atual.
   function cfgAnual() { return (estado.anual && estado.anual.config) || { percentual: 30, pode_editar: false }; }
-  function filtroAnual() { return estado.filtroAnual || (estado.filtroAnual = { busca: '', ano: null, soDestaque: false, regra: 'ambos', ordem: 'alfa', pag: 1 }); }
+  function filtroAnual() { return estado.filtroAnual || (estado.filtroAnual = { busca: '', ano: null, soDestaque: false, regra: 'ambos', ordem: 'alfa', tipo: '', pag: 1 }); }
   function soDig(s) { return String(s || '').replace(/\D/g, ''); }
   /** Anos completos disponíveis (do segundo ano da série até o último ano fechado) e o ano parcial em curso, se houver. */
   function anosAnual() {
@@ -715,6 +715,9 @@
     var d = estado.dados, f = filtroAnual(), ac = anosAnual(), mapa = mapaAnual();
     var ano = f.ano || (ac.completos.length ? ac.completos[ac.completos.length - 1] : null);
     var base = d.clientes.concat(d.clientes_outros || []), b = f.busca.trim().toLowerCase();
+    var contTipo = { CNPJ: 0, CPF: 0, CAEPF: 0, CNO: 0 };
+    base.forEach(function (c) { if (contTipo[c.tipo_doc] != null) contTipo[c.tipo_doc]++; });
+    if (f.tipo) base = base.filter(function (c) { return c.tipo_doc === f.tipo; });                  // filtro Documento: só CNPJ, CPF, CAEPF ou CNO
     var linhas = base.map(function (c) {
       var doc = soDig(c.cnpj), anos = mapa[doc] || null;
       var prev = anos && anos[ano - 1] ? anos[ano - 1].faturamento : null, cur = anos && anos[ano] ? anos[ano].faturamento : null;
@@ -731,7 +734,7 @@
     var porNome = function (x, y) { return (x.c.nome || '').localeCompare(y.c.nome || '', 'pt-BR', { sensitivity: 'base' }); };
     if ((f.ordem || 'alfa') === 'alta') linhas.sort(function (x, y) { return (y.v == null ? -1e9 : y.v) - (x.v == null ? -1e9 : x.v) || porNome(x, y); });
     else linhas.sort(porNome);
-    return { ano: ano, linhas: linhas, comDado: comDado, todas: todas, subiram: subiram.length, mudaram: mudaram };
+    return { ano: ano, linhas: linhas, comDado: comDado, todas: todas, subiram: subiram.length, mudaram: mudaram, contTipo: contTipo };
   }
   function celVar(v, dest) {
     if (v == null) return '<span class="cinza">—</span>';
@@ -779,6 +782,7 @@
         'Regime: <strong>Receita Federal</strong> (ECF e opção pelo Simples; para anos ainda sem ECF vale a última conhecida, indicada na ficha). O cadastro de regime do Questor não é usado. ' +
         'Só clientes <strong>ativos no Acessórias</strong>.' + esc(parcial) + ' Com a regra "faturamento e funcionários", quem não tem folha nos dois anos é decidido só pelo faturamento. O limite de ' + esc(pctTxt(X)) + '% é um só para a equipe' + (cfgAnual().pode_editar ? ' (botão % no título da coluna Variação).' : '.') + '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="n-busca" placeholder="Empresa ou CNPJ" value="' + esc(f.busca) + '">' +
+        '<span class="filter-label">Documento</span><select class="gp-select" id="n-tipo"><option value=""' + (!f.tipo ? ' selected' : '') + '>Todos (' + (r.contTipo.CNPJ + r.contTipo.CPF + r.contTipo.CAEPF + r.contTipo.CNO) + ')</option>' + ['CNPJ', 'CPF', 'CAEPF', 'CNO'].map(function (t) { return '<option value="' + t + '"' + (f.tipo === t ? ' selected' : '') + '>Só ' + t + ' (' + r.contTipo[t] + ')</option>'; }).join('') + '</select>' +
         '<span class="filter-label">Comparar</span><select class="gp-select" id="n-ano">' + optAnos + '</select>' +
         '<span class="filter-label">Destacar quem subiu</span><select class="gp-select" id="n-regra">' + optRegra + '</select>' +
         '<span class="filter-label">Ordenar</span><select class="gp-select" id="n-ordem"><option value="alfa"' + ((f.ordem || 'alfa') === 'alfa' ? ' selected' : '') + '>Ordem alfabética</option><option value="alta"' + (f.ordem === 'alta' ? ' selected' : '') + '>Maior alta de faturamento</option></select>' +
@@ -789,6 +793,7 @@
           '<th class="c">Variação ' + botaoPctAnual() + '</th><th class="c">Funcionários</th><th class="c">Variação</th><th class="c">Análise</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' + paginacaoHtml(r.linhas.length, f.pag, ANALISE_POR_PAGINA)
           : '<div class="vazio">Nenhum cliente neste filtro.</div>') + '</div>';
     var campo = $('n-busca'); if (campo) campo.addEventListener('input', function () { f.busca = campo.value; f.pag = 1; var pos = campo.selectionStart; desenharAnual(); var n = $('n-busca'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* sem seleção */ } });
+    var st = $('n-tipo'); if (st) st.addEventListener('change', function () { f.tipo = st.value; f.pag = 1; desenharAnual(); });
     var sa = $('n-ano'); if (sa) sa.addEventListener('change', function () { f.ano = parseInt(sa.value, 10); f.pag = 1; desenharAnual(); });
     var sr = $('n-regra'); if (sr) sr.addEventListener('change', function () { f.regra = sr.value; f.pag = 1; desenharAnual(); });
     var so = $('n-ordem'); if (so) so.addEventListener('change', function () { f.ordem = so.value; f.pag = 1; desenharAnual(); });
@@ -1061,7 +1066,7 @@
     if (sec === 'anual') {
       if (!estado.anual || estado.anual.valores_ocultos || !estado.anual.itens || !estado.anual.itens.length || !anosAnual().completos.length) return null;   // sem carga: nada para exportar
       var ra = linhasAnual(), fa = filtroAnual(), Xa = cfgAnual().percentual;
-      var fan = []; if (fa.busca) fan.push('Busca: ' + fa.busca); if (fa.soDestaque) fan.push('Só os destacados');
+      var fan = []; if (fa.busca) fan.push('Busca: ' + fa.busca); if (fa.tipo) fan.push('Documento: ' + fa.tipo); if (fa.soDestaque) fan.push('Só os destacados');
       return { arquivo: 'cs-analise-anual', titulo: 'Painel do Sucesso do Cliente - Análise Anual (' + ra.ano + ' × ' + (ra.ano - 1) + ')',
         filtros: [ra.linhas.length + ' cliente(s) · rever honorário: ' + pctTxt(Xa) + '% ou mais em ' + ROT_REGRA[fa.regra || 'ambos'] + (fan.length ? ' · ' + fan.join(' · ') : '') + ' · ' + ROT_ORDEM[fa.ordem || 'alfa'], aviso],
         colunas: ['Razão social', 'Documento', 'Categoria', 'Regime ' + (ra.ano - 1), 'Regime ' + ra.ano, 'Faturamento ' + (ra.ano - 1) + ' (R$)', 'Faturamento ' + ra.ano + ' (R$)', 'Variação faturamento (%)',
