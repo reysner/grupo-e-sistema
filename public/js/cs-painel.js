@@ -795,9 +795,9 @@
       var vTxt = l.v != null ? celVar(l.v, destaqueAnual(l.v)) : (l.prev === 0 && l.cur > 0 ? '<span class="pill" style="color:#2563eb;border-color:#2563eb55;background:#2563eb14">novo</span>' : '<span class="cinza">—</span>');
       var funcTxt = l.fp == null && l.fc == null ? '<span class="cinza">sem folha</span>' : (l.fp == null ? '—' : l.fp) + ' → ' + (l.fc == null ? '—' : l.fc);
       var regTxt = celRegime(l.rp, l.rc, l.mudouRegime, ano);
-      var honTxt = l.hc == null ? '<span class="cinza">—</span>' : '<span title="Valor mensal típico cobrado no Omie: ' + (ano - 1) + ' → ' + l.hcAno + '">' + (l.hp != null ? reais(l.hp) + ' → ' : '') + reais(l.hc) + '</span>' + (l.vh != null ? '<div class="sub">' + esc(pctAnual(l.vh)) + '</div>' : '');
+      // etiqueta curta sob "Rever honorário": o detalhe (valores do Omie) fica na ficha, ao clicar na empresa
       var rj = reajusteLinha(l);
-      var rjTxt = rj === 'nao' ? '<div class="sub" style="color:#b91c1c" title="O honorário do Omie subiu menos de ' + REAJUSTE_MIN + '% desde ' + (ano - 1) + '">Sem reajuste</div>'
+      var rjTxt = rj === 'nao' ? '<div class="sub" style="color:#b91c1c" title="O honorário do Omie subiu menos de ' + REAJUSTE_MIN + '% desde ' + (ano - 1) + '">Sem reajuste' + (l.vh != null ? ' ' + esc(pctAnual(l.vh)) : '') + '</div>'
         : rj === 'sim' ? '<div class="sub" style="color:#166534" title="Honorário mensal do Omie ' + esc(pctAnual(l.vh)) + ' desde ' + (ano - 1) + '">Reajustado ' + esc(pctAnual(l.vh)) + '</div>'
         : rj === 'sem-dado' ? '<div class="sub" title="Sem honorário cobrado no Omie para comparar">sem honorário no Omie</div>' : '';
       return '<tr><td style="white-space:normal;min-width:200px"><button class="link" data-anual="' + esc(l.doc) + '">' + esc(c.nome) + '</button><div class="sub">' + esc(c.cnpj || '') + '</div></td>' +
@@ -808,7 +808,6 @@
         '<td class="c">' + vTxt + '</td>' +
         '<td class="c">' + funcTxt + '</td>' +
         '<td class="c">' + celVar(l.vf, destaqueAnual(l.vf)) + '</td>' +
-        '<td class="c" style="font-family:var(--mono)">' + honTxt + '</td>' +
         '<td class="c">' + (dest ? '<span class="pill" style="color:#b45309;border-color:#b4530955;background:#b4530914" title="Rever honorário: ' + esc(motivosRever(l).join(' · ')) + (regra === 'ambos' && l.vf == null && destaquePorValores(l) ? ' (sem folha para comparar: decidido pelo faturamento)' : '') + '">Rever honorário</span>' : (l.anos ? '<span class="cinza" title="Abaixo do limite de ' + esc(pctTxt(X)) + '% em ' + esc(ROT_REGRA[regra]) + '">Abaixo do limite</span>' : '<span class="cinza">—</span>')) + rjTxt + '</td></tr>';
     }).join('');
     var optAnos = ac.completos.map(function (y) { return '<option value="' + y + '"' + (y === ano ? ' selected' : '') + '>' + y + ' × ' + (y - 1) + '</option>'; }).join('');
@@ -825,7 +824,7 @@
       '</div>' +
       '<div class="nota"><strong>Fontes.</strong> Faturamento por ano civil: Questor (módulo Fiscal). Funcionários: total de empregados ativos no <strong>último mês com folha</strong> de cada ano (Questor, Folha); a contagem é por empresa e fica na matriz. ' +
         'Regime: <strong>Receita Federal</strong> (ECF e opção pelo Simples; para anos ainda sem ECF vale a última conhecida, indicada na ficha). O cadastro de regime do Questor não é usado. ' +
-        'Só clientes <strong>ativos no Acessórias</strong>.' + esc(parcial) + ' <strong>A mudança de regime tributário entre os dois anos também gera "Rever honorário"</strong>, qualquer que seja a regra escolhida. <strong>Honorário Omie:</strong> valor mensal típico (mediana dos meses cobrados, categoria Serviços Honorários Contábeis, dois ambientes) do ano anterior até o mais recente; quem está em "Rever honorário" e subiu menos de ' + REAJUSTE_MIN + '% aparece como "Sem reajuste". Com a regra "faturamento e funcionários", quem não tem folha nos dois anos é decidido só pelo faturamento. O limite de ' + esc(pctTxt(X)) + '% é um só para a equipe' + (cfgAnual().pode_editar ? ' (botão % no título da coluna Variação).' : '.') + '</div>' +
+        'Só clientes <strong>ativos no Acessórias</strong>.' + esc(parcial) + ' <strong>A mudança de regime tributário entre os dois anos também gera "Rever honorário"</strong>, qualquer que seja a regra escolhida. <strong>Honorário no Omie:</strong> ao clicar na empresa, a ficha compara o honorário mensal cobrado (mediana dos meses, dois ambientes) com a variação do faturamento; o painel "Rever, sem reajuste" e o filtro "só sem reajuste" separam quem subiu menos de ' + REAJUSTE_MIN + '% desde o ano anterior. Com a regra "faturamento e funcionários", quem não tem folha nos dois anos é decidido só pelo faturamento. O limite de ' + esc(pctTxt(X)) + '% é um só para a equipe' + (cfgAnual().pode_editar ? ' (botão % no título da coluna Variação).' : '.') + '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="n-busca" placeholder="Empresa ou CNPJ" value="' + esc(f.busca) + '">' +
         '<span class="filter-label">Documento</span><select class="gp-select" id="n-tipo"><option value=""' + (!f.tipo ? ' selected' : '') + '>Todos (' + (r.contTipo.CNPJ + r.contTipo.CPF + r.contTipo.CAEPF + r.contTipo.CNO) + ')</option>' + ['CNPJ', 'CPF', 'CAEPF', 'CNO'].map(function (t) { return '<option value="' + t + '"' + (f.tipo === t ? ' selected' : '') + '>Só ' + t + ' (' + r.contTipo[t] + ')</option>'; }).join('') + '</select>' +
         '<span class="filter-label">Comparar</span><select class="gp-select" id="n-ano">' + optAnos + '</select>' +
@@ -834,9 +833,9 @@
         '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="n-dest"' + (f.soDestaque ? ' checked' : '') + '> só os destacados</label>' +
         '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="n-semrj"' + (f.soSemReajuste ? ' checked' : '') + '> só sem reajuste</label></div>' +
         '<div class="card-sub">' + r.linhas.length + ' cliente(s) · ' + comFunc + ' com folha nos dois anos · ' + ROT_ORDEM[f.ordem || 'alfa'] + '. Clique na empresa para ver ano a ano.</div>' +
-        (r.linhas.length ? '<div class="table-wrap"><table class="tab-analise"><colgroup><col style="width:18%"><col style="width:8%"><col style="width:15%"><col style="width:10%"><col style="width:10%"><col style="width:7%"><col style="width:7%"><col style="width:6%"><col style="width:10%"><col style="width:9%"></colgroup>' +
+        (r.linhas.length ? '<div class="table-wrap"><table class="tab-analise"><colgroup><col style="width:21%"><col style="width:9%"><col style="width:17%"><col style="width:11%"><col style="width:11%"><col style="width:8%"><col style="width:8%"><col style="width:7%"><col style="width:8%"></colgroup>' +
           '<thead><tr><th>Razão social</th><th class="c">Categoria</th><th class="c">Regime ' + (ano - 1) + ' → ' + ano + '</th><th class="c">Faturamento ' + (ano - 1) + '</th><th class="c">Faturamento ' + ano + '</th>' +
-          '<th class="c">Variação ' + botaoPctAnual() + '</th><th class="c">Funcionários</th><th class="c">Variação</th><th class="c">Honorário Omie<div class="th-sub">mensal ' + (ano - 1) + ' → hoje</div></th><th class="c">Análise</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' + paginacaoHtml(r.linhas.length, f.pag, ANALISE_POR_PAGINA)
+          '<th class="c">Variação ' + botaoPctAnual() + '</th><th class="c">Funcionários</th><th class="c">Variação</th><th class="c">Análise</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' + paginacaoHtml(r.linhas.length, f.pag, ANALISE_POR_PAGINA)
           : '<div class="vazio">Nenhum cliente neste filtro.</div>') + '</div>';
     var campo = $('n-busca'); if (campo) campo.addEventListener('input', function () { f.busca = campo.value; f.pag = 1; var pos = campo.selectionStart; desenharAnual(); var n = $('n-busca'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* sem seleção */ } });
     var st = $('n-tipo'); if (st) st.addEventListener('change', function () { f.tipo = st.value; f.pag = 1; desenharAnual(); });
@@ -936,12 +935,25 @@
       (ho && ho.hp != null && ho.hc != null && !valoresOcultos() ? ' Honorário cobrado no Omie: ' + esc(moedaTxt(ho.hp)) + ' por mês em ' + (ultComp - 1) + ' → ' + esc(moedaTxt(ho.hc)) + ' em ' + ho.hcAno + ' (' + esc(pctAnual(ho.vh)) + (v != null ? ' contra faturamento ' + esc(pctAnual(v)) : '') + (destaqueLinha({ v: v, vf: vf, mudouRegime: mudouReg }) ? (ho.vh >= REAJUSTE_MIN ? ': já reajustado' : ': sem reajuste') : '') + ').' : '') +
       (sug != null && c.honorario != null && !valoresOcultos() ? ' Com o faturamento de ' + ultComp + ', o honorário sugerido é ' + esc(moedaTxt(sug)) + ' por mês (hoje cobra ' + esc(moedaTxt(c.honorario)) + ').' : '');
     var q = c.questor;
+    // honorário cobrado no Omie x "Rever honorário": só aparece aqui, ao abrir a empresa
+    var blocoOmie = '';
+    if (ho && (ho.hp != null || ho.hc != null)) {
+      var lj = { v: v, vf: vf, mudouRegime: !!mudouReg, rp: A1 && A1.regime, rc: A2 && A2.regime }, rjF = reajusteLinha(Object.assign({ vh: ho.vh }, lj));
+      var sitTxt = ho.hc == null ? 'sem honorário no Omie' : (rjF === 'nao' ? 'Sem reajuste' : rjF === 'sim' ? 'Reajustado' : rjF === 'sem-dado' ? 'sem base para comparar' : 'fora do "Rever honorário"');
+      var corSit = rjF === 'nao' ? '#b91c1c' : rjF === 'sim' ? '#166534' : null;
+      var detSit = destaqueLinha(lj) ? 'Rever honorário: ' + esc(motivosRever(lj).join(' · ')) : 'abaixo do limite de ' + esc(pctTxt(X)) + '%';
+      blocoOmie = '<div class="ficha-sec">Honorário no Omie × faturamento</div><div class="blocos">' +
+        bloco('Honorário mensal ' + (ultComp - 1), ho.hp != null ? reais(ho.hp) : '—', 'valor típico cobrado no ano', null) +
+        bloco('Honorário mensal hoje', ho.hc != null ? reais(ho.hc) : '—', ho.hcAno ? 'valor típico em ' + ho.hcAno : '', null) +
+        bloco('Variação do honorário', ho.vh != null ? esc(pctAnual(ho.vh)) : '—', 'contra faturamento ' + (v != null ? esc(pctAnual(v)) : '—') + ' em ' + ultComp, null) +
+        bloco('Situação', sitTxt, detSit, corSit) + '</div>';
+    }
     var blocos = '<div class="blocos">' +
       bloco('Honorário mensal', reais(c.honorario), 'cobrado hoje', null) +
       bloco('Funcionários (hoje)', q ? celNum(q.funcionarios == null ? 0 : q.funcionarios) : 'sem dado', 'Questor, folha atual', null) +
       bloco('Regime tributário (hoje)', c.regime ? esc(c.regime) : '—', 'cadastro do Acessórias', null) + '</div>';
     $('ficha-corpo').innerHTML = blocos + '<div class="ficha-sec">Ano a ano</div>' +
-      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Ano</th><th class="c">Faturamento</th><th class="c">Variação</th><th></th><th class="c">Funcionários</th><th class="c">Variação</th><th class="c">Regime tributário</th><th class="c">Honorário mensal</th><th class="c">Variação</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' +
+      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Ano</th><th class="c">Faturamento</th><th class="c">Variação</th><th></th><th class="c">Funcionários</th><th class="c">Variação</th><th class="c">Regime tributário</th><th class="c">Honorário mensal</th><th class="c">Variação</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' + blocoOmie +
         '<div class="nota" style="margin-top:10px">Funcionários: total do último mês com folha de cada ano. Regime: dados da Receita Federal; abaixo de cada regime está a fonte (ECF do ano, opção pelo Simples ou a última ECF conhecida). Faturamento: exatamente o que o Questor devolve. Honorário mensal: valor típico cobrado por mês no Omie (categoria Serviços Honorários Contábeis, dois ambientes somados); o histórico do Omie começa no fim de 2023 e o ano em curso é parcial.</div>'
         : '<div class="linha-item"><span class="x">Este cliente ainda não tem dados do Questor por ano.</span></div>');
   }
