@@ -671,7 +671,7 @@
     if (simples(a) && simples(b)) return a !== b;                  // Simples <-> MEI
     return a !== REGIME_GENERICO && b !== REGIME_GENERICO;          // dois regimes específicos e diferentes
   }
-  var ROT_REGRA = { ambos: 'faturamento e funcionários', fat: 'faturamento', func: 'funcionários' };
+  var ROT_REGRA = { ambos: 'faturamento e funcionários', ou: 'faturamento ou funcionários', fat: 'faturamento', func: 'funcionários' };
   var ROT_ORDEM = { alfa: 'ordem alfabética', alta: 'maior alta de faturamento primeiro' };
   /** Regime como chip colorido e curto: Simples, Presumido, Real (Imune/Isenta em cinza). O texto completo fica no title. */
   function chipRegime(r) {
@@ -700,6 +700,7 @@
     var r = regra || filtroAnual().regra || 'ambos';
     if (r === 'fat') return destaqueAnual(l.v);
     if (r === 'func') return destaqueAnual(l.vf);
+    if (r === 'ou') return destaqueAnual(l.v) || destaqueAnual(l.vf);        // qualquer um dos dois no limite
     // "ambos": faturamento E funcionários no limite; sem folha nos dois anos (vf nulo) decide só o faturamento
     return destaqueAnual(l.v) && (l.vf == null || destaqueAnual(l.vf));
   }

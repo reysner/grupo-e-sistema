@@ -209,6 +209,8 @@ const semLixo = (e, nome) => {
     assert.deepStrictEqual([alfa.fp, alfa.fc, alfa.vf, alfa.rp, alfa.rc, alfa.mudouRegime], [10, 14, 40, 'Simples Nacional', 'Lucro Presumido', true]);
     E.filtroAnual.regra = 'fat';
     assert.strictEqual(C.t.linhasAnual().subiram, 2);                                      // ALFA e GAMA
+    E.filtroAnual.regra = 'ou';
+    assert.strictEqual(C.t.linhasAnual().subiram, 3);                                      // ALFA, ALFA FILIAL (func +30%) e GAMA (fat +50%)
     E.filtroAnual.regra = 'func';
     assert.strictEqual(C.t.linhasAnual().subiram, 2);                                      // ALFA (+40%) e ALFA FILIAL (+30%, exatamente no limite)
     E.filtroAnual.regra = 'ambos';
