@@ -96,7 +96,7 @@ router.post('/', async (req, res) => {
       await client.query(
         `INSERT INTO cs_email_sinais (cnpj, contatos_ativos, mensagens_recebidas, aguardando_4h, aguardando_24h, aguardando_48h, aguardando_7d,
                                       aguardando_compartilhado, mais_antigo_h, provaveis_encerramentos, resolvidos_zappy, caixas)
-         SELECT cnpj, ca, mr, a4, a24, a48, a7, ac, mh, pe, rz, string_to_array(NULLIF(cx, ''), '|')
+         SELECT cnpj, ca, mr, a4, a24, a48, a7, ac, mh, pe, rz, COALESCE(string_to_array(NULLIF(cx, ''), '|'), '{}'::text[])
            FROM unnest($1::text[], $2::int[], $3::int[], $4::int[], $5::int[], $6::int[], $7::int[], $8::int[], $9::int[], $10::int[], $11::int[], $12::text[])
                 AS x(cnpj, ca, mr, a4, a24, a48, a7, ac, mh, pe, rz, cx)`,
         [C.map((c) => c.cnpj), C.map((c) => c.contatos_ativos), C.map((c) => c.mensagens_recebidas), C.map((c) => c.aguardando_4h), C.map((c) => c.aguardando_24h),
