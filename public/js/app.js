@@ -3792,9 +3792,13 @@ const Atendimento = (() => {
     const tbody = document.getElementById('at-tbody');
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:24px">Carregando...</td></tr>';
-    const res = await fetch('/api/data/atendimentos?period=todos', {
-      headers: { 'Authorization': `Bearer ${_token()}` }
-    });
+    _carregarAnalistasSelect();   // a lista do formulário não depende da tabela: carrega já, mesmo que o histórico demore ou falhe
+    let res = null;
+    try {
+      res = await fetch('/api/data/atendimentos?period=todos', {
+        headers: { 'Authorization': `Bearer ${_token()}` }
+      });
+    } catch (e) { console.error('[Atendimento] loadGrid()', e); }
     if (!res || !res.ok) {
       tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar.</td></tr>';
       return;
@@ -3806,15 +3810,15 @@ const Atendimento = (() => {
     const _paged = App.Util.paginate(_filtered, _page);
     _renderGrid(_paged.items);
     App.Util.renderPagination('at-pagination', _paged.page, _paged.pages, _paged.total, 'Atendimento.goPage');
-    _carregarAnalistasSelect();
   }
 
-  async function _carregarAnalistasSelect() {
+  async function _carregarAnalistasSelect(tentativa) {
     const sel = document.getElementById('at-procurado');
     if (!sel) return;
+    tentativa = tentativa || 1;
     try {
       const res = await fetch('/api/analistas?ativo=true', { headers: { Authorization: `Bearer ${_token()}` } });
-      if (!res || !res.ok) return;
+      if (!res || !res.ok) throw new Error('HTTP ' + (res && res.status));
       const { analistas } = await res.json();
       const atual = sel.value;
       sel.innerHTML = '<option value="">Selecione</option>' +
@@ -3822,6 +3826,9 @@ const Atendimento = (() => {
       sel.value = atual;
     } catch (e) {
       console.error('[Atendimento] _carregarAnalistasSelect()', e);
+      // servidor acordando ou em deploy: tenta de novo algumas vezes antes de avisar
+      if (tentativa < 4) return setTimeout(() => _carregarAnalistasSelect(tentativa + 1), 2500 * tentativa);
+      if (sel.options.length <= 1) sel.innerHTML = '<option value="">Selecione</option><option value="" disabled>Não foi possível carregar a lista — recarregue a página</option>';
     }
   }
 
