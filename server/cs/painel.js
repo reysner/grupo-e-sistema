@@ -235,7 +235,7 @@ router.get('/atendimentos', async (req, res) => {
   try {
     const base = await montarBase(false, TTL_FICHA_MS);
     const tk = await ticketsPorCliente(JANELA_ATENDIMENTO);
-    const emRows = (await consultar('SELECT cnpj, recebidos, sem_resposta, destinatarios FROM cs_email_atendimento', [], 'email atendimento')) || [];
+    const emRows = (await consultar('SELECT cnpj, recebidos, sem_resposta, destinatarios, comp_recebidos, comp_sem FROM cs_email_atendimento', [], 'email atendimento')) || [];
     const em = new Map(emRows.map((r) => [r.cnpj, r]));
     const leitura = ((await consultar('SELECT lido_em, janela_dias FROM cs_email_atendimento_leitura WHERE id = 1', [], 'email atendimento leitura')) || [])[0] || null;
     const clientes = base.clientes.concat(base.clientes_outros || []).map((c) => {
@@ -243,7 +243,7 @@ router.get('/atendimentos', async (req, res) => {
       return {
         id: c.id, nome: c.nome, cnpj: c.cnpj, tipo_doc: c.tipo_doc || 'CNPJ', categoria: c.categoria || null, grupo: c.grupo || null,
         atendimentos: t.atendimentos || 0, sla_vermelho: t.sla_vermelho || 0, notas_baixas: t.notas_baixas || 0, ultimo: t.ultimo || null,
-        email: e ? { recebidos: e.recebidos, sem_resposta: e.sem_resposta, destinatarios: e.destinatarios } : null,
+        email: e ? { recebidos: e.recebidos, sem_resposta: e.sem_resposta, destinatarios: e.destinatarios, comp_recebidos: e.comp_recebidos || 0, comp_sem: e.comp_sem || 0 } : null,
       };
     });
     res.json({ janela_dias: JANELA_ATENDIMENTO, email_lido_em: leitura ? leitura.lido_em : null, email_janela_dias: leitura ? leitura.janela_dias : null, clientes });
@@ -265,12 +265,12 @@ router.get('/atendimento/:id', async (req, res) => {
          FROM cs_tickets t JOIN cs_vinculos v ON v.id = t.vinculo_id
         WHERE v.tipo = 'cliente' AND v.cliente_id = $1 AND t.abertura >= NOW() - INTERVAL '180 days'
         ORDER BY t.abertura DESC LIMIT 500`, [c.id], 'tickets 180d')) || [];
-    const e = ((await consultar('SELECT recebidos, sem_resposta, destinatarios FROM cs_email_atendimento WHERE cnpj = $1', [doc], 'email atendimento cliente')) || [])[0] || null;
+    const e = ((await consultar('SELECT recebidos, sem_resposta, destinatarios, comp_recebidos, comp_sem FROM cs_email_atendimento WHERE cnpj = $1', [doc], 'email atendimento cliente')) || [])[0] || null;
     const leitura = ((await consultar('SELECT lido_em, janela_dias FROM cs_email_atendimento_leitura WHERE id = 1', [], 'email atendimento leitura')) || [])[0] || null;
     res.json({
       cliente: { id: c.id, nome: c.nome, cnpj: c.cnpj, grupo: c.grupo || null, unidade: c.unidade || null, entrada: c.entrada, categoria: c.categoria || null },
       janela_dias: JANELA_ATENDIMENTO, tickets,
-      email: e ? { recebidos: e.recebidos, sem_resposta: e.sem_resposta, destinatarios: e.destinatarios } : null,
+      email: e ? { recebidos: e.recebidos, sem_resposta: e.sem_resposta, destinatarios: e.destinatarios, comp_recebidos: e.comp_recebidos || 0, comp_sem: e.comp_sem || 0 } : null,
       email_lido_em: leitura ? leitura.lido_em : null, email_janela_dias: leitura ? leitura.janela_dias : null,
     });
   } catch (err) {

@@ -1006,6 +1006,7 @@
     var l = [em.recebidos + ' e-mail(s) recebido(s) · ' + em.sem_resposta + ' sem resposta', ''];
     if (ds.length) { l.push('Recebidos por destinatário:'); ds.forEach(function (d) { l.push('• ' + d.nome + (d.grupo ? ' (grupo)' : '') + ': ' + d.recebidos); }); }
     var sem = ds.filter(function (d) { return d.sem > 0; });
+    if (em.comp_recebidos) l.push('', '+ ' + em.comp_recebidos + ' e-mail(s) de contatos que atendem várias empresas' + (em.comp_sem ? ' (' + em.comp_sem + ' sem resposta)' : '') + ', não somados acima');
     l.push('');
     if (sem.length) { l.push('Sem resposta:'); sem.forEach(function (d) { l.push('• ' + d.nome + ': ' + d.sem + (d.grupo ? ' (' + ROT_DEST_GRUPO + ')' : '')); }); }
     else l.push('Nenhum destinatário com e-mail sem resposta');
@@ -1038,7 +1039,7 @@
         '<td class="c">' + (c.sla_vermelho ? '<span style="color:#dc2626"><strong>' + c.sla_vermelho + '</strong></span>' : '0') + '</td>' +
         '<td class="c">' + (c.notas_baixas ? '<span style="color:#dc2626"><strong>' + c.notas_baixas + '</strong></span>' : '0') + '</td>' +
         '<td class="c">' + data(c.ultimo) + '</td>' +
-        '<td class="c"><span class="hon-sug" tabindex="0" title="' + tip + '" aria-label="' + tip + '">' + (em ? em.recebidos : '<span class="cinza">—</span>') + '</span></td>' +
+        '<td class="c"><span class="hon-sug" tabindex="0" title="' + tip + '" aria-label="' + tip + '">' + (em ? em.recebidos + (em.comp_recebidos ? ' <span class="cinza" title="E-mails de contatos que atendem várias empresas, não somados">+' + em.comp_recebidos + '</span>' : '') : '<span class="cinza">—</span>') + '</span></td>' +
         '<td class="c"><span class="hon-sug" tabindex="0" title="' + tip + '" aria-label="' + tip + '">' + (em ? (em.sem_resposta ? '<strong style="color:#dc2626">' + em.sem_resposta + '</strong>' : '0') : '<span class="cinza">—</span>') + '</span></td></tr>';
     }).join('');
     alvo.innerHTML =

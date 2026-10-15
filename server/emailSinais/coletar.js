@@ -263,7 +263,7 @@ function clientesParaEnvio(porCliente, nomesDiretorio) {
       const r = (por[nome] = por[nome] || { nome, grupo, recebidos: 0, sem: 0 });
       r.recebidos += c.destinatarios[a].recebidos; r.sem += c.destinatarios[a].sem;
     });
-    return { cnpj: c.cnpj, recebidos: c.recebidos, sem_resposta: c.sem_resposta, destinatarios: Object.values(por).sort((x, y) => y.recebidos - x.recebidos) };
+    return { cnpj: c.cnpj, recebidos: c.recebidos, sem_resposta: c.sem_resposta, compartilhados_recebidos: c.compartilhados_recebidos || 0, compartilhados_sem: c.compartilhados_sem || 0, destinatarios: Object.values(por).sort((x, y) => y.recebidos - x.recebidos) };
   });
 }
 async function enviarAtendimento(corpo) {

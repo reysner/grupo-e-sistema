@@ -67,7 +67,7 @@ function validarAtendimento(corpo) {
       if (!nome || (/@/.test(nome) && !enderecoInterno(nome))) return null;     // endereço de fora do escritório nunca entra
       return { nome, grupo: !!d.grupo, recebidos: int(d.recebidos), sem: int(d.sem) };
     }).filter(Boolean);
-    clientes.push({ cnpj, recebidos: int(c.recebidos), sem_resposta: int(c.sem_resposta), destinatarios });
+    clientes.push({ cnpj, recebidos: int(c.recebidos), sem_resposta: int(c.sem_resposta), comp_recebidos: int(c.compartilhados_recebidos), comp_sem: int(c.compartilhados_sem), destinatarios });
   });
   return { janela_dias: int(b.janela_dias) || 180, caixas_lidas: int(b.caixas_lidas), caixas_com_erro: int(b.caixas_com_erro), clientes };
 }
@@ -78,6 +78,8 @@ function garantirSchemaAtend() {
     // RLS ligado e sem policy: só o servidor lê (regra do projeto para tabela nova).
     _schemaAt = pool.query(`CREATE TABLE IF NOT EXISTS cs_email_atendimento (
         cnpj TEXT PRIMARY KEY, recebidos INT NOT NULL DEFAULT 0, sem_resposta INT NOT NULL DEFAULT 0, destinatarios JSONB NOT NULL DEFAULT '[]')`)
+      .then(() => pool.query('ALTER TABLE cs_email_atendimento ADD COLUMN IF NOT EXISTS comp_recebidos INT NOT NULL DEFAULT 0'))
+      .then(() => pool.query('ALTER TABLE cs_email_atendimento ADD COLUMN IF NOT EXISTS comp_sem INT NOT NULL DEFAULT 0'))
       .then(() => pool.query('ALTER TABLE cs_email_atendimento ENABLE ROW LEVEL SECURITY'))
       .then(() => pool.query(`CREATE TABLE IF NOT EXISTS cs_email_atendimento_leitura (
         id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1), lido_em TIMESTAMPTZ NOT NULL DEFAULT NOW(), janela_dias INT NOT NULL DEFAULT 180, caixas_lidas INT NOT NULL DEFAULT 0)`))
@@ -175,9 +177,9 @@ router.post('/atendimento', async (req, res) => {
     if (v.clientes.length) {
       const C = v.clientes;
       await client.query(
-        `INSERT INTO cs_email_atendimento (cnpj, recebidos, sem_resposta, destinatarios)
-         SELECT cnpj, r, s, d::jsonb FROM unnest($1::text[], $2::int[], $3::int[], $4::text[]) AS x(cnpj, r, s, d)`,
-        [C.map((c) => c.cnpj), C.map((c) => c.recebidos), C.map((c) => c.sem_resposta), C.map((c) => JSON.stringify(c.destinatarios))]);
+        `INSERT INTO cs_email_atendimento (cnpj, recebidos, sem_resposta, destinatarios, comp_recebidos, comp_sem)
+         SELECT cnpj, r, s, d::jsonb, cr, cs FROM unnest($1::text[], $2::int[], $3::int[], $4::text[], $5::int[], $6::int[]) AS x(cnpj, r, s, d, cr, cs)`,
+        [C.map((c) => c.cnpj), C.map((c) => c.recebidos), C.map((c) => c.sem_resposta), C.map((c) => JSON.stringify(c.destinatarios)), C.map((c) => c.comp_recebidos), C.map((c) => c.comp_sem)]);
     }
     await client.query(
       `INSERT INTO cs_email_atendimento_leitura (id, lido_em, janela_dias, caixas_lidas) VALUES (1, NOW(), $1, $2)

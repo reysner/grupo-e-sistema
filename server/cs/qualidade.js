@@ -95,6 +95,43 @@ function situacao(status, prazoIso, hoje) {
   return status;
 }
 
+/** Dois nomes de pessoa são "o mesmo" quando iguais sem acento e caixa, ou um contém o outro (ex.: "Guilherme" e "Guilherme de Barros Amaro"). */
+function mesmoNome(a, b) {
+  const x = semAcento(a), y = semAcento(b);
+  if (!x || !y) return false;
+  return x === y || (x.length >= 4 && y.startsWith(x + ' ')) || (y.length >= 4 && x.startsWith(y + ' '));
+}
+
+/**
+ * Prioridades do analista (o que pede ação hoje), da mais urgente para a menos:
+ *  - tratativa vencida (alta) ou com prazo em até 3 dias (média);
+ *  - cliente com e-mail sem resposta (alta a partir de 3 e-mails, média abaixo);
+ *  - atendimento com SLA vermelho nos últimos 30 dias (média).
+ */
+function montarPrioridades(ent, hoje) {
+  const h = hoje || hojeBrasilia(), lim = somarDias(h, 3);
+  const out = [];
+  (ent.registros || []).forEach((r) => {
+    if (r.status !== 'aberto' && r.status !== 'em_tratamento') return;
+    if (r.prazo < h) out.push({ tipo: 'tratativa', nivel: 'alta', titulo: 'Tratativa vencida: ' + r.tipo, detalhe: (r.cliente_nome || 'Cliente') + ' · prazo ' + r.prazo, ref: r.id, ordem: 0 });
+    else if (r.prazo <= lim) out.push({ tipo: 'tratativa', nivel: 'media', titulo: 'Tratativa perto do prazo: ' + r.tipo, detalhe: (r.cliente_nome || 'Cliente') + ' · prazo ' + r.prazo, ref: r.id, ordem: 1 });
+  });
+  (ent.emails || []).forEach((c) => {
+    if (!(c.sem > 0)) return;
+    out.push({ tipo: 'email', nivel: c.sem >= 3 ? 'alta' : 'media', titulo: c.sem + ' e-mail(s) sem resposta', detalhe: c.nome || c.cnpj, ref: c.cnpj, ordem: c.sem >= 3 ? 0.5 : 2 });
+  });
+  (ent.slaVermelho || []).forEach((t) => {
+    out.push({ tipo: 'sla', nivel: 'media', titulo: 'SLA vermelho no atendimento', detalhe: (t.cliente_nome || t.empresa_texto || 'Cliente') + ' · ' + String(t.abertura || '').slice(0, 10), ref: t.id, ordem: 3 });
+  });
+  return out.sort((a, b) => a.ordem - b.ordem || String(a.detalhe).localeCompare(String(b.detalhe)));
+}
+
+/** Semana (segunda-feira, AAAA-MM-DD) de uma data ISO. */
+function segundaDe(iso) {
+  const d = new Date(iso + 'T12:00:00Z'); const dow = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - dow); return d.toISOString().slice(0, 10);
+}
+
 let _schema = null;
 function garantirSchema() {
   if (!_schema) {
@@ -252,6 +289,91 @@ async function analistaDoLogin(user) {
   return todos.rows.find((a) => semAcento(a.nome) === alvo) || null;
 }
 
+/** Quem é o analista (lista de Qualidade) e o colaborador da Gamificação (Zappy) deste login; administrador ou usuário podem pedir outro analista. */
+async function identidade(user, analistaId) {
+  let analista = null;
+  if (analistaId && PAPEIS.includes(user.role)) {
+    const a = await pool.query('SELECT id, nome, ativo, user_id FROM analistas WHERE id::text = $1', [String(analistaId)]);
+    analista = a.rows[0] || null;
+  } else analista = await analistaDoLogin(user);
+  let colab = null;
+  const donoLogin = analista && !(analistaId && PAPEIS.includes(user.role)) ? user.id : (analista && analista.user_id) || null;
+  try {
+    if (donoLogin) colab = ((await pool.query('SELECT nome, zappy_user_id FROM gam_colaboradores WHERE user_id = $1', [String(donoLogin)])).rows[0]) || null;
+    if (!colab && analista) {
+      const todos = (await pool.query('SELECT nome, zappy_user_id FROM gam_colaboradores')).rows;
+      colab = todos.find((c) => mesmoNome(c.nome, analista.nome)) || null;
+    }
+  } catch (e) { colab = null; }
+  return { analista, colab };
+}
+
+routerAnalista.get('/painel', async (req, res) => {
+  try {
+    await garantirSchema();
+    const hoje = hojeBrasilia();
+    const { analista, colab } = await identidade(req.user, req.query.analista);
+    if (!analista) return res.json({ analista: null, aviso: 'Seu login ainda não está ligado a um analista da lista. Peça à liderança para ligar (Qualidade > seu nome > Login).' });
+
+    const regs = (await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.analista_id = $1 AND r.status <> 'cancelado' ORDER BY r.prazo ASC LIMIT 300`, [String(analista.id)])).rows;
+    const registros = comSituacao(regs);
+
+    // Atendimentos do Zappy (180 dias) do analista, pelo usuário do Zappy ligado na Gamificação
+    let atend = { vinculado: !!(colab && colab.zappy_user_id), colaborador: colab ? colab.nome : null, janela_dias: 180, lista: [], semanas: [], total: 0, sla_vermelho: 0, notas_baixas: 0, media_nota: null };
+    let slaVermelho30 = [];
+    if (colab && colab.zappy_user_id) {
+      try {
+        const t = (await pool.query(
+          `SELECT t.id, t.abertura, t.departamento, t.nota_avaliacao, t.pior_status, t.empresa_texto, c.nome_empresa AS cliente_nome
+             FROM cs_tickets t
+             LEFT JOIN cs_vinculos v ON v.id = t.vinculo_id AND v.tipo = 'cliente'
+             LEFT JOIN clientes c ON c.id::text = v.cliente_id
+            WHERE t.analista_id = $1 AND t.abertura >= NOW() - INTERVAL '180 days'
+            ORDER BY t.abertura DESC LIMIT 600`, [String(colab.zappy_user_id)])).rows;
+        const notas = t.filter((x) => x.nota_avaliacao != null).map((x) => Number(x.nota_avaliacao));
+        const por = {};
+        t.forEach((x) => { const s = segundaDe(new Date(x.abertura).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })); por[s] = (por[s] || 0) + 1; });
+        const semanas = []; const ini = segundaDe(hoje);
+        for (let i = 11; i >= 0; i--) { const s = somarDias(ini, -7 * i); semanas.push({ semana: s, n: por[s] || 0 }); }
+        atend = Object.assign(atend, {
+          lista: t.slice(0, 300), semanas, total: t.length,
+          sla_vermelho: t.filter((x) => x.pior_status === 'vermelho').length, notas_baixas: t.filter((x) => x.nota_avaliacao != null && x.nota_avaliacao <= 2).length,
+          media_nota: notas.length ? Math.round(notas.reduce((s, n) => s + n, 0) / notas.length * 100) / 100 : null,
+        });
+        const corte = new Date(Date.now() - 30 * 86400000);
+        slaVermelho30 = t.filter((x) => x.pior_status === 'vermelho' && new Date(x.abertura) >= corte);
+      } catch (e) { console.warn('[qualidade] painel: atendimentos indisponíveis:', e.message); }
+    }
+
+    // E-mails: o analista aparece como destinatário (nome do diretório do Google) nas contagens por cliente
+    let emails = { lido_em: null, janela_dias: null, recebidos: 0, sem_resposta: 0, clientes: [] };
+    try {
+      const l = (await pool.query('SELECT lido_em, janela_dias FROM cs_email_atendimento_leitura WHERE id = 1')).rows[0];
+      const rows = (await pool.query('SELECT a.cnpj, a.destinatarios, c.nome_empresa AS nome FROM cs_email_atendimento a LEFT JOIN clientes c ON regexp_replace(c.cnpj, \'\\D\', \'\', \'g\') = a.cnpj AND c.status = \'ativo\'')).rows;
+      const meus = [];
+      rows.forEach((r) => {
+        (r.destinatarios || []).forEach((d) => {
+          if (!d.grupo && mesmoNome(d.nome, analista.nome)) meus.push({ cnpj: r.cnpj, nome: r.nome, recebidos: d.recebidos, sem: d.sem });
+        });
+      });
+      meus.sort((a, b) => b.sem - a.sem || b.recebidos - a.recebidos);
+      emails = { lido_em: l ? l.lido_em : null, janela_dias: l ? l.janela_dias : null, recebidos: meus.reduce((s, c) => s + c.recebidos, 0), sem_resposta: meus.reduce((s, c) => s + c.sem, 0), clientes: meus.slice(0, 150) };
+    } catch (e) { console.warn('[qualidade] painel: e-mails indisponíveis:', e.message); }
+
+    // Evolução semanal das tratativas (lançadas e resolvidas nas últimas 12 semanas)
+    const ini = segundaDe(hoje); const evol = [];
+    const lancadas = {}, resolvidas = {};
+    registros.forEach((r) => {
+      const c = segundaDe(String(r.criado_em instanceof Date ? r.criado_em.toISOString() : r.criado_em).slice(0, 10)); lancadas[c] = (lancadas[c] || 0) + 1;
+      if (r.resolvido_em) { const s = segundaDe(String(r.resolvido_em instanceof Date ? r.resolvido_em.toISOString() : r.resolvido_em).slice(0, 10)); resolvidas[s] = (resolvidas[s] || 0) + 1; }
+    });
+    for (let i = 11; i >= 0; i--) { const s = somarDias(ini, -7 * i); evol.push({ semana: s, lancadas: lancadas[s] || 0, resolvidas: resolvidas[s] || 0, atendimentos: (atend.semanas.find((x) => x.semana === s) || {}).n || 0 }); }
+
+    const prioridades = montarPrioridades({ registros, emails: emails.clientes, slaVermelho: slaVermelho30 }, hoje);
+    res.json({ hoje, analista: { id: analista.id, nome: analista.nome }, registros, atendimentos: atend, emails, evolucao: evol, prioridades });
+  } catch (e) { console.error('[qualidade] GET /painel falhou:', e); res.status(500).json({ error: 'Erro ao montar o seu painel.' }); }
+});
+
 routerAnalista.get('/minhas', async (req, res) => {
   try {
     await garantirSchema();
@@ -291,4 +413,4 @@ routerAnalista.patch('/:id/tratar', async (req, res) => {
   } catch (e) { console.error('[qualidade] PATCH /tratar falhou:', e); res.status(500).json({ error: 'Erro ao registrar a tratativa.' }); }
 });
 
-module.exports = { router, routerAnalista, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia };
+module.exports = { router, routerAnalista, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };

@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS } = require('./qualidade');
+const { validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -54,6 +54,34 @@ teste('situação: aberto ou em tratamento com prazo vencido vira "vencido"; res
 });
 teste('o nome do login casa com o analista sem acento nem caixa', () => {
   assert.strictEqual(semAcento('  Denísa  XAVIER '), 'denisa xavier');
+});
+teste('mesmo nome: igual sem acento, ou o primeiro nome contra o nome completo; nomes diferentes não casam', () => {
+  assert.strictEqual(mesmoNome('Guilherme', 'Guilherme de Barros Amaro'), true);
+  assert.strictEqual(mesmoNome('Nathânia Andrade Conceição', 'nathania andrade conceicao'), true);
+  assert.strictEqual(mesmoNome('Bruno Xavier', 'Bruno Cesar Xavier'), false);
+  assert.strictEqual(mesmoNome('Ivone', 'Ivonete Souza'), false);
+  assert.strictEqual(mesmoNome('', 'Ivone'), false);
+});
+
+teste('prioridades: vencida e e-mails (3+) primeiro, depois prazo curto, e-mail e SLA; encerradas não entram', () => {
+  const p = montarPrioridades({
+    registros: [
+      { id: 'a', status: 'aberto', prazo: '2026-10-10', tipo: 'Multa', cliente_nome: 'ALFA' },
+      { id: 'b', status: 'em_tratamento', prazo: '2026-10-18', tipo: 'Erro', cliente_nome: 'BETA' },
+      { id: 'c', status: 'resolvido', prazo: '2026-10-01', tipo: 'Atraso', cliente_nome: 'GAMA' },
+      { id: 'd', status: 'aberto', prazo: '2026-12-01', tipo: 'Atraso', cliente_nome: 'DELTA' },
+    ],
+    emails: [{ cnpj: '1', nome: 'EMAIL-3', sem: 3 }, { cnpj: '2', nome: 'EMAIL-1', sem: 1 }, { cnpj: '3', nome: 'SEM', sem: 0 }],
+    slaVermelho: [{ id: 't', cliente_nome: 'SLA-CLI', abertura: '2026-10-12T10:00:00Z' }],
+  }, HOJE);
+  assert.deepStrictEqual(p.map((x) => x.ref), ['a', '1', 'b', '2', 't']);
+  assert.deepStrictEqual(p.map((x) => x.nivel), ['alta', 'alta', 'media', 'media', 'media']);
+});
+
+teste('segunda-feira da semana', () => {
+  assert.strictEqual(segundaDe('2026-10-16'), '2026-10-12');   // sexta
+  assert.strictEqual(segundaDe('2026-10-12'), '2026-10-12');
+  assert.strictEqual(segundaDe('2026-10-18'), '2026-10-12');   // domingo
 });
 
 console.log(`\n${ok} testes passaram.`);

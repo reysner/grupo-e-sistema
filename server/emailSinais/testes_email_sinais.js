@@ -237,6 +237,14 @@ teste('histórico: resposta de qualquer endereço do escritório encerra; menos 
   const obrig = atendimentoPorContato([recPara('joao@padaria.com.br', 50, ['cs@escritorial.com.br']), env('joao@padaria.com.br', 40), recPara('joao@padaria.com.br', 30, ['cs@escritorial.com.br'], { tamanho: 3000 })], ctxAt);
   assert.strictEqual(obrig[0].semResposta, 0);
 });
+teste('histórico: contato ligado a duas empresas vai para "compartilhados" e não infla o total de nenhuma', () => {
+  const m2 = Object.assign({}, mapaEmails, { 'socio@yahoo.com.br': ['11111111000111', '33333333000133'] });
+  const c = atendimentoPorContato([recPara('socio@yahoo.com.br', 50, ['cs@escritorial.com.br']), recPara('joao@padaria.com.br', 20, ['cs@escritorial.com.br'])],
+    Object.assign({}, ctxAt, { mapaEmails: m2 }));
+  const por = Object.fromEntries(consolidarAtendimento(c).map((x) => [x.cnpj, x]));
+  assert.deepStrictEqual([por['11111111000111'].recebidos, por['11111111000111'].compartilhados_recebidos, por['11111111000111'].compartilhados_sem], [1, 1, 1]);
+  assert.deepStrictEqual([por['33333333000133'].recebidos, por['33333333000133'].compartilhados_recebidos], [0, 1]);
+});
 teste('histórico: contato sem empresa não entra; resolvido pelo Zappy zera a espera mas mantém os recebidos', () => {
   assert.strictEqual(atendimentoPorContato([recPara('fulano@desconhecido.com', 50, ['cs@escritorial.com.br'])], ctxAt).length, 0);
   const c = atendimentoPorContato([recPara('joao@padaria.com.br', 50, ['cs@escritorial.com.br'])], ctxAt);
