@@ -1,205 +1,96 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Acompanhe e trate as considerações de qualidade registradas para você." />
-  <meta name="robots" content="noindex" />
-  <title>Minhas tratativas | Grupo-E</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <style>
-    *{margin:0;padding:0;box-sizing:border-box}
-    :root{
-      --green:#1a4233;--green-light:#2a6e4a;--green-pale:#e8f4ef;
-      --gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;--gray-400:#94a3b8;--gray-500:#64748b;--gray-700:#334155;--gray-800:#1e293b;
-      --white:#fff;--red:#b91c1c;--amber:#b45309;--blue:#2563eb;--ok:#166534;--radius:12px;--shadow:0 4px 16px rgba(0,0,0,.08);
-    }
-    body{font-family:'Inter',sans-serif;background:var(--gray-50);color:var(--gray-800);min-height:100vh}
-    #login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
-    .login-card{background:var(--white);border-radius:16px;box-shadow:0 8px 40px rgba(0,0,0,.12);padding:40px;width:100%;max-width:400px}
-    .login-title{font-size:20px;font-weight:800;color:var(--green);text-align:center;margin-bottom:6px}
-    .login-sub{font-size:13px;color:var(--gray-400);text-align:center;margin-bottom:24px}
-    .field label{display:block;font-size:12px;font-weight:700;color:var(--gray-500);margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
-    .field input,.field select,.field textarea{width:100%;padding:10px 14px;border:1px solid var(--gray-200);border-radius:8px;font:inherit;font-size:14px;outline:none}
-    .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--green)}
-    .field{margin-bottom:14px}
-    .btn-login{width:100%;padding:12px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px}
-    .btn-login:hover{background:var(--green-light)}
-    .login-err{color:var(--red);font-size:13px;text-align:center;margin-top:10px;display:none}
-    #app-screen{display:none}
-    .topbar{background:var(--green);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
-    .topbar-title{color:#fff;font-weight:800;font-size:16px}
-    .topbar-right{display:flex;align-items:center;gap:12px}
-    .topbar-user{color:rgba(255,255,255,.85);font-size:13px}
-    .btn-sair{background:rgba(255,255,255,.15);color:#fff;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:12.5px}
-    .btn-sair:hover{background:rgba(255,255,255,.25)}
-    #menu-usuario .mu-btn{background:#fff;color:#1a4233;border-color:transparent}
-    #menu-usuario .mu-btn:hover{background:#f1f5f9}
-    .container{max-width:860px;margin:0 auto;padding:24px 20px 60px}
-    .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
-    .kpi{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px}
-    .kpi .t{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--gray-500)}
-    .kpi .v{font-size:26px;font-weight:800;margin-top:2px}
-    .card{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;margin-bottom:14px}
-    .card-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
-    .pill{display:inline-block;border:1px solid;border-radius:20px;padding:1px 10px;font-size:11.5px;font-weight:700}
-    .tipo{font-weight:800;font-size:14.5px}
-    .deps{font-size:12px;color:var(--gray-500)}
-    .txt{font-size:14px;margin:6px 0;white-space:pre-wrap}
-    .meta{font-size:12px;color:var(--gray-500)}
-    .trat{font-size:13px;margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--gray-100)}
-    .acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-    .btn{border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer}
-    .btn-p{background:var(--green);color:#fff}.btn-p:hover{background:var(--green-light)}
-    .btn-s{background:var(--gray-100);color:var(--gray-700)}.btn-s:hover{background:var(--gray-200)}
-    .tratar{margin-top:12px;display:none}
-    .tratar.aberto{display:block}
-    .erro{color:var(--red);font-size:12.5px;margin-top:6px}
-    .vazio{text-align:center;color:var(--gray-400);padding:34px 10px;font-size:14px}
-    h2.sec{font-size:12px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.05em;margin:20px 0 10px}
-  </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="Portal do analista: tratativas de qualidade, atendimentos, e-mails e prioridades. Acesso com login." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Grupo-E" />
+  <meta property="og:locale" content="pt_BR" />
+  <meta property="og:title" content="Portal do Analista | Grupo-E" />
+  <meta property="og:description" content="Portal do analista: tratativas de qualidade, atendimentos, e-mails e prioridades. Acesso com login." />
+  <meta name="twitter:card" content="summary" />
+  <title>Portal do Analista | Grupo-E</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/cs-painel.css?v=26">
 </head>
 <body>
 
+<!-- LOGIN (contas do Grupo-E) -->
 <div id="login-screen">
-  <div class="login-card">
-    <div class="login-title">✅ Minhas tratativas</div>
-    <div class="login-sub">Qualidade — Grupo-E</div>
-    <div class="field"><label for="l-email">E-mail</label><input id="l-email" type="email" placeholder="seu@email.com" /></div>
-    <div class="field"><label for="l-senha">Senha</label><input id="l-senha" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter') login()" /></div>
-    <button class="btn-login" onclick="login()">Entrar</button>
-    <div class="login-err" id="l-err"></div>
-  </div>
+  <form class="login-box" id="login-form" autocomplete="on">
+    <div class="login-logo"><div class="login-dot"></div><h2>Portal do Analista <span>/ Grupo-E</span></h2></div>
+    <div class="login-title">Bem-vindo 👋</div>
+    <div class="login-sub">Entre com o mesmo e-mail e senha do sistema Grupo-E.</div>
+    <label class="login-label" for="inp-email">E-mail</label>
+    <input class="login-input" type="email" id="inp-email" autocomplete="username" required>
+    <label class="login-label" for="inp-senha">Senha</label>
+    <input class="login-input" type="password" id="inp-senha" autocomplete="current-password" required>
+    <button class="login-btn" type="submit" id="login-btn">Entrar</button>
+    <div class="login-err" id="login-err" role="alert"></div>
+  </form>
 </div>
 
-<div id="app-screen">
-  <div class="topbar">
-    <div class="topbar-title">✅ Minhas tratativas</div>
-    <div class="topbar-right">
-      <button class="btn-sair" onclick="carregar()">Atualizar</button>
-      <div id="menu-usuario"></div>
+<!-- APLICATIVO -->
+<div id="app">
+ <div class="gp-layout">
+  <aside class="gp-sidebar">
+    <div class="gp-sidebar-logo">
+      <img src="/img/logo-grupo-e.png" alt="Grupo-E">
+      <div class="gp-sidebar-id">
+        <span class="gp-sidebar-dot"></span>
+        <div>
+          <div class="gp-sidebar-title">Portal do Analista</div>
+          <div class="gp-sidebar-sub" id="sub-analista">Tratativas, atendimentos e e-mails</div>
+        </div>
+      </div>
     </div>
-  </div>
-  <div class="container" id="conteudo"><p class="vazio">Carregando…</p></div>
+    <nav class="gp-nav" id="nav">
+      <button class="gp-nav-item active" data-sec="visao"><span class="gp-nav-icon">🏠</span>Visão Geral</button>
+      <button class="gp-nav-item" data-sec="prioridades"><span class="gp-nav-icon">🚨</span>Prioridades<span class="gp-nav-badge" id="badge-prioridades"></span></button>
+      <div class="gp-nav-divider">Qualidade</div>
+      <button class="gp-nav-item" data-sec="tratativas"><span class="gp-nav-icon">✅</span>Tratativas<span class="gp-nav-badge" id="badge-tratativas"></span></button>
+      <div class="gp-nav-divider">Meu trabalho</div>
+      <button class="gp-nav-item" data-sec="nota"><span class="gp-nav-icon">🏆</span>Minha nota</button>
+      <button class="gp-nav-item" data-sec="atendimentos"><span class="gp-nav-icon">🎧</span>Meus atendimentos</button>
+      <button class="gp-nav-item" data-sec="emails"><span class="gp-nav-icon">📧</span>Meus e-mails</button>
+      <div class="gp-nav-divider">Acompanhamento</div>
+      <button class="gp-nav-item" data-sec="evolucao"><span class="gp-nav-icon">📈</span>Evolução semanal</button>
+    </nav>
+  </aside>
+
+  <main class="gp-main">
+    <div class="gp-header">
+      <div>
+        <div class="gp-header-title" id="titulo">Visão Geral</div>
+        <div class="gp-header-sub" id="subtitulo"></div>
+      </div>
+      <div class="gp-header-right">
+        <div class="filter-group" id="ver-como" style="display:none">
+          <span class="filter-label">Ver como</span>
+          <select class="gp-select" id="sel-analista"></select>
+        </div>
+        <div class="gp-live"><div class="gp-live-dot"></div> Ao vivo</div>
+        <div class="gp-update" id="atualizado"></div>
+        <button class="gp-footer-btn" style="width:auto;padding:4px 10px" id="btn-atualizar" title="Recarrega os dados">↻ Atualizar</button>
+        <div id="menu-usuario"></div>
+      </div>
+    </div>
+
+    <section class="gp-section ativa" id="sec-visao"></section>
+    <section class="gp-section" id="sec-prioridades"></section>
+    <section class="gp-section" id="sec-tratativas"></section>
+    <section class="gp-section" id="sec-nota"></section>
+    <section class="gp-section" id="sec-atendimentos"></section>
+    <section class="gp-section" id="sec-emails"></section>
+    <section class="gp-section" id="sec-evolucao"></section>
+  </main>
+ </div>
 </div>
 
 <script src="/js/menu-usuario.js?v=2"></script>
-<script>
-var _token = null, _user = null;
-var ROT = { aberto: 'Aberto', em_tratamento: 'Em tratamento', resolvido: 'Resolvido', cancelado: 'Cancelado', vencido: 'Vencido' };
-var COR = { aberto: '#b45309', em_tratamento: '#2563eb', resolvido: '#166534', cancelado: '#6b7280', vencido: '#b91c1c' };
-
-function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-function dt(s) { if (!s) return '—'; var x = String(s).slice(0, 10); return x.slice(8, 10) + '/' + x.slice(5, 7) + '/' + x.slice(0, 4); }
-
-async function login() {
-  var email = document.getElementById('l-email').value.trim();
-  var senha = document.getElementById('l-senha').value;
-  var err = document.getElementById('l-err');
-  err.style.display = 'none';
-  if (!email || !senha) { err.textContent = 'Preencha e-mail e senha.'; err.style.display = 'block'; return; }
-  var res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email, password: senha }) });
-  var data = await res.json().catch(function () { return {}; });
-  if (!res.ok) { err.textContent = data.error || 'Credenciais inválidas.'; err.style.display = 'block'; return; }
-  var u = data.user;
-  if (!(u.acesso_qualidade || u.role === 'administrador' || u.role === 'usuario')) {
-    err.textContent = 'Esse login não tem o acesso Qualidade. Fale com a liderança.'; err.style.display = 'block'; return;
-  }
-  _token = data.token; _user = u;
-  try { localStorage.setItem('ql_token', _token); localStorage.setItem('ql_user', JSON.stringify(_user)); } catch (e) { /* sem armazenamento */ }
-  mostrarApp();
-}
-
-function sair() {
-  _token = null; _user = null;
-  try { localStorage.removeItem('ql_token'); localStorage.removeItem('ql_user'); } catch (e) { /* sem armazenamento */ }
-  document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('app-screen').style.display = 'none';
-}
-
-function mostrarApp() {
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app-screen').style.display = 'block';
-  if (window.MenuUsuario) {
-    window.MenuUsuario.montar({
-      alvo: document.getElementById('menu-usuario'), usuario: _user, chamar: api,
-      aoSair: sair,
-      aoAtualizar: function (novo) {
-        _user = Object.assign(_user, { name: novo.name, email: novo.email });
-        try { localStorage.setItem('ql_user', JSON.stringify(_user)); } catch (e) { /* sem armazenamento */ }
-      },
-    });
-  }
-  carregar();
-}
-
-function api(path, opts) {
-  var o = Object.assign({}, opts || {});
-  o.headers = Object.assign({ Authorization: 'Bearer ' + _token }, o.headers || {});
-  return fetch(path, o);
-}
-
-function cartao(r) {
-  var aberto = r.status === 'aberto' || r.status === 'em_tratamento';
-  var c = COR[r.situacao] || '#6b7280';
-  var h = '<div class="card" id="r-' + esc(r.id) + '"><div class="card-top"><span class="pill" style="color:' + c + ';border-color:' + c + '55;background:' + c + '14">' + esc(ROT[r.situacao] || r.situacao) + '</span>' +
-    '<span class="tipo">' + esc(r.tipo) + '</span><span class="deps">· ' + esc((r.departamentos || []).join(', ')) + '</span></div>' +
-    '<div class="meta"><strong>' + esc(r.cliente_nome || 'Cliente') + '</strong> · lançado em ' + dt(r.criado_em) + ' por ' + esc(r.criado_por || '—') + ' · prazo <strong>' + dt(r.prazo) + '</strong>' +
-    (r.resolvido_em ? ' · resolvido em ' + dt(r.resolvido_em) : '') + '</div>' +
-    '<div class="txt">' + esc(r.detalhe) + '</div>' +
-    (r.tratativa ? '<div class="trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '');
-  if (aberto) {
-    h += '<div class="acoes">' +
-      (r.status === 'aberto' ? '<button class="btn btn-s" onclick="iniciar(\'' + esc(r.id) + '\')">Iniciar tratativa</button>' : '') +
-      '<button class="btn btn-p" onclick="abrirResolver(\'' + esc(r.id) + '\')">Resolver</button></div>' +
-      '<div class="tratar" id="t-' + esc(r.id) + '"><div class="field" style="margin-bottom:8px"><label>O que foi feito?</label><textarea rows="3" maxlength="600" id="tx-' + esc(r.id) + '" placeholder="Descreva a solução ou o que foi combinado com o cliente"></textarea></div>' +
-      '<button class="btn btn-p" onclick="resolver(\'' + esc(r.id) + '\')">Confirmar resolução</button><div class="erro" id="e-' + esc(r.id) + '"></div></div>';
-  }
-  return h + '</div>';
-}
-
-async function carregar() {
-  var box = document.getElementById('conteudo');
-  box.innerHTML = '<p class="vazio">Carregando…</p>';
-  var res = await api('/api/qualidade/minhas');
-  if (res.status === 401) { sair(); return; }
-  var j = await res.json().catch(function () { return {}; });
-  if (!res.ok) { box.innerHTML = '<div class="card"><p class="vazio">' + esc(j.error || 'Não foi possível carregar suas tratativas.') + '</p></div>'; return; }
-  if (!j.analista) { box.innerHTML = '<div class="card"><p class="vazio">' + esc(j.aviso || 'Seu login ainda não está ligado a um analista.') + '</p></div>'; return; }
-  var regs = j.registros;
-  var por = function (s) { return regs.filter(function (r) { return r.situacao === s; }); };
-  var pend = regs.filter(function (r) { return r.status === 'aberto' || r.status === 'em_tratamento'; });
-  var feitos = regs.filter(function (r) { return r.status === 'resolvido'; });
-  pend.sort(function (a, b) { return (a.situacao === 'vencido' ? 0 : 1) - (b.situacao === 'vencido' ? 0 : 1) || String(a.prazo).localeCompare(String(b.prazo)); });
-  box.innerHTML =
-    '<div class="kpis"><div class="kpi"><div class="t">Vencidos</div><div class="v" style="color:var(--red)">' + por('vencido').length + '</div></div>' +
-    '<div class="kpi"><div class="t">Em aberto</div><div class="v" style="color:var(--amber)">' + por('aberto').length + '</div></div>' +
-    '<div class="kpi"><div class="t">Em tratamento</div><div class="v" style="color:var(--blue)">' + por('em_tratamento').length + '</div></div>' +
-    '<div class="kpi"><div class="t">Resolvidos</div><div class="v" style="color:var(--ok)">' + feitos.length + '</div></div></div>' +
-    '<h2 class="sec">Para tratar</h2>' + (pend.length ? pend.map(cartao).join('') : '<div class="card"><p class="vazio">Nada pendente. Bom trabalho!</p></div>') +
-    (feitos.length ? '<h2 class="sec">Resolvidos</h2>' + feitos.map(cartao).join('') : '');
-}
-
-async function acao(id, corpo, erroEl) {
-  var res = await api('/api/qualidade/' + encodeURIComponent(id) + '/tratar', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
-  var j = await res.json().catch(function () { return {}; });
-  if (!res.ok) { if (erroEl) erroEl.textContent = j.error || 'Não foi possível salvar.'; else alert(j.error || 'Não foi possível salvar.'); return false; }
-  return true;
-}
-async function iniciar(id) { if (await acao(id, { status: 'em_tratamento' })) carregar(); }
-function abrirResolver(id) { document.getElementById('t-' + id).classList.toggle('aberto'); }
-async function resolver(id) {
-  var erro = document.getElementById('e-' + id); erro.textContent = '';
-  var tx = document.getElementById('tx-' + id).value.trim();
-  if (tx.length < 5) { erro.textContent = 'Descreva o que foi feito (mínimo de 5 caracteres).'; return; }
-  if (await acao(id, { status: 'resolvido', tratativa: tx }, erro)) carregar();
-}
-
-window.addEventListener('load', function () {
-  var t = null, u = null;
-  try { t = localStorage.getItem('ql_token'); u = localStorage.getItem('ql_user'); } catch (e) { /* sem armazenamento */ }
-  if (t && u) { try { _token = t; _user = JSON.parse(u); mostrarApp(); } catch (e) { sair(); } }
-});
-</script>
+<script src="/js/qualidade.js?v=1"></script>
 </body>
 </html>
