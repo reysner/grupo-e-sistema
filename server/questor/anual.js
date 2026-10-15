@@ -109,7 +109,10 @@ const GENERICO = 'Lucro (Presumido/Real)';
 const ROTULO_ECF = { 'LUCRO REAL': 'Lucro Real', 'LUCRO PRESUMIDO': 'Lucro Presumido', 'LUCRO ARBITRADO': 'Lucro Arbitrado', 'ISENTO DO IRPJ': 'Isenta do IRPJ', 'IMUNE DO IRPJ': 'Imune do IRPJ' };
 function rotuloEcf(f) {
   const t = String(f || '').toUpperCase().trim();
-  return ROTULO_ECF[t] || (t ? t.charAt(0) + t.slice(1).toLowerCase() : null);
+  if (ROTULO_ECF[t]) return ROTULO_ECF[t];
+  if (/IMUNE/.test(t)) return 'Imune do IRPJ';
+  if (/ISENT/.test(t)) return 'Isenta do IRPJ';
+  return t ? t.charAt(0) + t.slice(1).toLowerCase() : null;
 }
 function regimeDaReceita(j, ano) {
   if (!j || typeof j !== 'object') return null;

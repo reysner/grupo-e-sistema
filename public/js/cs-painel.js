@@ -672,18 +672,35 @@
     return a !== REGIME_GENERICO && b !== REGIME_GENERICO;          // dois regimes específicos e diferentes
   }
   var ROT_REGRA = { ambos: 'faturamento e funcionários', fat: 'faturamento', func: 'funcionários' };
+  /** Regime como chip colorido e curto: Simples, Presumido, Real (Imune/Isenta em cinza). O texto completo fica no title. */
+  function chipRegime(r) {
+    if (!r) return '<span class="cinza">—</span>';
+    var t = String(r), cls = 'rg-outro', curto = t;
+    if (/simples/i.test(t)) { cls = 'rg-simples'; curto = 'Simples'; }
+    else if (/presumido/i.test(t)) { cls = 'rg-presumido'; curto = 'Presumido'; }
+    else if (/real/i.test(t)) { cls = 'rg-real'; curto = 'Real'; }
+    else if (/imune/i.test(t)) { cls = 'rg-outro'; curto = 'Imune'; }
+    else if (/isent/i.test(t)) { cls = 'rg-outro'; curto = 'Isenta'; }
+    return '<span class="chip-regime ' + cls + '" title="' + esc(t) + '">' + esc(curto) + '</span>';
+  }
+  function celRegime(rp, rc, mudou, ano) {
+    if (!rp && !rc) return '<span class="cinza">—</span>';
+    if (mudou) return '<span class="regime-muda" title="O regime mudou entre ' + (ano - 1) + ' e ' + ano + '">' + chipRegime(rp) + '<span class="regime-seta" aria-hidden="true">→</span>' + chipRegime(rc) + '</span>';
+    return chipRegime(rc || rp);
+  }
   /** Aviso (passar o mouse) de um cliente sem faturamento usado no ano: o total do relatório do Questor não fecha com a soma dos meses. */
   function avisoFatAnual(anos, ano) { var x = anos && anos[ano]; return x && x.faturamento == null && x.aviso ? x.aviso : ''; }
   function semDadoFat(anos, ano) {
     var av = avisoFatAnual(anos, ano);
     return av ? '<span class="cinza aviso-fat" tabindex="0" title="' + esc(av) + '" aria-label="' + esc(av) + '">sem dado ⚠</span>' : '<span class="cinza">sem dado</span>';
   }
-  /** Destaque pela regra escolhida: "ambos" exige que as DUAS variações (faturamento e funcionários) estejam no limite ou acima. */
+  /** Destaque pela regra escolhida: "ambos" exige as DUAS variações (faturamento e funcionários) no limite ou acima; quando não há folha para comparar, vale o faturamento. */
   function destaqueLinha(l, regra) {
     var r = regra || filtroAnual().regra || 'ambos';
     if (r === 'fat') return destaqueAnual(l.v);
     if (r === 'func') return destaqueAnual(l.vf);
-    return destaqueAnual(l.v) && destaqueAnual(l.vf);
+    // "ambos": faturamento E funcionários no limite; sem folha nos dois anos (vf nulo) decide só o faturamento
+    return destaqueAnual(l.v) && (l.vf == null || destaqueAnual(l.vf));
   }
   function linhasAnual() {
     var d = estado.dados, f = filtroAnual(), ac = anosAnual(), mapa = mapaAnual();
@@ -725,17 +742,17 @@
       var c = l.c, dest = destaqueLinha(l);
       var vTxt = l.v != null ? celVar(l.v, destaqueAnual(l.v)) : (l.prev === 0 && l.cur > 0 ? '<span class="pill" style="color:#2563eb;border-color:#2563eb55;background:#2563eb14">novo</span>' : '<span class="cinza">—</span>');
       var funcTxt = l.fp == null && l.fc == null ? '<span class="cinza">sem folha</span>' : (l.fp == null ? '—' : l.fp) + ' → ' + (l.fc == null ? '—' : l.fc);
-      var regTxt = l.rp || l.rc ? (l.mudouRegime ? '<span class="pill" style="color:#7c3aed;border-color:#7c3aed55;background:#7c3aed14" title="O regime mudou entre ' + (ano - 1) + ' e ' + ano + '">' + esc(l.rp) + ' → ' + esc(l.rc) + '</span>' : esc(l.rc || l.rp)) : '<span class="cinza">—</span>';
+      var regTxt = celRegime(l.rp, l.rc, l.mudouRegime, ano);
       return '<tr><td style="white-space:normal;min-width:200px"><button class="link" data-anual="' + esc(l.doc) + '">' + esc(c.nome) + '</button><div class="sub">' + esc(c.cnpj || '') + '</div></td>' +
         '<td class="c">' + pillCat(c) + '</td>' +
-        '<td class="c" style="white-space:normal">' + regTxt + '</td>' +
+        '<td class="c">' + regTxt + '</td>' +
         '<td class="c" style="font-family:var(--mono)">' + (l.anos && l.prev != null ? reais(l.prev) : semDadoFat(l.anos, ano - 1)) + '</td>' +
         '<td class="c" style="font-family:var(--mono)">' + (l.anos && l.cur != null ? reais(l.cur) : semDadoFat(l.anos, ano)) + '</td>' +
         '<td class="c">' + vTxt + '</td>' +
         '<td class="c">' + funcTxt + '</td>' +
         '<td class="c">' + celVar(l.vf, destaqueAnual(l.vf)) + '</td>' +
         '<td class="c" style="font-family:var(--mono)">' + reais(c.honorario) + '</td>' +
-        '<td class="c">' + (dest ? '<span class="pill" style="color:#b45309;border-color:#b4530955;background:#b4530914" title="' + esc(pctTxt(X)) + '% ou mais em ' + esc(ROT_REGRA[regra]) + ': avaliar reajuste do honorário">Rever honorário</span>' : '') + '</td></tr>';
+        '<td class="c">' + (dest ? '<span class="pill" style="color:#b45309;border-color:#b4530955;background:#b4530914" title="' + esc(pctTxt(X)) + '% ou mais em ' + esc(ROT_REGRA[regra]) + (regra === 'ambos' && l.vf == null ? ' (sem folha para comparar: decidido pelo faturamento)' : '') + ': avaliar reajuste do honorário">Rever honorário</span>' : '') + '</td></tr>';
     }).join('');
     var optAnos = ac.completos.map(function (y) { return '<option value="' + y + '"' + (y === ano ? ' selected' : '') + '>' + y + ' × ' + (y - 1) + '</option>'; }).join('');
     var optRegra = Object.keys(ROT_REGRA).map(function (k) { return '<option value="' + k + '"' + (k === regra ? ' selected' : '') + '>' + esc(ROT_REGRA[k].charAt(0).toUpperCase() + ROT_REGRA[k].slice(1)) + '</option>'; }).join('');
@@ -750,13 +767,13 @@
       '</div>' +
       '<div class="nota"><strong>Fontes.</strong> Faturamento por ano civil: Questor (módulo Fiscal). Funcionários: total de empregados ativos no <strong>último mês com folha</strong> de cada ano (Questor, Folha); a contagem é por empresa e fica na matriz. ' +
         'Regime: <strong>Receita Federal</strong> (ECF e opção pelo Simples; para anos ainda sem ECF vale a última conhecida, indicada na ficha). O cadastro de regime do Questor não é usado. ' +
-        'Só clientes <strong>ativos no Acessórias</strong>.' + esc(parcial) + ' Com a regra "faturamento e funcionários", clientes sem folha não são destacados. O limite de ' + esc(pctTxt(X)) + '% é um só para a equipe' + (cfgAnual().pode_editar ? ' (botão % no título da coluna Variação).' : '.') + '</div>' +
+        'Só clientes <strong>ativos no Acessórias</strong>.' + esc(parcial) + ' Com a regra "faturamento e funcionários", quem não tem folha nos dois anos é decidido só pelo faturamento. O limite de ' + esc(pctTxt(X)) + '% é um só para a equipe' + (cfgAnual().pode_editar ? ' (botão % no título da coluna Variação).' : '.') + '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="n-busca" placeholder="Empresa ou CNPJ" value="' + esc(f.busca) + '">' +
         '<span class="filter-label">Comparar</span><select class="gp-select" id="n-ano">' + optAnos + '</select>' +
         '<span class="filter-label">Destacar quem subiu</span><select class="gp-select" id="n-regra">' + optRegra + '</select>' +
         '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="n-dest"' + (f.soDestaque ? ' checked' : '') + '> só os destacados</label></div>' +
         '<div class="card-sub">' + r.linhas.length + ' cliente(s) · ' + comFunc + ' com folha nos dois anos · ordem: maior alta de faturamento primeiro. Clique na empresa para ver ano a ano.</div>' +
-        (r.linhas.length ? '<div class="table-wrap"><table class="tab-analise"><colgroup><col style="width:21%"><col style="width:9%"><col style="width:13%"><col style="width:10%"><col style="width:10%"><col style="width:7%"><col style="width:8%"><col style="width:6%"><col style="width:8%"><col style="width:8%"></colgroup>' +
+        (r.linhas.length ? '<div class="table-wrap"><table class="tab-analise"><colgroup><col style="width:19%"><col style="width:8%"><col style="width:17%"><col style="width:10%"><col style="width:10%"><col style="width:7%"><col style="width:8%"><col style="width:6%"><col style="width:8%"><col style="width:7%"></colgroup>' +
           '<thead><tr><th>Razão social</th><th class="c">Categoria</th><th class="c">Regime ' + (ano - 1) + ' → ' + ano + '</th><th class="c">Faturamento ' + (ano - 1) + '</th><th class="c">Faturamento ' + ano + '</th>' +
           '<th class="c">Variação ' + botaoPctAnual() + '</th><th class="c">Funcionários</th><th class="c">Variação</th><th class="c">Honorário mensal</th><th class="c">Análise</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' + paginacaoHtml(r.linhas.length, f.pag, ANALISE_POR_PAGINA)
           : '<div class="vazio">Nenhum cliente neste filtro.</div>') + '</div>';
@@ -830,7 +847,7 @@
         '<td style="min-width:90px"><div class="barra-ano" style="width:' + larg + '%"></div></td>' +
         '<td class="c">' + (x.funcionarios == null ? '<span class="cinza">sem folha</span>' : x.funcionarios) + '</td>' +
         '<td class="c">' + (parcial ? '' : celVar(vf, destaqueAnual(vf))) + '</td>' +
-        '<td class="c" style="white-space:normal">' + (x.regime ? (mud ? '<strong>' + esc(x.regime) + '</strong>' : esc(x.regime)) + (x.regime_fonte ? '<div class="sub">' + esc(x.regime_fonte) + '</div>' : '') : '<span class="cinza">—</span>') + '</td></tr>';
+        '<td class="c" style="white-space:normal">' + (x.regime ? chipRegime(x.regime) + (mud ? ' <span class="regime-seta" title="Mudou em relação ao ano anterior">●</span>' : '') + (x.regime_fonte ? '<div class="sub">' + esc(x.regime_fonte) + '</div>' : '') : '<span class="cinza">—</span>') + '</td></tr>';
     }).join('');
     var ultComp = ac.completos.length ? ac.completos[ac.completos.length - 1] : null;
     var A1 = ultComp && anos[ultComp - 1] ? anos[ultComp - 1] : null, A2 = ultComp && anos[ultComp] ? anos[ultComp] : null;
@@ -844,7 +861,7 @@
     else partes.push('sem folha nos dois anos para comparar funcionários');
     var ambos = destaqueAnual(v) && destaqueAnual(vf);
     passo.innerHTML = '<strong>Leitura:</strong> em ' + ultComp + ' sobre ' + (ultComp - 1) + ', ' + partes.join('; ') + '.' +
-      (ambos ? ' Os dois passaram do limite de ' + esc(pctTxt(X)) + ': vale avaliar reajuste do honorário.' : (destaqueAnual(v) ? ' O faturamento passou do limite de ' + esc(pctTxt(X)) + '%, sem acompanhamento de funcionários.' : '')) +
+      (ambos ? ' Os dois passaram do limite de ' + esc(pctTxt(X)) + ': vale avaliar reajuste do honorário.' : (destaqueAnual(v) && vf == null ? ' O faturamento passou do limite de ' + esc(pctTxt(X)) + '% e não há folha para comparar: vale avaliar reajuste do honorário.' : (destaqueAnual(v) ? ' O faturamento passou do limite de ' + esc(pctTxt(X)) + '%, mas os funcionários não acompanharam.' : ''))) +
       (sug != null && c.honorario != null && !valoresOcultos() ? ' Com o faturamento de ' + ultComp + ', o honorário sugerido é ' + esc(moedaTxt(sug)) + ' por mês (hoje cobra ' + esc(moedaTxt(c.honorario)) + ').' : '');
     var q = c.questor;
     var blocos = '<div class="blocos">' +

@@ -270,3 +270,18 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 /* ── Análise Anual ── */
 .an-baixo-up{color:#b45309;}
 .barra-ano{height:10px;border-radius:5px;background:var(--brand,#256050);opacity:.75;}
+
+/* ── Regime em chips (Análise Anual) ── */
+.chip-regime{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700;line-height:1.5;border:1px solid transparent;white-space:nowrap;}
+.rg-simples{color:#047857;background:rgba(16,185,129,.14);border-color:rgba(16,185,129,.38);}
+.rg-presumido{color:#1d4ed8;background:rgba(37,99,235,.12);border-color:rgba(37,99,235,.34);}
+.rg-real{color:#7c3aed;background:rgba(124,58,237,.12);border-color:rgba(124,58,237,.34);}
+.rg-outro{color:var(--text2);background:var(--surface2);border-color:var(--border);}
+.regime-muda{display:inline-flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:4px 5px;padding:3px 7px;border-radius:999px;background:rgba(217,119,6,.10);box-shadow:inset 0 0 0 1px rgba(217,119,6,.45);}
+.regime-muda .chip-regime{padding:1px 8px;font-size:11.5px;}
+.regime-seta{color:#b45309;font-weight:700;font-size:13px;}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .rg-simples{color:#6ee7b7;}
+  :root:not([data-theme="light"]) .rg-presumido{color:#93c5fd;}
+  :root:not([data-theme="light"]) .rg-real{color:#c4b5fd;}
+}

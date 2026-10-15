@@ -203,7 +203,7 @@ const semLixo = (e, nome) => {
     assert.strictEqual(r.ano, 2025);
     assert.strictEqual(r.linhas.length, 4);                                                // 3 CNPJ + 1 CPF da lista; o 99999999000199 não aparece
     assert.strictEqual(r.linhas[0].c.nome, 'GAMA LTDA');                                   // maior alta de faturamento primeiro (+50%)
-    assert.strictEqual(r.subiram, 1);                                                      // regra "ambos": só a ALFA (fat +40% e func +40%); a GAMA não tem folha
+    assert.strictEqual(r.subiram, 2);                                                      // "ambos": ALFA (fat +40% e func +40%) e GAMA (+50%, sem folha: decide o faturamento)
     assert.strictEqual(r.mudaram, 1);
     const alfa = r.linhas.find((l) => l.c.nome === 'ALFA LTDA');
     assert.deepStrictEqual([alfa.fp, alfa.fc, alfa.vf, alfa.rp, alfa.rc, alfa.mudouRegime], [10, 14, 40, 'Simples Nacional', 'Lucro Presumido', true]);
@@ -213,13 +213,14 @@ const semLixo = (e, nome) => {
     assert.strictEqual(C.t.linhasAnual().subiram, 2);                                      // ALFA (+40%) e ALFA FILIAL (+30%, exatamente no limite)
     E.filtroAnual.regra = 'ambos';
     E.filtroAnual.soDestaque = true;
-    assert.deepStrictEqual(C.t.linhasAnual().linhas.map((l) => l.c.nome), ['ALFA LTDA']);
+    assert.deepStrictEqual(C.t.linhasAnual().linhas.map((l) => l.c.nome), ['GAMA LTDA', 'ALFA LTDA']);
     E.filtroAnual.soDestaque = false;
     const x = C.t.dadosExport('anual');
     semLixo(x, 'cs/anual');
     const lin = x.linhas.find((l) => l[0] === 'ALFA LTDA');
     assert.deepStrictEqual([lin[3], lin[4], lin[5], lin[6], lin[7], lin[8], lin[9], lin[10], lin[12]], ['Simples Nacional', 'Lucro Presumido', 1000, 1400, 40, 10, 14, 40, 'Sim']);
-    assert.strictEqual(x.linhas.find((l) => l[0] === 'GAMA LTDA')[12], '');                // sem folha: não destaca na regra "ambos"
+    assert.strictEqual(x.linhas.find((l) => l[0] === 'GAMA LTDA')[12], 'Sim');             // sem folha: decide o faturamento (+50%)
+    assert.strictEqual(x.linhas.find((l) => l[0] === 'ALFA FILIAL LTDA')[12], '');         // fat +25%: abaixo do limite
     E.ocultar = true;
     assert.ok(C.t.dadosExport('anual').linhas.every((l) => l[5] === 'oculto' || l[5] === 'sem dado'), 'valores ocultos vazaram na análise anual');
     E.ocultar = false;
