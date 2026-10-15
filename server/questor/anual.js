@@ -98,25 +98,37 @@ function rotuloRegime(doc, { simples, presumido, real }) {
 }
 
 /**
- * Regime tributário do ano pelos dados abertos da Receita Federal (via BrasilAPI /cnpj/v1): 
- *  1. forma de tributação declarada na ECF daquele ano (regime_tributario[]: LUCRO REAL, LUCRO PRESUMIDO, ISENTO DO IRPJ...);
- *  2. senão, período de opção pelo Simples Nacional (data_opcao_pelo_simples / data_exclusao_do_simples) que cubra o fim do ano.
- * Devolve { regime, fonte } ou null (sem informação). Função PURA.
+ * Regime tributário do ano pelos dados abertos da Receita Federal (via BrasilAPI /cnpj/v1). Ordem:
+ *  1. forma de tributação declarada na ECF daquele ano (LUCRO REAL, LUCRO PRESUMIDO, ISENTO DO IRPJ...);
+ *  2. opção pelo Simples Nacional que cubra o fim do ano (data_opcao_pelo_simples / data_exclusao_do_simples);
+ *  3. sem ECF do ano (a Receita publica com ~2 anos de atraso): vale a última ECF anterior, se o cliente não passou pelo Simples depois dela;
+ *  4. saiu do Simples antes do fim do ano e não há ECF: "Lucro (Presumido/Real)" (sabe-se só que deixou o Simples).
+ * Devolve { regime, fonte } ou null (a Receita não informa). Função PURA. O cadastro de regime do Questor NÃO entra aqui: não é confiável.
  */
+const GENERICO = 'Lucro (Presumido/Real)';
 const ROTULO_ECF = { 'LUCRO REAL': 'Lucro Real', 'LUCRO PRESUMIDO': 'Lucro Presumido', 'LUCRO ARBITRADO': 'Lucro Arbitrado', 'ISENTO DO IRPJ': 'Isenta do IRPJ', 'IMUNE DO IRPJ': 'Imune do IRPJ' };
+function rotuloEcf(f) {
+  const t = String(f || '').toUpperCase().trim();
+  return ROTULO_ECF[t] || (t ? t.charAt(0) + t.slice(1).toLowerCase() : null);
+}
 function regimeDaReceita(j, ano) {
   if (!j || typeof j !== 'object') return null;
-  const lista = Array.isArray(j.regime_tributario) ? j.regime_tributario : [];
-  const doAno = lista.filter((x) => Number(x.ano) === ano && !x.cnpj_da_scp);
-  if (doAno.length) {
-    const f = String(doAno[0].forma_de_tributacao || '').toUpperCase().trim();
-    const rot = ROTULO_ECF[f] || (f ? f.charAt(0) + f.slice(1).toLowerCase() : null);
-    if (rot) return { regime: rot, fonte: 'Receita (ECF)' };
-  }
-  const fimAno = `${ano}-12-31`;
+  const ecf = (Array.isArray(j.regime_tributario) ? j.regime_tributario : []).filter((x) => !x.cnpj_da_scp && x.ano != null && rotuloEcf(x.forma_de_tributacao));
+  const doAno = ecf.find((x) => Number(x.ano) === ano);
+  if (doAno) return { regime: rotuloEcf(doAno.forma_de_tributacao), fonte: 'Receita (ECF ' + ano + ')' };
+  const fimAno = ano + '-12-31';
   const opc = j.data_opcao_pelo_simples ? String(j.data_opcao_pelo_simples).slice(0, 10) : null;
   const exc = j.data_exclusao_do_simples ? String(j.data_exclusao_do_simples).slice(0, 10) : null;
   if (opc && opc <= fimAno && (!exc || exc > fimAno)) return { regime: j.opcao_pelo_mei ? 'MEI' : 'Simples Nacional', fonte: 'Receita (Simples)' };
+  const anteriores = ecf.filter((x) => Number(x.ano) < ano).sort((a, b) => Number(b.ano) - Number(a.ano));
+  const saiuDoSimples = exc && exc <= fimAno && opc && exc > opc;                      // período de Simples que já terminou
+  if (anteriores.length) {
+    const ult = anteriores[0], anoUlt = Number(ult.ano);
+    if (saiuDoSimples && Number(exc.slice(0, 4)) >= anoUlt) return { regime: GENERICO, fonte: 'Receita (saiu do Simples em ' + exc.slice(0, 4) + ')' };
+    if (opc && opc > anoUlt + '-12-31' && opc <= fimAno) return null;                  // entrou no Simples depois da última ECF e já saiu: sem base segura
+    return { regime: rotuloEcf(ult.forma_de_tributacao), fonte: 'Receita (última ECF: ' + anoUlt + ')' };
+  }
+  if (saiuDoSimples) return { regime: GENERICO, fonte: 'Receita (saiu do Simples em ' + exc.slice(0, 4) + ')' };
   return null;
 }
 

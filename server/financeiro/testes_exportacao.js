@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, regimeMudou: regimeMudou }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, regimeMudou: regimeMudou, semDadoFat: semDadoFat }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -183,15 +183,20 @@ const semLixo = (e, nome) => {
       ],
     };
     E.filtroAnual = { busca: '', ano: null, soDestaque: false, regra: 'ambos', pag: 1 };
-    // fontes diferentes não geram mudança falsa: 'Fora do Simples' (sem detalhe) contra um regime específico não conta
-    assert.strictEqual(C.t.regimeMudou('Lucro Presumido', 'Fora do Simples'), false);
-    assert.strictEqual(C.t.regimeMudou('Fora do Simples', 'Lucro Presumido'), false);
-    assert.strictEqual(C.t.regimeMudou('Simples Nacional', 'Fora do Simples'), true);
+    // fontes diferentes não geram mudança falsa: 'Lucro (Presumido/Real)' (sem detalhe) contra um regime específico não conta
+    assert.strictEqual(C.t.regimeMudou('Lucro Presumido', 'Lucro (Presumido/Real)'), false);
+    assert.strictEqual(C.t.regimeMudou('Lucro (Presumido/Real)', 'Lucro Presumido'), false);
+    assert.strictEqual(C.t.regimeMudou('Simples Nacional', 'Lucro (Presumido/Real)'), true);
     assert.strictEqual(C.t.regimeMudou('Simples Nacional', 'Lucro Presumido'), true);
     assert.strictEqual(C.t.regimeMudou('Lucro Presumido', 'Lucro Real'), true);
     assert.strictEqual(C.t.regimeMudou('Lucro Real', 'Lucro Real'), false);
     assert.strictEqual(C.t.regimeMudou(null, 'Lucro Real'), false);
     assert.deepStrictEqual([...C.t.anosAnual().completos], [2024, 2025]);                  // 2026 é parcial (8 meses) e fica de fora
+    // cliente sem faturamento usado: "sem dado" com o aviso ao passar o mouse (total do relatório não fecha com a soma dos meses)
+    const semAviso = C.t.semDadoFat({ 2025: { faturamento: null } }, 2025);
+    const comAviso = C.t.semDadoFat({ 2025: { faturamento: null, aviso: 'Faturamento não usado: o total do relatório do Questor (R$ 1,00) não fecha com a soma dos meses (R$ 2,00)' } }, 2025);
+    assert.ok(!/title=/.test(semAviso) && /sem dado/.test(semAviso));
+    assert.ok(/title="[^"]*não fecha com a soma dos meses/.test(comAviso));
     assert.strictEqual(C.t.varPct(1000, 1400), 40);
     assert.strictEqual(C.t.varPct(0, 500), null);
     const r = C.t.linhasAnual();

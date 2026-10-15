@@ -143,33 +143,26 @@ async function main() {
   }
   console.log(`funcionários: ${Object.keys(ativosPorEmp).length} empresas com folha processada`);
 
-  // ── Regime por ano: relações de optantes com Data Base (31/12 de cada ano; no ano corrente, o último dia do mês fechado) ──
-  const opcoes = {};   // ano -> { simples, presumido, real }
-  for (let ano = ANO_INICIAL; ano <= anoFim; ano++) {
-    const base = ano === anoFim ? `${ultimoDia(anoFim, mesFim)}/${String(mesFim).padStart(2, '0')}/${anoFim}` : `31/12/${ano}`;
-    const ler = async (acao) => parseOptantes(((await nweb.chamar(`/TnWebDMRelatorio/Executar?_AActionName=${acao}&_ABase64=False&_ATipoRetorno=nrwexCSV`, { PMODELO: '1', PDATABASE: base }, { timeoutMs: 240000 })).Data) || '');
-    opcoes[ano] = { simples: await ler('nFisRROpcaoSSimplesFederal'), presumido: await ler('nFisRROpcaoLucroPresumido'), real: await ler('nFisRROpcaoLalur') };
-  }
-  console.log('regime: ' + Object.keys(opcoes).map((a) => `${a}:${opcoes[a].simples.size}S`).join(' '));
-
   const receita = await lerReceita(presentes);
   // a contagem de funcionários é por EMPRESA do Questor: fica no documento do estabelecimento de menor código (a matriz) entre os clientes lidos
   const donoDaEmpresa = new Map();
   for (const d of presentes) { const m = noQuestor.get(d); const atual = donoDaEmpresa.get(m.emp); if (!atual || Number(m.est) < Number(noQuestor.get(atual).est)) donoDaEmpresa.set(m.emp, d); }
+  // regime só da Receita (o cadastro de regime do Questor não é confiável); sem informação da Receita fica em branco
   const regimeDoAno = (cnpj, ano) => {
     const rec = receita[cnpj] && receita[cnpj].j ? regimeDaReceita(receita[cnpj].j, ano) : null;
-    if (rec) return { regime: rec.regime, regime_fonte: rec.fonte };
-    return { regime: rotuloRegime(cnpj, opcoes[ano]), regime_fonte: 'Questor' };
+    return rec ? { regime: rec.regime, regime_fonte: rec.fonte } : { regime: null, regime_fonte: null };
   };
   const itens = presentes.map((cnpj) => {
     const m = noQuestor.get(cnpj), fat = resultado[cnpj] ? resultado[cnpj].anos : {};
+    const falha = falhas.find((f) => f.doc === cnpj);
+    const aviso = !resultado[cnpj] && falha ? 'Faturamento não usado: ' + falha.motivo.replace(/^soma dos meses \(([\d.]+)\) não bate com o TOTAL \(([\d.]+)\)$/, (_, a, b) => 'o total do relatório do Questor (R$ ' + Number(b).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ') não fecha com a soma dos meses (R$ ' + Number(a).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ')') : null;
     const meses = donoDaEmpresa.get(m.emp) === cnpj ? (ativosPorEmp[m.emp] || {}) : null;
     const anos = [];
     for (let ano = ANO_INICIAL; ano <= anoFim; ano++) {
       const f = fat[ano], fn = meses ? funcionariosDoAno(meses, ano) : { funcionarios: null, funcionarios_media: null };
       anos.push({
         ano, faturamento: f ? f.faturamento : null, meses: f ? f.meses : 0, meses_com_valor: f ? f.meses_com_valor : 0,
-        funcionarios: fn.funcionarios, funcionarios_media: fn.funcionarios_media, ...regimeDoAno(cnpj, ano),
+        funcionarios: fn.funcionarios, funcionarios_media: fn.funcionarios_media, ...regimeDoAno(cnpj, ano), aviso: f ? null : aviso,
       });
     }
     return { cnpj, anos };

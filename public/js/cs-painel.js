@@ -642,9 +642,14 @@
     for (var y = a.ano_inicial + 1; y <= ult; y++) completos.push(y);
     return { completos: completos, parcial: mes === 12 ? null : { ano: ano, mes: mes }, ini: a.ano_inicial };
   }
+  var REGIME_GENERICO = 'Lucro (Presumido/Real)';
   function mapaAnual() {
     var m = {};
-    ((estado.anual && estado.anual.itens) || []).forEach(function (it) { var o = {}; it.anos.forEach(function (x) { o[x.ano] = x; }); m[it.cnpj] = o; });
+    ((estado.anual && estado.anual.itens) || []).forEach(function (it) {
+      var o = {};
+      it.anos.forEach(function (x) { if (x.regime === 'Fora do Simples') x.regime = REGIME_GENERICO; o[x.ano] = x; });   // leitura antiga usava "Fora do Simples"
+      m[it.cnpj] = o;
+    });
     return m;
   }
   /** variação % de b sobre a; null quando não há base (a <= 0 ou ausente). */
@@ -663,9 +668,15 @@
     var simples = function (r) { return r === 'Simples Nacional' || r === 'MEI'; };
     if (simples(a) !== simples(b)) return true;
     if (simples(a) && simples(b)) return a !== b;                  // Simples <-> MEI
-    return a !== 'Fora do Simples' && b !== 'Fora do Simples';     // dois regimes específicos e diferentes
+    return a !== REGIME_GENERICO && b !== REGIME_GENERICO;          // dois regimes específicos e diferentes
   }
   var ROT_REGRA = { ambos: 'faturamento e funcionários', fat: 'faturamento', func: 'funcionários' };
+  /** Aviso (passar o mouse) de um cliente sem faturamento usado no ano: o total do relatório do Questor não fecha com a soma dos meses. */
+  function avisoFatAnual(anos, ano) { var x = anos && anos[ano]; return x && x.faturamento == null && x.aviso ? x.aviso : ''; }
+  function semDadoFat(anos, ano) {
+    var av = avisoFatAnual(anos, ano);
+    return av ? '<span class="cinza aviso-fat" tabindex="0" title="' + esc(av) + '" aria-label="' + esc(av) + '">sem dado ⚠</span>' : '<span class="cinza">sem dado</span>';
+  }
   /** Destaque pela regra escolhida: "ambos" exige que as DUAS variações (faturamento e funcionários) estejam no limite ou acima. */
   function destaqueLinha(l, regra) {
     var r = regra || filtroAnual().regra || 'ambos';
@@ -717,8 +728,8 @@
       return '<tr><td style="white-space:normal;min-width:200px"><button class="link" data-anual="' + esc(l.doc) + '">' + esc(c.nome) + '</button><div class="sub">' + esc(c.cnpj || '') + '</div></td>' +
         '<td class="c">' + pillCat(c) + '</td>' +
         '<td class="c" style="white-space:normal">' + regTxt + '</td>' +
-        '<td class="c" style="font-family:var(--mono)">' + (l.anos && l.prev != null ? reais(l.prev) : '<span class="cinza">sem dado</span>') + '</td>' +
-        '<td class="c" style="font-family:var(--mono)">' + (l.anos && l.cur != null ? reais(l.cur) : '<span class="cinza">sem dado</span>') + '</td>' +
+        '<td class="c" style="font-family:var(--mono)">' + (l.anos && l.prev != null ? reais(l.prev) : semDadoFat(l.anos, ano - 1)) + '</td>' +
+        '<td class="c" style="font-family:var(--mono)">' + (l.anos && l.cur != null ? reais(l.cur) : semDadoFat(l.anos, ano)) + '</td>' +
         '<td class="c">' + vTxt + '</td>' +
         '<td class="c">' + funcTxt + '</td>' +
         '<td class="c">' + celVar(l.vf, destaqueAnual(l.vf)) + '</td>' +
@@ -737,7 +748,7 @@
         kpi('#0f766e', 'Faturamento ' + ano, valoresOcultos() ? reais(null) : reais(totCur), pctDelta == null ? 'sem base para comparar' : pctAnual(pctDelta) + ' sobre ' + (ano - 1) + ' (clientes da lista)') +
       '</div>' +
       '<div class="nota"><strong>Fontes.</strong> Faturamento por ano civil: Questor (módulo Fiscal). Funcionários: total de empregados ativos no <strong>último mês com folha</strong> de cada ano (Questor, Folha); a contagem é por empresa e fica na matriz. ' +
-        'Regime: <strong>Receita Federal</strong> (ECF e opção pelo Simples); onde a Receita não informa, vale o cadastro do Questor, que pode estar desatualizado (fica indicado na ficha). ' +
+        'Regime: <strong>Receita Federal</strong> (ECF e opção pelo Simples; para anos ainda sem ECF vale a última conhecida, indicada na ficha). O cadastro de regime do Questor não é usado. ' +
         'Só clientes <strong>ativos no Acessórias</strong>.' + esc(parcial) + ' Com a regra "faturamento e funcionários", clientes sem folha não são destacados. O limite de ' + esc(pctTxt(X)) + '% é um só para a equipe' + (cfgAnual().pode_editar ? ' (botão % no título da coluna Variação).' : '.') + '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="n-busca" placeholder="Empresa ou CNPJ" value="' + esc(f.busca) + '">' +
         '<span class="filter-label">Comparar</span><select class="gp-select" id="n-ano">' + optAnos + '</select>' +
@@ -813,7 +824,7 @@
       var larg = Math.max(2, Math.round(Math.abs(fat) / max * 100));
       var mud = ant && regimeMudou(ant.regime, x.regime);
       return '<tr><td><strong>' + y + '</strong>' + (parcial ? ' <span class="cinza">até ' + String(ac.parcial.mes).padStart(2, '0') + '/' + y + '</span>' : '') + '</td>' +
-        '<td class="c" style="font-family:var(--mono)">' + (x.faturamento == null ? '<span class="cinza">sem dado</span>' : reais(x.faturamento)) + '</td>' +
+        '<td class="c" style="font-family:var(--mono)">' + (x.faturamento == null ? semDadoFat(anos, y) : reais(x.faturamento)) + '</td>' +
         '<td class="c">' + (parcial ? '<span class="cinza">parcial</span>' : celVar(v, destaqueAnual(v))) + '</td>' +
         '<td style="min-width:90px"><div class="barra-ano" style="width:' + larg + '%"></div></td>' +
         '<td class="c">' + (x.funcionarios == null ? '<span class="cinza">sem folha</span>' : x.funcionarios) + '</td>' +
@@ -841,7 +852,7 @@
       bloco('Regime tributário (hoje)', c.regime ? esc(c.regime) : '—', 'cadastro do Acessórias', null) + '</div>';
     $('ficha-corpo').innerHTML = blocos + '<div class="ficha-sec">Ano a ano</div>' +
       (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Ano</th><th class="c">Faturamento</th><th class="c">Variação</th><th></th><th class="c">Funcionários</th><th class="c">Variação</th><th class="c">Regime tributário</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' +
-        '<div class="nota" style="margin-top:10px">Funcionários: total do último mês com folha de cada ano. Regime: dados da Receita Federal; sem informação dela, vale o cadastro do Questor (indicado abaixo do nome do regime).</div>'
+        '<div class="nota" style="margin-top:10px">Funcionários: total do último mês com folha de cada ano. Regime: dados da Receita Federal; abaixo de cada regime está a fonte (ECF do ano, opção pelo Simples ou a última ECF conhecida). Faturamento: exatamente o que o Questor devolve.</div>'
         : '<div class="linha-item"><span class="x">Este cliente ainda não tem dados do Questor por ano.</span></div>');
   }
 
