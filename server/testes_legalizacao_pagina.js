@@ -32,7 +32,7 @@ const ctx = {
     getElementById: el, querySelectorAll: () => [], addEventListener() {}, createElement: () => el('x' + Math.random()),
     body: { appendChild() {} },
   },
-  localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+  localStorage: { getItem: (k) => (k === 'cs_user' ? (ctx.__user || null) : null), setItem() {}, removeItem() {} },
   fetch: async () => ({ ok: false, status: 500, json: async () => ({}) }),
   alert() {}, prompt() { return null; },
 };
@@ -154,6 +154,24 @@ teste('ficha abre para empresa sem cadastro no Acessórias sem botão de inativa
   T.desenharFicha(0);
   assert.ok(el('ficha-corpo').innerHTML.includes('data-acao="inativar"'));
   assert.ok(el('ficha-corpo').innerHTML.includes('data-acao="municipio"'));
+});
+teste('certificado que o cliente não renova: analista pede, administrador desativa; desativado sai de tudo', () => {
+  ctx.__user = JSON.stringify({ name: 'Analista', role: 'colaborador', acesso_legalizacao: true });
+  T.desenharLista('certificados');
+  let h = el('sec-certificados').innerHTML;
+  assert.ok(h.includes('data-acao="cert-sol"') && !h.includes('data-acao="cert-desat"'), 'analista vê só o pedido');
+  T.desenharFicha(0);
+  assert.ok(el('ficha-corpo').innerHTML.includes('data-acao="cert-sol"'));
+  ctx.__user = JSON.stringify({ name: 'Admin', role: 'administrador' });
+  T.desenharLista('certificados');
+  h = el('sec-certificados').innerHTML;
+  assert.ok(h.includes('data-acao="cert-desat"') && !h.includes('data-acao="cert-sol"'), 'administrador desativa direto');
+  assert.ok(!T.dadosExport('certificados').colunas.includes('Ação'), 'a coluna de ação não vai para a exportação');
+  const antes = T.contagem('cert_pj').total;
+  T.estado.linhas[0].cert.desativado = true;
+  assert.strictEqual(T.contagem('cert_pj').total, antes - 1, 'certificado desativado não é contado');
+  assert.ok(!T.docsPrioridade().some((r) => r.tipo === 'cert_pj' && r.l.cliente_id === 'a1'), 'nem aparece nas prioridades');
+  T.estado.linhas[0].cert.desativado = false; ctx.__user = null;
 });
 teste('evolução vazia não quebra', () => {
   T.estado.historico = [];

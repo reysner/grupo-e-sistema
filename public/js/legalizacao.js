@@ -195,8 +195,8 @@
 
   // ── modelo dos dados ─────────────────────────────────────────────────────
   function itemDe(l, tipo) {
-    if (tipo === 'cert_pj') return l.cert && l.cert.tipo === 'pj' ? l.cert : null;
-    if (tipo === 'cert_pf') return l.cert && l.cert.tipo === 'pf' ? l.cert : null;
+    if (tipo === 'cert_pj') return l.cert && l.cert.tipo === 'pj' && !l.cert.desativado ? l.cert : null;   // certificado desativado sai de tudo (deixa de ser cobrado)
+    if (tipo === 'cert_pf') return l.cert && l.cert.tipo === 'pf' && !l.cert.desativado ? l.cert : null;
     return l[tipo] || null;
   }
   function stDe(i) { return i && COR_ST[i.status] ? i.status : 'sem_data'; }
@@ -306,6 +306,17 @@
   var COL_OBS = { t: 'Observação', h: function (r) { var t = obsDe(r); return (r.i && r.i.a_conferir ? '<span class="pill" style="color:#b45309;border-color:#b4530955;background:#b4530914" title="Data lida do documento; falta alguém conferir">a conferir</span> ' : '') + (t ? esc(t) : (r.i && r.i.a_conferir ? '' : '<span class="cinza">—</span>')); }, x: function (r) { return (r.i && r.i.a_conferir ? '[a conferir] ' : '') + obsDe(r); } };
   var COL_NUM = { t: 'Nº do alvará', h: function (r) { return r.i && r.i.numero ? esc(r.i.numero) : '<span class="cinza">—</span>'; }, x: function (r) { return r.i && r.i.numero ? r.i.numero : ''; } };
 
+  function ehAdmin() { try { var u = JSON.parse(ls(K_USER) || 'null'); return !!u && u.role === 'administrador'; } catch (e) { return false; } }
+  /** Certificado que o cliente não vai renovar: o analista informa (pedido ao administrador); o administrador desativa na hora. */
+  function temBotaoCert(l) { return !!l && !!(itemDe(l, 'cert_pj') || itemDe(l, 'cert_pf')) && !!(l.cliente_id || (l.cert && l.cert.id)); }
+  function botaoCert(l) {
+    if (!temBotaoCert(l)) return '<span class="cinza">—</span>';
+    return ehAdmin()
+      ? '<button class="lg-acao perigo" data-acao="cert-desat" data-ix="' + l._ix + '" title="Desativa o certificado: sai da lista e dos indicadores e deixa de ser cobrado">🚫 Desativar</button>'
+      : '<button class="lg-acao perigo" data-acao="cert-sol" data-ix="' + l._ix + '" title="Cliente sem movimento ou que não quer renovar: avisa o administrador para desativar e parar a cobrança">📝 Não vai renovar</button>';
+  }
+  var COL_ACAO_CERT = { t: 'Ação', acao: true, h: function (r) { return botaoCert(r.l); }, x: function () { return ''; } };
+
   var SPECS = {
     prioridades: {
       arquivo: 'legalizacao-prioridades', titulo: 'Legalização — Prioridades', filtros: ['busca', 'tipo', 'sit', 'auto'],
@@ -333,7 +344,7 @@
       arquivo: 'legalizacao-certificados', titulo: 'Legalização — Certificados digitais', filtros: ['busca', 'tipo', 'sit', 'auto'],
       tipos: [['cert_pj', 'Pessoa jurídica (e-CNPJ)'], ['cert_pf', 'Pessoa física (e-CPF)']],
       linhas: function () { return docsDe(null, ['cert_pj', 'cert_pf']).sort(porNome); },
-      colunas: [COL_EMPRESA, { t: 'Tipo', h: function (r) { return r.tipo === 'cert_pf' ? 'PF' : 'PJ'; }, x: function (r) { return r.tipo === 'cert_pf' ? 'PF' : 'PJ'; } }, COL_SIT, COL_VENC, COL_PRAZO, COL_OBS],
+      colunas: [COL_EMPRESA, { t: 'Tipo', h: function (r) { return r.tipo === 'cert_pf' ? 'PF' : 'PJ'; }, x: function (r) { return r.tipo === 'cert_pf' ? 'PF' : 'PJ'; } }, COL_SIT, COL_VENC, COL_PRAZO, COL_OBS, COL_ACAO_CERT],
       ajuda: 'Um certificado por cliente: PJ para empresa, PF para pessoa física.',
       vazio: 'Nenhum certificado com este filtro.',
     },
@@ -603,6 +614,7 @@
       if (l.prefeitura_url_sanitario) acoes += '<a class="lg-acao" style="text-decoration:none" href="' + esc(l.prefeitura_url_sanitario) + '" target="_blank" rel="noopener noreferrer">🔗 Portal do sanitário</a>';
     }
     if (l.cliente_id) acoes += '<button class="lg-acao perigo" data-acao="inativar" data-ix="' + ix + '" title="Pede ao administrador para inativar este cliente">🚫 Solicitar inativação</button>';
+    if (temBotaoCert(l)) acoes += botaoCert(l);
     $('ficha-corpo').innerHTML =
       (l.sem_cadastro_acessorias ? '<div class="nota">⚠️ Esta empresa está na lista de Legalização, mas <strong>não tem cadastro no Acessórias</strong>.</div>' : '') +
       '<div class="ficha-sec">Situação dos documentos</div>' + blocos + tab +
@@ -633,8 +645,38 @@
     aviso('Inscrição municipal salva.');
     await carregar();
   }
+  /** O mesmo modal serve para pedir a inativação do cliente e para avisar que o certificado não será renovado. */
+  function textosModal(modo) {
+    var cert = modo === 'cert';
+    $('inat-titulo').textContent = cert ? 'Certificado que o cliente não vai renovar' : 'Solicitar inativação de cliente';
+    $('inat-txt').innerHTML = cert ? 'Isso <b>não desativa na hora</b>: avisa o administrador, que confere e desativa o certificado para parar a cobrança.' : 'Isso <b>não desativa o cliente na hora</b>: envia um pedido para o administrador revisar e confirmar.';
+    $('inat-obs').placeholder = cert ? 'Ex.: cliente sem movimento, não quer atualizar o certificado digital.' : 'Ex.: cliente encerrou a atividade em 08/2026, CNPJ baixado; sem contato há 3 meses.';
+  }
+  function abrirSolicitarCert(ix) {
+    var l = estado.linhas[ix]; if (!l || !temBotaoCert(l)) return;
+    estado.inatModo = 'cert';
+    estado.inatCert = { clienteId: l.cliente_id || null, certId: l.cert && l.cert.tipo === 'pf' ? l.cert.id : null };
+    textosModal('cert');
+    $('inat-empresa').value = l.nome_empresa || '';
+    $('inat-obs').value = '';
+    $('inat-err').style.display = 'none';
+    $('modal-inat').classList.add('aberto');
+    $('inat-obs').focus();
+  }
+  /** Administrador: desativa o certificado direto (sem pedido). */
+  async function desativarCert(ix) {
+    var l = estado.linhas[ix]; if (!l || !temBotaoCert(l)) return;
+    if (!window.confirm('Desativar o certificado de "' + (l.nome_empresa || 'esta empresa') + '"? Ele sai da lista e dos indicadores e deixa de ser cobrado.')) return;
+    var url = l.cert.tipo === 'pj' && l.cliente_id ? '/api/data/legalizacao/certificados-cliente/' + encodeURIComponent(l.cliente_id) + '/desativar' : '/api/data/legalizacao/certificados/' + encodeURIComponent(l.cert.id) + '/desativar';
+    var r = await chamarApi(url, { method: 'PATCH' });
+    var j = await r.json().catch(function () { return {}; });
+    if (!r.ok) { alert(j.error || 'Não foi possível desativar o certificado.'); return; }
+    aviso('Certificado desativado.');
+    await carregar();
+  }
   function abrirInativar(ix) {
     var l = estado.linhas[ix]; if (!l || !l.cliente_id) return;
+    estado.inatModo = 'cliente'; textosModal('cliente');
     estado.inatId = l.cliente_id;
     $('inat-empresa').value = l.nome_empresa || '';
     $('inat-obs').value = '';
@@ -649,7 +691,9 @@
     if (!obs) { err.textContent = 'Escreva uma observação explicando o porquê.'; err.style.display = 'block'; return; }
     var btn = $('inat-enviar'); btn.disabled = true;
     try {
-      var r = await chamarApi('/api/data/legalizacao/solicitar-inativacao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clienteId: estado.inatId, observacao: obs }) });
+      var cert = estado.inatModo === 'cert' && estado.inatCert;
+      var r = await chamarApi(cert ? '/api/data/legalizacao/solicitar-desativacao-certificado' : '/api/data/legalizacao/solicitar-inativacao', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cert ? { clienteId: cert.clienteId || undefined, certId: cert.certId || undefined, observacao: obs } : { clienteId: estado.inatId, observacao: obs }) });
       var j = await r.json().catch(function () { return {}; });
       if (!r.ok) { err.textContent = j.error || 'Erro ao enviar a solicitação.'; err.style.display = 'block'; return; }
       fecharInativar();
@@ -686,7 +730,7 @@
     var spec = SPECS[sec];
     if (spec) {
       var f = estado.f[sec], lista = filtrarLinhas(sec);
-      var colunas = spec.colunas.slice();
+      var colunas = spec.colunas.filter(function (c) { return !c.acao; });   // colunas de ação não vão para o CSV/PDF
       if (spec.expExtra) colunas = colunas.slice(0, 1).concat(spec.expExtra, colunas.slice(1));
       var filtros = [];
       if (f.busca) filtros.push('Busca: ' + f.busca);
@@ -751,7 +795,7 @@
     var ac = alvo.closest && alvo.closest('[data-acao]');
     if (ac) {
       var ix = parseInt(ac.getAttribute('data-ix'), 10), a = ac.getAttribute('data-acao');
-      if (a === 'municipio') editarMunicipio(ix); else if (a === 'im') editarIM(ix); else if (a === 'inativar') abrirInativar(ix);
+      if (a === 'municipio') editarMunicipio(ix); else if (a === 'im') editarIM(ix); else if (a === 'inativar') abrirInativar(ix); else if (a === 'cert-sol') abrirSolicitarCert(ix); else if (a === 'cert-desat') desativarCert(ix);
       return;
     }
     var p = alvo.closest && alvo.closest('[data-pag]');

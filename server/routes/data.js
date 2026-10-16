@@ -5400,6 +5400,16 @@ async function ensureLegalizacaoSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_legal_solic_inativ_status ON legalizacao_solicitacoes_inativacao (status)`).catch(()=>{});
   // Motivo (lista de Motivos de Churn) separado da observação livre — pedido do Reysner, 18/09/2026.
   await pool.query(`ALTER TABLE legalizacao_solicitacoes_inativacao ADD COLUMN IF NOT EXISTS motivo TEXT`).catch(()=>{});
+  // Pedido do analista para desativar um certificado digital que o cliente não vai renovar (cliente sem movimento): o administrador valida.
+  await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_solicitacoes_desativacao (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cliente_id TEXT, cert_id TEXT, nome_empresa TEXT, tipo_cert TEXT DEFAULT 'pj',
+    observacao TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente','aprovada','rejeitada')),
+    solicitado_por TEXT, solicitado_em TIMESTAMPTZ DEFAULT NOW(),
+    decidido_por TEXT, decidido_em TIMESTAMPTZ, decisao_observacao TEXT
+  )`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_solicitacoes_desativacao ENABLE ROW LEVEL SECURITY`).catch(()=>{});
   // Sininho da página pública: o "lida" de notificacoes é global (vale pro admin também), então cada
   // usuário guarda só a hora em que viu o sininho pela última vez.
   await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_notif_visto (user_id TEXT PRIMARY KEY, visto_em TIMESTAMPTZ NOT NULL DEFAULT NOW())`).catch(()=>{});
@@ -6296,6 +6306,118 @@ router.patch('/legalizacao/solicitacoes-inativacao/:id/rejeitar', requireAdmin, 
     if (!rows.length) return res.status(404).json({ error: 'Solicitação não encontrada ou já decidida.' });
     res.json({ ok: true });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao rejeitar solicitação.' }); }
+});
+
+/**
+ * Desativa um certificado digital: por id, ou o PJ do cliente (cria a linha se ainda não existir). Tira o item da lista, dos indicadores,
+ * do sino e da cobrança; fecha os pedidos pendentes dele. Devolve false se não achar o certificado/cliente.
+ */
+async function desativarCertificadoRegistro({ certId, clienteId }, por) {
+  await ensureLegalizacaoSchema();
+  let cli = clienteId ? String(clienteId) : null;
+  if (certId) {
+    const r = await pool.query(`UPDATE legalizacao_certificados SET desativado_em = NOW(), atualizado_em = NOW() WHERE id::text = $1 RETURNING cliente_id`, [String(certId)]);
+    if (!r.rows.length) return false;
+    cli = r.rows[0].cliente_id || cli;
+  } else {
+    const c = (await pool.query(`SELECT nome_empresa, cnpj FROM clientes WHERE id::text = $1`, [cli])).rows[0];
+    if (!c) return false;
+    await pool.query(
+      `INSERT INTO legalizacao_certificados (cliente_id, tipo, titular_nome, titular_documento, criado_por, desativado_em)
+       VALUES ($1,'pj',$2,$3,$4,NOW())
+       ON CONFLICT (cliente_id) WHERE tipo = 'pj' AND cliente_id IS NOT NULL DO UPDATE SET desativado_em = NOW(), atualizado_em = NOW()`,
+      [cli, c.nome_empresa, c.cnpj, por]);
+  }
+  await pool.query(
+    `UPDATE legalizacao_solicitacoes_desativacao SET status = 'aprovada', decidido_por = $1, decidido_em = NOW()
+      WHERE status = 'pendente' AND (cert_id = $2 OR (cert_id IS NULL AND cliente_id = $3))`,
+    [por, certId ? String(certId) : null, cli]);
+  return true;
+}
+
+/** PATCH /legalizacao/certificados-cliente/:clienteId/desativar — administrador desativa o certificado PJ do cliente direto (mesmo sem linha ainda). */
+router.patch('/legalizacao/certificados-cliente/:clienteId/desativar', requireAdmin, async (req, res) => {
+  try {
+    const ok = await desativarCertificadoRegistro({ clienteId: req.params.clienteId }, req.user.name);
+    if (!ok) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', 'Certificado desativado (cliente ' + req.params.clienteId + ')', req);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao desativar certificado.' }); }
+});
+
+/**
+ * POST /legalizacao/solicitar-desativacao-certificado — o analista informa que o cliente não movimenta / não quer renovar o certificado.
+ * NÃO desativa nada: registra o pedido pendente e avisa o administrador, que confere e desativa para parar a cobrança.
+ */
+router.post('/legalizacao/solicitar-desativacao-certificado', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const { clienteId, certId, observacao } = req.body || {};
+    if (!clienteId && !certId) return res.status(400).json({ error: 'Informe o cliente ou o certificado.' });
+    if (!observacao || !String(observacao).trim()) return res.status(400).json({ error: 'Escreva uma observação explicando o porquê.' });
+    let cli = clienteId ? String(clienteId) : null, cid = null, nome = null, tipo = 'pj';
+    if (certId) {
+      const c = (await pool.query(`SELECT id::text AS id, cliente_id, titular_nome, tipo FROM legalizacao_certificados WHERE id::text = $1`, [String(certId)])).rows[0];
+      if (!c) return res.status(404).json({ error: 'Certificado não encontrado.' });
+      cid = c.id; cli = c.cliente_id || cli; nome = c.titular_nome; tipo = c.tipo;
+    }
+    if (cli) {
+      const c = (await pool.query(`SELECT nome_empresa FROM clientes WHERE id::text = $1`, [cli])).rows[0];
+      if (c && (!nome || tipo === 'pj')) nome = c.nome_empresa;
+    }
+    if (!nome) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    const pend = await pool.query(
+      `SELECT id FROM legalizacao_solicitacoes_desativacao WHERE status = 'pendente' AND (($1::text IS NOT NULL AND cert_id = $1) OR ($1::text IS NULL AND cert_id IS NULL AND cliente_id = $2))`, [cid, cli]);
+    if (pend.rows.length) return res.status(409).json({ error: 'Já existe um pedido pendente para este certificado.' });
+    const obs = String(observacao).trim().slice(0, 600);
+    const ins = await pool.query(
+      `INSERT INTO legalizacao_solicitacoes_desativacao (cliente_id, cert_id, nome_empresa, tipo_cert, observacao, solicitado_por) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [cli, cid, nome, tipo, obs, req.user.name]);
+    await pool.query(
+      `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo, cliente_id) VALUES ('legalizacao_desativacao_solicitada', $1, $2, 'legalizacao', $3)`,
+      ['Certificado digital: pedido de desativação', `${req.user.name} informou que ${nome} não vai renovar o certificado ${tipo.toUpperCase()}: "${obs}". Valide em Legalização para parar a cobrança.`, cli]);
+    res.status(201).json({ ok: true, id: ins.rows[0].id });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao registrar o pedido.' }); }
+});
+
+/** GET /legalizacao/solicitacoes-desativacao — pedidos de desativação de certificado (administrador; padrão: pendentes). */
+router.get('/legalizacao/solicitacoes-desativacao', requireAdmin, async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const status = req.query.status || 'pendente';
+    const { rows } = await pool.query(
+      status === 'todas'
+        ? `SELECT * FROM legalizacao_solicitacoes_desativacao ORDER BY solicitado_em DESC LIMIT 200`
+        : `SELECT * FROM legalizacao_solicitacoes_desativacao WHERE status = $1 ORDER BY solicitado_em DESC LIMIT 200`,
+      status === 'todas' ? [] : [status]);
+    res.json({ data: rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao listar os pedidos.' }); }
+});
+
+/** PATCH .../solicitacoes-desativacao/:id/aprovar — administrador valida: desativa o certificado e fecha o pedido. */
+router.patch('/legalizacao/solicitacoes-desativacao/:id/aprovar', requireAdmin, async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const s = (await pool.query(`SELECT * FROM legalizacao_solicitacoes_desativacao WHERE id::text = $1 AND status = 'pendente'`, [req.params.id])).rows[0];
+    if (!s) return res.status(404).json({ error: 'Pedido não encontrado ou já decidido.' });
+    const ok = await desativarCertificadoRegistro({ certId: s.cert_id, clienteId: s.cliente_id }, req.user.name);
+    if (!ok) return res.status(404).json({ error: 'Certificado não encontrado.' });
+    await pool.query(`UPDATE legalizacao_solicitacoes_desativacao SET status = 'aprovada', decidido_por = COALESCE(decidido_por, $1), decidido_em = COALESCE(decidido_em, NOW()) WHERE id = $2`, [req.user.name, s.id]);
+    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', `Aprovou desativação do certificado de ${s.nome_empresa} (pedido de ${s.solicitado_por})`, req);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao aprovar o pedido.' }); }
+});
+
+/** PATCH .../solicitacoes-desativacao/:id/rejeitar — administrador recusa; o certificado continua ativo. */
+router.patch('/legalizacao/solicitacoes-desativacao/:id/rejeitar', requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE legalizacao_solicitacoes_desativacao SET status = 'rejeitada', decidido_por = $1, decidido_em = NOW(), decisao_observacao = $2
+        WHERE id::text = $3 AND status = 'pendente' RETURNING id`,
+      [req.user.name, (req.body && req.body.decisaoObservacao) || null, req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Pedido não encontrado ou já decidido.' });
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao rejeitar o pedido.' }); }
 });
 
 module.exports = router;

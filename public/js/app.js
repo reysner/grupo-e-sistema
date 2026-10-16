@@ -5735,7 +5735,7 @@ const Legalizacao = (() => {
   }
 
   async function load() {
-    await Promise.all([_carregarPainel(), _carregarSolicitacoesInativacao()]);
+    await Promise.all([_carregarPainel(), _carregarSolicitacoesInativacao(), _carregarSolicitacoesCert()]);
   }
 
   // ── SOLICITAÇÕES DE INATIVAÇÃO (vindas da página pública, colaborador) ──
@@ -5781,6 +5781,44 @@ const Legalizacao = (() => {
     });
     if (!res.ok) { App.Toast.err('Erro ao rejeitar.'); return; }
     App.Toast.ok('Solicitação rejeitada.');
+    await load();
+  }
+
+  // ── PEDIDOS DE DESATIVAÇÃO DE CERTIFICADO (analista informa; o administrador valida) ──
+  async function _carregarSolicitacoesCert() {
+    const res = await fetch('/api/data/legalizacao/solicitacoes-desativacao', { headers: { Authorization: 'Bearer ' + _tk() } });
+    if (!res || !res.ok) return;
+    const { data } = await res.json();
+    const card = document.getElementById('legal-solic-cert-card');
+    const tbody = document.getElementById('legal-solic-cert-tbody');
+    if (!card || !tbody) return;
+    if (!data || !data.length) { card.style.display = 'none'; return; }
+    card.style.display = '';
+    tbody.innerHTML = data.map(s => `<tr>
+      <td><b>${_esc(s.nome_empresa) || '—'}</b></td>
+      <td>${_esc(String(s.tipo_cert || 'pj').toUpperCase())}</td>
+      <td>${_esc(s.solicitado_por) || '—'}</td>
+      <td style="max-width:320px">${_esc(s.observacao)}</td>
+      <td style="font-size:12px;color:var(--gray-500);white-space:nowrap">${_fmtData(s.solicitado_em) || '—'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-success btn-sm" onclick="Legalizacao.aprovarSolicitacaoCert('${s.id}')">✅ Validar e desativar</button>
+        <button class="btn btn-ghost btn-sm" onclick="Legalizacao.rejeitarSolicitacaoCert('${s.id}')">❌ Rejeitar</button>
+      </td>
+    </tr>`).join('');
+  }
+  async function aprovarSolicitacaoCert(id) {
+    if (!confirm('Desativar este certificado? Ele sai da lista, dos indicadores e deixa de ser cobrado.')) return;
+    const res = await fetch(`/api/data/legalizacao/solicitacoes-desativacao/${id}/aprovar`, { method: 'PATCH', headers: { Authorization: 'Bearer ' + _tk() } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { App.Toast.err(data.error || 'Erro ao aprovar.'); return; }
+    App.Toast.ok('Certificado desativado.');
+    await load();
+  }
+  async function rejeitarSolicitacaoCert(id) {
+    const decisaoObservacao = prompt('Motivo da rejeição (opcional):') || '';
+    const res = await fetch(`/api/data/legalizacao/solicitacoes-desativacao/${id}/rejeitar`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() }, body: JSON.stringify({ decisaoObservacao }) });
+    if (!res.ok) { App.Toast.err('Erro ao rejeitar.'); return; }
+    App.Toast.ok('Pedido rejeitado.');
     await load();
   }
 
@@ -6039,7 +6077,8 @@ const Legalizacao = (() => {
     let detalhe = c.vencimento ? '<b>Vencimento:</b> ' + _fmtData(c.vencimento) : 'Nenhuma data cadastrada ainda.';
     if (c.observacoes) detalhe += `<br><i>${_esc(c.observacoes)}</i>`;
     const botoes =
-      (c.tipo === 'pf' && c.id ? _btn('🚫', `Legalizacao.desativarCertificado('${c.id}')`, 'Desativar (deixa de aparecer e de ser cobrado na página pública)', '#e53e3e') : '');
+      (c.id ? _btn('🚫', `Legalizacao.desativarCertificado('${c.id}')`, 'Desativar (cliente sem movimento / não vai renovar: deixa de aparecer e de ser cobrado)', '#e53e3e')
+        : (l.cliente_id ? _btn('🚫', `Legalizacao.desativarCertificadoCliente('${l.cliente_id}')`, 'Desativar (cliente sem movimento / não vai renovar: deixa de aparecer e de ser cobrado)', '#e53e3e') : ''));
     return _celula(c.tipo.toUpperCase(), c.status, `leg-cert-${l.cliente_id || c.id}`, detalhe, botoes);
   }
 
@@ -6138,6 +6177,7 @@ const Legalizacao = (() => {
   }
   const desativarAlvara = (id) => _desativar('alvaras', id, 'este Alvará Sanitário');
   const desativarCertificado = (id) => _desativar('certificados', id, 'este certificado');
+  const desativarCertificadoCliente = (clienteId) => _desativar('certificados-cliente', clienteId, 'o certificado deste cliente');
   async function _reativar(rota, id) {
     const res = await fetch('/api/data/legalizacao/' + rota + '/' + id + '/reativar', { method: 'PATCH', headers: { Authorization: 'Bearer ' + _tk() } });
     if (res && res.ok) { App.Toast.ok('Reativado.'); await _carregarPainel(); }
@@ -6360,11 +6400,11 @@ const Legalizacao = (() => {
 
   return {
     load, filtrar, filtrarPorSituacao, goPage, _toggleDetalhe,
-    abrirFormAlvara, salvarAlvara, excluirAlvara, editarIM, editarMunicipio, abrirConferencia, conferir, abrirSaude, desativarAlvara, desativarCertificado, reativarAlvara, reativarCertificado,
+    abrirFormAlvara, salvarAlvara, excluirAlvara, editarIM, editarMunicipio, abrirConferencia, conferir, abrirSaude, desativarAlvara, desativarCertificado, desativarCertificadoCliente, reativarAlvara, reativarCertificado,
     consultarPrefeitura, consultarTodosPrefeitura, exportCSV, exportPDF,
     abrirFormCertificadoPJ, salvarCertificadoPJ, abrirFormCertificadoPF,
     salvarCertificadoPF, excluirCertificado, abrirFormProcuracao, salvarProcuracao,
-    aprovarSolicitacaoInativacao, rejeitarSolicitacaoInativacao,
+    aprovarSolicitacaoInativacao, rejeitarSolicitacaoInativacao, aprovarSolicitacaoCert, rejeitarSolicitacaoCert,
   };
 })();
 

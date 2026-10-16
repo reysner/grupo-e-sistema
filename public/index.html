@@ -1069,6 +1069,18 @@
             </div>
           </div>
 
+          <!-- PEDIDOS DE DESATIVAÇÃO DE CERTIFICADO (cliente sem movimento / não vai renovar) -->
+          <div class="form-card" id="legal-solic-cert-card" style="margin-bottom:20px;display:none">
+            <h2 class="form-title" style="margin:0 0 4px">🔐 Certificados que o cliente não vai renovar</h2>
+            <p style="font-size:12px;color:var(--gray-400);margin:0 0 14px">Pedidos dos analistas na Legalização. Validar desativa o certificado: sai da lista, dos indicadores e deixa de ser cobrado.</p>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Empresa</th><th>Tipo</th><th>Solicitado por</th><th>Observação</th><th>Data</th><th></th></tr></thead>
+                <tbody id="legal-solic-cert-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- LISTA ÚNICA DE CLIENTES — uma coluna por situação (pedido do Reysner, 18/09/2026) -->
           <div class="form-card">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
@@ -1479,6 +1491,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="/js/app.js?v=2026101508"></script>
+  <script src="/js/app.js?v=2026101509"></script>
 </body>
 </html>
