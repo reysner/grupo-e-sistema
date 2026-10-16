@@ -255,16 +255,20 @@ const GRUPOS = new Set(['dptofiscal@escritorial.com.br', 'dptocontabil@escritori
   'gestao@escritorial.com.br', 'pralegal@escritorial.com.br', 'hands@escritorial.com.br', 'legalizacao@escritorial.com.br', 'legalizacao@escritorialcontabil.com.br',
   'deptopessoal@escritorial.com.br', 'dctfweb@escritorial.com.br', 'cs@escritorial.com.br']);
 function clientesParaEnvio(porCliente, nomesDiretorio) {
-  return porCliente.map((c) => {
+  const nomear = (dest) => {
     const por = {};
-    Object.keys(c.destinatarios).forEach((a) => {
+    Object.keys(dest || {}).forEach((a) => {
       const grupo = GRUPOS.has(a);
       const nome = grupo ? a : (nomesDiretorio[a] || a);
       const r = (por[nome] = por[nome] || { nome, grupo, recebidos: 0, sem: 0 });
-      r.recebidos += c.destinatarios[a].recebidos; r.sem += c.destinatarios[a].sem;
+      r.recebidos += dest[a].recebidos; r.sem += dest[a].sem;
     });
-    return { cnpj: c.cnpj, recebidos: c.recebidos, sem_resposta: c.sem_resposta, compartilhados_recebidos: c.compartilhados_recebidos || 0, compartilhados_sem: c.compartilhados_sem || 0, destinatarios: Object.values(por).sort((x, y) => y.recebidos - x.recebidos) };
-  });
+    return Object.values(por).sort((x, y) => y.recebidos - x.recebidos);
+  };
+  return porCliente.map((c) => ({
+    cnpj: c.cnpj, recebidos: c.recebidos, sem_resposta: c.sem_resposta, compartilhados_recebidos: c.compartilhados_recebidos || 0, compartilhados_sem: c.compartilhados_sem || 0,
+    destinatarios: nomear(c.destinatarios), compartilhados_destinatarios: nomear(c.compartilhados_destinatarios),
+  }));
 }
 async function enviarAtendimento(corpo) {
   const url = (process.env.APP_URL || '').replace(/\/$/, '') + '/api/cs/email-sinais/atendimento';

@@ -1159,7 +1159,10 @@
     var l = [em.recebidos + ' e-mail(s) recebido(s) · ' + em.sem_resposta + ' sem resposta', ''];
     if (ds.length) { l.push('Recebidos por destinatário:'); ds.forEach(function (d) { l.push('• ' + d.nome + (d.grupo ? ' (grupo)' : '') + ': ' + d.recebidos); }); }
     var sem = ds.filter(function (d) { return d.sem > 0; });
-    if (em.comp_recebidos) l.push('', '+ ' + em.comp_recebidos + ' e-mail(s) de contatos que atendem várias empresas' + (em.comp_sem ? ' (' + em.comp_sem + ' sem resposta)' : '') + ', não somados acima');
+    if (em.comp_recebidos) {
+      l.push('', '+ ' + em.comp_recebidos + ' e-mail(s) de contatos que atendem várias empresas' + (em.comp_sem ? ' (' + em.comp_sem + ' sem resposta)' : '') + ', não somados acima');
+      (em.comp_destinatarios || []).slice().sort(function (a, b) { return b.recebidos - a.recebidos || a.nome.localeCompare(b.nome); }).slice(0, 8).forEach(function (d) { l.push('• ' + d.nome + ': ' + d.recebidos); });
+    }
     l.push('');
     if (sem.length) { l.push('Sem resposta:'); sem.forEach(function (d) { l.push('• ' + d.nome + ': ' + d.sem + (d.grupo ? ' (' + ROT_DEST_GRUPO + ')' : '')); }); }
     else l.push('Nenhum destinatário com e-mail sem resposta');
@@ -1229,13 +1232,24 @@
       return '<tr><td>' + data(t.abertura) + '</td><td>' + esc(t.departamento || '—') + '</td><td>' + esc(t.analista || '—') + '</td><td class="c">' + (t.nota_avaliacao != null ? t.nota_avaliacao : '—') + '</td><td class="c"><span class="pill" style="color:' + cor + ';border-color:' + cor + '55;background:' + cor + '14">' + esc(t.pior_status || '—') + '</span></td></tr>';
     }).join('') + '</tbody></table></div>';
   }
-  function tabelaDestinatarios(em) {
-    var ds = ((em && em.destinatarios) || []).slice().sort(function (a, b) { return b.sem - a.sem || b.recebidos - a.recebidos || a.nome.localeCompare(b.nome); });
-    if (!ds.length) return '<div class="linha-item"><span class="x">Sem e-mails deste cliente na leitura.</span></div>';
+  function linhasDestinatarios(ds) {
     return '<div class="table-wrap"><table><thead><tr><th>Destinatário</th><th class="c">Tipo</th><th class="c">E-mails recebidos</th><th class="c">Sem resposta</th></tr></thead><tbody>' + ds.map(function (d) {
       return '<tr><td>' + esc(d.nome) + '</td><td class="c">' + (d.grupo ? '<span class="cinza" title="' + esc(ROT_DEST_GRUPO) + '">grupo</span>' : 'pessoa') + '</td><td class="c">' + d.recebidos + '</td>' +
         '<td class="c">' + (d.sem ? '<strong style="color:#dc2626" title="' + esc(d.grupo ? ROT_DEST_GRUPO : 'Nenhum e-mail do escritório para este contato depois desse(s)') + '">' + d.sem + '</strong>' : '0') + '</td></tr>';
     }).join('') + '</tbody></table></div>';
+  }
+  function ordenaDest(l) { return (l || []).slice().sort(function (a, b) { return b.sem - a.sem || b.recebidos - a.recebidos || a.nome.localeCompare(b.nome); }); }
+  /** E-mails exclusivos do cliente e, à parte, os de contatos que atendem várias empresas (cada um com a relação por destinatário). */
+  function tabelaDestinatarios(em) {
+    var ds = ordenaDest(em && em.destinatarios), cds = ordenaDest(em && em.comp_destinatarios), comp = (em && em.comp_recebidos) || 0;
+    if (!ds.length && !comp) return '<div class="linha-item"><span class="x">Sem e-mails deste cliente na leitura.</span></div>';
+    var h = ds.length ? linhasDestinatarios(ds) : '<div class="linha-item"><span class="x">Nenhum e-mail exclusivo deste cliente.</span></div>';
+    if (comp) {
+      h += '<div class="ficha-sec" style="margin-top:14px">De contatos que atendem várias empresas (' + comp + (em.comp_sem ? ', ' + em.comp_sem + ' sem resposta' : '') + ')</div>' +
+        '<div class="cinza" style="font-size:12px;margin-bottom:6px">Sócio, contador ou familiar ligado a mais de uma empresa: não dá para saber de qual delas é o e-mail, então não entram no total acima nem inflam cada empresa.</div>' +
+        (cds.length ? linhasDestinatarios(cds) : '<div class="linha-item"><span class="x">A relação por destinatário aparece na próxima leitura de e-mails (segunda-feira, 08:30).</span></div>');
+    }
+    return h;
   }
   async function abrirFichaAtendimento(id) {
     document.querySelector('.ficha-box').classList.add('larga');
@@ -1255,7 +1269,7 @@
         '<div class="blocos">' + bloco('Atendimentos (' + f.janela_dias + ' dias)', t.length, 'conversas no Zappy', null) +
           bloco('SLA vermelho', vermelhos, 'antes da revisão da Gamificação', vermelhos ? '#dc2626' : null) +
           bloco('Notas baixas', notasBaixas, 'nota 1 ou 2', notasBaixas ? '#dc2626' : null) +
-          blocoTip('E-mails recebidos', temEmail ? (em ? em.recebidos : 0) : '—', temEmail ? 'últimos ' + (f.email_janela_dias || 180) + ' dias' : 'leitura ainda não carregada', null) +
+          blocoTip('E-mails recebidos', temEmail ? (em ? em.recebidos : 0) : '—', temEmail ? 'últimos ' + (f.email_janela_dias || 180) + ' dias' + (em && em.comp_recebidos ? ' · +' + em.comp_recebidos + ' de contatos compartilhados' : '') : 'leitura ainda não carregada', null) +
           blocoTip('E-mails sem resposta', temEmail ? (em ? em.sem_resposta : 0) : '—', temEmail ? 'passe o mouse para ver por destinatário' : '', em && em.sem_resposta ? '#dc2626' : null) + '</div>' +
         '<div class="ficha-sec">Atendimentos (Zappy, ' + f.janela_dias + ' dias)</div>' + tabelaAtendimentos(t) +
         '<div class="ficha-sec">E-mails por destinatário</div>' + tabelaDestinatarios(em) +

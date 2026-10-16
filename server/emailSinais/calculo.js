@@ -293,9 +293,17 @@ function consolidarAtendimento(contatos) {
   const por = {};
   (contatos || []).forEach((s) => {
     s.cnpjs.forEach((c) => {
-      const r = (por[c] = por[c] || { cnpj: c, recebidos: 0, sem_resposta: 0, destinatarios: {}, compartilhados_recebidos: 0, compartilhados_sem: 0 });
+      const r = (por[c] = por[c] || { cnpj: c, recebidos: 0, sem_resposta: 0, destinatarios: {}, compartilhados_recebidos: 0, compartilhados_sem: 0, compartilhados_destinatarios: {} });
       const resolvido = !!s.resolvidoZappy;          // o escritório já falou com o cliente pelo Zappy depois do e-mail
-      if (s.cnpjs.length > 1) { r.compartilhados_recebidos += s.recebidos; if (!resolvido) r.compartilhados_sem += s.semResposta; return; }
+      if (s.cnpjs.length > 1) {
+        r.compartilhados_recebidos += s.recebidos; if (!resolvido) r.compartilhados_sem += s.semResposta;
+        Object.keys(s.porDest).forEach((a) => {
+          const d = (r.compartilhados_destinatarios[a] = r.compartilhados_destinatarios[a] || { recebidos: 0, sem: 0 });
+          d.recebidos += s.porDest[a].recebidos;
+          if (!resolvido) d.sem += s.porDest[a].sem;
+        });
+        return;
+      }
       r.recebidos += s.recebidos;
       if (!resolvido) r.sem_resposta += s.semResposta;
       Object.keys(s.porDest).forEach((a) => {

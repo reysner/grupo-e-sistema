@@ -244,6 +244,7 @@ teste('histórico: contato ligado a duas empresas vai para "compartilhados" e n�
   const por = Object.fromEntries(consolidarAtendimento(c).map((x) => [x.cnpj, x]));
   assert.deepStrictEqual([por['11111111000111'].recebidos, por['11111111000111'].compartilhados_recebidos, por['11111111000111'].compartilhados_sem], [1, 1, 1]);
   assert.deepStrictEqual([por['33333333000133'].recebidos, por['33333333000133'].compartilhados_recebidos], [0, 1]);
+  assert.deepStrictEqual(por['33333333000133'].compartilhados_destinatarios['cs@escritorial.com.br'], { recebidos: 1, sem: 1 });   // a relação por destinatário também vale para os compartilhados
 });
 teste('histórico: contato sem empresa não entra; resolvido pelo Zappy zera a espera mas mantém os recebidos', () => {
   assert.strictEqual(atendimentoPorContato([recPara('fulano@desconhecido.com', 50, ['cs@escritorial.com.br'])], ctxAt).length, 0);
