@@ -188,7 +188,7 @@
   }
   function cartaoTrat(r) {
     var trabalhando = r.status === 'aberto' || r.status === 'em_tratamento';
-    var meu = !estado.analistaVer;
+    var meu = true;                                    // o analista, ou a liderança em nome dele (Ver como)
     var h = '<div class="qa-reg" id="r-' + esc(r.id) + '"><div class="qa-reg-topo">' + pill(r.situacao) + ' <strong>' + esc(r.tipo) + '</strong> <span class="cinza">· ' + esc((r.departamentos || []).join(', ')) + '</span></div>' +
       '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
       '<div class="qa-reg-rod"><strong>' + esc(r.cliente_nome || 'Cliente') + '</strong> · lançado em ' + dt(r.criado_em) + ' por ' + esc(r.criado_por || '—') + ' · prazo <strong>' + dt(r.prazo) + '</strong>' +
@@ -196,6 +196,7 @@
       (r.tratativa ? '<div class="qa-reg-trat"><strong>O que foi feito:</strong> ' + esc(r.tratativa) + '</div>' : '') + linhaTempo(r);
     if (r.status === 'finalizada') h += '<div class="qa-reg-trat" style="border-left:3px solid #7c3aed"><strong>Aguardando validação da liderança.</strong> Você será avisado se ela devolver para ajuste.</div>';
     if (trabalhando && meu) {
+      if (estado.analistaVer) h += '<div class="cinza" style="font-size:11px;margin-top:8px">Você está agindo em nome do analista: o que registrar aparece como "' + esc((JSON.parse(ls(K_USER) || '{}') || {}).name || 'liderança') + ' (em nome de ...)".</div>';
       h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
         (r.status === 'aberto' ? '<button type="button" class="gp-footer-btn" style="width:auto" data-ini="' + esc(r.id) + '">▶ Iniciar tratativa</button>' : '') +
         '<button type="button" class="gp-footer-btn" style="width:auto" data-nota="' + esc(r.id) + '">📝 Adicionar nota</button>' +

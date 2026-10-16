@@ -566,6 +566,21 @@ routerAnalista.get('/minhas', async (req, res) => {
   } catch (e) { console.error('[qualidade] GET /minhas falhou:', e); res.status(500).json({ error: 'Erro ao carregar suas tratativas.' }); }
 });
 
+/**
+ * Quem pode agir num registro pelo portal: o próprio analista (login ligado a ele) ou administrador/usuário "em nome de" (modo Ver como).
+ * Devolve { ok, analistaNome, por } ou { ok:false, status, erro }.
+ */
+async function autorizaAgir(user, reg) {
+  if (PAPEIS.includes(user.role)) {
+    const a = (await pool.query('SELECT nome FROM analistas WHERE id::text = $1', [String(reg.analista_id)])).rows[0];
+    return { ok: true, analistaNome: a ? a.nome : 'o analista', por: (user.name || 'Liderança') + (a ? ' (em nome de ' + a.nome + ')' : '') };
+  }
+  const analista = await analistaDoLogin(user);
+  if (!analista) return { ok: false, status: 403, erro: 'Seu login não está ligado a um analista.' };
+  if (String(reg.analista_id) !== String(analista.id)) return { ok: false, status: 403, erro: 'Esse registro é de outro analista.' };
+  return { ok: true, analistaNome: analista.nome, por: user.name || analista.nome };
+}
+
 routerAnalista.patch('/:id/tratar', async (req, res) => {
   const b = req.body || {};
   // "resolvido" vindo de páginas antigas vale como finalizar: quem encerra de fato é a liderança
@@ -575,19 +590,18 @@ routerAnalista.patch('/:id/tratar', async (req, res) => {
   if (!v.ok) return res.status(400).json({ error: v.erro });
   try {
     await garantirSchema();
-    const analista = await analistaDoLogin(req.user);
-    if (!analista) return res.status(403).json({ error: 'Seu login não está ligado a um analista.' });
     const r = await pool.query('SELECT id, analista_id, status, tipo, cliente_nome FROM cs_qualidade_registros WHERE id::text = $1', [String(req.params.id)]);
     if (!r.rows.length) return res.status(404).json({ error: 'Registro não encontrado.' });
-    if (String(r.rows[0].analista_id) !== String(analista.id)) return res.status(403).json({ error: 'Esse registro é de outro analista.' });
+    const ag = await autorizaAgir(req.user, r.rows[0]);
+    if (!ag.ok) return res.status(ag.status).json({ error: ag.erro });
     if (['finalizada', 'resolvido', 'cancelado'].includes(r.rows[0].status)) return res.status(409).json({ error: 'Esse registro já foi finalizado ou encerrado.' });
     const x = v.valores, sets = ['status = $1', 'atualizado_em = NOW()'], vals = [x.status];
     if (x.tratativa !== undefined) { vals.push(x.tratativa); sets.push('tratativa = $' + vals.length); }
-    if (x.status === 'finalizada') { vals.push(req.user.name || analista.nome); sets.push('resolvido_em = NOW()', 'resolvido_por = $' + vals.length); }
+    if (x.status === 'finalizada') { vals.push(ag.por); sets.push('resolvido_em = NOW()', 'resolvido_por = $' + vals.length); }
     vals.push(r.rows[0].id);
     await pool.query(`UPDATE cs_qualidade_registros SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
-    await registrar(r.rows[0].id, req.user.name || analista.nome, x.status === 'finalizada' ? 'finalizada' : 'iniciada', x.tratativa || null);
-    if (x.status === 'finalizada') await notificarFinalizacao(r.rows[0], req.user.name || analista.nome, x.tratativa);
+    await registrar(r.rows[0].id, ag.por, x.status === 'finalizada' ? 'finalizada' : 'iniciada', x.tratativa || null);
+    if (x.status === 'finalizada') await notificarFinalizacao(r.rows[0], ag.analistaNome, x.tratativa);
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [r.rows[0].id]);
     res.json({ registro: (await anexarNotas(comSituacao(rows)))[0] });
   } catch (e) { console.error('[qualidade] PATCH /tratar falhou:', e); res.status(500).json({ error: 'Erro ao registrar a tratativa.' }); }
@@ -600,13 +614,12 @@ routerAnalista.post('/:id/nota', async (req, res) => {
   if (t.length > MAX_TRATATIVA) return res.status(400).json({ error: 'A nota passa de ' + MAX_TRATATIVA + ' caracteres.' });
   try {
     await garantirSchema();
-    const analista = await analistaDoLogin(req.user);
-    if (!analista) return res.status(403).json({ error: 'Seu login não está ligado a um analista.' });
     const r = await pool.query('SELECT id, analista_id, status FROM cs_qualidade_registros WHERE id::text = $1', [String(req.params.id)]);
     if (!r.rows.length) return res.status(404).json({ error: 'Registro não encontrado.' });
-    if (String(r.rows[0].analista_id) !== String(analista.id)) return res.status(403).json({ error: 'Esse registro é de outro analista.' });
+    const ag = await autorizaAgir(req.user, r.rows[0]);
+    if (!ag.ok) return res.status(ag.status).json({ error: ag.erro });
     if (['resolvido', 'cancelado'].includes(r.rows[0].status)) return res.status(409).json({ error: 'Esse registro já foi encerrado.' });
-    await registrar(r.rows[0].id, req.user.name || analista.nome, 'nota', t);
+    await registrar(r.rows[0].id, ag.por, 'nota', t);
     await pool.query('UPDATE cs_qualidade_registros SET atualizado_em = NOW() WHERE id = $1', [r.rows[0].id]);
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [r.rows[0].id]);
     res.status(201).json({ registro: (await anexarNotas(comSituacao(rows)))[0] });
