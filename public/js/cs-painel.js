@@ -1466,8 +1466,20 @@
   }
 
   // ── Módulo Qualidade: uma linha por analista ───────────────────────────────────
+  /** Lançamentos dos últimos 7 dias, de todos os analistas: qualquer administrador abre o analista e interage. */
+  function recentesQ() {
+    var rs = estado.qRecentes || []; if (!rs.length) return '';
+    return '<div class="card"><div class="card-title">Lançamentos dos últimos 7 dias</div><div class="card-sub">' + rs.length + ' registro(s). Clique no analista para validar, devolver, ajustar o prazo ou cancelar.</div>' +
+      '<div class="table-wrap"><table><thead><tr><th>Lançado em</th><th>Empresa</th><th>Tipo</th><th>Analista</th><th class="c">Prazo</th><th class="c">Status</th></tr></thead><tbody>' + rs.map(function (r) {
+        return '<tr><td>' + data(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td>' +
+          '<td><button class="link" data-qan="' + esc(r.analista_id) + '">' + esc(r.analista_nome || '—') + '</button></td><td class="c">' + data(r.prazo) + '</td><td class="c">' + pillStatusQ(r.situacao) + '</td></tr>';
+      }).join('') + '</tbody></table></div></div>';
+  }
   function filtroQ() { return estado.filtroQ || (estado.filtroQ = { busca: '', todos: false }); }
-  async function carregarResumoQ() { estado.qResumo = await api('/api/cs/painel/qualidade/resumo'); }
+  async function carregarResumoQ() {
+    estado.qResumo = await api('/api/cs/painel/qualidade/resumo');
+    try { estado.qRecentes = (await api('/api/cs/painel/qualidade/recentes?dias=7')).registros; } catch (e) { estado.qRecentes = []; }
+  }
   async function desenharQualidadeMod() {
     var alvo = $('sec-consideracoes'); if (!alvo) return;
     var f = filtroQ();
@@ -1504,7 +1516,7 @@
         kpi('#b91c1c', 'Vencidos', tot.vencidos, 'prazo passou e ainda não foi resolvido') +
         kpi('#166534', 'Resolvidos', tot.resolvidos, 'considerações encerradas') +
       '</div>' +
-      aviso +
+      aviso + recentesQ() +
       '<div class="nota"><strong>Como funciona.</strong> A consideração é registrada na ficha do cliente (Gestão da Permanência) pelo Sucesso do Cliente ou pelo Time Operacional, com analista e prazo. ' +
         'Aqui a lista é por analista: clique no nome para ver cada registro, o prazo e o status. O analista trata pela página <strong>Minhas tratativas</strong> (/qualidade). ' +
         'Cada consideração também pesa no termômetro de Atendimento do risco de churn do cliente.' + (r.sem_analista ? ' <span style="color:#b91c1c">' + r.sem_analista + ' registro(s) sem analista na lista.</span>' : '') + '</div>' +
@@ -1542,7 +1554,8 @@
             (r.status === 'aberto' ? '<button type="button" class="gp-footer-btn" data-qst="' + esc(r.id) + '" data-novo="em_tratamento" style="width:auto">Em tratamento</button> ' : '') +
             '<button type="button" class="gp-footer-btn" data-qst="' + esc(r.id) + '" data-novo="resolvido" style="width:auto">Resolver</button> ' +
             '<button type="button" class="gp-footer-btn" data-qpz="' + esc(r.id) + '" data-prazo="' + esc(r.prazo) + '" style="width:auto">Prazo</button> ' +
-            '<button type="button" class="gp-footer-btn" data-qst="' + esc(r.id) + '" data-novo="cancelado" style="width:auto">Cancelar</button>' : '') + '</td></tr>';
+            '<button type="button" class="gp-footer-btn" data-qst="' + esc(r.id) + '" data-novo="cancelado" style="width:auto">Cancelar</button>' : '') +
+          (ehAdminPainel() ? ' <button type="button" class="gp-footer-btn qa-excluir" data-qdel="' + esc(r.id) + '" style="width:auto" title="Apaga o registro de vez (teste ou lançamento errado)">Excluir</button>' : '') + '</td></tr>';
       }).join('');
       var adminLogin = '';
       if (ehAdminPainel()) {
@@ -1577,6 +1590,15 @@
           if (novo === 'resolvido') { var t = window.prompt('O que foi feito para resolver?'); if (t == null) return; mudar(rid, { status: 'resolvido', tratativa: t }); }
           else if (novo === 'cancelado') { if (window.confirm('Cancelar esta consideração? Ela deixa de pesar no risco do cliente.')) mudar(rid, { status: 'cancelado' }); }
           else mudar(rid, { status: novo });
+        });
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('#ficha-corpo [data-qdel]'), function (b) {
+        b.addEventListener('click', async function () {
+          if (!window.confirm('Excluir este registro de vez? Isso não pode ser desfeito. (Para só tirar do risco e manter o histórico, use Cancelar.)')) return;
+          var r = await chamarApi('/api/cs/painel/qualidade/' + encodeURIComponent(b.getAttribute('data-qdel')), { method: 'DELETE' });
+          var x = await r.json().catch(function () { return {}; });
+          if (!r.ok) { window.alert(x.error || 'Não foi possível excluir.'); return; }
+          estado.qResumo = null; abrirFichaAnalistaQ(id); desenharQualidadeMod();
         });
       });
       Array.prototype.forEach.call(document.querySelectorAll('#ficha-corpo [data-qvalida]'), function (b) {

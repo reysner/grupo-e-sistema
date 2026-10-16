@@ -1825,7 +1825,7 @@ const Notificacoes = (() => {
       list.innerHTML = '<p style="text-align:center;color:var(--gray-400);font-size:13px;padding:20px">Sem notificações</p>';
       return;
     }
-    const icons = { insatisfacao_alta: '🚨', reajuste: '⚠️', novo_cliente: '🎉', novo_cliente_acessorias: '🆕', pesquisa: '📊', churn_acessorias: '📉', qualidade_finalizada: '✅', default: '🔔' };
+    const icons = { insatisfacao_alta: '🚨', reajuste: '⚠️', novo_cliente: '🎉', novo_cliente_acessorias: '🆕', pesquisa: '📊', churn_acessorias: '📉', qualidade_finalizada: '✅', qualidade_lancada: '📌', default: '🔔' };
     list.innerHTML = data.map(function(n) {
       const icon = icons[n.tipo] || icons.default;
       const bg = n.lida ? '' : 'background:#f0fff4;';
@@ -1911,7 +1911,7 @@ const Notificacoes = (() => {
       return;
     }
     // Tratativa finalizada pelo analista: abre o módulo Qualidade do painel /cs, onde a liderança dá o processo como finalizado.
-    if (tipo === 'qualidade_finalizada') {
+    if (tipo === 'qualidade_finalizada' || tipo === 'qualidade_lancada') {
       marcarLida(id);
       const painel = document.getElementById('notif-panel');
       if (painel) painel.hidden = true;

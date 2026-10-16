@@ -165,6 +165,7 @@ function garantirSchema() {
       })
       .then(() => pool.query('ALTER TABLE analistas ADD COLUMN IF NOT EXISTS user_id TEXT'))
       .then(() => require('./analistasNomes').aplicar(pool))   // ajuste único dos nomes completos (planilha de 15/10/2026)
+      .then(() => require('./limpezaTeste').aplicar(pool))     // limpeza única do registro de teste da Josiane (16/10/2026)
       .catch((e) => { _schema = null; throw e; });
   }
   return _schema;
@@ -191,6 +192,22 @@ async function anexarNotas(lista) {
     const por = {}; rows.forEach((h) => { (por[h.registro_id] = por[h.registro_id] || []).push({ em: h.em, por: h.por, acao: h.acao, texto: h.texto }); });
     return lista.map((r) => ({ ...r, notas: por[r.id] || [] }));
   } catch (e) { return lista.map((r) => ({ ...r, notas: [] })); }
+}
+
+/**
+ * Aviso no sino a TODOS os administradores quando alguém lança uma consideração de Qualidade. O sino é compartilhado: qualquer administrador
+ * que abrir o aviso chega ao módulo Qualidade do /cs, onde todos podem interagir (validar, devolver, cancelar, ajustar prazo).
+ */
+async function notificarLancamento(reg, lancador) {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS notificacoes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(), tipo TEXT NOT NULL, titulo TEXT NOT NULL, mensagem TEXT NOT NULL,
+      lida BOOLEAN DEFAULT false, link_modulo TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`);
+    const prazo = String(reg.prazo || '').split('-').reverse().join('/');
+    await pool.query(
+      `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ('qualidade_lancada', $1, $2, 'cs-qualidade')`,
+      ['Nova qualidade lançada: ' + reg.tipo, (lancador || 'Alguém') + ' lançou "' + reg.tipo + '" para ' + (reg.analista_nome || 'o analista') + ' sobre "' + (reg.cliente_nome || 'cliente') + '" (' + (reg.departamentos || []).join(', ') + '), prazo ' + prazo + '.']);
+  } catch (e) { console.warn('[qualidade] aviso de lançamento não gravado:', e.message); }
 }
 
 /** Aviso no sino do administrador quando o analista finaliza: a liderança valida para encerrar o processo. */
@@ -341,6 +358,7 @@ router.post('/', async (req, res) => {
       [c.id, soDigitos(c.cnpj), c.nome_empresa, x.tipo, x.departamentos, x.detalhe, x.analista_id, x.prazo, req.user.name || null, req.user.id || null]);
     await registrar(ins.rows[0].id, req.user.name, 'criado', x.tipo + ' · prazo ' + x.prazo);
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [ins.rows[0].id]);
+    await notificarLancamento(rows[0], req.user.name);
     res.status(201).json({ registro: comSituacao(rows)[0] });
   } catch (e) { console.error('[qualidade] POST falhou:', e); res.status(500).json({ error: 'Erro ao salvar o registro.' }); }
 });
@@ -364,6 +382,17 @@ router.get('/resumo', async (req, res) => {
     const orfaos = await pool.query(`SELECT COUNT(*)::int AS n FROM cs_qualidade_registros r WHERE NOT EXISTS (SELECT 1 FROM analistas a WHERE a.id::text = r.analista_id)`);
     res.json({ hoje, analistas: rows, sem_analista: orfaos.rows[0].n });
   } catch (e) { console.error('[qualidade] GET /resumo falhou:', e); res.status(500).json({ error: 'Erro ao montar o módulo Qualidade.' }); }
+});
+
+/** Lançamentos dos últimos dias (todos os analistas), para o aviso de "novos" no módulo Qualidade. */
+router.get('/recentes', async (req, res) => {
+  try {
+    await garantirSchema();
+    const dias = Math.min(30, Math.max(1, parseInt(req.query.dias, 10) || 7));
+    const { rows } = await pool.query(
+      `SELECT ${COLUNAS} ${DE} WHERE r.criado_em >= NOW() - ($1 || ' days')::interval AND r.status <> 'cancelado' ORDER BY r.criado_em DESC LIMIT 30`, [String(dias)]);
+    res.json({ dias, registros: comSituacao(rows) });
+  } catch (e) { console.error('[qualidade] GET /recentes falhou:', e); res.status(500).json({ error: 'Erro ao ler os lançamentos recentes.' }); }
 });
 
 router.get('/analista/:id', async (req, res) => {
@@ -400,6 +429,17 @@ router.patch('/:id', async (req, res) => {
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [atual.id]);
     res.json({ registro: (await anexarNotas(comSituacao(rows)))[0] });
   } catch (e) { console.error('[qualidade] PATCH falhou:', e); res.status(500).json({ error: 'Erro ao atualizar o registro.' }); }
+});
+
+/** Exclui um registro de vez (lançamento de teste ou errado). Só administrador; para manter o histórico, use cancelar. */
+router.delete('/:id', async (req, res) => {
+  if (!req.user || req.user.role !== 'administrador') return res.status(403).json({ error: 'Só o administrador exclui um registro.' });
+  try {
+    await garantirSchema();
+    const del = await pool.query('DELETE FROM cs_qualidade_registros WHERE id::text = $1 RETURNING id', [String(req.params.id)]);
+    if (!del.rows.length) return res.status(404).json({ error: 'Registro não encontrado.' });
+    res.json({ ok: true });
+  } catch (e) { console.error('[qualidade] DELETE falhou:', e); res.status(500).json({ error: 'Erro ao excluir o registro.' }); }
 });
 
 router.put('/vinculo/:analistaId', async (req, res) => {
