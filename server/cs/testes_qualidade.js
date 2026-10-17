@@ -26,10 +26,10 @@ teste('"Todos" vira todos os departamentos; departamento desconhecido é ignorad
   assert.strictEqual(validarRegistro(Object.assign({}, base, { departamentos: ['Marte'] }), HOJE).ok, false);
   assert.strictEqual(validarRegistro(Object.assign({}, base, { departamentos: [] }), HOJE).ok, false);
 });
-teste('descrição: mínimo de 5 e máximo de 600 caracteres', () => {
+teste('descrição: mínimo de 5 e máximo de 1500 caracteres', () => {
   assert.strictEqual(validarRegistro(Object.assign({}, base, { detalhe: 'oi' }), HOJE).ok, false);
-  assert.strictEqual(validarRegistro(Object.assign({}, base, { detalhe: 'a'.repeat(600) }), HOJE).ok, true);
-  assert.strictEqual(validarRegistro(Object.assign({}, base, { detalhe: 'a'.repeat(601) }), HOJE).ok, false);
+  assert.strictEqual(validarRegistro(Object.assign({}, base, { detalhe: 'a'.repeat(1500) }), HOJE).ok, true);
+  assert.strictEqual(validarRegistro(Object.assign({}, base, { detalhe: 'a'.repeat(1501) }), HOJE).ok, false);
 });
 teste('prazo: hoje vale, ontem não, além de um ano não; cliente e analista são obrigatórios', () => {
   assert.strictEqual(validarRegistro(Object.assign({}, base, { prazo: '2026-10-16' }), HOJE).ok, true);
