@@ -913,6 +913,8 @@ async function idsDoAnalista(analistaId) {
   if (a.user_id) return [a.user_id];
   return (await pool.query('SELECT id::text AS id, name FROM users WHERE active = 1')).rows.filter((u) => mesmoNome(u.name, a.nome)).map((u) => u.id);
 }
+/** O risco da carteira (Sinais de atenção, termômetro Tratativas) depende das ocorrências: pede para recalcular na próxima leitura. */
+function refrescarRisco() { try { require('./painel').invalidarCache(); } catch (e) { /* o cálculo expira sozinho em poucos minutos */ } }
 const curtoTexto = (t, n) => { const x = String(t || '').split(/\s+/).join(' ').trim(); return x.length <= n ? x : x.slice(0, n) + '…'; };
 const idsDaFila = (reg) => (reg.fila === 'sucesso' ? idsSucesso() : idsGestoresDe(reg.departamentos));
 /** Dispara o push sem esperar (e sem nunca lançar erro): buscarIds devolve as pessoas; quem fez a ação não é avisado. */
@@ -1267,6 +1269,7 @@ router.post('/gestor/ocorrencias/:id/cancelar', async (req, res) => {
       await tentarAvancarParaValidacao(reg.pai_id, req.user.name, null, req.user.id);
     }
     avisarPush(async () => idsResp, { titulo: 'Ocorrência cancelada', texto: (reg.cliente_nome || 'Empresa') + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(v.valores.motivo, 100), url: '/cs?aba=analista', tag: 'canc-' + reg.id }, req.user.id);
+    refrescarRisco();
     res.json({ registro: await registroCompleto(reg.id) });
   } catch (e) { console.error('[qualidade] POST cancelar falhou:', e); res.status(500).json({ error: 'Erro ao cancelar a ocorrência.' }); }
 });
@@ -1290,6 +1293,7 @@ router.post('/gestor/ocorrencias/:id/excluir', async (req, res) => {
     } catch (e) { console.warn('[qualidade] avisos do sino não limpos:', e.message); }
     require('./auditoria').logReq(req, 'excluir', 'cs-qualidade', 'Excluiu a ocorrência' + (filhas.length ? ' (e ' + filhas.length + ' vinculada(s))' : '') + ' — ' + [reg.cliente_nome, reg.assunto].filter(Boolean).join(' · ') + ' · motivo: ' + curtoTexto(v.valores.motivo, 300));
     if (reg.pai_id) await tentarAvancarParaValidacao(reg.pai_id, req.user.name, null, req.user.id);   // a original deixa de esperar por esta vinculada
+    refrescarRisco();
     res.json({ ok: true, vinculadas: filhas.length });
   } catch (e) { console.error('[qualidade] POST excluir falhou:', e); res.status(500).json({ error: 'Erro ao excluir a ocorrência.' }); }
 });
@@ -1318,6 +1322,7 @@ router.post('/gestor/ocorrencias/:id/reabrir', async (req, res) => {
     if (reabreEncerrada) await pool.query('UPDATE cs_qualidade_resp SET encerrado_em = NULL WHERE registro_id = $1', [reg.id]);   // cada responsável trata e encerra de novo
     await registrar(reg.id, req.user.name, 'reaberta', v.valores.motivo);
     if (alvo.para === 'com_analista') avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Ocorrência reaberta', texto: (reg.cliente_nome || 'Empresa') + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(v.valores.motivo, 100), url: '/cs?aba=analista', tag: 'reab-' + reg.id + '-' + Date.now() }, req.user.id);
+    refrescarRisco();
     res.json({ registro: await registroCompleto(reg.id) });
   } catch (e) { console.error('[qualidade] POST reabrir falhou:', e); res.status(500).json({ error: 'Erro ao reabrir a ocorrência.' }); }
 });
@@ -1354,6 +1359,7 @@ router.post('/sucesso/ocorrencias/:id/encerrar', async (req, res) => {
     if (!upEtapa8.rowCount) return res.status(409).json({ error: JA_MUDOU });
     await registrar(reg.id, req.user.name, 'encerrada', textoNota(v.valores));
     avisarPush(async () => [reg.criado_por_id], { titulo: 'Ocorrência encerrada', texto: (reg.cliente_nome || 'Empresa') + ' — ' + (reg.assunto || ''), url: '/cs?aba=consideracoes', tag: 'enc-' + reg.id }, req.user.id);
+    refrescarRisco();
     res.json({ registro: await registroCompleto(reg.id) });
   } catch (e) { console.error('[qualidade] POST sucesso encerrar falhou:', e); res.status(500).json({ error: 'Erro ao encerrar o processo.' }); }
 });

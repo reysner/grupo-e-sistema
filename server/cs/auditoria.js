@@ -294,6 +294,7 @@ router.post('/limpar-teste', async (req, res) => {
     await garantirTabela();
     const apagado = await executarLimpeza(pool, quemDe(req));
     await logReq(req, 'limpar', 'cs-admin', 'Limpou os dados de teste do módulo Qualidade: ' + apagado.ocorrencias + ' ocorrência(s) e ' + apagado.logs + ' registro(s) de log (uma cópia ficou guardada no banco)');
+    try { require('./painel').invalidarCache(); } catch (e) { /* expira sozinho */ }   // o risco não pode continuar contando o que foi apagado
     res.json({ ok: true, apagado });
   } catch (e) { console.error('[auditoria] POST /limpar-teste falhou:', e); res.status(500).json({ error: 'Erro ao limpar: nada foi apagado.' }); }
 });

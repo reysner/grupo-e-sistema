@@ -162,6 +162,16 @@
     sondarAvisos();
   }
 
+  /** Depois de excluir/cancelar/reabrir uma ocorrência: o risco e os Sinais de atenção mudam, então recarrega a carteira (e a ficha, se estiver aberta). */
+  async function recarregarCarteira() {
+    estado.qResumo = null;
+    if (!estado.dados) return;
+    try {
+      estado.dados = await api('/api/cs/painel/dados?forcar=1');
+      desenharTudo();
+      if ($('ficha') && $('ficha').style.display === 'flex' && estado.ficha && estado.ficha.cliente) abrirFicha(estado.ficha.cliente.id);
+    } catch (e) { /* a tela segue com o que tinha; o botão Atualizar recarrega */ }
+  }
   async function iniciar(forcar) {
     $('login-screen').style.display = 'none';
     $('app').style.display = 'block';
@@ -2208,6 +2218,7 @@
           var st = $('bk-status');
           if (!x.ok) { st.className = 'ac-status erro'; st.textContent = x.j.error || 'Não foi possível limpar.'; apagar.disabled = false; return; }
           estado.qResumo = null; estado.g = null; estado.a = null; estado.s = null; estado.ac.info = null; estado.ac.logs = null;
+          recarregarCarteira();
           await desenharBackup(alvo);
           var s2 = $('bk-status'); if (s2) { s2.className = 'ac-status'; s2.textContent = 'Pronto: ' + x.j.apagado.ocorrencias + ' ocorrência(s) e ' + x.j.apagado.logs + ' registro(s) de log apagados. Está tudo zerado.'; }
         });
@@ -2603,7 +2614,7 @@
         pedirMotivo(titulo, botao, async function (motivo) {
           var x = await postarQ(base + '/' + acao, { motivo: motivo });
           if (!x.ok) return x.j.error || 'Não foi possível concluir.';
-          fecharJanela(); recarregar();
+          fecharJanela(); recarregar(); recarregarCarteira();
           return null;
         });
       });

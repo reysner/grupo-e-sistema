@@ -55,6 +55,8 @@ async function consultar(sql, params = [], rotulo = '') {
 // ── Cache curto: a página faz poucas chamadas seguidas e o cálculo percorre a carteira inteira ──
 let _cache = null;
 const TTL_MS = 60 * 1000;
+/** Esquece o cálculo guardado: a próxima chamada refaz a carteira (usado quando uma ocorrência de Qualidade é excluída, cancelada, reaberta ou encerrada). */
+function invalidarCache() { _cache = null; }
 
 // A ficha de um cliente aceita uma base mais velha (a lista já foi calculada ao abrir o painel); abrir a ficha não deve recalcular a carteira.
 const TTL_FICHA_MS = 10 * 60 * 1000;
@@ -340,4 +342,4 @@ router.get('/cliente/:id/acessorias', async (req, res) => {
   }
 });
 
-module.exports = { router, montarBase, proximoPasso, ultimosMeses, PAPEIS, mascararBase, mascararFicha, mascararMotivo, veValores };
+module.exports = { router, invalidarCache, montarBase, proximoPasso, ultimosMeses, PAPEIS, mascararBase, mascararFicha, mascararMotivo, veValores };
