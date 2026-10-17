@@ -46,6 +46,11 @@ router.post('/register', loginLimiter, async (req, res) => {
   }
 });
 
+/** Acessos do painel /cs definidos pela administração (Acessos): módulos de indicadores dão a marca acesso_cs; módulos de Qualidade/portais dão a marca acesso_gestor. Falha = sem acréscimo. */
+async function marcasDoPainel(userId) {
+  try { return await require('../cs/acessos').marcasDeAcesso(userId); } catch (e) { return { cs: false, portais: false }; }
+}
+
 /** Quem está cadastrado como gestor/diretor em algum departamento (Qualidade > Gerenciar gestores) ganha a marca acesso_gestor. Falha na consulta = sem a marca. */
 async function ehGestorDeQualidade(userId) {
   try { return (await pool.query('SELECT 1 FROM cs_qualidade_gestores WHERE user_id = $1 LIMIT 1', [String(userId)])).rows.length > 0; }
@@ -68,10 +73,11 @@ router.post('/login', loginLimiter, async (req, res) => {
     const match = await auth.checkPassword(password, row.password);
     if (!match) return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
 
-    const user = { id: row.id, name: row.name, role: row.role, acesso_gestor: await ehGestorDeQualidade(row.id), acesso_minha_nota: !!row.acesso_minha_nota, acesso_legalizacao: !!row.acesso_legalizacao, acesso_cs: !!row.acesso_cs, acesso_financeiro: !!row.acesso_financeiro, acesso_qualidade: !!row.acesso_qualidade, acesso_financeiro_sv: !!row.acesso_financeiro_sv };
+    const marcasCs = await marcasDoPainel(row.id);
+    const user = { id: row.id, name: row.name, role: row.role, acesso_gestor: (await ehGestorDeQualidade(row.id)) || marcasCs.portais, acesso_minha_nota: !!row.acesso_minha_nota, acesso_legalizacao: !!row.acesso_legalizacao, acesso_cs: !!row.acesso_cs || marcasCs.cs, acesso_financeiro: !!row.acesso_financeiro, acesso_qualidade: !!row.acesso_qualidade, acesso_financeiro_sv: !!row.acesso_financeiro_sv };
     const accessToken = auth.signAccess(user);
     const { token: refreshToken } = await auth.issueRefreshToken(row.id);
-    return res.json({ token: accessToken, refreshToken, user: { id: row.id, name: row.name, email: row.email, role: row.role, acesso_gestor: user.acesso_gestor, acesso_minha_nota: !!row.acesso_minha_nota, acesso_legalizacao: !!row.acesso_legalizacao, acesso_cs: !!row.acesso_cs, acesso_financeiro: !!row.acesso_financeiro, acesso_qualidade: !!row.acesso_qualidade, acesso_financeiro_sv: !!row.acesso_financeiro_sv } });
+    return res.json({ token: accessToken, refreshToken, user: { id: row.id, name: row.name, email: row.email, role: row.role, acesso_gestor: user.acesso_gestor, acesso_minha_nota: !!row.acesso_minha_nota, acesso_legalizacao: !!row.acesso_legalizacao, acesso_cs: !!row.acesso_cs || marcasCs.cs, acesso_financeiro: !!row.acesso_financeiro, acesso_qualidade: !!row.acesso_qualidade, acesso_financeiro_sv: !!row.acesso_financeiro_sv } });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Erro ao fazer login.' });
@@ -96,7 +102,8 @@ router.post('/refresh', async (req, res) => {
       return res.status(401).json({ error: 'Sessão expirada. Faça login novamente.' });
 
     await auth.revokeRefreshToken(refreshToken);
-    const user = { id: row.user_id, name: row.name, role: row.role, acesso_gestor: await ehGestorDeQualidade(row.user_id), acesso_minha_nota: !!row.acesso_minha_nota, acesso_legalizacao: !!row.acesso_legalizacao, acesso_cs: !!row.acesso_cs, acesso_financeiro: !!row.acesso_financeiro, acesso_qualidade: !!row.acesso_qualidade, acesso_financeiro_sv: !!row.acesso_financeiro_sv };
+    const marcasCs = await marcasDoPainel(row.user_id);
+    const user = { id: row.user_id, name: row.name, role: row.role, acesso_gestor: (await ehGestorDeQualidade(row.user_id)) || marcasCs.portais, acesso_minha_nota: !!row.acesso_minha_nota, acesso_legalizacao: !!row.acesso_legalizacao, acesso_cs: !!row.acesso_cs || marcasCs.cs, acesso_financeiro: !!row.acesso_financeiro, acesso_qualidade: !!row.acesso_qualidade, acesso_financeiro_sv: !!row.acesso_financeiro_sv };
     const accessToken = auth.signAccess(user);
     const { token: newRefresh } = await auth.issueRefreshToken(row.user_id);
     return res.json({ token: accessToken, refreshToken: newRefresh, user });

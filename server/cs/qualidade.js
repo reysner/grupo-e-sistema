@@ -23,6 +23,7 @@ const express = require('express');
 const { pool } = require('../db');
 const { requireAuth } = require('../auth');
 const push = require('../push');
+const acessos = require('./acessos');
 
 const TIPOS = ['Multa', 'Erro', 'Reclamação', 'Atraso', 'Falha de atendimento', 'Falha técnica', 'Outros'];
 const DEPARTAMENTOS = ['Comercial', 'Contábil', 'Financeiro', 'Fiscal', 'Legalização', 'Pessoal', 'Sucesso'];
@@ -821,7 +822,9 @@ router.get('/eu', async (req, res) => {
     const an = await analistaDoLogin(req.user).catch(() => null);
     res.json({ nome: req.user.name, papel: req.user.role, completo: podeEquipe(req.user), gestor: g.length > 0, departamentos: g.map((x) => x.departamento), papeis: g.map((x) => x.papel),
       analista: !!(req.user.acessoQualidade || an), analista_id: an ? an.id : null,
-      final: g.some((x) => x.papel === 'final'), sucesso: g.some((x) => x.departamento === 'Sucesso' || x.papel === 'final') });
+      final: g.some((x) => x.papel === 'final'), sucesso: g.some((x) => x.departamento === 'Sucesso' || x.papel === 'final'),
+      modulos: acessos.modulosEfetivos({ admin: req.user.role === 'administrador', equipe: podeEquipe(req.user), gestor: g.length > 0 || !!req.user.acessoGestor, analista: !!(req.user.acessoQualidade || an), sucesso: g.some((x) => x.departamento === 'Sucesso' || x.papel === 'final') }, await acessos.lerConfig(req.user.id)),
+      modulos_definidos: Array.isArray(await acessos.lerConfig(req.user.id)) });
   } catch (e) { console.error('[qualidade] GET /eu falhou:', e); res.status(500).json({ error: 'Erro ao ler o perfil.' }); }
 });
 
@@ -995,6 +998,7 @@ router.post('/gestor/ocorrencias/:id/devolver', async (req, res) => {
 /** PORTAL DO SUCESSO DO CLIENTE: todas as ocorrências (o dashboard de todos). Vê a equipe do painel e quem é do Sucesso do Cliente; só o gestor final encerra. */
 async function podeVerSucesso(req) {
   if (podeEquipe(req.user)) return true;
+  if ((await acessos.lerConfig(req.user.id)) && (await acessos.lerConfig(req.user.id)).includes('sucesso')) return true;   // liberado em Acessos
   return (await pool.query("SELECT 1 FROM cs_qualidade_gestores WHERE user_id = $1 AND (departamento = 'Sucesso' OR papel = 'final') LIMIT 1", [String(req.user.id)])).rows.length > 0;
 }
 router.get('/sucesso/ocorrencias', async (req, res) => {

@@ -26,6 +26,7 @@
     churn: ['Churn', 'Saídas do período ÷ base ativa no início do período. Só contam as três "Transferida por…" do Acessórias.'],
     categorias: ['Categorias', 'Diamante, Ouro, Prata e Bronze pelo honorário, somando grupos de empresas. O motivo de cada categoria aparece sempre.'],
     sucesso: ['Portal do Sucesso do Cliente', 'Todas as ocorrências de todos os departamentos. O Sucesso do Cliente recebe a devolutiva do gestor, formaliza com o cliente e encerra; só o gestor final encerra o processo.'],
+    acessos: ['Acessos', 'Quem vê o quê no painel: módulos de cada pessoa e os cadastros da Qualidade (analistas, tipos e gestores).'],
     gestor: ['Portal do Gestor', 'As ocorrências do seu departamento: analise, crie a tratativa (plano de ação, responsável e prazo) e abra para o analista. A validação do que o analista tratou volta para cá.'],
     analista: ['Portal do Analista', 'As ocorrências que o seu gestor abriu para você. Sua tratativa será validada pelo seu gestor; depois da nota que você deixar, a ocorrência segue para o Sucesso do Cliente, que faz a devolutiva ao cliente.'],
     qualidade: ['Qualidade dos Dados', 'De onde vem cada indicador e o que ainda está sem dado.'],
@@ -155,6 +156,7 @@
     $('app').style.display = 'block';
     var u = null; try { u = JSON.parse(ls(K_USER) || 'null'); } catch (e) { u = null; }
     if (u && u.name) montarMenuUsuario(u);
+    try { estado.eu = await api('/api/cs/painel/qualidade/eu'); } catch (e) { estado.eu = estado.eu || null; }   // módulos liberados (Acessos)
     aplicarPerfilCs();
     if (!perfilCs().completo) return iniciarLimitado();   // gestor e analista: só os módulos deles, sem os dados da carteira
     ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="vazio">Carregando…</div>'; });
@@ -203,6 +205,7 @@
     if (sec === 'gestor' && estado.g && !estado.g.dados) desenharGestor();
     if (sec === 'analista' && (!estado.a || !estado.a.dados) && perfilCs().analista) desenharAnalista();
     if (sec === 'sucesso' && (!estado.s || !estado.s.dados)) desenharSucesso();
+    if (sec === 'acessos' && (!estado.ac || !estado.ac.dados)) desenharAcessos();
     var ativa = $('sec-' + sec); if (ativa) ativa.scrollTop = 0;
     if (sec === 'consideracoes' && estado.dados && !estado.qResumo) desenharQualidadeMod();   // recarrega depois de um registro novo
     ['btn-csv', 'btn-pdf'].forEach(function (id) { var b = $(id); if (b) b.style.display = SEC_EXPORTA[sec] ? 'inline-flex' : 'none'; });
@@ -1897,6 +1900,149 @@
     if ($('oc-assunto').focus) $('oc-assunto').focus();
   }
 
+  // ── ACESSOS: quem vê o quê no painel (só administrador) ─────────────────────────────────────────
+  var ICONE_MOD = { visao: '🏠', inteligente: '🧠', anual: '📅', atendimento: '🎧', permanencia: '🎯', churn: '📉', categorias: '🏅', qualidade_dados: '🔎', qualidade: '✅', gestor: '🧭', analista: '🧑‍💼', sucesso: '🤝' };
+  var MOD_INDICADORES = ['visao', 'inteligente', 'anual', 'atendimento', 'permanencia', 'churn', 'categorias', 'qualidade_dados'];
+  var PERFIS_RAPIDOS = [
+    { id: 'equipe', rotulo: 'Equipe completa', modulos: MOD_INDICADORES.concat(['qualidade', 'sucesso']) },
+    { id: 'indicadores', rotulo: 'Só indicadores', modulos: MOD_INDICADORES.slice() },
+    { id: 'portais', rotulo: 'Só Qualidade e portais', modulos: ['qualidade', 'gestor', 'analista', 'sucesso'] },
+    { id: 'nada', rotulo: 'Sem acesso a nada', modulos: [] }
+  ];
+  var CADASTROS_AC = [
+    { id: 'analistas', ico: '👥', titulo: 'Analistas', texto: 'Quem é analista, o login ligado a cada um e quem está ativo.' },
+    { id: 'tipos', ico: '🏷️', titulo: 'Tipos de registro', texto: 'Os tipos de ocorrência e o peso de cada um no risco de churn.' },
+    { id: 'gestores', ico: '🧭', titulo: 'Gestores(as)', texto: 'Gestor(a), diretor(a) e gestor(a) final de cada departamento.' }
+  ];
+  /** Liga ou desliga um módulo na lista, devolvendo na ordem do catálogo. */
+  function alternarModuloAc(lista, codigo, catalogo) {
+    var tem = (lista || []).indexOf(codigo) >= 0, set = (lista || []).filter(function (c) { return c !== codigo; });
+    if (!tem) set.push(codigo);
+    return catalogo.map(function (m) { return m.codigo; }).filter(function (c) { return set.indexOf(c) >= 0; });
+  }
+  function iniciaisAc(nome) {
+    var p = String(nome || '').trim().split(' ').filter(Boolean);
+    if (!p.length) return '?';
+    return (p[0].charAt(0) + (p.length > 1 ? p[p.length - 1].charAt(0) : '')).toUpperCase();
+  }
+  function matizAc(nome) { var h = 0, s = String(nome || ''); for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; }
+  function semAcentoAc(t) { return String(t || '').normalize('NFD').split('').filter(function (c) { return c < '\u0300' || c > '\u036f'; }).join('').toLowerCase(); }
+  function filtrarAc(usuarios, f) {
+    var b = semAcentoAc(f && f.busca).trim(), modo = (f && f.filtro) || 'todos';
+    return (usuarios || []).filter(function (u) {
+      if (b && semAcentoAc(u.nome).indexOf(b) < 0 && semAcentoAc(u.email).indexOf(b) < 0) return false;
+      if (modo === 'personalizados') return !!u.definido;
+      if (modo === 'padrao') return !u.admin && !u.definido;
+      if (modo === 'sem') return !u.admin && (!u.modulos.length || !u.entra_no_painel);
+      return true;
+    });
+  }
+  function htmlResumoAc(d) {
+    var us = d.usuarios || [], adm = us.filter(function (u) { return u.admin; }).length, per = us.filter(function (u) { return u.definido; }).length;
+    var sem = us.filter(function (u) { return !u.admin && (!u.modulos.length || !u.entra_no_painel); }).length;
+    return '<div class="gp-kpi-row">' +
+      kpi('#256050', 'Pessoas ativas', us.length, adm + ' administrador(es)') +
+      kpi('#7c3aed', 'Personalizados', per, 'módulos escolhidos à mão') +
+      kpi('#0e7490', 'Padrão do perfil', us.length - adm - per, 'seguem o perfil de sempre') +
+      kpi('#b91c1c', 'Sem acesso', sem, 'não veem nenhum módulo') + '</div>';
+  }
+  function htmlMatrizAc(d, f) {
+    var cat = d.catalogo || [], lista = filtrarAc(d.usuarios, f), grupos = [];
+    cat.forEach(function (m) { var g = grupos[grupos.length - 1]; if (g && g.nome === m.grupo) g.n++; else grupos.push({ nome: m.grupo, n: 1 }); });
+    var cab1 = '<tr class="ac-grupos"><th class="ac-nome">Pessoa</th>' + grupos.map(function (g, i) { return '<th colspan="' + g.n + '" class="ac-g ac-g' + (i % 2) + '">' + esc(g.nome) + '</th>'; }).join('') + '<th class="ac-perfil-th">Perfil</th></tr>';
+    var cab2 = '<tr class="ac-cols"><th class="ac-nome"></th>' + cat.map(function (m) { return '<th class="ac-col" data-col="' + esc(m.codigo) + '" title="' + esc(m.rotulo) + '"><span class="ac-ico">' + (ICONE_MOD[m.codigo] || '•') + '</span><span class="ac-rot">' + esc(m.rotulo) + '</span></th>'; }).join('') + '<th></th></tr>';
+    var linhas = lista.map(function (u) {
+      var cels = cat.map(function (m) {
+        var tem = u.modulos.indexOf(m.codigo) >= 0;
+        if (u.admin) return '<td class="ac-cel" data-col="' + esc(m.codigo) + '"><span class="ac-sw on trava" title="Administrador vê todos os módulos">✓</span></td>';
+        return '<td class="ac-cel" data-col="' + esc(m.codigo) + '"><button type="button" class="ac-sw ' + (tem ? 'on' : 'off') + '" data-ac-sw="' + esc(u.id) + '|' + esc(m.codigo) + '" aria-pressed="' + (tem ? 'true' : 'false') + '" aria-label="' + esc(u.nome + ' — ' + m.rotulo + ': ' + (tem ? 'vê' : 'não vê')) + '" title="' + esc(m.rotulo) + '">' + (tem ? '✓' : '') + '</button></td>';
+      }).join('');
+      var etiqueta = u.admin ? '<span class="ac-tag ac-tag-adm">Administrador</span>' : u.definido ? '<span class="ac-tag ac-tag-per">Personalizado</span>' : '<span class="ac-tag">Padrão do perfil</span>';
+      var aviso = u.admin ? '' : !u.modulos.length ? '<span class="ac-tag ac-tag-sem">Sem acesso a nada</span>' : !u.entra_no_painel ? '<span class="ac-tag ac-tag-sem">Não entra no painel</span>' : '';
+      var acoes = u.admin ? '' : '<select data-ac-perfil="' + esc(u.id) + '" aria-label="Aplicar perfil rápido a ' + esc(u.nome) + '"><option value="">Aplicar perfil…</option>' +
+        PERFIS_RAPIDOS.map(function (p) { return '<option value="' + p.id + '">' + esc(p.rotulo) + '</option>'; }).join('') + '</select>' +
+        (u.definido ? '<button type="button" class="ac-voltar" data-ac-padrao="' + esc(u.id) + '" title="Descarta o que foi marcado e volta ao padrão do perfil">↺ padrão</button>' : '');
+      return '<tr data-ac-linha="' + esc(u.id) + '"><th class="ac-nome" scope="row"><span class="ac-av" style="--h:' + matizAc(u.nome) + '">' + esc(iniciaisAc(u.nome)) + '</span><span class="ac-quem" title="' + esc(u.nome) + '"><strong>' + esc(u.nome) + '</strong><small>' + esc(u.email || '') + '</small></span></th>' + cels + '<td class="ac-perfil">' + etiqueta + aviso + acoes + '</td></tr>';
+    }).join('');
+    return '<div class="ac-wrap"><table class="ac-mx"><thead>' + cab1 + cab2 + '</thead><tbody>' + (linhas || '<tr><td colspan="' + (cat.length + 2) + '" class="vazio">Ninguém neste filtro.</td></tr>') + '</tbody></table></div>';
+  }
+  function htmlAcessos(d, f) {
+    var chips = [['todos', 'Todos'], ['personalizados', 'Personalizados'], ['padrao', 'Padrão do perfil'], ['sem', 'Sem acesso']].map(function (c) {
+      return '<button type="button" class="' + (f.filtro === c[0] ? 'active' : '') + '" data-ac-filtro="' + c[0] + '">' + c[1] + '</button>';
+    }).join('');
+    var tiles = CADASTROS_AC.map(function (c) {
+      return '<button type="button" class="ac-tile" data-ac-cad="' + c.id + '"><span class="ac-tile-ico">' + c.ico + '</span><span><strong>' + esc(c.titulo) + '</strong><span class="t">' + esc(c.texto) + '</span><span class="ir">Abrir cadastro →</span></span></button>';
+    }).join('');
+    return '<div id="ac-resumo">' + htmlResumoAc(d) + '</div>' +
+      '<div class="card"><div class="card-title">Cadastros da Qualidade</div><div class="card-sub">Quem pode ser analista ou gestor(a), os tipos de ocorrência e o peso de cada um. Antes ficavam dentro de Qualidade.</div><div class="ac-tiles">' + tiles + '</div></div>' +
+      '<div class="card"><div class="card-title">Quem vê o quê</div><div class="card-sub">Toque numa bolinha para liberar ou tirar um módulo: salva na hora. Quem nunca foi mexido segue o padrão do perfil; ao mexer, a pessoa passa a ser <strong>Personalizado</strong> e vê exatamente o que estiver marcado. Administrador sempre vê tudo. Vale na próxima vez que a pessoa abrir o painel (quem ganha o primeiro acesso ao painel precisa entrar de novo).</div>' +
+      '<div class="ac-barra"><input class="gp-input" id="ac-busca" placeholder="Buscar pessoa ou e-mail" value="' + esc(f.busca || '') + '"><div class="tabs" id="ac-filtros">' + chips + '</div><span class="ac-status" id="ac-status" role="status" aria-live="polite"></span></div>' +
+      '<div class="ac-legenda"><span><span class="ac-sw on">✓</span>vê o módulo</span><span><span class="ac-sw off"></span>não vê</span><span>Indicadores da carteira dão acesso aos dados dos clientes; Portal do Gestor só mostra algo para quem está cadastrado(a) como gestor(a).</span></div>' +
+      '<div id="ac-matriz">' + htmlMatrizAc(d, f) + '</div></div>';
+  }
+  async function desenharAcessos() {
+    var alvo = $('sec-acessos'); if (!alvo) return;
+    if (!estado.ac) estado.ac = { dados: null, f: { busca: '', filtro: 'todos' } };
+    var ac = estado.ac;
+    if (!ac.dados) {
+      alvo.innerHTML = '<div class="vazio">Carregando…</div>';
+      try { ac.dados = await api('/api/cs/painel/acessos'); }
+      catch (e) { estado.ac = null; alvo.innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; return; }
+    }
+    alvo.innerHTML = htmlAcessos(ac.dados, ac.f);
+    ligarAcessos(alvo);
+  }
+  function ligarAcessos(alvo) {
+    var d = estado.ac.dados, f = estado.ac.f;
+    var pintar = function () { $('ac-matriz').innerHTML = htmlMatrizAc(d, f); $('ac-resumo').innerHTML = htmlResumoAc(d); };
+    var status = function (t, erro) { var s = $('ac-status'); if (s) { s.textContent = t; s.className = 'ac-status' + (erro ? ' erro' : ''); } };
+    var achar = function (id) { return d.usuarios.filter(function (u) { return u.id === id; })[0]; };
+    var salvar = async function (u, modulos) {
+      var antes = { modulos: u.modulos, definido: u.definido, entra: u.entra_no_painel };
+      u.modulos = modulos === null ? u.padrao.slice() : modulos; u.definido = modulos !== null; u.entra_no_painel = u.definido || !!u.entra_padrao;
+      pintar(); status('Salvando…');
+      try {
+        var r = await chamarApi('/api/cs/painel/acessos/' + encodeURIComponent(u.id), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ modulos: modulos }) });
+        var j = await r.json().catch(function () { return {}; });
+        if (!r.ok) throw new Error(j.error || 'Não foi possível salvar.');
+        status('Salvo para ' + u.nome + ' ✓');
+      } catch (e) {
+        u.modulos = antes.modulos; u.definido = antes.definido; u.entra_no_painel = antes.entra; pintar(); status(e.message || 'Não foi possível salvar.', true);
+      }
+    };
+    alvo.addEventListener('click', function (ev) {
+      var t = ev.target, ach = function (sel) { return t && t.closest ? t.closest(sel) : null; };
+      var sw = ach('[data-ac-sw]');
+      if (sw) { var p = sw.getAttribute('data-ac-sw').split('|'), u = achar(p[0]); if (u && !u.admin) salvar(u, alternarModuloAc(u.modulos, p[1], d.catalogo)); return; }
+      var pd = ach('[data-ac-padrao]');
+      if (pd) { var u2 = achar(pd.getAttribute('data-ac-padrao')); if (u2) salvar(u2, null); return; }
+      var fl = ach('[data-ac-filtro]');
+      if (fl) {
+        f.filtro = fl.getAttribute('data-ac-filtro');
+        Array.prototype.forEach.call(alvo.querySelectorAll('[data-ac-filtro]'), function (b) { b.classList.toggle('active', b === fl); });
+        pintar(); return;
+      }
+      var cad = ach('[data-ac-cad]');
+      if (cad) {
+        var id = cad.getAttribute('data-ac-cad');
+        if (id === 'analistas') abrirGerenciarAnalistas(null);
+        else if (id === 'tipos') { estado.qOpcoes = null; abrirGerenciarTipos(null); }
+        else abrirGerenciarGestores(null);
+      }
+    });
+    alvo.addEventListener('change', function (ev) {
+      var sel = ev.target; if (!sel || !sel.getAttribute || !sel.getAttribute('data-ac-perfil')) return;
+      var perfil = PERFIS_RAPIDOS.filter(function (p) { return p.id === sel.value; })[0], u = achar(sel.getAttribute('data-ac-perfil'));
+      sel.value = '';
+      if (perfil && u && !u.admin) salvar(u, perfil.modulos.slice());
+    });
+    var busca = $('ac-busca'); if (busca) busca.addEventListener('input', function () { f.busca = busca.value; $('ac-matriz').innerHTML = htmlMatrizAc(d, f); });
+    // realce em cruz: a coluna do módulo sob o mouse acende
+    var luz = function (cod) { Array.prototype.forEach.call(alvo.querySelectorAll('.ac-cel'), function (c) { c.classList.toggle('ac-hl', !!cod && c.getAttribute('data-col') === cod); }); };
+    alvo.addEventListener('mouseover', function (ev) { var c = ev.target && ev.target.closest ? ev.target.closest('.ac-cel') : null; luz(c ? c.getAttribute('data-col') : null); });
+    alvo.addEventListener('mouseleave', function () { luz(null); });
+  }
+
   // ── PERFIL: o /cs mostra só os módulos de cada pessoa (o servidor confere cada rota) ──────────────────
   function usuarioCs() { try { return JSON.parse(ls(K_USER) || 'null') || {}; } catch (e) { return {}; } }
   /** completo = administrador, usuário ou equipe do CS (todos os módulos de sempre); o administrador também vê os dois portais; gestor e analista, só os deles. */
@@ -1905,20 +2051,33 @@
     var adm = u.role === 'administrador';
     return { completo: adm || u.role === 'usuario' || !!u.acesso_cs, admin: adm, gestor: adm || !!u.acesso_gestor, analista: adm || !!u.acesso_qualidade };
   }
-  function perfilCs() { return perfilDe(usuarioCs()); }
+  // Módulos liberados (Acessos): o servidor devolve em /qualidade/eu o que a pessoa vê; quem não foi configurado segue o padrão do perfil.
+  var SEC_MODULO = { visao: 'visao', analise: 'inteligente', anual: 'anual', atendimento: 'atendimento', consideracoes: 'qualidade', gestor: 'gestor', analista: 'analista', sucesso: 'sucesso', risco: 'permanencia', churn: 'churn', categorias: 'categorias', qualidade: 'qualidade_dados', acessos: 'acessos' };
+  var ORDEM_SECOES = ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'gestor', 'analista', 'sucesso', 'risco', 'churn', 'categorias', 'qualidade', 'acessos'];
+  function modulosCs() { return estado.eu && Array.isArray(estado.eu.modulos) ? estado.eu.modulos : null; }
+  /** true/false conforme os módulos da pessoa; null quando ainda não se sabe (cai nas regras de sempre). */
+  function secaoLiberada(sec) { var m = modulosCs(); return m ? m.indexOf(SEC_MODULO[sec]) >= 0 : null; }
+  function secaoInicialCs() { for (var i = 0; i < ORDEM_SECOES.length; i++) if (secaoLiberada(ORDEM_SECOES[i])) return ORDEM_SECOES[i]; return 'consideracoes'; }
+  function perfilCs() {
+    var p = perfilDe(usuarioCs()), m = modulosCs();
+    if (m) { p.gestor = m.indexOf('gestor') >= 0; p.analista = m.indexOf('analista') >= 0; p.completo = MOD_INDICADORES.some(function (c) { return m.indexOf(c) >= 0; }); }
+    return p;
+  }
   function aplicarPerfilCs() {
     var p = perfilCs();
     Array.prototype.forEach.call(document.querySelectorAll('.gp-nav-item'), function (b) {
       var sec = b.getAttribute('data-sec');
-      var ok = p.completo ? (sec === 'gestor' ? p.gestor : sec === 'analista' ? p.analista : true) : (sec === 'consideracoes' || (sec === 'gestor' && p.gestor) || (sec === 'analista' && p.analista) || (sec === 'sucesso' && !!(estado.eu && estado.eu.sucesso)));
+      var lib = secaoLiberada(sec);
+      var ok = lib !== null ? lib : sec === 'acessos' ? p.admin : p.completo ? (sec === 'gestor' ? p.gestor : sec === 'analista' ? p.analista : true) : (sec === 'consideracoes' || (sec === 'gestor' && p.gestor) || (sec === 'analista' && p.analista) || (sec === 'sucesso' && !!(estado.eu && estado.eu.sucesso)));
       b.style.display = ok ? '' : 'none';
     });
-    Array.prototype.forEach.call(document.querySelectorAll('.gp-nav-divider'), function (d) { d.style.display = p.completo ? '' : 'none'; });
+    Array.prototype.forEach.call(document.querySelectorAll('.gp-nav-divider'), function (d) { d.style.display = (d.getAttribute('data-div') === 'adm' ? p.admin : p.completo) ? '' : 'none'; });
     if (!p.completo) {
       ['btn-csv', 'btn-pdf', 'btn-valores', 'btn-atualizar', 'filtro-periodo'].forEach(function (id) { var e = $(id); if (e) e.style.display = 'none'; });
       var sucessoOk = !!(estado.eu && estado.eu.sucesso);
       if (['consideracoes', 'gestor', 'analista', 'sucesso'].indexOf(estado.secao) < 0 || (estado.secao === 'gestor' && !p.gestor) || (estado.secao === 'analista' && !p.analista) || (estado.secao === 'sucesso' && !sucessoOk)) estado.secao = p.gestor ? 'gestor' : 'consideracoes';
     } else if ((estado.secao === 'gestor' && !p.gestor) || (estado.secao === 'analista' && !p.analista)) estado.secao = 'visao';
+    if (secaoLiberada(estado.secao) === false) estado.secao = secaoInicialCs();   // a seção aberta não é mais da pessoa
   }
   async function iniciarLimitado() {
     var p = perfilCs();
@@ -2399,7 +2558,7 @@
     }
     alvo.innerHTML =
       '<div class="qa-barra"><button type="button" class="login-btn" id="q-registrar" style="width:auto;margin:0;padding:10px 22px">＋ Registrar ocorrência</button>' +
-        (ehAdminPainel() ? '<button type="button" class="gp-footer-btn" id="q-gerenciar" style="width:auto">Gerenciar analistas</button><button type="button" class="gp-footer-btn" id="q-tipos" style="width:auto">Gerenciar tipos de registro</button><button type="button" class="gp-footer-btn" id="q-gestores" style="width:auto">Gerenciar gestores</button>' : '') + '<span class="qa-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</span></div>' +
+        '<span class="qa-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</span></div>' +
       '<div class="gp-kpi-row">' +
         kpi('#7c3aed', 'A validar', tot.a_validar, 'finalizadas pelo analista, aguardando você') +
         kpi('#b45309', 'Em aberto', tot.abertos, 'aguardando o analista começar') +
@@ -2410,9 +2569,6 @@
       aviso + recentesQ() + pesoBox;
     var atualiza = function () { estado.qResumo = null; desenharQualidadeMod(); };
     var reg = $('q-registrar'); if (reg) reg.addEventListener('click', function () { abrirRegistrarOcorrencia(atualiza); });
-    var g = $('q-gerenciar'); if (g) g.addEventListener('click', function () { abrirGerenciarAnalistas(atualiza); });
-    var gt = $('q-tipos'); if (gt) gt.addEventListener('click', function () { estado.qOpcoes = null; abrirGerenciarTipos(function () { desenharQualidadeMod(); }); });
-    var gg = $('q-gestores'); if (gg) gg.addEventListener('click', function () { abrirGerenciarGestores(null); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-qan]'), function (bt) { bt.addEventListener('click', function () { abrirFichaAnalistaQ(bt.getAttribute('data-qan')); }); });
     var box = $('q-peso-box'); if (box) box.addEventListener('toggle', function () { estado.qPesoAberto = !!box.open; });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes .qt-inline[data-tid]'), function (inp) {

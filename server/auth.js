@@ -66,6 +66,14 @@ async function checkPassword(plain, hash) { return bcrypt.compare(plain, hash); 
 
 const IS_PROD = process.env.NODE_ENV === 'production';
 
+/** Lê o token da requisição sem exigir login: devolve o conteúdo (sub, role, ...) ou null. Para barreiras que só complementam a rota (ela confere o resto). */
+function lerPayload(req) {
+  const auth = req.headers && req.headers.authorization;
+  const token = auth && auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  if (!token) return null;
+  try { return jwt.verify(token, ACCESS_SECRET, { issuer: 'grupo-e' }); } catch (e) { return null; }
+}
+
 function requireAuth(req, res, next) {
   const auth = req.headers.authorization;
   const token = auth && auth.startsWith('Bearer ') ? auth.slice(7) : null;
@@ -141,5 +149,5 @@ function requireAdmin(req, res, next) {
 module.exports = {
   signAccess, issueRefreshToken, revokeRefreshToken, revokeAllUserTokens,
   pruneExpiredTokens, hashPassword, checkPassword,
-  requireAuth, requireAdmin,
+  requireAuth, requireAdmin, lerPayload,
 };

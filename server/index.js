@@ -64,6 +64,8 @@ app.use('/api/auth',   authRoutes);
 app.use('/api/data',   dataRoutes);
 app.use('/api/users',  usersRoutes);
 app.use('/api/cs/categorias', require('./cs/categorias').router);  // Categorias Diamante/Ouro/Prata/Bronze (antes de /api/cs)
+app.use('/api/cs/painel', require('./cs/acessos').restringir(require('./auth').lerPayload));   // quem tem módulos definidos em Acessos só passa nas rotas deles
+app.use('/api/cs/painel/acessos', require('./cs/acessos').router);   // Acessos: o administrador define os módulos de cada pessoa
 app.use('/api/cs/painel/churn-motivos', require('./cs/churnMotivos').router);   // Churn por motivo e Fechamento do mês (antes de /api/cs/painel)
 app.use('/api/push', require('./push').router);   // avisos push do navegador (chave, cadastrar e descadastrar o aparelho; qualquer pessoa logada)
 app.use('/api/cs/painel/qualidade', require('./cs/qualidade').router);   // Qualidade: considerações por cliente e analista (antes de /api/cs/painel)

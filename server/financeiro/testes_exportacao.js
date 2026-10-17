@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, secaoFicha: secaoFicha, listaOcorrenciasQ: listaOcorrenciasQ, tabelaAcessorias: tabelaAcessorias, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, cartaoOcorrenciaQ: cartaoOcorrenciaQ, tabelaOcorrenciasMod: tabelaOcorrenciasMod, filtrarPortal: filtrarPortal, htmlAnalista: htmlAnalista, htmlOcorrenciaAnalista: htmlOcorrenciaAnalista, htmlSucesso: htmlSucesso, htmlOcorrenciaSucesso: htmlOcorrenciaSucesso, htmlRetornos: htmlRetornos, botaoValoresVisivel: botaoValoresVisivel, perfilDe: perfilDe, filtrarGestor: filtrarGestor, contagemEtapasGestor: contagemEtapasGestor, htmlGestor: htmlGestor, htmlTratativaGestor: htmlTratativaGestor, htmlMinhasOcorrencias: htmlMinhasOcorrencias, htmlGestoresQ: htmlGestoresQ, opcoesTiposOc: opcoesTiposOc, formularioOcorrenciaQ: formularioOcorrenciaQ, comoPesaTratativa: comoPesaTratativa, abrirNovoMotivoChurn: abrirNovoMotivoChurn }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, secaoFicha: secaoFicha, listaOcorrenciasQ: listaOcorrenciasQ, tabelaAcessorias: tabelaAcessorias, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, cartaoOcorrenciaQ: cartaoOcorrenciaQ, tabelaOcorrenciasMod: tabelaOcorrenciasMod, filtrarPortal: filtrarPortal, htmlAnalista: htmlAnalista, htmlOcorrenciaAnalista: htmlOcorrenciaAnalista, htmlSucesso: htmlSucesso, htmlOcorrenciaSucesso: htmlOcorrenciaSucesso, htmlRetornos: htmlRetornos, alternarModuloAc: alternarModuloAc, filtrarAc: filtrarAc, iniciaisAc: iniciaisAc, htmlMatrizAc: htmlMatrizAc, htmlResumoAc: htmlResumoAc, htmlAcessos: htmlAcessos, secaoLiberada: secaoLiberada, secaoInicialCs: secaoInicialCs, botaoValoresVisivel: botaoValoresVisivel, perfilDe: perfilDe, filtrarGestor: filtrarGestor, contagemEtapasGestor: contagemEtapasGestor, htmlGestor: htmlGestor, htmlTratativaGestor: htmlTratativaGestor, htmlMinhasOcorrencias: htmlMinhasOcorrencias, htmlGestoresQ: htmlGestoresQ, opcoesTiposOc: opcoesTiposOc, formularioOcorrenciaQ: formularioOcorrenciaQ, comoPesaTratativa: comoPesaTratativa, abrirNovoMotivoChurn: abrirNovoMotivoChurn }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null, tratativas: 75 }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -290,6 +290,57 @@ const semLixo = (e, nome) => {
     assert.ok(h.includes('Sucesso do Cliente') && !h.includes('id="gt-salvar"'));
     const depois = C.t.htmlTratativaGestor(Object.assign({}, base, { etapa: 'devolutiva_cliente', validacao_nota: 'Tudo ok', validacao_por: 'Eduardo', validacao_em: '2026-10-20T10:00:00Z' }), []);
     assert.ok(!depois.includes('id="gv-validar"') && depois.includes('Tudo ok') && depois.includes('Guia retificada'), 'depois de validada só leitura');
+  });
+  await teste('cs: Acessos — matriz pessoa × módulo: administrador travado, bolinhas com estado, etiqueta Personalizado/Padrão, filtros e busca', () => {
+    const cat = [{ codigo: 'visao', rotulo: 'Visão Geral', grupo: 'Indicadores da carteira' }, { codigo: 'churn', rotulo: 'Churn', grupo: 'Indicadores da carteira' }, { codigo: 'gestor', rotulo: 'Portal do Gestor', grupo: 'Qualidade e portais' }];
+    const U = (id, nome, extra) => Object.assign({ id, nome, email: nome.toLowerCase() + '@x.com', papel: 'usuario', admin: false, definido: false, modulos: ['visao', 'churn'], padrao: ['visao', 'churn'], entra_padrao: true, entra_no_painel: true }, extra || {});
+    const d = { catalogo: cat, usuarios: [U('1', 'Reysner Silva', { admin: true, papel: 'administrador', modulos: ['visao', 'churn', 'gestor', 'acessos'] }), U('2', 'Maria Souza', { definido: true, modulos: ['churn'] }), U('3', 'João Ágil'), U('4', 'Zé Vazio', { definido: true, modulos: [], entra_no_painel: true }), U('5', 'Sem Painel', { modulos: ['qualidade'], entra_padrao: false, entra_no_painel: false })] };
+    const h = C.t.htmlMatrizAc(d, { busca: '', filtro: 'todos' });
+    assert.ok(h.includes('Indicadores da carteira') && h.includes('Qualidade e portais') && h.includes('colspan="2"') && h.includes('data-col="gestor"'));
+    assert.ok(h.includes('class="ac-sw on trava"'), 'administrador: bolinhas travadas');
+    assert.ok(!h.includes('data-ac-sw="1|'), 'administrador não tem bolinha clicável');
+    assert.ok(h.includes('data-ac-sw="2|churn"') && h.includes('aria-pressed="true"') && h.includes('aria-pressed="false"'), 'bolinhas clicáveis com estado');
+    assert.ok(h.includes('aria-label="Maria Souza — Churn: vê"') && h.includes('aria-label="Maria Souza — Visão Geral: não vê"'));
+    assert.ok(h.includes('ac-tag-per">Personalizado') && h.includes('ac-tag">Padrão do perfil') && h.includes('ac-tag-adm">Administrador'));
+    assert.ok(h.includes('data-ac-padrao="2"') && !h.includes('data-ac-padrao="3"'), '"voltar ao padrão" só para quem foi personalizado');
+    assert.ok(h.includes('Sem acesso a nada') && h.includes('Não entra no painel'));
+    assert.ok(h.includes('data-ac-perfil="3"') && h.includes('Equipe completa') && h.includes('Só Qualidade e portais'));
+    assert.ok(h.includes('>RS<') && h.includes('>MS<') && h.includes('>JÁ<'), 'iniciais no avatar');
+    const so = (f) => C.t.filtrarAc(d.usuarios, Object.assign({ busca: '', filtro: 'todos' }, f)).map((u) => u.id);
+    assert.deepStrictEqual(so({}), ['1', '2', '3', '4', '5']);
+    assert.deepStrictEqual(so({ filtro: 'personalizados' }), ['2', '4']);
+    assert.deepStrictEqual(so({ filtro: 'padrao' }), ['3', '5']);
+    assert.deepStrictEqual(so({ filtro: 'sem' }), ['4', '5']);
+    assert.deepStrictEqual(so({ busca: 'joao' }), ['3'], 'busca sem acento');
+    assert.deepStrictEqual(so({ busca: 'souza@x' }), ['2'], 'busca por e-mail');
+    assert.ok(C.t.htmlMatrizAc(d, { busca: 'zzz', filtro: 'todos' }).includes('Ninguém neste filtro'));
+    const r = C.t.htmlResumoAc(d);
+    assert.ok(r.includes('Pessoas ativas') && r.includes('Personalizados') && r.includes('Padrão do perfil') && r.includes('Sem acesso'));
+    const tela = C.t.htmlAcessos(d, { busca: '', filtro: 'todos' });
+    assert.ok(tela.includes('Cadastros da Qualidade') && tela.includes('data-ac-cad="analistas"') && tela.includes('data-ac-cad="tipos"') && tela.includes('data-ac-cad="gestores"') && tela.includes('Quem vê o quê'));
+    assert.ok(tela.includes('id="ac-busca"') && tela.includes('data-ac-filtro="sem"') && tela.includes('class="active" data-ac-filtro="todos"'));
+  });
+  await teste('cs: Acessos — alternar módulo mantém a ordem do catálogo; módulos liberados mandam nas seções; seção inicial é a primeira liberada', () => {
+    const cat = [{ codigo: 'visao' }, { codigo: 'churn' }, { codigo: 'gestor' }];
+    assert.deepStrictEqual(C.t.alternarModuloAc(['churn'], 'visao', cat), ['visao', 'churn']);
+    assert.deepStrictEqual(C.t.alternarModuloAc(['visao', 'churn'], 'visao', cat), ['churn']);
+    assert.deepStrictEqual(C.t.alternarModuloAc([], 'gestor', cat), ['gestor']);
+    assert.strictEqual(C.t.iniciaisAc('Maria Souza'), 'MS');
+    assert.strictEqual(C.t.iniciaisAc('Josiane Alves de Oliveira Cezario'), 'JC');
+    assert.strictEqual(C.t.iniciaisAc(''), '?');
+    const antes = C.t.estado.eu;
+    try {
+      C.t.estado.eu = null;
+      assert.strictEqual(C.t.secaoLiberada('churn'), null, 'sem dados dos módulos: regras de sempre');
+      C.t.estado.eu = { modulos: ['churn', 'qualidade', 'sucesso'] };
+      assert.strictEqual(C.t.secaoLiberada('churn'), true);
+      assert.strictEqual(C.t.secaoLiberada('consideracoes'), true, 'a seção Qualidade é o módulo qualidade');
+      assert.strictEqual(C.t.secaoLiberada('risco'), false);
+      assert.strictEqual(C.t.secaoLiberada('acessos'), false);
+      assert.strictEqual(C.t.secaoInicialCs(), 'consideracoes');
+      C.t.estado.eu = { modulos: ['categorias', 'acessos'] };
+      assert.strictEqual(C.t.secaoInicialCs(), 'categorias');
+    } finally { C.t.estado.eu = antes; }
   });
   await teste('cs: perfil no /cs — administrador vê tudo; gestor só Qualidade e Portal do Gestor; analista só Qualidade e Portal do Analista; equipe de sempre não ganha os portais', () => {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.perfilDe({ role: 'administrador' }))), { completo: true, admin: true, gestor: true, analista: true });

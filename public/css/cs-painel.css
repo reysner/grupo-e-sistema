@@ -222,7 +222,8 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 .gp-nav::-webkit-scrollbar{width:4px;}.gp-nav::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:4px;}
 
 /* Título e subtítulo do painel logo abaixo da logo (pedido do Reysner, 09/10/2026). */
-.gp-sidebar-logo{flex-direction:column;justify-content:flex-start;gap:18px;padding:4px 16px 14px;}   /* logo mais acima, texto mais embaixo */
+.gp-sidebar-logo{flex-direction:column;justify-content:flex-start;gap:0;padding:4px 16px 14px;}
+.gp-sidebar-logo img{margin-bottom:-30px;}   /* a imagem tem margem transparente embaixo: aproxima o título da logo (18/10/2026) */   /* logo mais acima, texto mais embaixo */
 .gp-sidebar-id{display:flex;align-items:flex-start;gap:10px;width:100%;padding:0 4px;}
 .gp-sidebar-id .gp-sidebar-dot{margin-top:6px;}
 .gp-sidebar-title{color:#fff;font-size:13px;font-weight:700;letter-spacing:-.3px;line-height:1.25;}
@@ -397,3 +398,54 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 .qa-aviso{display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;border:2px solid #7c3aed;background:#7c3aed14;border-radius:12px;padding:12px 16px;margin-bottom:14px;font-size:13px;}
 .qa-aviso-acoes{display:flex;gap:8px;flex-wrap:wrap;}
 #badge-qualmod:not(:empty){background:#7c3aed;color:#fff;}
+
+/* ===== ACESSOS (administração, 18/10/2026): matriz pessoa × módulo ===== */
+.ac-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px;}
+.ac-tile{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:14px 16px;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text);cursor:pointer;font:inherit;transition:transform .15s,box-shadow .15s,border-color .15s;}
+.ac-tile:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,.09);border-color:var(--brand3);}
+.ac-tile-ico{flex:none;width:44px;height:44px;border-radius:13px;display:grid;place-items:center;font-size:22px;background:var(--brand-soft);}
+.ac-tile strong{display:block;font-size:14px;margin-bottom:2px;}
+.ac-tile .t{display:block;font-size:12px;color:var(--text2);line-height:1.4;}
+.ac-tile .ir{display:block;margin-top:6px;font-size:11px;font-weight:700;color:var(--brand);}
+.ac-barra{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:14px 0;}
+.ac-barra .gp-input{min-width:230px;}
+.ac-barra .tabs{margin-bottom:0;}
+.ac-status{font-size:12px;color:var(--brand);font-weight:600;min-height:16px;}
+.ac-status.erro{color:var(--red);}
+.ac-wrap{overflow:auto;border:1px solid var(--border);border-radius:14px;max-height:66vh;background:var(--surface);}
+.ac-mx{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;}
+.ac-mx th,.ac-mx td{border-bottom:1px solid var(--border);padding:0;background:var(--surface);}
+.ac-mx thead th{position:sticky;z-index:3;}
+.ac-mx .ac-grupos th{top:0;height:30px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--text2);text-align:center;background:var(--surface2);}
+.ac-mx .ac-grupos .ac-g0{background:var(--brand-soft);color:var(--brand2);}
+.ac-mx .ac-cols th{top:30px;height:196px;vertical-align:bottom;text-align:center;padding:8px 0;min-width:52px;}
+.ac-col .ac-ico{display:block;font-size:17px;margin-bottom:8px;}
+.ac-col .ac-rot{display:inline-block;writing-mode:vertical-rl;transform:rotate(180deg);font-size:11.5px;font-weight:600;color:var(--text2);max-height:156px;overflow:hidden;white-space:nowrap;text-transform:none;letter-spacing:0;}
+.ac-mx .ac-nome{position:sticky;left:0;z-index:2;text-align:left;padding:9px 14px;min-width:280px;display:table-cell;white-space:nowrap;box-shadow:1px 0 0 var(--border);}
+.ac-mx thead .ac-nome{z-index:4;}
+.ac-nome .ac-av{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:50%;margin-right:10px;vertical-align:middle;font-size:12px;font-weight:700;color:#fff;background:hsl(var(--h),42%,38%);}
+.ac-nome .ac-quem{display:inline-block;vertical-align:middle;max-width:190px;}
+.ac-nome .ac-quem strong{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ac-nome .ac-quem small{display:block;font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ac-cel{text-align:center;padding:6px 4px;transition:background .12s;}
+.ac-cel.ac-hl{background:var(--brand-soft);}
+.ac-mx tbody tr:hover th,.ac-mx tbody tr:hover td{background:var(--surface2);}
+.ac-mx tbody tr:hover td.ac-hl{background:var(--brand-soft);}
+.ac-sw{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;border:2px solid var(--border);background:transparent;color:#fff;font-size:15px;font-weight:700;cursor:pointer;transition:transform .12s,background .12s,border-color .12s;}
+.ac-sw:hover{transform:scale(1.12);border-color:var(--brand3);}
+.ac-sw.on{background:var(--brand);border-color:var(--brand);}
+.ac-sw.on.trava{background:var(--text3);border-color:var(--text3);cursor:default;opacity:.7;}
+.ac-sw.trava:hover{transform:none;}
+.ac-perfil{white-space:nowrap;padding:6px 12px;text-align:left;}
+.ac-perfil-th{min-width:340px;}
+.ac-tag{display:inline-block;margin-right:6px;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;border:1px solid var(--border);color:var(--text2);background:var(--surface2);}
+.ac-tag-adm{color:#8a6d00;border-color:#f5c51866;background:#f5c51822;}
+.ac-tag-per{color:var(--purple);border-color:#7c3aed55;background:#7c3aed14;}
+.ac-tag-sem{color:var(--red);border-color:#dc262655;background:#dc262612;}
+.ac-perfil select{margin-left:2px;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);}
+.ac-voltar{margin-left:6px;padding:4px 9px;font-size:12px;font-weight:600;border:1px solid var(--border);border-radius:8px;background:none;color:var(--text2);cursor:pointer;}
+.ac-voltar:hover{border-color:var(--brand3);color:var(--brand2);}
+.ac-legenda{display:flex;flex-wrap:wrap;gap:16px;font-size:12px;color:var(--text2);margin-bottom:10px;}
+.ac-legenda .ac-sw{width:18px;height:18px;font-size:11px;cursor:default;vertical-align:middle;margin-right:4px;}
+.ac-legenda .ac-sw:hover{transform:none;border-color:var(--border);}
+@media (max-width:700px){.ac-mx .ac-nome{min-width:190px;}.ac-nome .ac-quem{max-width:110px;}}
