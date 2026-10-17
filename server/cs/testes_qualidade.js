@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { TIPO_PLANO, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { TIPO_PLANO, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -140,6 +140,7 @@ teste('lista branca do gestor/analista: registrar, ver as próprias, perfil, ges
   ['/analista/ocorrencias', '/sucesso/ocorrencias'].forEach((c) => ok('GET', c));
   ['/analista/ocorrencias/u1/nota', '/analista/ocorrencias/u1/encerrar', '/gestor/ocorrencias/u1/validar', '/gestor/ocorrencias/u1/devolver', '/sucesso/ocorrencias/u1/encerrar'].forEach((c) => ok('POST', c));
   no('POST', '/sucesso/ocorrencias/u1/abrir'); no('POST', '/analista/ocorrencias/u1/validar'); no('POST', '/gestor/ocorrencias/u1/encerrar'); no('GET', '/analista/ocorrencias/u1'); no('PUT', '/sucesso/ocorrencias/u1/encerrar'); no('DELETE', '/analista/ocorrencias/u1');
+  ok('POST', '/gestor/ocorrencias/u1/filha'); no('POST', '/gestor/ocorrencias/u1/excluir'); no('POST', '/analista/ocorrencias/u1/filha');
   no('POST', '/'); no('POST', '/gestores'); no('POST', '/tipos'); no('PATCH', '/abc'); no('DELETE', '/abc'); no('DELETE', '/gestores/1'); no('PUT', '/vinculo/1'); no('PUT', '/gestor/ocorrencias/x'); no('POST', '/gestor/ocorrencias/x/tratar');
 });
 teste('escopo do Portal do Gestor: administração vê tudo; gestor vê os departamentos dele; gestor do Sucesso também vê o que ficou sem gestor', () => {
@@ -159,7 +160,9 @@ teste('escopo do Portal do Gestor: administração vê tudo; gestor vê os depar
 teste('tratativa do gestor: plano, responsável, departamento (o da ocorrência por padrão), prazo (SLA editável) e observação', () => {
   const b = { plano: 'Retificar a guia e avisar o cliente hoje.', analista_id: '7', prazo: '2026-10-20' };
   const v = validarTratativaGestor(b, 'Fiscal', '2026-10-17');
-  assert.deepStrictEqual(v, { ok: true, valores: { plano: 'Retificar a guia e avisar o cliente hoje.', analista_id: '7', departamento: 'Fiscal', prazo: '2026-10-20', obs: null } });
+  assert.deepStrictEqual(v, { ok: true, valores: { plano: 'Retificar a guia e avisar o cliente hoje.', analista_id: '7', analistas_ids: ['7'], departamento: 'Fiscal', prazo: '2026-10-20', obs: null } });
+  const varios = validarTratativaGestor(Object.assign({}, b, { analista_id: undefined, analistas_ids: ['7', '9', '7', ''] }), 'Fiscal', '2026-10-17');
+  assert.deepStrictEqual([varios.valores.analista_id, varios.valores.analistas_ids], ['7', ['7', '9']], 'vários responsáveis: sem repetir, o primeiro é o principal');
   assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { departamento: 'Contábil', obs: ' ok ' }), 'Fiscal', '2026-10-17').valores.departamento, 'Contábil');
   assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { obs: ' ok ' }), 'Fiscal', '2026-10-17').valores.obs, 'ok');
   assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { plano: 'oi' }), 'Fiscal', '2026-10-17').ok, false);
@@ -198,7 +201,9 @@ teste('fluxo: cada passo só sai da etapa certa e leva à seguinte (e o status d
   assert.strictEqual(v('final_encerrar', 'encerrada').ok, false, 'não encerra duas vezes');
   assert.strictEqual(v('inventada', 'registrada').ok, false);
   assert.ok(v('final_encerrar', 'registrada').erro.includes('não foi validada'));
-  assert.deepStrictEqual(Object.keys(TRANSICOES), ['abrir', 'analista_encerrar', 'gestor_devolver', 'gestor_validar', 'final_encerrar']);
+  assert.deepStrictEqual(Object.keys(TRANSICOES), ['abrir', 'analista_encerrar', 'gestor_devolver', 'gestor_validar', 'filha_validar', 'final_encerrar']);
+  assert.deepStrictEqual(v('filha_validar', 'validacao_gestor'), { ok: true, para: 'encerrada', status: 'resolvido' }, 'a filha validada já está encerrada');
+  assert.strictEqual(v('filha_validar', 'com_analista').ok, false);
 });
 teste('nota e observação de quem encerra, valida ou devolve: nota obrigatória (5 a 600), observação opcional (até 1000)', () => {
   assert.deepStrictEqual(validarEncerramento({ nota: ' Guia retificada e cliente avisado ' }), { ok: true, valores: { nota: 'Guia retificada e cliente avisado', obs: null } });
@@ -252,6 +257,64 @@ teste('ocorrência: prazo para execução é obrigatório, não pode ser passado
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prazo: '2026-10-15' }), t, '2026-10-16').ok, false, 'ontem não');
 });
 
+teste('ocorrência filha: assunto, plano, responsáveis (um por situação ou vários), departamento (sem padrão) e prazo próprios', () => {
+  const b = { assunto: 'Alinhar com o Bruno', plano: 'Conferir as guias do mês e avisar o cliente.', analistas_ids: ['3'], departamento: 'Financeiro', prazo: '2026-10-25' };
+  const v = validarFilha(b, '2026-10-18');
+  assert.strictEqual(v.ok, true);
+  assert.deepStrictEqual([v.valores.assunto, v.valores.analistas_ids, v.valores.departamento, v.valores.prazo], ['Alinhar com o Bruno', ['3'], 'Financeiro', '2026-10-25']);
+  assert.strictEqual(validarFilha(Object.assign({}, b, { departamento: undefined }), '2026-10-18').ok, false, 'a filha precisa de departamento');
+  assert.strictEqual(validarFilha(Object.assign({}, b, { assunto: 'ok' }), '2026-10-18').ok, false);
+  assert.strictEqual(validarFilha(Object.assign({}, b, { assunto: 'a'.repeat(101) }), '2026-10-18').ok, false);
+  assert.strictEqual(validarFilha(Object.assign({}, b, { analistas_ids: [] }), '2026-10-18').ok, false, 'sem responsável');
+  assert.strictEqual(validarFilha(Object.assign({}, b, { prazo: '2026-10-17' }), '2026-10-18').ok, false, 'prazo passado');
+  assert.strictEqual(validarFilha(Object.assign({}, b, { analistas_ids: ['3', '4'] }), '2026-10-18').valores.analistas_ids.length, 2);
+});
+teste('original conduzida só por ocorrências vinculadas: pode ficar sem responsável próprio, mas só quando existem filhas', () => {
+  const b = { plano: 'Alinhar com cada analista por ocorrência.', prazo: '2026-10-25' };
+  assert.strictEqual(validarTratativaGestor(b, 'Fiscal', '2026-10-18').ok, false, 'sem filhas, precisa de responsável');
+  const v = validarTratativaGestor(b, 'Fiscal', '2026-10-18', { permiteSemResponsavel: true });
+  assert.strictEqual(v.ok, true);
+  assert.deepStrictEqual([v.valores.analistas_ids, v.valores.analista_id], [[], null]);
+});
+teste('Portal do Sucesso do Cliente acompanha TODOS os casos: a lista não filtra por departamento, fila nem etapa, e o Sucesso é avisado de toda ocorrência nova', () => {
+  const fonte = require('fs').readFileSync(require('path').join(__dirname, 'qualidade.js'), 'utf8');
+  const i = fonte.indexOf("router.get('/sucesso/ocorrencias'"), j = fonte.indexOf("router.post('/sucesso/ocorrencias/:id/encerrar'", i);
+  const rota = fonte.slice(i, j);
+  assert.ok(rota.includes("r.origem IN ('modulo', 'filha')") && rota.includes("r.status <> 'cancelado'"), 'lista tudo que não foi cancelado, ocorrências e filhas');
+  const semOrdem = rota.split('ORDER BY')[0];
+  assert.ok(!semOrdem.includes('departamentos') && !semOrdem.includes('r.fila') && !semOrdem.includes('etapa NOT IN') && !semOrdem.includes('criado_por_id'), 'sem filtro por departamento, fila, etapa ou quem abriu');
+  const k = fonte.indexOf("router.post('/ocorrencias'"), l = fonte.indexOf('res.status(201)', k);
+  const trecho = fonte.slice(k, l);
+  assert.ok(trecho.includes('await idsSucesso()') && !trecho.includes(": await idsSucesso()),"), 'o Sucesso do Cliente é avisado sempre (não só quando não há gestor)');
+});
+teste('sigilo: a filha não aponta o analista do registro (o reclamado) nem a original, a não ser que o gestor queira', () => {
+  const b = { assunto: 'Alinhar guias', plano: 'Conferir as guias do mês e avisar o cliente.', analistas_ids: ['3'], departamento: 'Fiscal', prazo: '2026-10-25' };
+  assert.strictEqual(validarFilha(b, '2026-10-18').valores.mostrar_pai, false, 'por padrão não mostra');
+  assert.strictEqual(validarFilha(Object.assign({}, b, { mostrar_pai: true }), '2026-10-18').valores.mostrar_pai, true);
+  assert.strictEqual(validarFilha(Object.assign({}, b, { mostrar_pai: 'sim' }), '2026-10-18').valores.mostrar_pai, false, 'só true vale');
+  const original = { id: 'o1', origem: 'modulo', analista_origem_id: '9', analista_origem_nome: 'Fulano Reclamado', mostrar_pai: false, pai: null };
+  const filha = { id: 'f1', origem: 'filha', pai_id: 'o1', pai: { id: 'o1', assunto: 'Reclamação do cliente X' }, analista_origem_id: null, mostrar_pai: false };
+  const m1 = mascararParaAnalista(original, '3', false);
+  assert.deepStrictEqual([m1.analista_origem_id, m1.analista_origem_nome], [null, null], 'quem trata não vê o reclamado');
+  assert.strictEqual(mascararParaAnalista(original, '9', false).analista_origem_nome, 'Fulano Reclamado', 'o próprio indicado vê o que é sobre ele');
+  assert.strictEqual(mascararParaAnalista(original, '3', true).analista_origem_nome, 'Fulano Reclamado', 'liderança vê tudo');
+  const m2 = mascararParaAnalista(filha, '3', false);
+  assert.deepStrictEqual([m2.pai_id, m2.pai], [null, null], 'a filha não mostra de onde veio');
+  const aberta = mascararParaAnalista(Object.assign({}, filha, { mostrar_pai: true, analista_origem_id: '9', analista_origem_nome: 'Fulano Reclamado' }), '3', false);
+  assert.deepStrictEqual([aberta.pai.assunto, aberta.analista_origem_nome], ['Reclamação do cliente X', 'Fulano Reclamado'], 'se o gestor quis mostrar, mostra');
+  assert.strictEqual(original.analista_origem_nome, 'Fulano Reclamado', 'não altera o original');
+});
+teste('original só vai à validação quando todos os responsáveis encerraram e as filhas estão encerradas', () => {
+  const r = (id, ok) => ({ analista_id: id, encerrado_em: ok ? '2026-10-18' : null });
+  assert.deepStrictEqual(prontoParaValidacao([r('1', true)], []), { pronto: true, pendentes: [], filhasPendentes: 0 });
+  assert.deepStrictEqual(prontoParaValidacao([r('1', true), r('2', false)], []), { pronto: false, pendentes: ['2'], filhasPendentes: 0 }, 'falta um analista');
+  assert.deepStrictEqual(prontoParaValidacao([r('1', true), r('2', true)], [{ etapa: 'com_analista' }, { etapa: 'encerrada' }]), { pronto: false, pendentes: [], filhasPendentes: 1 }, 'falta uma filha');
+  assert.strictEqual(prontoParaValidacao([r('1', true), r('2', true)], [{ etapa: 'encerrada' }]).pronto, true);
+  assert.strictEqual(prontoParaValidacao([], []).pronto, false, 'sem responsáveis nem filhas nada está pronto');
+  assert.strictEqual(prontoParaValidacao([], [{ etapa: 'encerrada' }, { etapa: 'encerrada' }]).pronto, true, 'original conduzida só pelas filhas: pronta quando todas encerram');
+  assert.deepStrictEqual(prontoParaValidacao([], [{ etapa: 'encerrada' }, { etapa: 'com_analista' }]), { pronto: false, pendentes: [], filhasPendentes: 1 });
+  assert.strictEqual(prontoParaValidacao(null, null).pronto, false);
+});
 teste('departamentos do analista: vários (ex.: Financeiro e Legalização), só os da lista e sem repetir; o aviso não bloqueia', () => {
   assert.deepStrictEqual(validarDepartamentosAnalista({ departamentos: ['Legalização', 'Financeiro', 'Financeiro', 'Xpto'] }).valores.departamentos, ['Financeiro', 'Legalização']);
   assert.deepStrictEqual(validarDepartamentosAnalista({ departamentos: [] }).valores.departamentos, [], 'pode ficar sem departamento');
