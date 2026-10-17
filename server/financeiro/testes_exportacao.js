@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, secaoFicha: secaoFicha, listaOcorrenciasQ: listaOcorrenciasQ, tabelaAcessorias: tabelaAcessorias, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, cartaoOcorrenciaQ: cartaoOcorrenciaQ, tabelaOcorrenciasMod: tabelaOcorrenciasMod, htmlGestoresQ: htmlGestoresQ, opcoesTiposOc: opcoesTiposOc, formularioOcorrenciaQ: formularioOcorrenciaQ, comoPesaTratativa: comoPesaTratativa, abrirNovoMotivoChurn: abrirNovoMotivoChurn }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, secaoFicha: secaoFicha, listaOcorrenciasQ: listaOcorrenciasQ, tabelaAcessorias: tabelaAcessorias, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, cartaoOcorrenciaQ: cartaoOcorrenciaQ, tabelaOcorrenciasMod: tabelaOcorrenciasMod, perfilDe: perfilDe, filtrarGestor: filtrarGestor, contagemEtapasGestor: contagemEtapasGestor, htmlGestor: htmlGestor, htmlTratativaGestor: htmlTratativaGestor, htmlMinhasOcorrencias: htmlMinhasOcorrencias, htmlGestoresQ: htmlGestoresQ, opcoesTiposOc: opcoesTiposOc, formularioOcorrenciaQ: formularioOcorrenciaQ, comoPesaTratativa: comoPesaTratativa, abrirNovoMotivoChurn: abrirNovoMotivoChurn }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null, tratativas: 75 }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -243,6 +243,43 @@ const semLixo = (e, nome) => {
     assert.ok(g1.includes('Etapa: <strong>registrada, aguardando análise</strong>') && g1.includes('encaminhada ao gestor de Fiscal'), 'etapa e encaminhamento');
     assert.ok(C.t.cartaoOcorrenciaQ(Object.assign(r('x5', 'aberto'), { etapa: 'registrada', fila: 'sucesso', departamentos: ['Pessoal'] })).includes('encaminhada ao Sucesso do Cliente (departamento sem gestor)'));
     assert.ok(C.t.cartaoOcorrenciaQ(r('x1', 'aberto')).includes('Registrada em') && C.t.cartaoOcorrenciaQ(r('x1', 'aberto')).includes('por Larissa'), 'quem registrou e quando');
+  });
+  await teste('cs: perfil no /cs — administrador vê tudo; gestor só Qualidade e Portal do Gestor; analista só Qualidade e Portal do Analista; equipe de sempre não ganha os portais', () => {
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.perfilDe({ role: 'administrador' }))), { completo: true, admin: true, gestor: true, analista: true });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.perfilDe({ role: 'colaborador', acesso_gestor: true }))), { completo: false, admin: false, gestor: true, analista: false });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.perfilDe({ role: 'colaborador', acesso_qualidade: true }))), { completo: false, admin: false, gestor: false, analista: true });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.perfilDe({ role: 'colaborador', acesso_gestor: true, acesso_qualidade: true }))), { completo: false, admin: false, gestor: true, analista: true });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.perfilDe({ role: 'usuario' }))), { completo: true, admin: false, gestor: false, analista: false });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.perfilDe({ role: 'colaborador', acesso_cs: true }))), { completo: true, admin: false, gestor: false, analista: false });
+    assert.strictEqual(C.t.perfilDe(null).completo, false);
+  });
+  await teste('cs: Portal do Gestor — filtros por departamento, analista, etapa e busca; contagem por etapa; tabela e janela da tratativa', () => {
+    const r = (id, extra) => Object.assign({ id, etapa: 'registrada', situacao: 'aberto', status: 'aberto', tipo: 'Erro', prioridade: 'Alta', departamentos: ['Fiscal'], assunto: 'Guia errada ' + id, detalhe: 'Detalhe', cliente_nome: 'ALFA LTDA', criado_em: '2026-10-17T12:00:00Z', criado_por: 'Larissa', analista_id: null, analista_nome: null, prazo: '2026-10-25', anexos: [], notas: [] }, extra || {});
+    const regs = [r('a'), r('b', { departamentos: ['Pessoal'], etapa: 'com_analista', analista_id: '7', analista_nome: 'Josiane', situacao: 'vencido' }), r('c', { etapa: 'tratativa_definida', analista_id: '7', analista_nome: 'Josiane', cliente_nome: 'BETA ME' }), r('d', { etapa: 'validacao_gestor', analista_id: '9', analista_nome: 'Bruno' })];
+    const F = (f) => Object.assign({ depto: '', analista: '', etapa: '', busca: '' }, f);
+    assert.strictEqual(C.t.filtrarGestor(regs, F({})).length, 4);
+    assert.deepStrictEqual(C.t.filtrarGestor(regs, F({ depto: 'Pessoal' })).map((x) => x.id), ['b']);
+    assert.deepStrictEqual(C.t.filtrarGestor(regs, F({ analista: '7' })).map((x) => x.id), ['b', 'c']);
+    assert.deepStrictEqual(C.t.filtrarGestor(regs, F({ etapa: 'vencidas' })).map((x) => x.id), ['b']);
+    assert.deepStrictEqual(C.t.filtrarGestor(regs, F({ etapa: 'validacao_gestor' })).map((x) => x.id), ['d']);
+    assert.deepStrictEqual(C.t.filtrarGestor(regs, F({ busca: 'beta' })).map((x) => x.id), ['c']);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.contagemEtapasGestor(regs))), { vencidas: 1, registrada: 1, tratativa_definida: 1, com_analista: 1, validacao_gestor: 1, devolutiva_cliente: 0, encerrada: 0 });
+    const h = C.t.htmlGestor({ escopo: { todos: false, deptos: ['Fiscal', 'Pessoal'] }, registros: regs }, F({}));
+    assert.ok(h.includes('Trâmite') && h.includes('Sucesso do Cliente') && h.includes('Aguardando análise') && h.includes('Em validação'));
+    assert.ok(h.includes('seus departamentos: Fiscal, Pessoal') && h.includes('<option value="7">Josiane</option>') && h.includes('<option value="9">Bruno</option>') && h.includes('value="vencidas"'));
+    assert.ok(h.includes('Analisar e criar tratativa') && h.includes('Editar / abrir para o analista') && h.includes('>Ver<'));
+    assert.ok(C.t.htmlGestor({ escopo: { todos: true, deptos: [] }, registros: [] }, F({})).includes('todos os departamentos'));
+    const edit = C.t.htmlTratativaGestor(r('a', { tratativa_depto: 'Contábil' }), [{ id: '7', nome: 'Josiane' }, { id: '9', nome: 'Bruno' }]);
+    assert.ok(edit.includes('Criar a tratativa') && edit.includes('Plano de ação') && edit.includes('Responsável') && edit.includes('Prazo para execução (SLA)') && edit.includes('id="gt-abrir"') && edit.includes('id="gt-salvar"'));
+    assert.ok(edit.includes('<option value="Contábil" selected>Contábil</option>') && edit.includes('value="2026-10-25"'), 'departamento e prazo vêm preenchidos');
+    assert.ok(!edit.includes('data-oc-res'), 'sem os botões de resolver/cancelar dentro da janela do gestor');
+    const lida = C.t.htmlTratativaGestor(r('b', { etapa: 'com_analista', plano_acao: 'Plano X', tratativa_depto: 'Pessoal', gestor_obs: 'Obs Y', tratativa_definida_por: 'Eduardo', liberada_em: '2026-10-18T10:00:00Z' }), []);
+    assert.ok(lida.includes('Plano X') && lida.includes('Obs Y') && lida.includes('definida por Eduardo') && lida.includes('aberta ao analista em 18/10/2026') && !lida.includes('id="gt-salvar"'), 'depois de aberta só leitura');
+  });
+  await teste('cs: Qualidade de quem só registra — minhas ocorrências com etapa e para onde foram', () => {
+    const h = C.t.htmlMinhasOcorrencias([{ id: 'x', tipo: 'Erro', prioridade: 'Alta', departamentos: ['Fiscal'], fila: 'gestor', etapa: 'registrada', assunto: 'Guia errada', cliente_nome: 'ALFA LTDA', criado_em: '2026-10-17T12:00:00Z', prazo: '2026-10-25', anexos: [] }, { id: 'y', tipo: 'Multa', prioridade: 'Baixa', departamentos: ['Pessoal'], fila: 'sucesso', etapa: 'com_analista', assunto: 'Multa X', cliente_nome: 'BETA', criado_em: '2026-10-16T12:00:00Z', prazo: null, anexos: [] }]);
+    assert.ok(h.includes('Minhas ocorrências') && h.includes('Gestor de Fiscal') && h.includes('Sucesso do Cliente') && h.includes('Aguardando análise') && h.includes('Com o analista'));
+    assert.ok(C.t.htmlMinhasOcorrencias([]).includes('Você ainda não registrou nenhuma ocorrência.'));
   });
   await teste('cs: Gerenciar gestores — um bloco por departamento, vários gestores, papel e aviso de departamento sem gestor', () => {
     const j = { departamentos: [{ codigo: 'Fiscal', rotulo: 'Fiscal', gestores: [{ id: 1, user_id: 'u1', nome: 'Eduardo', papel: 'gestor' }, { id: 2, user_id: 'u2', nome: 'Denisa', papel: 'diretor' }] }, { codigo: 'Sucesso', rotulo: 'Sucesso do Cliente', gestores: [] }], usuarios: [{ id: 'u1', name: 'Eduardo' }, { id: 'u3', name: 'Thais <T>' }] };

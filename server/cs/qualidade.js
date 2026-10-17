@@ -29,7 +29,7 @@ const STATUS = ['aberto', 'em_tratamento', 'finalizada', 'resolvido', 'cancelado
 const ROTULO_STATUS = { aberto: 'Aberto', em_tratamento: 'Em tratamento', finalizada: 'Finalizada (aguardando validação)', resolvido: 'Resolvido', cancelado: 'Cancelado' };
 const MAX_DETALHE = 2000;   // "Descreva a tratativa" da ficha e "Descrição / Detalhes da ocorrência" (era 600; ampliado a pedido do Reysner, 17/10/2026)
 const PRIORIDADES = ['Muito Alta', 'Alta', 'Média', 'Baixa'];
-const PAPEIS_GESTOR = ['gestor', 'diretor'];
+const PAPEIS_GESTOR = ['gestor', 'diretor', 'final'];   // final = o gestor que encerra o processo no portal do Sucesso do Cliente (etapa 3)
 /**
  * Etapas do fluxo de uma ocorrência registrada no módulo (Portal do Gestor, 17/10/2026):
  *   registrada → (o gestor do departamento analisa e cria a tratativa: plano de ação, responsável e departamento) → tratativa_definida
@@ -129,7 +129,7 @@ function validarGestor(corpo) {
   const departamento = DEPARTAMENTOS.find((d) => d === b.departamento);
   if (!departamento) return { ok: false, erro: 'Escolha o departamento.' };
   const papel = b.papel === undefined ? 'gestor' : PAPEIS_GESTOR.find((p) => p === b.papel);
-  if (!papel) return { ok: false, erro: 'O papel é gestor ou diretor.' };
+  if (!papel) return { ok: false, erro: 'O papel é gestor, diretor ou gestor final.' };
   return { ok: true, valores: { user_id, departamento, papel } };
 }
 
@@ -165,6 +165,55 @@ function deveAvisar(user, reg, deptosGestor) {
   if (reg.fila === 'gestor') return (reg.departamentos || []).some((d) => meus.includes(d));
   if (reg.fila === 'sucesso') return meus.includes('Sucesso');
   return false;
+}
+
+/** Etapa do fluxo → status que o risco de churn lê (aplicado quando a etapa muda). */
+const ETAPA_STATUS = { registrada: 'aberto', tratativa_definida: 'aberto', com_analista: 'em_tratamento', validacao_gestor: 'finalizada', devolutiva_cliente: 'finalizada', encerrada: 'resolvido' };
+
+/**
+ * Rotas do Qualidade abertas a quem é só gestor ou só analista (acesso_qualidade): registrar ocorrência, ver as próprias, perfil, gestores e,
+ * para o gestor, o Portal do Gestor (a rota confere o escopo). Tudo o mais do módulo continua só da equipe do painel.
+ */
+function rotaAbertaGestorAnalista(metodo, caminho) {
+  const m = String(metodo || '').toUpperCase();
+  const c = String(caminho || '').split('?')[0].replace(/\/+$/, '') || '/';
+  const p = c.split('/');   // '' + segmentos
+  if (m === 'GET') return ['/opcoes', '/empresas', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias'].includes(c) || (p.length === 3 && p[1] === 'anexo');
+  if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && p[4] === 'abrir');
+  if (m === 'PUT') return p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && p[4] === 'tratativa';
+  return false;
+}
+
+/** O que a pessoa enxerga no Portal do Gestor: a administração vê tudo; gestor/diretor, os departamentos dele (e, no Sucesso do Cliente, o que ficou sem gestor). */
+function escopoDoUsuario(user, deptosGestor) {
+  const deptos = Array.from(new Set(deptosGestor || []));
+  return { todos: !!(user && user.role === 'administrador'), deptos, sucesso: deptos.includes('Sucesso') };
+}
+function ocorrenciaNoEscopo(esc, reg) {
+  if (!esc || !reg) return false;
+  if (esc.todos) return true;
+  if ((reg.departamentos || []).some((d) => (esc.deptos || []).includes(d))) return true;
+  return !!(esc.sucesso && reg.fila === 'sucesso');
+}
+
+/** Valida a tratativa que o gestor cria: plano de ação, responsável (analista), departamento que trata, prazo (SLA, o gestor pode mudar) e observação. */
+function validarTratativaGestor(corpo, deptoDaOcorrencia, hoje) {
+  const b = corpo || {};
+  const plano = String(b.plano == null ? '' : b.plano).replace(/\r\n/g, '\n').trim();
+  if (plano.length < 5) return { ok: false, erro: 'Descreva o plano de ação (mínimo de 5 caracteres).' };
+  if (plano.length > MAX_DETALHE) return { ok: false, erro: 'O plano de ação passa de ' + MAX_DETALHE + ' caracteres.' };
+  const analista_id = texto(b.analista_id, 80);
+  if (!analista_id) return { ok: false, erro: 'Escolha o responsável (analista) pela tratativa.' };
+  const departamento = DEPARTAMENTOS.find((d) => d === (b.departamento || deptoDaOcorrencia));
+  if (!departamento) return { ok: false, erro: 'Escolha o departamento que vai tratar.' };
+  const h = hoje || hojeBrasilia();
+  const prazo = texto(b.prazo, 10);
+  if (!ISO.test(prazo) || isNaN(Date.parse(prazo + 'T12:00:00Z'))) return { ok: false, erro: 'Informe o prazo para execução.' };
+  if (prazo < h) return { ok: false, erro: 'O prazo não pode ser uma data que já passou.' };
+  if (prazo > somarDias(h, 365)) return { ok: false, erro: 'O prazo passa de um ano: escolha uma data mais próxima.' };
+  const obs = String(b.obs == null ? '' : b.obs).replace(/\r\n/g, '\n').trim();
+  if (obs.length > MAX_TRATATIVA) return { ok: false, erro: 'A observação passa de ' + MAX_TRATATIVA + ' caracteres.' };
+  return { ok: true, valores: { plano, analista_id, departamento, prazo, obs: obs || null } };
 }
 
 /** Valida a mudança de um registro: status, prazo e/ou tratativa. */
@@ -267,6 +316,14 @@ function garantirSchema() {
         id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, departamento TEXT NOT NULL, papel TEXT NOT NULL DEFAULT 'gestor',
         criado_por TEXT, criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (user_id, departamento))`))
       .then(() => pool.query('ALTER TABLE cs_qualidade_gestores ENABLE ROW LEVEL SECURITY'))
+      // tratativa criada pelo gestor (plano de ação, departamento que trata, observação) e a liberação para o analista
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS plano_acao TEXT'))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS tratativa_depto TEXT'))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS gestor_obs TEXT'))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS tratativa_definida_por TEXT'))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS tratativa_definida_em TIMESTAMPTZ'))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS liberada_em TIMESTAMPTZ'))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS liberada_por TEXT'))
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ENABLE ROW LEVEL SECURITY'))
       .then(() => pool.query('CREATE INDEX IF NOT EXISTS cs_qualidade_cliente_idx ON cs_qualidade_registros (cliente_id)'))
       .then(() => pool.query('CREATE INDEX IF NOT EXISTS cs_qualidade_analista_idx ON cs_qualidade_registros (analista_id)'))
@@ -299,7 +356,7 @@ function soEquipe(req, res, next) {
 }
 
 const COLUNAS = `r.id, r.cliente_id, r.cnpj, r.cliente_nome, r.tipo, r.departamentos, r.detalhe, r.analista_id, a.nome AS analista_nome,
-       to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.status, r.origem, r.etapa, r.fila, r.assunto, r.prioridade, r.criado_por, r.criado_em, r.resolvido_em, r.resolvido_por, r.tratativa, r.validado_em, r.validado_por`;
+       to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.status, r.origem, r.etapa, r.fila, r.plano_acao, r.tratativa_depto, r.gestor_obs, r.tratativa_definida_por, r.tratativa_definida_em, r.liberada_em, r.liberada_por, r.assunto, r.prioridade, r.criado_por, r.criado_em, r.resolvido_em, r.resolvido_por, r.tratativa, r.validado_em, r.validado_por`;
 const DE = `FROM cs_qualidade_registros r LEFT JOIN analistas a ON a.id::text = r.analista_id`;
 const comSituacao = (rows) => rows.map((r) => ({ ...r, situacao: situacao(r.status, r.prazo), status_rotulo: ROTULO_STATUS[r.status] }));
 
@@ -365,7 +422,13 @@ async function registrar(registroId, por, acao, txt) {
 
 // ── Equipe do painel ─────────────────────────────────────────────────────────────
 const router = express.Router();
-router.use(requireAuth, soEquipe);
+function soQualidadeGeral(req, res, next) {
+  if (podeEquipe(req.user)) return next();
+  const u = req.user || {};
+  if ((u.acessoGestor || u.acessoQualidade) && rotaAbertaGestorAnalista(req.method, req.path)) return next();
+  return res.status(403).json({ error: 'Acesso restrito à equipe do Sucesso do Cliente.' });
+}
+router.use(requireAuth, soQualidadeGeral);
 
 /** Tipos de registro ativos, na ordem de exibição. */
 async function tiposAtivos() {
@@ -611,6 +674,91 @@ router.get('/avisos', async (req, res) => {
   } catch (e) { console.error('[qualidade] GET /avisos falhou:', e); res.status(500).json({ error: 'Erro ao ler os avisos.' }); }
 });
 
+/** Escopo da pessoa logada no Portal do Gestor (os departamentos em que ela é gestor/diretor/gestor final). */
+async function escopoDaRequisicao(req) {
+  const meus = (await pool.query('SELECT departamento FROM cs_qualidade_gestores WHERE user_id = $1', [String(req.user.id)])).rows.map((g) => g.departamento);
+  return escopoDoUsuario(req.user, meus);
+}
+
+/** Perfil da pessoa no módulo: o que ela é (gestor, analista) e de quais departamentos. A tela usa para mostrar só os módulos dela; quem decide é o servidor, em cada rota. */
+router.get('/eu', async (req, res) => {
+  try {
+    await garantirSchema();
+    const g = (await pool.query('SELECT departamento, papel FROM cs_qualidade_gestores WHERE user_id = $1', [String(req.user.id)])).rows;
+    const an = await analistaDoLogin(req.user).catch(() => null);
+    res.json({ nome: req.user.name, papel: req.user.role, completo: podeEquipe(req.user), gestor: g.length > 0, departamentos: g.map((x) => x.departamento), papeis: g.map((x) => x.papel),
+      analista: !!(req.user.acessoQualidade || an), analista_id: an ? an.id : null });
+  } catch (e) { console.error('[qualidade] GET /eu falhou:', e); res.status(500).json({ error: 'Erro ao ler o perfil.' }); }
+});
+
+/** As ocorrências que a própria pessoa registrou (com etapa, status e para onde foram). */
+router.get('/ocorrencias/minhas', async (req, res) => {
+  try {
+    await garantirSchema();
+    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.origem = 'modulo' AND r.criado_por_id = $1 ORDER BY r.criado_em DESC LIMIT 100`, [String(req.user.id)]);
+    res.json({ registros: await anexarAnexos(comSituacao(rows)) });
+  } catch (e) { console.error('[qualidade] GET /ocorrencias/minhas falhou:', e); res.status(500).json({ error: 'Erro ao ler as suas ocorrências.' }); }
+});
+
+/** PORTAL DO GESTOR: as ocorrências do escopo da pessoa (administração: todas), com anexos e andamento. */
+router.get('/gestor/ocorrencias', async (req, res) => {
+  try {
+    await garantirSchema();
+    const esc = await escopoDaRequisicao(req);
+    if (!esc.todos && !esc.deptos.length) return res.status(403).json({ error: 'Você não é gestor de nenhum departamento. A administração cadastra os gestores em Qualidade > Gerenciar gestores.' });
+    const vals = []; let filtro = '';
+    if (!esc.todos) { vals.push(esc.deptos); filtro = ` AND (r.departamentos && $1::text[]${esc.sucesso ? " OR r.fila = 'sucesso'" : ''})`; }
+    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.origem = 'modulo' AND r.status <> 'cancelado'${filtro} ORDER BY r.criado_em DESC LIMIT 500`, vals);
+    res.json({ escopo: esc, registros: await anexarAnexos(await anexarNotas(comSituacao(rows))) });
+  } catch (e) { console.error('[qualidade] GET /gestor/ocorrencias falhou:', e); res.status(500).json({ error: 'Erro ao ler as ocorrências do gestor.' }); }
+});
+
+/** O gestor cria (ou edita, enquanto não abriu para o analista) a tratativa: plano de ação, responsável, departamento e prazo. */
+router.put('/gestor/ocorrencias/:id/tratativa', async (req, res) => {
+  try {
+    await garantirSchema();
+    const esc = await escopoDaRequisicao(req);
+    const reg = (await pool.query("SELECT id, etapa, origem, departamentos, fila FROM cs_qualidade_registros WHERE id::text = $1", [String(req.params.id)])).rows[0];
+    if (!reg || reg.origem !== 'modulo') return res.status(404).json({ error: 'Ocorrência não encontrada.' });
+    if (!ocorrenciaNoEscopo(esc, reg)) return res.status(403).json({ error: 'Esta ocorrência não é do seu departamento.' });
+    if (!['registrada', 'tratativa_definida'].includes(reg.etapa)) return res.status(409).json({ error: 'A tratativa já foi aberta para o analista: não dá mais para editar por aqui.' });
+    const v = validarTratativaGestor(req.body, (reg.departamentos || [])[0]);
+    if (!v.ok) return res.status(400).json({ error: v.erro });
+    const x = v.valores;
+    const an = (await pool.query('SELECT id, nome, ativo FROM analistas WHERE id::text = $1', [x.analista_id])).rows[0];
+    if (!an) return res.status(404).json({ error: 'Responsável não encontrado na lista de analistas.' });
+    if (!an.ativo) return res.status(400).json({ error: an.nome + ' está desativado na lista de analistas.' });
+    await pool.query(
+      `UPDATE cs_qualidade_registros SET plano_acao = $1, analista_id = $2, tratativa_depto = $3, prazo = $4, gestor_obs = $5, etapa = 'tratativa_definida',
+         tratativa_definida_por = $6, tratativa_definida_em = NOW(), atualizado_em = NOW() WHERE id = $7`,
+      [x.plano, String(an.id), x.departamento, x.prazo, x.obs, req.user.name || null, reg.id]);
+    await registrar(reg.id, req.user.name, 'tratativa_definida', 'Responsável: ' + an.nome + ' · ' + x.departamento + ' · prazo ' + x.prazo);
+    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [reg.id]);
+    res.json({ registro: (await anexarAnexos(await anexarNotas(comSituacao(rows))))[0] });
+  } catch (e) { console.error('[qualidade] PUT tratativa falhou:', e); res.status(500).json({ error: 'Erro ao salvar a tratativa.' }); }
+});
+
+/** O gestor abre a ocorrência para o analista responsável (a partir daqui o analista trata; o risco passa a contar "em tratamento"). */
+router.post('/gestor/ocorrencias/:id/abrir', async (req, res) => {
+  try {
+    await garantirSchema();
+    const esc = await escopoDaRequisicao(req);
+    const reg = (await pool.query("SELECT id, etapa, origem, departamentos, fila, plano_acao, analista_id, prazo, assunto, cliente_nome FROM cs_qualidade_registros WHERE id::text = $1", [String(req.params.id)])).rows[0];
+    if (!reg || reg.origem !== 'modulo') return res.status(404).json({ error: 'Ocorrência não encontrada.' });
+    if (!ocorrenciaNoEscopo(esc, reg)) return res.status(403).json({ error: 'Esta ocorrência não é do seu departamento.' });
+    if (reg.etapa !== 'tratativa_definida' || !reg.plano_acao || !reg.analista_id || !reg.prazo) return res.status(409).json({ error: 'Defina a tratativa (plano de ação, responsável e prazo) antes de abrir para o analista.' });
+    const an = (await pool.query('SELECT nome FROM analistas WHERE id::text = $1', [String(reg.analista_id)])).rows[0];
+    await pool.query(`UPDATE cs_qualidade_registros SET etapa = 'com_analista', status = ${"'" + ETAPA_STATUS.com_analista + "'"}, liberada_em = NOW(), liberada_por = $1, atualizado_em = NOW() WHERE id = $2`, [req.user.name || null, reg.id]);
+    await registrar(reg.id, req.user.name, 'liberada', 'Aberta para ' + (an ? an.nome : 'o analista'));
+    try {
+      await pool.query(`INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ('qualidade_liberada', $1, $2, 'cs-qualidade')`,
+        ['Ocorrência aberta para ' + (an ? an.nome : 'o analista'), (req.user.name || 'O gestor') + ' abriu a tratativa de "' + (reg.assunto || '') + '" (' + (reg.cliente_nome || 'cliente') + ') para ' + (an ? an.nome : 'o analista') + ', prazo ' + String(reg.prazo).slice(0, 10).split('-').reverse().join('/') + '.']);
+    } catch (e) { console.warn('[qualidade] aviso de liberação não gravado:', e.message); }
+    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [reg.id]);
+    res.json({ registro: (await anexarAnexos(await anexarNotas(comSituacao(rows))))[0] });
+  } catch (e) { console.error('[qualidade] POST abrir falhou:', e); res.status(500).json({ error: 'Erro ao abrir a ocorrência para o analista.' }); }
+});
+
 /** Sugestão de empresas ao digitar: as que COMEÇAM com o texto (nome ou CNPJ) vêm primeiro; se couberem mais, as que apenas contêm. */
 router.get('/empresas', async (req, res) => {
   try {
@@ -663,8 +811,9 @@ router.post('/ocorrencias', async (req, res) => {
 router.post('/ocorrencias/:id/anexo', express.raw({ type: () => true, limit: MAX_ANEXO + 1024 }), async (req, res) => {
   try {
     await garantirSchema();
-    const reg = (await pool.query("SELECT id FROM cs_qualidade_registros WHERE id::text = $1 AND origem = 'modulo'", [String(req.params.id)])).rows[0];
+    const reg = (await pool.query("SELECT id, criado_por_id FROM cs_qualidade_registros WHERE id::text = $1 AND origem = 'modulo'", [String(req.params.id)])).rows[0];
     if (!reg) return res.status(404).json({ error: 'Ocorrência não encontrada.' });
+    if (!podeEquipe(req.user) && String(reg.criado_por_id) !== String(req.user.id)) return res.status(403).json({ error: 'Só quem registrou a ocorrência anexa arquivos a ela.' });
     const dados = Buffer.isBuffer(req.body) ? req.body : null;
     if (!dados || !dados.length) return res.status(400).json({ error: 'Arquivo vazio.' });
     if (dados.length > MAX_ANEXO) return res.status(413).json({ error: 'O arquivo passa de ' + Math.round(MAX_ANEXO / 1048576) + ' MB.' });
@@ -681,8 +830,9 @@ router.post('/ocorrencias/:id/anexo', express.raw({ type: () => true, limit: MAX
 router.get('/anexo/:anexoId', async (req, res) => {
   try {
     await garantirSchema();
-    const a = (await pool.query('SELECT nome, mime, dados FROM cs_qualidade_anexos WHERE id::text = $1', [String(req.params.anexoId)])).rows[0];
+    const a = (await pool.query('SELECT a.nome, a.mime, a.dados, r.criado_por_id, r.departamentos, r.fila FROM cs_qualidade_anexos a JOIN cs_qualidade_registros r ON r.id = a.registro_id WHERE a.id::text = $1', [String(req.params.anexoId)])).rows[0];
     if (!a) return res.status(404).json({ error: 'Anexo não encontrado.' });
+    if (!podeEquipe(req.user) && String(a.criado_por_id) !== String(req.user.id) && !ocorrenciaNoEscopo(await escopoDaRequisicao(req), a)) return res.status(403).json({ error: 'Esse anexo não é de uma ocorrência sua nem do seu departamento.' });
     res.set({ 'Content-Type': a.mime || 'application/octet-stream', 'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(a.nome), 'X-Content-Type-Options': 'nosniff' });
     res.send(a.dados);
   } catch (e) { console.error('[qualidade] GET anexo falhou:', e); res.status(500).json({ error: 'Erro ao baixar o anexo.' }); }
@@ -789,7 +939,7 @@ routerAnalista.get('/painel', async (req, res) => {
     const { analista, colab } = await identidade(req.user, req.query.analista);
     if (!analista) return res.json({ analista: null, aviso: 'Seu login ainda não está ligado a um analista da lista. Peça à liderança para ligar (Qualidade > seu nome > Login).' });
 
-    const regs = (await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.analista_id = $1 AND r.status <> 'cancelado' ORDER BY r.prazo ASC LIMIT 300`, [String(analista.id)])).rows;
+    const regs = (await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.analista_id = $1 AND r.origem <> 'modulo' AND r.status <> 'cancelado' ORDER BY r.prazo ASC LIMIT 300`, [String(analista.id)])).rows;
     const registros = await anexarNotas(comSituacao(regs));
 
     // Atendimentos do Zappy (180 dias) do analista, pelo usuário do Zappy ligado na Gamificação
@@ -858,7 +1008,7 @@ routerAnalista.get('/minhas', async (req, res) => {
       analista = a.rows[0] || null;
     } else analista = await analistaDoLogin(req.user);
     if (!analista) return res.json({ analista: null, registros: [], aviso: 'Seu login ainda não está ligado a um analista da lista. Peça à liderança para ligar (Qualidade > seu nome > Login).' });
-    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.analista_id = $1 AND r.status <> 'cancelado' ORDER BY (r.status IN ('resolvido')) ASC, r.prazo ASC LIMIT 300`, [String(analista.id)]);
+    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.analista_id = $1 AND r.origem <> 'modulo' AND r.status <> 'cancelado' ORDER BY (r.status IN ('resolvido')) ASC, r.prazo ASC LIMIT 300`, [String(analista.id)]);
     res.json({ analista, registros: await anexarNotas(comSituacao(rows)) });
   } catch (e) { console.error('[qualidade] GET /minhas falhou:', e); res.status(500).json({ error: 'Erro ao carregar suas tratativas.' }); }
 });
@@ -887,8 +1037,9 @@ routerAnalista.patch('/:id/tratar', async (req, res) => {
   if (!v.ok) return res.status(400).json({ error: v.erro });
   try {
     await garantirSchema();
-    const r = await pool.query('SELECT id, analista_id, status, tipo, cliente_nome FROM cs_qualidade_registros WHERE id::text = $1', [String(req.params.id)]);
+    const r = await pool.query('SELECT id, analista_id, status, tipo, cliente_nome, origem FROM cs_qualidade_registros WHERE id::text = $1', [String(req.params.id)]);
     if (!r.rows.length) return res.status(404).json({ error: 'Registro não encontrado.' });
+    if (r.rows[0].origem === 'modulo') return res.status(409).json({ error: 'Ocorrência do módulo Qualidade: a tratativa segue o fluxo do Portal do Gestor e do Portal do Analista.' });
     const ag = await autorizaAgir(req.user, r.rows[0]);
     if (!ag.ok) return res.status(ag.status).json({ error: ag.erro });
     if (['finalizada', 'resolvido', 'cancelado'].includes(r.rows[0].status)) return res.status(409).json({ error: 'Esse registro já foi finalizado ou encerrado.' });
@@ -911,8 +1062,9 @@ routerAnalista.post('/:id/nota', async (req, res) => {
   if (t.length > MAX_TRATATIVA) return res.status(400).json({ error: 'A nota passa de ' + MAX_TRATATIVA + ' caracteres.' });
   try {
     await garantirSchema();
-    const r = await pool.query('SELECT id, analista_id, status FROM cs_qualidade_registros WHERE id::text = $1', [String(req.params.id)]);
+    const r = await pool.query('SELECT id, analista_id, status, origem FROM cs_qualidade_registros WHERE id::text = $1', [String(req.params.id)]);
     if (!r.rows.length) return res.status(404).json({ error: 'Registro não encontrado.' });
+    if (r.rows[0].origem === 'modulo') return res.status(409).json({ error: 'Ocorrência do módulo Qualidade: a tratativa segue o fluxo do Portal do Gestor e do Portal do Analista.' });
     const ag = await autorizaAgir(req.user, r.rows[0]);
     if (!ag.ok) return res.status(ag.status).json({ error: ag.erro });
     if (['resolvido', 'cancelado'].includes(r.rows[0].status)) return res.status(409).json({ error: 'Esse registro já foi encerrado.' });
@@ -923,4 +1075,4 @@ routerAnalista.post('/:id/nota', async (req, res) => {
   } catch (e) { console.error('[qualidade] POST /nota falhou:', e); res.status(500).json({ error: 'Erro ao salvar a nota.' }); }
 });
 
-module.exports = { router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };

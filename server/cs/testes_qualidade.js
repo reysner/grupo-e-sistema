@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { TIPO_PLANO, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { TIPO_PLANO, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -130,6 +130,49 @@ teste('aviso de ocorrência nova: administração (menos quem registrou); gestor
   assert.strictEqual(deveAvisar(ges, r({ fila: 'sucesso', departamentos: ['Pessoal'] }), ['Sucesso']), true, 'sem gestor no departamento: vai para o Sucesso do Cliente');
   assert.strictEqual(deveAvisar(ges, r({ fila: 'sucesso', departamentos: ['Pessoal'] }), ['Fiscal']), false);
   assert.strictEqual(deveAvisar(null, r(), []), false);
+});
+teste('lista branca do gestor/analista: registrar, ver as próprias, perfil, gestores e Portal do Gestor; o resto do módulo não', () => {
+  const ok = (m, c) => assert.strictEqual(rotaAbertaGestorAnalista(m, c), true, m + ' ' + c);
+  const no = (m, c) => assert.strictEqual(rotaAbertaGestorAnalista(m, c), false, m + ' ' + c);
+  ['/opcoes', '/empresas', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/anexo/abc'].forEach((c) => ok('GET', c));
+  ok('GET', '/empresas?q=ab'); ok('POST', '/ocorrencias'); ok('POST', '/ocorrencias/uuid-1/anexo'); ok('POST', '/gestor/ocorrencias/uuid-1/abrir'); ok('PUT', '/gestor/ocorrencias/uuid-1/tratativa');
+  ['/resumo', '/recentes', '/tipos', '/ocorrencias', '/cliente/123', '/analista/7', '/vinculo/1'].forEach((c) => no('GET', c));
+  no('POST', '/'); no('POST', '/gestores'); no('POST', '/tipos'); no('PATCH', '/abc'); no('DELETE', '/abc'); no('DELETE', '/gestores/1'); no('PUT', '/vinculo/1'); no('PUT', '/gestor/ocorrencias/x'); no('POST', '/gestor/ocorrencias/x/tratar');
+});
+teste('escopo do Portal do Gestor: administração vê tudo; gestor vê os departamentos dele; gestor do Sucesso também vê o que ficou sem gestor', () => {
+  const adm = escopoDoUsuario({ role: 'administrador' }, []);
+  const ges = escopoDoUsuario({ role: 'colaborador' }, ['Fiscal', 'Fiscal', 'Pessoal']);
+  const suc = escopoDoUsuario({ role: 'colaborador' }, ['Sucesso']);
+  const reg = (d, fila) => ({ departamentos: [d], fila });
+  assert.strictEqual(ocorrenciaNoEscopo(adm, reg('Fiscal', 'gestor')), true);
+  assert.deepStrictEqual(ges.deptos, ['Fiscal', 'Pessoal']);
+  assert.strictEqual(ocorrenciaNoEscopo(ges, reg('Fiscal', 'gestor')), true);
+  assert.strictEqual(ocorrenciaNoEscopo(ges, reg('Contábil', 'gestor')), false);
+  assert.strictEqual(ocorrenciaNoEscopo(ges, reg('Contábil', 'sucesso')), false, 'sem ser do Sucesso, a fila do Sucesso não é dele');
+  assert.strictEqual(ocorrenciaNoEscopo(suc, reg('Contábil', 'sucesso')), true);
+  assert.strictEqual(ocorrenciaNoEscopo(suc, reg('Contábil', 'gestor')), false);
+  assert.strictEqual(ocorrenciaNoEscopo(escopoDoUsuario({ role: 'colaborador' }, []), reg('Fiscal', 'gestor')), false);
+});
+teste('tratativa do gestor: plano, responsável, departamento (o da ocorrência por padrão), prazo (SLA editável) e observação', () => {
+  const b = { plano: 'Retificar a guia e avisar o cliente hoje.', analista_id: '7', prazo: '2026-10-20' };
+  const v = validarTratativaGestor(b, 'Fiscal', '2026-10-17');
+  assert.deepStrictEqual(v, { ok: true, valores: { plano: 'Retificar a guia e avisar o cliente hoje.', analista_id: '7', departamento: 'Fiscal', prazo: '2026-10-20', obs: null } });
+  assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { departamento: 'Contábil', obs: ' ok ' }), 'Fiscal', '2026-10-17').valores.departamento, 'Contábil');
+  assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { obs: ' ok ' }), 'Fiscal', '2026-10-17').valores.obs, 'ok');
+  assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { plano: 'oi' }), 'Fiscal', '2026-10-17').ok, false);
+  assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { analista_id: '' }), 'Fiscal', '2026-10-17').ok, false);
+  assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { departamento: 'Marte' }), 'Fiscal', '2026-10-17').ok, false);
+  assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { prazo: '' }), 'Fiscal', '2026-10-17').ok, false);
+  assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { prazo: '2026-10-16' }), 'Fiscal', '2026-10-17').ok, false, 'prazo passado');
+  assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { prazo: '2026-10-17' }), 'Fiscal', '2026-10-17').ok, true, 'hoje vale');
+  assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { plano: 'a'.repeat(2001) }), 'Fiscal', '2026-10-17').ok, false);
+  assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { obs: 'a'.repeat(601) }), 'Fiscal', '2026-10-17').ok, false);
+});
+teste('etapa → status do risco: aberta até a tratativa; em tratamento com o analista; finalizada na validação e na devolutiva; resolvida ao encerrar', () => {
+  assert.deepStrictEqual(ETAPA_STATUS, { registrada: 'aberto', tratativa_definida: 'aberto', com_analista: 'em_tratamento', validacao_gestor: 'finalizada', devolutiva_cliente: 'finalizada', encerrada: 'resolvido' });
+});
+teste('gestores: o papel "final" (quem encerra no Sucesso do Cliente) é aceito', () => {
+  assert.strictEqual(validarGestor({ user_id: 'u1', departamento: 'Sucesso', papel: 'final' }).valores.papel, 'final');
 });
 teste('etapas do fluxo na ordem combinada', () => {
   assert.deepStrictEqual(ETAPAS, ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada']);

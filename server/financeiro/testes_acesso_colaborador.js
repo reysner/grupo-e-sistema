@@ -23,6 +23,7 @@ app.get('/api/users', requireAuth, (req, res) => res.json({ ok: true }));
 app.get('/api/data/legalizacao/painel', requireAuth, (req, res) => res.json({ ok: true }));
 app.get('/api/gam/minha-nota', requireAuth, (req, res) => res.json({ ok: true }));
 app.get('/api/qualidade/minhas', requireAuth, (req, res) => res.json({ ok: true }));
+app.get('/api/cs/painel/qualidade/opcoes', requireAuth, (req, res) => res.json({ ok: true }));
 
 const servidor = http.createServer(app);
 const get = (porta, caminho, token) => new Promise((resolve, reject) => {
@@ -70,6 +71,17 @@ servidor.listen(0, '127.0.0.1', async () => {
       assert.strictEqual((await get(porta, '/api/qualidade/minhas', colab({ acesso_minha_nota: true }))).status, 403);
       assert.strictEqual((await get(porta, '/api/qualidade/minhas', colab({}))).status, 403);
       assert.strictEqual((await get(porta, '/api/qualidade/minhas', bruno)).status, 403);
+    });
+    await teste('Qualidade no /cs: gestor (acesso_gestor) e analista (acesso_qualidade) chegam às rotas de Qualidade, mas não ao resto do /cs; sem marca, não', async () => {
+      const q = '/api/cs/painel/qualidade/opcoes';
+      assert.strictEqual((await get(porta, q, colab({ acesso_gestor: true }))).status, 200);
+      assert.strictEqual((await get(porta, q, colab({ acesso_qualidade: true }))).status, 200);
+      assert.strictEqual((await get(porta, q, colab({}))).status, 403);
+      assert.strictEqual((await get(porta, q, colab({ acesso_minha_nota: true }))).status, 403);
+      for (const c of ['/api/cs/painel/dados', '/api/cs/painel/anual']) {
+        assert.strictEqual((await get(porta, c, colab({ acesso_gestor: true }))).status, 403, c);
+        assert.strictEqual((await get(porta, c, colab({ acesso_qualidade: true }))).status, 403, c);
+      }
     });
     console.log(`\n${ok} testes passaram.`);
   } catch (e) { console.error('FALHOU:', e.message); process.exitCode = 1; }
