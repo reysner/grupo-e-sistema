@@ -42,6 +42,9 @@ function hojeBrasilia() {
 function somarDias(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
 
 /** Valida o corpo de um novo registro. Devolve { ok, valores } ou { ok:false, erro }. */
+/** Tipo gravado nos planos de ação feitos na ficha (a ficha não pede tipo; tipo de verdade só existe nas ocorrências lançadas no módulo). */
+const TIPO_PLANO = 'Plano de ação';
+
 function validarRegistro(corpo, hoje, tiposPermitidos) {
   const b = corpo || {};
   const h = hoje || hojeBrasilia();
@@ -209,7 +212,7 @@ async function notificarLancamento(reg, lancador) {
     const prazo = String(reg.prazo || '').split('-').reverse().join('/');
     await pool.query(
       `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ('qualidade_lancada', $1, $2, 'cs-qualidade')`,
-      ['Nova qualidade lançada: ' + reg.tipo, (lancador || 'Alguém') + ' lançou "' + reg.tipo + '" para ' + (reg.analista_nome || 'o analista') + ' sobre "' + (reg.cliente_nome || 'cliente') + '" (' + (reg.departamentos || []).join(', ') + '), prazo ' + prazo + '.']);
+      [reg.tipo === TIPO_PLANO ? 'Novo plano de ação registrado' : 'Nova qualidade lançada: ' + reg.tipo, (lancador || 'Alguém') + ' lançou "' + reg.tipo + '" para ' + (reg.analista_nome || 'o analista') + ' sobre "' + (reg.cliente_nome || 'cliente') + '" (' + (reg.departamentos || []).join(', ') + '), prazo ' + prazo + '.']);
   } catch (e) { console.warn('[qualidade] aviso de lançamento não gravado:', e.message); }
 }
 
@@ -346,8 +349,10 @@ router.get('/cliente/:clienteId', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const tipos = (await tiposAtivos()).map((t) => t.nome);
-    const v = validarRegistro(req.body, undefined, tipos);
+    // A ficha não envia tipo: o registro vira "Plano de ação" (origem 'ficha'). Quem ainda enviar um tipo (página antiga em cache) segue validado pela lista.
+    const comTipo = !!(req.body && req.body.tipo);
+    const tipos = comTipo ? (await tiposAtivos()).map((t) => t.nome) : [TIPO_PLANO];
+    const v = validarRegistro(comTipo ? req.body : Object.assign({}, req.body, { tipo: TIPO_PLANO }), undefined, tipos);
     if (!v.ok) return res.status(400).json({ error: v.erro });
     const cli = await pool.query(`SELECT id::text AS id, nome_empresa, regexp_replace(cnpj, '\\D', '', 'g') AS cnpj FROM clientes WHERE id::text = $1`, [v.valores.cliente_id]);
     if (!cli.rows.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
@@ -629,4 +634,4 @@ routerAnalista.post('/:id/nota', async (req, res) => {
   } catch (e) { console.error('[qualidade] POST /nota falhou:', e); res.status(500).json({ error: 'Erro ao salvar a nota.' }); }
 });
 
-module.exports = { router, routerAnalista, validarTipo, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { router, routerAnalista, validarTipo, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };

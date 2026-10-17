@@ -316,7 +316,7 @@
         '<div><strong style="color:' + COR_TERM.financeiro + '">Financeiro</strong><br>Dias de atraso do título mais antigo (até 15 dias = 25 pontos; acima de 90 = 90), mais 10 pontos com 3 ou mais títulos. Cliente marcado como inadimplente crônico fica em 70, no mínimo.</div>' +
         '<div><strong style="color:' + COR_TERM.atendimento + '">Atendimento</strong><br>Insatisfações registradas (pesam pela gravidade e diminuem depois de 90 dias), notas baixas, e SLA vermelho do Zappy <em>depois da revisão da Gamificação</em>, e detratores das pesquisas.</div>' +
         '<div><strong style="color:' + COR_TERM.operacional + '">Operacional</strong><br>Proporção das entregas do Acessórias (últimos 90 dias) que chegam ao cliente e foram entregues com atraso ou venceram sem entrega: guias e declarações com multa, folha, FGTS, DCTFWeb, INSS e envios ao cliente. Tarefas internas (balancete, renovação de certificado, aniversário de sócio, cadastros) não contam. Entrega dentro do prazo técnico ou do prazo legal não é atraso. Só conta com <strong>5 entregas ou mais</strong> no período (com menos, a taxa não é confiável: fica sem dado). Empresa com contrato <strong>Suspenso no Omie</strong> (selo ⏸) também fica fora do Operacional: o atraso dela já pesa no Financeiro.</div>' +
-        '<div><strong style="color:' + COR_TERM.tratativas + '">Tratativas</strong><br>Ocorrências <strong>lançadas no módulo Qualidade</strong> (erro, multa, reclamação, atraso, falha…) dos últimos 90 dias e o andamento da tratativa de cada uma: cada ocorrência vale o dobro do peso do seu tipo, mais se o prazo venceu, menos se já foi finalizada ou resolvida. Só entra na média enquanto houver tratativa em aberto. O que se escreve em "Descreva a tratativa" na ficha é plano de ação e <strong>não conta</strong>.</div>' +
+        '<div><strong style="color:' + COR_TERM.tratativas + '">Tratativas</strong><br>Ocorrências <strong>lançadas no módulo Qualidade</strong> (erro, multa, reclamação, atraso, falha…) dos últimos 90 dias e o andamento da tratativa de cada uma. Só entra na média enquanto houver tratativa em aberto. O que se escreve em "Descreva a tratativa" na ficha é plano de ação e <strong>não conta</strong>.</div>' +
       '</div></details>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px">' +
         '<span class="filter-label">Buscar</span><input class="gp-input" id="r-busca" placeholder="Nome ou CNPJ" value="' + esc(f.busca) + '">' +
@@ -1392,14 +1392,12 @@
     }
   }
 
-  /** Formulário do plano de ação: Tipo e Departamentos em cima; "Descreva a tratativa" ao lado do Responsável e do Prazo. */
+  /** Formulário do plano de ação: só os Departamentos em cima (sem tipo de registro); "Descreva a tratativa" ao lado do Responsável e do Prazo. */
   function formularioQ(o) {
-    var optTipos = '<option value="">Selecione</option>' + o.tipos.map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('');
     var optAn = '<option value="">Selecione</option>' + (estado.qAnalistas || []).map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.nome) + '</option>'; }).join('');
     var deps = o.departamentos.map(function (d) { return '<label class="qa-dep"><input type="checkbox" class="qa-dep-ck" value="' + esc(d) + '"> ' + esc(d) + '</label>'; }).join('');
     return '<div class="qa-form">' +
       '<div class="qa-linha">' +
-        '<div class="qa-campo qa-tipo"><label for="qa-tipo">Tipo de registro <span class="req">*</span>' + (ehAdminPainel() ? ' <a href="#" id="qa-editar-tipos" class="qa-lnk">(editar lista)</a>' : '') + '</label><select id="qa-tipo">' + optTipos + '</select></div>' +
         '<div class="qa-campo qa-deps-campo"><label>Departamentos envolvidos <span class="req">*</span></label><div class="qa-deps"><label class="qa-dep"><input type="checkbox" id="qa-dep-todos"> <strong>Todos</strong></label>' + deps + '</div></div>' +
       '</div>' +
       '<div class="qa-grade">' +
@@ -1431,12 +1429,10 @@
         k.addEventListener('change', function () { todos.checked = document.querySelectorAll('.qa-dep-ck:checked').length === o.departamentos.length; });
       });
       var ed = $('qa-editar-an'); if (ed) ed.addEventListener('click', function (ev) { ev.preventDefault(); abrirGerenciarAnalistas(function () { montarConsideracoes(c); }); });
-      var et = $('qa-editar-tipos'); if (et) et.addEventListener('click', function (ev) { ev.preventDefault(); abrirGerenciarTipos(function () { montarConsideracoes(c); }); });
       $('qa-salvar').addEventListener('click', async function () {
         var erro = $('qa-erro'); erro.textContent = '';
         var deps = Array.prototype.map.call(document.querySelectorAll('.qa-dep-ck:checked'), function (k) { return k.value; });
-        var corpo = { cliente_id: c.id, tipo: $('qa-tipo').value, departamentos: deps, detalhe: det.value, analista_id: $('qa-analista').value, prazo: $('qa-prazo').value };
-        if (!corpo.tipo) { erro.textContent = 'Escolha o tipo de registro.'; return; }
+        var corpo = { cliente_id: c.id, departamentos: deps, detalhe: det.value, analista_id: $('qa-analista').value, prazo: $('qa-prazo').value };
         if (!deps.length) { erro.textContent = 'Escolha ao menos um departamento envolvido.'; return; }
         if (!corpo.analista_id) { erro.textContent = 'Escolha o responsável.'; return; }
         if (!corpo.prazo) { erro.textContent = 'Informe o prazo para execução.'; return; }
@@ -1573,6 +1569,18 @@
     estado.qResumo = await api('/api/cs/painel/qualidade/resumo');
     try { estado.qRecentes = (await api('/api/cs/painel/qualidade/recentes?dias=7')).registros; } catch (e) { estado.qRecentes = []; }
   }
+  /** Quadro "Como a Tratativa pesa no risco de churn": só o administrador vê, no módulo Qualidade (pedido do Reysner, 17/10/2026). */
+  function comoPesaTratativa(tipos) {
+    var linhas = (tipos || []).map(function (t) { return '<tr><td>' + esc(t.nome) + '</td><td class="c">' + t.peso + '</td><td class="c"><strong>' + (t.peso * 2) + '</strong></td></tr>'; }).join('');
+    return '<details class="card leg" style="padding:12px 20px"><summary><span class="seta">▶</span> 🔒 Como a Tratativa pesa no risco de churn <span style="font-weight:500;text-transform:none;letter-spacing:0">(só administradores · clique para expandir)</span></summary><div class="corpo">' +
+      '<div><strong>Quem alimenta</strong><br>Só o que é <strong>lançado no módulo Qualidade</strong> (erro, multa, reclamação, atraso, falha…): aparece nos Sinais de atenção da ficha, no card Tratativas da Visão Geral e pesa no risco, que agora tem quatro critérios: Financeiro, Atendimento, Operacional e Tratativas. O plano de ação escrito na ficha ("Descreva a tratativa") <strong>não conta</strong>.</div>' +
+      '<div><strong>Como cada ocorrência pesa</strong><br>Vale o <strong>dobro do peso do seu tipo</strong> (tabela abaixo), multiplicado por: 1,5 se o prazo venceu · 1 em aberto ou em tratamento · 0,5 finalizada aguardando validação · 0,25 resolvida. Ocorrência com mais de 45 dias vale metade. Vale o que foi lançado nos últimos 90 dias, a soma é limitada a 100 por cliente e a cancelada não entra.</div>' +
+      '<div><strong>Quando entra na média</strong><br>Só enquanto houver tratativa em aberto (aberta, em tratamento ou finalizada aguardando validação). Sem pendência o termômetro fica de fora: uma tratativa resolvida não esconde um cliente com Financeiro alto e o risco não vira "parcial" à toa. Um termômetro a partir de 75 pontos já gera alerta e sobe o cliente para, no mínimo, Médio.</div>' +
+      '<div><strong>Pesos por tipo</strong> <span class="cinza">(mudam em "Gerenciar tipos de registro")</span>' +
+        (linhas ? '<div class="table-wrap" style="margin-top:6px"><table><thead><tr><th>Tipo</th><th class="c">Peso do tipo</th><th class="c">Vale na Tratativa (×2)</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<br>Nenhum tipo ativo cadastrado.') + '</div>' +
+      '</div></details>';
+  }
+
   async function desenharQualidadeMod() {
     var alvo = $('sec-consideracoes'); if (!alvo) return;
     var f = filtroQ();
@@ -1601,6 +1609,12 @@
         '<td class="c">' + data(a.ultimo_lancamento) + '</td><td class="c">' + data(a.proximo_prazo) + '</td>' +
         '<td class="c">' + (a.user_id ? '<span title="Este analista tem login ligado e vê as próprias tratativas">✔</span>' : '<span class="cinza" title="Sem login ligado: abra o analista para ligar">—</span>') + '</td></tr>';
     }).join('');
+    var pesoBox = '';
+    if (ehAdminPainel()) {
+      var tiposQ = [];
+      try { tiposQ = ((await api('/api/cs/painel/qualidade/tipos')).tipos || []).filter(function (t) { return t.ativo; }); } catch (e) { tiposQ = []; }
+      pesoBox = comoPesaTratativa(tiposQ);
+    }
     alvo.innerHTML =
       '<div class="gp-kpi-row">' +
         kpi('#7c3aed', 'A validar', tot.a_validar, 'finalizadas pelo analista, aguardando você') +
@@ -1609,10 +1623,10 @@
         kpi('#b91c1c', 'Vencidos', tot.vencidos, 'prazo passou e ainda não foi resolvido') +
         kpi('#166534', 'Resolvidos', tot.resolvidos, 'considerações encerradas') +
       '</div>' +
-      aviso + recentesQ() +
+      aviso + recentesQ() + pesoBox +
       '<div class="nota"><strong>Como funciona.</strong> A consideração é registrada na ficha do cliente (Gestão da Permanência) pelo Sucesso do Cliente ou pelo Time Operacional, com analista e prazo. ' +
         'Aqui a lista é por analista: clique no nome para ver cada registro, o prazo e o status. O analista trata pela página <strong>Minhas tratativas</strong> (/qualidade). ' +
-        'Cada consideração também pesa no termômetro de Atendimento do risco de churn do cliente.' + (r.sem_analista ? ' <span style="color:#b91c1c">' + r.sem_analista + ' registro(s) sem analista na lista.</span>' : '') + '</div>' +
+        'Os planos de ação feitos na ficha são informativos e não pesam no risco; só o que é lançado aqui no módulo alimenta os Sinais de atenção e o termômetro Tratativas do risco de churn.' + (r.sem_analista ? ' <span style="color:#b91c1c">' + r.sem_analista + ' registro(s) sem analista na lista.</span>' : '') + '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="q-busca" placeholder="Nome do analista" value="' + esc(f.busca) + '">' +
         '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="q-todos"' + (f.todos ? ' checked' : '') + '> mostrar analistas sem registro</label>' +
         (ehAdminPainel() ? '<button type="button" class="gp-footer-btn" id="q-gerenciar" style="width:auto">Gerenciar analistas</button><button type="button" class="gp-footer-btn" id="q-tipos" style="width:auto">Gerenciar tipos de registro</button>' : '') + '</div>' +

@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, resumoQ: resumoQ, chipOcorrenciaQ: chipOcorrenciaQ, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, resumoQ: resumoQ, chipOcorrenciaQ: chipOcorrenciaQ, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, comoPesaTratativa: comoPesaTratativa }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null, tratativas: 75 }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -163,6 +163,8 @@ const semLixo = (e, nome) => {
     assert.ok(f.includes('class="qa-grade"') && f.indexOf('id="qa-detalhe"') < f.indexOf('id="qa-analista"') && f.indexOf('id="qa-analista"') < f.indexOf('id="qa-prazo"'));
     assert.ok(f.indexOf('Departamentos envolvidos') < f.indexOf('Descreva a tratativa:'));
     assert.ok(f.includes('não entra no card Tratativa nem no risco'));
+    assert.ok(!f.includes('Tipo de registro') && !f.includes('id="qa-tipo"') && !f.includes('qa-editar-tipos'), 'a ficha não pede mais o tipo de registro');
+    assert.ok(f.includes('Departamentos envolvidos'));
     assert.ok(C.t.formularioQAntigo(o).includes('Descreva a ocorrência'), 'o layout antigo continua guardado');
     assert.strictEqual(C.t.resumoQ('apuração   do imposto com valor divergente'), 'apuração do imposto com valor divergente');
     const longo = 'Erro na apuração do imposto da competência de setembro: valor do ISS calculado sobre a base errada e guia enviada ao cliente sem conferência.';
@@ -170,6 +172,13 @@ const semLixo = (e, nome) => {
     assert.ok(r.length <= 91 && r.endsWith('…') && !r.includes('  '), r);
     const chip = C.t.chipOcorrenciaQ({ tipo: 'Erro', departamentos: ['Fiscal'], detalhe: longo, criado_em: '2026-10-16T12:00:00Z', prazo: '2026-10-20', situacao: 'vencido', analista_nome: 'Josiane' });
     assert.ok(chip.includes('<strong>Erro</strong>') && chip.includes('Fiscal') && chip.includes('apuração do imposto') && chip.includes('Vencido') && chip.includes('title='));
+  });
+  await teste('cs: quadro "Como a Tratativa pesa" mostra o peso de cada tipo (dobro) e o que não conta', () => {
+    const h = C.t.comoPesaTratativa([{ nome: 'Multa', peso: 25 }, { nome: 'Erro', peso: 15 }]);
+    assert.ok(h.includes('só administradores') && h.includes('Como a Tratativa pesa'));
+    assert.ok(h.includes('<td>Multa</td><td class="c">25</td><td class="c"><strong>50</strong></td>') && h.includes('<td>Erro</td><td class="c">15</td><td class="c"><strong>30</strong></td>'));
+    assert.ok(h.includes('1,5') && h.includes('0,25') && h.includes('não conta') && h.includes('mais de 45 dias'));
+    assert.ok(C.t.comoPesaTratativa([]).includes('Nenhum tipo ativo'));
   });
   await teste('cs: análise traz o grupo consolidado e cada empresa; zero vira "sem faturamento"; CPF aparece', () => {
     const e = C.t.dadosExport('analise');
