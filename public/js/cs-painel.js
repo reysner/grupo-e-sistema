@@ -2479,8 +2479,8 @@
       '<div class="qa-oc-linha qa-g-grid">' +
         '<div class="qa-campo"><label for="gf-depto">Departamento que trata <span class="req">*</span></label><select id="gf-depto">' + optD + '</select></div>' +
         '<div class="qa-campo"><label for="gf-prazo">Prazo para execução <span class="req">*</span></label><input type="date" id="gf-prazo" min="' + hojeIsoLocal() + '"></div>' +
-        '<div class="qa-campo"><label for="gf-obs">Observação</label><input type="text" id="gf-obs" maxlength="600" placeholder="Opcional"></div>' +
       '</div>' +
+      '<div class="qa-campo"><label for="gf-obs">Observação <span class="cinza" id="gf-obs-cont">0/1500</span></label><textarea id="gf-obs" rows="3" maxlength="1500" placeholder="Opcional: orientação a quem vai tratar. Digite @ para chamar um analista."></textarea></div>' +
       '<label class="qa-dep" style="margin:6px 0"><input type="checkbox" id="gf-mostrar"> Mostrar a origem e o analista do registro para quem vai tratar <span class="cinza">(padrão: não; isso fica só com você)</span></label>' +
       '<div class="qa-oc-linha qa-oc-bot"><button type="button" class="qa-btn-cancel" id="gf-cancel" style="background:#64748b">Cancelar</button><button type="button" class="qa-btn-ok" id="gf-ok">Abrir ocorrência vinculada</button></div>' +
       '<div class="pop-erro" id="gf-erro" role="alert"></div>';
@@ -2494,7 +2494,10 @@
     ligarChipsResp($('gf-resp'));
     var marcados = function () { return chipsDe($('gf-resp')); };
     plano.addEventListener('input', function () { $('gf-cont').textContent = plano.value.length + '/1500'; });
+    var obsF = $('gf-obs');
+    obsF.addEventListener('input', function () { $('gf-obs-cont').textContent = obsF.value.length + '/1500'; });
     ligarMencoes(plano, function () { return analistasPorDepto($('gf-depto').value); }, function (a) { adicionarChipResp($('gf-resp'), a); });
+    ligarMencoes(obsF, function () { return analistasPorDepto($('gf-depto').value); }, function (a) { adicionarChipResp($('gf-resp'), a); });   // @ também na observação
     $('gf-ok').addEventListener('click', async function () {
       erro.textContent = '';
       var sel = marcados(), assunto = $('gf-assunto').value.trim(), prazo = $('gf-prazo').value;
@@ -2947,7 +2950,7 @@
         '<div class="qa-campo"><label for="gt-depto">Departamento que trata <span class="req">*</span></label><select id="gt-depto">' + optD + '</select></div>' +
         '<div class="qa-campo"><label for="gt-prazo">Prazo para execução (SLA) <span class="req">*</span></label><input type="date" id="gt-prazo" min="' + hojeIsoLocal() + '" value="' + esc(r.prazo || '') + '"></div>' +
       '</div>' +
-      '<div class="qa-campo"><label for="gt-obs">Observação</label><textarea id="gt-obs" rows="2" maxlength="600" placeholder="Opcional: orientação ao analista">' + esc(r.gestor_obs || '') + '</textarea></div>' +
+      '<div class="qa-campo"><label for="gt-obs">Observação <span class="cinza" id="gt-obs-cont">' + String(r.gestor_obs || '').length + '/1500</span></label><textarea id="gt-obs" rows="4" maxlength="1500" placeholder="Opcional: orientação ao analista. Digite @ para chamar um analista.">' + esc(r.gestor_obs || '') + '</textarea></div>' +
       (podeFilha ? '<div style="margin:6px 0">' + btnFilha + '</div>' : '') +
       '<div class="cinza" style="font-size:12px;margin:6px 0">Salvar guarda a tratativa e você ainda pode editar. <strong>Salvar e abrir para o analista</strong> libera para ele tratar; depois disso não se edita mais por aqui.</div>' +
       '<div class="qa-oc-linha qa-g-botoes"><button type="button" class="qa-btn-cancel" id="gt-cancel" style="background:#64748b">Fechar</button><button type="button" class="qa-btn-ok" id="gt-salvar" style="background:#2563eb">Salvar tratativa</button><button type="button" class="qa-btn-ok" id="gt-abrir">Salvar e abrir para o analista</button></div>' +
@@ -2983,6 +2986,9 @@
     $('gt-cont').textContent = plano.value.length + '/1500';
     ligarChipsResp($('gt-resp'));
     ligarMencoes(plano, function () { return analistasPorDepto($('gt-depto').value); }, function (a) { adicionarChipResp($('gt-resp'), a); });
+    var obsG = $('gt-obs');
+    obsG.addEventListener('input', function () { $('gt-obs-cont').textContent = obsG.value.length + '/1500'; });
+    ligarMencoes(obsG, function () { return analistasPorDepto($('gt-depto').value); }, function (a) { adicionarChipResp($('gt-resp'), a); });   // @ também na observação
     var salvar = async function (abrir) {
       erro.textContent = '';
       var sel = chipsDe($('gt-resp'));

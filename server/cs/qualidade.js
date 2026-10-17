@@ -277,7 +277,7 @@ function validarTratativaGestor(corpo, deptoDaOcorrencia, hoje, opts) {
   if (prazo < h) return { ok: false, erro: 'O prazo não pode ser uma data que já passou.' };
   if (prazo > somarDias(h, 365)) return { ok: false, erro: 'O prazo passa de um ano: escolha uma data mais próxima.' };
   const obs = String(b.obs == null ? '' : b.obs).replace(/\r\n/g, '\n').trim();
-  if (obs.length > MAX_TRATATIVA) return { ok: false, erro: 'A observação passa de ' + MAX_TRATATIVA + ' caracteres.' };
+  if (obs.length > MAX_DETALHE) return { ok: false, erro: 'A observação passa de ' + MAX_DETALHE + ' caracteres.' };
   return { ok: true, valores: { plano, analista_id, analistas_ids, departamento, prazo, obs: obs || null } };
 }
 

@@ -413,6 +413,8 @@ const semLixo = (e, nome) => {
     assert.ok(f.includes('Abrir ocorrência vinculada') && f.includes('id="gf-assunto"') && f.includes('id="gf-plano"') && f.includes('id="gf-resp"') && f.includes('id="gf-depto"') && f.includes('id="gf-prazo"') && f.includes('id="gf-ok"'));
     assert.ok(f.includes('Digite @ para chamar um analista') && f.includes('<option value="Fiscal" selected>Fiscal</option>') && !f.includes('id="gf-mostrar" checked'), 'por padrão não mostra a origem');
     assert.ok(f.includes('Mostrar a origem e o analista do registro') && f.includes('fica só com você'));
+    assert.ok(f.includes('id="gf-obs"') && f.includes('maxlength="1500"') && f.includes('0/1500') && f.includes('Digite @ para chamar um analista'), 'observação da vinculada: textarea larga, até 1500, com @');
+    assert.ok(h.includes('id="gt-obs"') && h.includes('maxlength="1500"') && h.includes('/1500</span></label><textarea id="gt-obs"'), 'observação da tratativa: até 1500, com contador');
     assert.ok(f.includes('data-vazio="1"') && f.includes('digite @ no plano de ação'), 'a ocorrência vinculada começa sem ninguém e chama com @');
     assert.ok(C.t.htmlChipsResp([{ id: '5', nome: 'Kelen Garcia da Silva' }]).includes('data-chip="5"') && C.t.htmlChipsResp([{ id: '5', nome: 'Kelen' }]).includes('data-chip-x="5"'), 'cada etiqueta tem o ✕ para retirar');
     assert.ok(C.t.htmlChipsResp([]).includes('Ninguém ainda'));

@@ -173,7 +173,8 @@ teste('tratativa do gestor: plano, responsável, departamento (o da ocorrência 
   assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { prazo: '2026-10-16' }), 'Fiscal', '2026-10-17').ok, false, 'prazo passado');
   assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { prazo: '2026-10-17' }), 'Fiscal', '2026-10-17').ok, true, 'hoje vale');
   assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { plano: 'a'.repeat(2001) }), 'Fiscal', '2026-10-17').ok, false);
-  assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { obs: 'a'.repeat(601) }), 'Fiscal', '2026-10-17').ok, false);
+  assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { obs: 'a'.repeat(1501) }), 'Fiscal', '2026-10-17').ok, false);
+  assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { obs: 'a'.repeat(1500) }), 'Fiscal', '2026-10-17').ok, true, 'observação até 1500');
 });
 teste('etapa → status do risco: aberta até a tratativa; em tratamento com o analista; finalizada na validação e na devolutiva; resolvida ao encerrar', () => {
   assert.deepStrictEqual(ETAPA_STATUS, { registrada: 'aberto', tratativa_definida: 'aberto', com_analista: 'em_tratamento', validacao_gestor: 'finalizada', devolutiva_cliente: 'finalizada', encerrada: 'resolvido', cancelada: 'cancelado' });
