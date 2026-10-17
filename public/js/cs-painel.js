@@ -2400,17 +2400,32 @@
     }).join('');
     return h;
   }
-  /** Caixas de analistas (nome completo); com departamento, os dele vêm primeiro. */
-  function checksResp(lista, dep, marcados, classe) {
-    var ordem = (lista || []).slice().sort(function (a, b) {
-      var da = depsAnalista(a).indexOf(dep) >= 0 ? 0 : 1, db = depsAnalista(b).indexOf(dep) >= 0 ? 0 : 1;
+  /** Responsáveis escolhidos: etiquetas com ✕ (quem entra é chamado com @ no plano de ação). */
+  var VAZIO_RESP = '<span class="cinza" data-vazio="1">Ninguém ainda: digite @ no plano de ação para chamar o(a) analista.</span>';
+  function htmlChipResp(a) {
+    return '<span class="qg-chip" data-chip="' + esc(a.id) + '" data-nome="' + esc(a.nome) + '">' + esc(a.nome) + '<button type="button" data-chip-x="' + esc(a.id) + '" title="Retirar" aria-label="Retirar ' + esc(a.nome) + '">✕</button></span>';
+  }
+  function htmlChipsResp(lista) { return (lista || []).length ? lista.map(htmlChipResp).join('') : VAZIO_RESP; }
+  function chipsDe(raiz) { return raiz ? Array.prototype.slice.call(raiz.querySelectorAll('[data-chip]')) : []; }
+  function adicionarChipResp(raiz, a) {
+    if (!raiz || raiz.querySelector('[data-chip="' + a.id + '"]')) return;
+    var v = raiz.querySelector('[data-vazio]'); if (v) v.parentNode.removeChild(v);
+    raiz.insertAdjacentHTML('beforeend', htmlChipResp(a));
+  }
+  function ligarChipsResp(raiz) {
+    if (!raiz) return;
+    raiz.addEventListener('click', function (ev) {
+      var x = ev.target && ev.target.closest ? ev.target.closest('[data-chip-x]') : null; if (!x) return;
+      var c = x.closest('[data-chip]'); if (c) c.parentNode.removeChild(c);
+      if (!raiz.querySelector('[data-chip]') && !raiz.querySelector('[data-vazio]')) raiz.insertAdjacentHTML('beforeend', VAZIO_RESP);
+    });
+  }
+  /** Analistas na ordem para o @: os do departamento escolhido primeiro. */
+  function analistasPorDepto(dep) {
+    return (estado.qAnalistas || []).slice().sort(function (a, b) {
+      var da = dep && depsAnalista(a).indexOf(dep) >= 0 ? 0 : 1, db = dep && depsAnalista(b).indexOf(dep) >= 0 ? 0 : 1;
       return da - db || String(a.nome).localeCompare(String(b.nome), 'pt-BR');
     });
-    if (!ordem.length) return '<span class="cinza">Nenhum analista cadastrado (Acessos > Analistas).</span>';
-    return ordem.map(function (a) {
-      var daqui = dep && depsAnalista(a).indexOf(dep) >= 0;
-      return '<label class="qa-dep"><input type="checkbox" class="' + classe + '" value="' + esc(a.id) + '" data-nome="' + esc(a.nome) + '"' + ((marcados || []).indexOf(String(a.id)) >= 0 ? ' checked' : '') + '> ' + esc(a.nome) + (daqui ? ' <span class="cinza">· ' + esc(rotuloDepto(dep)) + '</span>' : '') + '</label>';
-    }).join('');
   }
   /** Digitando @ no texto aparece a lista de analistas; escolher insere o nome e marca a pessoa como responsável (como nas solicitações do Acessórias). */
   function ligarMencoes(ta, listaFn, aoEscolher) {
@@ -2419,7 +2434,7 @@
     ta.parentNode.style.position = 'relative'; ta.parentNode.appendChild(pop);
     var itens = [], idx = 0, ini = -1, quebra = String.fromCharCode(10);
     var fecha = function () { pop.hidden = true; itens = []; ini = -1; idx = 0; };
-    var pinta = function () { pop.hidden = false; pop.innerHTML = itens.map(function (a, i) { return '<div class="qa-oc-item' + (i === idx ? ' ativo' : '') + '" data-i="' + i + '">' + esc(a.nome) + '</div>'; }).join(''); };
+    var pinta = function () { pop.hidden = false; pop.innerHTML = itens.map(function (a, i) { return '<div class="qa-oc-item' + (i === idx ? ' ativo' : '') + '" data-i="' + i + '">' + esc(a.nome) + (depsAnalista(a).length ? ' <span class="cinza">· ' + esc(depsAnalista(a).map(rotuloDepto).join(', ')) + '</span>' : '') + '</div>'; }).join(''); };
     var consulta = function () {
       var pos = ta.selectionStart, antes = ta.value.slice(0, pos), m = antes.lastIndexOf('@');
       if (m < 0) return fecha();
@@ -2460,7 +2475,7 @@
       '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">Vinculada a <strong>' + esc(pai.assunto || '—') + '</strong> (' + esc(pai.cliente_nome || '') + '). Abra uma para cada situação: cada uma tem o seu responsável e o seu prazo. A original só segue para a validação quando todas estiverem encerradas.</div>' +
       '<div class="qa-campo"><label for="gf-assunto">Assunto <span class="req">*</span></label><input type="text" id="gf-assunto" maxlength="100" placeholder="Qual a situação a tratar?"></div>' +
       '<div class="qa-campo"><label for="gf-plano">Plano de ação <span class="req">*</span> <span class="cinza" id="gf-cont">0/1500</span></label><textarea id="gf-plano" rows="4" maxlength="1500" placeholder="O que precisa ser feito. Digite @ para chamar um analista."></textarea></div>' +
-      '<div class="qa-campo"><label>Responsáveis <span class="req">*</span> <span class="cinza">(um ou vários)</span></label><div class="qa-resp-lista" id="gf-resp">' + checksResp(analistas, depPai, [], 'gf-resp-ck') + '</div></div>' +
+      '<div class="qa-campo"><label>Responsáveis <span class="req">*</span> <span class="cinza">(um ou vários · digite @ no plano de ação para chamar o(a) analista)</span></label><div class="qg-chips" id="gf-resp">' + htmlChipsResp([]) + '</div></div>' +
       '<div class="qa-oc-linha qa-g-grid">' +
         '<div class="qa-campo"><label for="gf-depto">Departamento que trata <span class="req">*</span></label><select id="gf-depto">' + optD + '</select></div>' +
         '<div class="qa-campo"><label for="gf-prazo">Prazo para execução <span class="req">*</span></label><input type="date" id="gf-prazo" min="' + hojeIsoLocal() + '"></div>' +
@@ -2476,13 +2491,10 @@
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Abrir ocorrência vinculada">' + htmlFilhaGestor(pai, estado.qAnalistas || []) + '</div>';
     $('gf-fechar').addEventListener('click', fechar); $('gf-cancel').addEventListener('click', fechar);
     var plano = $('gf-plano'), erro = $('gf-erro');
-    var marcados = function () { return Array.prototype.filter.call(ov.querySelectorAll('.gf-resp-ck'), function (c) { return c.checked; }); };
+    ligarChipsResp($('gf-resp'));
+    var marcados = function () { return chipsDe($('gf-resp')); };
     plano.addEventListener('input', function () { $('gf-cont').textContent = plano.value.length + '/1500'; });
-    ligarMencoes(plano, function () { return estado.qAnalistas || []; }, function (a) { var ck = ov.querySelector('.gf-resp-ck[value="' + a.id + '"]'); if (ck) ck.checked = true; });
-    $('gf-depto').addEventListener('change', function () {   // regrupa: os do departamento primeiro, sem perder quem já foi marcado
-      var ids = marcados().map(function (c) { return c.value; });
-      $('gf-resp').innerHTML = checksResp(estado.qAnalistas || [], $('gf-depto').value, ids, 'gf-resp-ck');
-    });
+    ligarMencoes(plano, function () { return analistasPorDepto($('gf-depto').value); }, function (a) { adicionarChipResp($('gf-resp'), a); });
     $('gf-ok').addEventListener('click', async function () {
       erro.textContent = '';
       var sel = marcados(), assunto = $('gf-assunto').value.trim(), prazo = $('gf-prazo').value;
@@ -2494,7 +2506,7 @@
       var nomes = sel.map(function (c) { return c.getAttribute('data-nome'); }).join(', ');
       if (!window.confirm('Abrir esta ocorrência vinculada para ' + nomes + '?')) return;
       var b = $('gf-ok'); b.disabled = true;
-      var x = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(pai.id) + '/filha', { assunto: assunto, plano: plano.value, analistas_ids: sel.map(function (c) { return c.value; }), departamento: $('gf-depto').value, prazo: prazo, obs: $('gf-obs').value, mostrar_pai: $('gf-mostrar').checked });
+      var x = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(pai.id) + '/filha', { assunto: assunto, plano: plano.value, analistas_ids: sel.map(function (c) { return c.getAttribute('data-chip'); }), departamento: $('gf-depto').value, prazo: prazo, obs: $('gf-obs').value, mostrar_pai: $('gf-mostrar').checked });
       if (!x.ok) { erro.textContent = x.j.error || 'Não foi possível abrir a ocorrência vinculada.'; b.disabled = false; return; }
       fechar(); if (aoCriar) aoCriar();
       estado.g.dados = null; desenharGestor();
@@ -2930,7 +2942,7 @@
     }
     return topo + '<div class="ficha-sec">Criar a tratativa</div>' +
       '<div class="qa-campo"><label for="gt-plano">Plano de ação <span class="req">*</span> <span class="cinza" id="gt-cont">0/1500</span></label><textarea id="gt-plano" rows="5" maxlength="1500" placeholder="O que será feito para resolver e evitar que se repita">' + esc(r.plano_acao || '') + '</textarea></div>' +
-      '<div class="qa-campo"><label>Responsável <span class="req">*</span> <span class="cinza">(um ou vários · digite @ no plano de ação para chamar alguém · pode ficar sem responsável se você conduzir só pelas ocorrências vinculadas)</span></label><div class="qa-resp-lista" id="gt-resp">' + checksResp(analistas, depAtual, marcados, 'gt-resp-ck') + '</div></div>' +
+      '<div class="qa-campo"><label>Responsável <span class="req">*</span> <span class="cinza">(um ou vários · digite @ no plano de ação para chamar alguém · pode ficar sem responsável se você conduzir só pelas ocorrências vinculadas)</span></label><div class="qg-chips" id="gt-resp">' + htmlChipsResp((analistas || []).filter(function (a) { return marcados.indexOf(String(a.id)) >= 0; })) + '</div></div>' +
       '<div class="qa-oc-linha qa-g-grid">' +
         '<div class="qa-campo"><label for="gt-depto">Departamento que trata <span class="req">*</span></label><select id="gt-depto">' + optD + '</select></div>' +
         '<div class="qa-campo"><label for="gt-prazo">Prazo para execução (SLA) <span class="req">*</span></label><input type="date" id="gt-prazo" min="' + hojeIsoLocal() + '" value="' + esc(r.prazo || '') + '"></div>' +
@@ -2969,11 +2981,12 @@
     var plano = $('gt-plano'), erro = $('gt-erro');
     plano.addEventListener('input', function () { $('gt-cont').textContent = plano.value.length + '/1500'; });
     $('gt-cont').textContent = plano.value.length + '/1500';
-    ligarMencoes(plano, function () { return estado.qAnalistas || []; }, function (a) { var ck = ov.querySelector('.gt-resp-ck[value="' + a.id + '"]'); if (ck) ck.checked = true; });
+    ligarChipsResp($('gt-resp'));
+    ligarMencoes(plano, function () { return analistasPorDepto($('gt-depto').value); }, function (a) { adicionarChipResp($('gt-resp'), a); });
     var salvar = async function (abrir) {
       erro.textContent = '';
-      var sel = Array.prototype.filter.call(ov.querySelectorAll('.gt-resp-ck'), function (c) { return c.checked; });
-      var corpo = { plano: plano.value, analistas_ids: sel.map(function (c) { return c.value; }), departamento: $('gt-depto').value, prazo: $('gt-prazo').value, obs: $('gt-obs').value };
+      var sel = chipsDe($('gt-resp'));
+      var corpo = { plano: plano.value, analistas_ids: sel.map(function (c) { return c.getAttribute('data-chip'); }), departamento: $('gt-depto').value, prazo: $('gt-prazo').value, obs: $('gt-obs').value };
       if (plano.value.trim().length < 5) { erro.textContent = 'Descreva o plano de ação (mínimo de 5 caracteres).'; return; }
       if (!corpo.analistas_ids.length && !(r.filhas || []).length) { erro.textContent = 'Escolha ao menos um responsável (analista) ou abra ocorrências vinculadas para os analistas.'; return; }
       if (!corpo.prazo) { erro.textContent = 'Informe o prazo para execução.'; return; }
