@@ -223,7 +223,7 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 
 /* Título e subtítulo do painel logo abaixo da logo (pedido do Reysner, 09/10/2026). */
 .gp-sidebar-logo{flex-direction:column;justify-content:flex-start;gap:0;padding:4px 16px 14px;}
-.gp-sidebar-logo img{margin-bottom:-30px;}   /* a imagem tem margem transparente embaixo: aproxima o título da logo (18/10/2026) */   /* logo mais acima, texto mais embaixo */
+.gp-sidebar-logo img{margin-bottom:-8px;}   /* a imagem tem margem transparente embaixo: aproxima o título da logo (18/10/2026) */   /* logo mais acima, texto mais embaixo */
 .gp-sidebar-id{display:flex;align-items:flex-start;gap:10px;width:100%;padding:0 4px;}
 .gp-sidebar-id .gp-sidebar-dot{margin-top:6px;}
 .gp-sidebar-title{color:#fff;font-size:13px;font-weight:700;letter-spacing:-.3px;line-height:1.25;}
