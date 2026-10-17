@@ -158,9 +158,13 @@ const semLixo = (e, nome) => {
   });
   await teste('cs: ficha — formulário novo (Descreva a tratativa + Responsável + Prazo) e Sinais de atenção com resumo da ocorrência', () => {
     const o = { tipos: ['Erro', 'Multa'], departamentos: ['Fiscal', 'Contábil'], max_detalhe: 600 };
+    C.t.estado.qAnalistas = [{ id: '1', nome: 'Ana Souza' }, { id: '2', nome: 'Bruno Lima' }];
     const f = C.t.formularioQ(o);
+    assert.strictEqual((f.match(/class="qa-resp-ck"/g) || []).length, 2, 'cada analista ativo vira uma caixa de marcar (vários responsáveis)');
+    assert.ok(f.includes('Responsável(is)') && f.includes('id="qa-resp"') && !f.includes('<select id="qa-analista"'));
+    assert.strictEqual((f.match(/class="qa-dep-ck"/g) || []).length, 2, 'vários departamentos continuam valendo');
     assert.ok(f.includes('Descreva a tratativa:') && f.includes('Responsável') && !f.includes('Descreva a ocorrência') && !f.includes('>Analista'));
-    assert.ok(f.includes('class="qa-grade"') && f.indexOf('id="qa-detalhe"') < f.indexOf('id="qa-analista"') && f.indexOf('id="qa-analista"') < f.indexOf('id="qa-prazo"'));
+    assert.ok(f.includes('class="qa-grade"') && f.indexOf('id="qa-detalhe"') < f.indexOf('id="qa-resp"') && f.indexOf('id="qa-resp"') < f.indexOf('id="qa-prazo"'));
     assert.ok(f.indexOf('Departamentos envolvidos') < f.indexOf('Descreva a tratativa:'));
     assert.ok(f.includes('não entra no card Tratativa nem no risco'));
     assert.ok(!f.includes('Tipo de registro') && !f.includes('id="qa-tipo"') && !f.includes('qa-editar-tipos'), 'a ficha não pede mais o tipo de registro');

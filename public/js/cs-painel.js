@@ -1414,7 +1414,7 @@
 
   /** Formulário do plano de ação: só os Departamentos em cima (sem tipo de registro); "Descreva a tratativa" ao lado do Responsável e do Prazo. */
   function formularioQ(o) {
-    var optAn = '<option value="">Selecione</option>' + (estado.qAnalistas || []).map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.nome) + '</option>'; }).join('');
+    var respLista = (estado.qAnalistas || []).map(function (a) { return '<label class="qa-dep"><input type="checkbox" class="qa-resp-ck" value="' + esc(a.id) + '" data-nome="' + esc(a.nome) + '"> ' + esc(a.nome) + '</label>'; }).join('');
     var deps = o.departamentos.map(function (d) { return '<label class="qa-dep"><input type="checkbox" class="qa-dep-ck" value="' + esc(d) + '"> ' + esc(d) + '</label>'; }).join('');
     return '<div class="qa-form">' +
       '<div class="qa-linha">' +
@@ -1424,7 +1424,8 @@
         '<div class="qa-campo qa-larga"><label for="qa-detalhe">Descreva a tratativa: <span class="req">*</span> <span class="cinza" id="qa-cont">0/' + o.max_detalhe + '</span></label>' +
           '<textarea id="qa-detalhe" maxlength="' + o.max_detalhe + '" rows="4" placeholder="Ex.: plano de ação sobre o que aparece em Sinais de atenção: guia retificada, cliente avisado, conferência dobrada no fechamento."></textarea></div>' +
         '<div class="qa-lateral">' +
-          '<div class="qa-campo"><label for="qa-analista">Responsável <span class="req">*</span>' + (ehAdminPainel() ? ' <a href="#" id="qa-editar-an" class="qa-lnk">(editar lista)</a>' : '') + '</label><select id="qa-analista">' + optAn + '</select></div>' +
+          '<div class="qa-campo"><label>Responsável(is) <span class="req">*</span>' + (ehAdminPainel() ? ' <a href="#" id="qa-editar-an" class="qa-lnk">(editar lista)</a>' : '') + '</label>' +
+            '<details class="qa-multi" id="qa-resp"><summary id="qa-resp-rot">Selecione</summary><div class="qa-multi-lista">' + (respLista || '<span class="cinza">Nenhum analista ativo na lista.</span>') + '</div></details></div>' +
           '<div class="qa-campo"><label for="qa-prazo">Prazo para execução <span class="req">*</span></label><input type="date" id="qa-prazo" min="' + hojeIsoLocal() + '"></div>' +
         '</div>' +
       '</div>' +
@@ -1448,13 +1449,22 @@
       Array.prototype.forEach.call(document.querySelectorAll('.qa-dep-ck'), function (k) {
         k.addEventListener('change', function () { todos.checked = document.querySelectorAll('.qa-dep-ck:checked').length === o.departamentos.length; });
       });
+      // Responsáveis: lista com caixas de marcar (pode escolher mais de um); o texto do campo resume a escolha e a lista fecha ao clicar fora.
+      var resumoResp = function () {
+        var marc = Array.prototype.filter.call(document.querySelectorAll('.qa-resp-ck'), function (k) { return k.checked; });
+        var rot = $('qa-resp-rot'); if (rot) rot.textContent = !marc.length ? 'Selecione' : marc.length === 1 ? marc[0].getAttribute('data-nome') : marc.length + ' responsáveis';
+      };
+      Array.prototype.forEach.call(document.querySelectorAll('.qa-resp-ck'), function (k) { k.addEventListener('change', resumoResp); });
+      var fechaResp = function (ev) { var d = $('qa-resp'); if (!d) { document.removeEventListener('click', fechaResp); return; } if (d.open && !(d.contains && d.contains(ev.target))) d.open = false; };
+      document.addEventListener('click', fechaResp);
       var ed = $('qa-editar-an'); if (ed) ed.addEventListener('click', function (ev) { ev.preventDefault(); abrirGerenciarAnalistas(function () { montarConsideracoes(c); }); });
       $('qa-salvar').addEventListener('click', async function () {
         var erro = $('qa-erro'); erro.textContent = '';
         var deps = Array.prototype.map.call(document.querySelectorAll('.qa-dep-ck:checked'), function (k) { return k.value; });
-        var corpo = { cliente_id: c.id, departamentos: deps, detalhe: det.value, analista_id: $('qa-analista').value, prazo: $('qa-prazo').value };
+        var resp = Array.prototype.filter.call(document.querySelectorAll('.qa-resp-ck'), function (k) { return k.checked; }).map(function (k) { return k.value; });
+        var corpo = { cliente_id: c.id, departamentos: deps, detalhe: det.value, analistas_ids: resp, prazo: $('qa-prazo').value };
         if (!deps.length) { erro.textContent = 'Escolha ao menos um departamento envolvido.'; return; }
-        if (!corpo.analista_id) { erro.textContent = 'Escolha o responsável.'; return; }
+        if (!resp.length) { erro.textContent = 'Escolha ao menos um responsável.'; return; }
         if (!corpo.prazo) { erro.textContent = 'Informe o prazo para execução.'; return; }
         if (det.value.trim().length < 5) { erro.textContent = 'Descreva a tratativa (mínimo de 5 caracteres).'; return; }
         $('qa-salvar').disabled = true;

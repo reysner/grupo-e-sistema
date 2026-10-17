@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { TIPO_PLANO, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { TIPO_PLANO, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -75,6 +75,15 @@ teste('plano de ação da ficha: sem tipo vira "Plano de ação"; departamentos,
   assert.strictEqual(validarRegistro(Object.assign({}, sem, { analista_id: '' }), HOJE, [TIPO_PLANO]).ok, false);
   assert.strictEqual(validarRegistro(Object.assign({}, sem, { prazo: '2026-10-01' }), HOJE, [TIPO_PLANO]).ok, false);
   assert.strictEqual(validarRegistro(Object.assign({}, base, { tipo: 'Multa' }), HOJE, [TIPO_PLANO]).ok, false, 'tipo comum não passa na lista só de plano');
+});
+
+teste('mais de um responsável: aceita lista ou um só, tira repetidos e vazios, limita a 20', () => {
+  assert.deepStrictEqual(idsResponsaveis({ analistas_ids: ['7', '9', '7', '', ' 12 '] }), ['7', '9', '12']);
+  assert.deepStrictEqual(idsResponsaveis({ analista_id: '7' }), ['7']);
+  assert.deepStrictEqual(idsResponsaveis({ analistas_ids: [], analista_id: '7' }), []);   // lista informada manda, mesmo vazia
+  assert.deepStrictEqual(idsResponsaveis({}), []);
+  assert.deepStrictEqual(idsResponsaveis(null), []);
+  assert.strictEqual(idsResponsaveis({ analistas_ids: Array.from({ length: 30 }, (_, i) => String(i + 1)) }).length, 20);
 });
 
 teste('fluxo: finalizar exige o que foi feito; a liderança encerra (resolvido) sem novo texto se a tratativa já existe', () => {

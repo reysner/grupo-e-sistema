@@ -68,6 +68,15 @@ function validarRegistro(corpo, hoje, tiposPermitidos) {
   return { ok: true, valores: { cliente_id, tipo, departamentos: deps, detalhe, analista_id, prazo } };
 }
 
+/** Responsáveis de um lançamento: `analistas_ids` (vários) ou `analista_id` (um), sem repetição nem vazios, no máximo 20. */
+function idsResponsaveis(corpo) {
+  const b = corpo || {};
+  const bruto = Array.isArray(b.analistas_ids) ? b.analistas_ids : (b.analista_id ? [b.analista_id] : []);
+  const ids = [];
+  bruto.forEach((x) => { const t = texto(x, 80); if (t && !ids.includes(t)) ids.push(t); });
+  return ids.slice(0, 20);
+}
+
 /** Valida a mudança de um registro: status, prazo e/ou tratativa. */
 function validarMudanca(corpo, hoje, opts) {
   const b = corpo || {};
@@ -352,22 +361,30 @@ router.post('/', async (req, res) => {
     // A ficha não envia tipo: o registro vira "Plano de ação" (origem 'ficha'). Quem ainda enviar um tipo (página antiga em cache) segue validado pela lista.
     const comTipo = !!(req.body && req.body.tipo);
     const tipos = comTipo ? (await tiposAtivos()).map((t) => t.nome) : [TIPO_PLANO];
-    const v = validarRegistro(comTipo ? req.body : Object.assign({}, req.body, { tipo: TIPO_PLANO }), undefined, tipos);
+    // Mais de um responsável: um registro para cada um (cada responsável trata o seu, com status e prazo próprios).
+    const ids = idsResponsaveis(req.body);
+    const corpo = Object.assign({}, comTipo ? req.body : Object.assign({}, req.body, { tipo: TIPO_PLANO }), { analista_id: ids[0] || '' });
+    const v = validarRegistro(corpo, undefined, tipos);
     if (!v.ok) return res.status(400).json({ error: v.erro });
     const cli = await pool.query(`SELECT id::text AS id, nome_empresa, regexp_replace(cnpj, '\\D', '', 'g') AS cnpj FROM clientes WHERE id::text = $1`, [v.valores.cliente_id]);
     if (!cli.rows.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
-    const an = await pool.query('SELECT id, nome, ativo FROM analistas WHERE id::text = $1', [v.valores.analista_id]);
-    if (!an.rows.length) return res.status(404).json({ error: 'Analista não encontrado.' });
-    if (!an.rows[0].ativo) return res.status(400).json({ error: 'Esse analista está desativado na lista.' });
-    const c = cli.rows[0], x = v.valores;
-    const ins = await pool.query(
-      `INSERT INTO cs_qualidade_registros (cliente_id, cnpj, cliente_nome, tipo, departamentos, detalhe, analista_id, prazo, criado_por, criado_por_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-      [c.id, soDigitos(c.cnpj), c.nome_empresa, x.tipo, x.departamentos, x.detalhe, x.analista_id, x.prazo, req.user.name || null, req.user.id || null]);
-    await registrar(ins.rows[0].id, req.user.name, 'criado', x.tipo + ' · prazo ' + x.prazo);
-    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [ins.rows[0].id]);
-    await notificarLancamento(rows[0], req.user.name);
-    res.status(201).json({ registro: comSituacao(rows)[0] });
+    for (const aid of ids) {   // confere todos antes de gravar qualquer um
+      const an = await pool.query('SELECT id, nome, ativo FROM analistas WHERE id::text = $1', [aid]);
+      if (!an.rows.length) return res.status(404).json({ error: 'Responsável não encontrado.' });
+      if (!an.rows[0].ativo) return res.status(400).json({ error: an.rows[0].nome + ' está desativado na lista.' });
+    }
+    const c = cli.rows[0], x = v.valores, criados = [];
+    for (const aid of ids) {
+      const ins = await pool.query(
+        `INSERT INTO cs_qualidade_registros (cliente_id, cnpj, cliente_nome, tipo, departamentos, detalhe, analista_id, prazo, criado_por, criado_por_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+        [c.id, soDigitos(c.cnpj), c.nome_empresa, x.tipo, x.departamentos, x.detalhe, aid, x.prazo, req.user.name || null, req.user.id || null]);
+      await registrar(ins.rows[0].id, req.user.name, 'criado', x.tipo + ' · prazo ' + x.prazo);
+      const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [ins.rows[0].id]);
+      await notificarLancamento(rows[0], req.user.name);
+      criados.push(comSituacao(rows)[0]);
+    }
+    res.status(201).json({ registro: criados[0], registros: criados });
   } catch (e) { console.error('[qualidade] POST falhou:', e); res.status(500).json({ error: 'Erro ao salvar o registro.' }); }
 });
 
@@ -634,4 +651,4 @@ routerAnalista.post('/:id/nota', async (req, res) => {
   } catch (e) { console.error('[qualidade] POST /nota falhou:', e); res.status(500).json({ error: 'Erro ao salvar a nota.' }); }
 });
 
-module.exports = { router, routerAnalista, validarTipo, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { router, routerAnalista, validarTipo, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
