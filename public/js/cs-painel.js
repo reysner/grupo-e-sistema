@@ -2365,7 +2365,7 @@
     var b = String((f && f.busca) || '').trim().toLowerCase();
     return (regs || []).filter(function (r) {
       if (f.depto && (r.departamentos || []).indexOf(f.depto) < 0) return false;
-      if (f.analista && String(r.analista_id) !== String(f.analista)) return false;
+      if (f.analista && !casaAnalista(r, f.analista)) return false;
       if (f.etapa === 'vencidas') { if (r.situacao !== 'vencido') return false; } else if (f.etapa && r.etapa !== f.etapa) return false;
       if (b && String(r.cliente_nome || '').toLowerCase().indexOf(b) < 0 && String(r.assunto || '').toLowerCase().indexOf(b) < 0) return false;
       return true;
@@ -2486,10 +2486,7 @@
     var op = function (v, rot, sel) { return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(rot) + '</option>'; };
     var optD = op('', 'Todos os departamentos', !f.depto) + DEPS_OCORRENCIA.map(function (x) { return op(x[0], x[1], f.depto === x[0]); }).join('');
     var optE = op('', 'Todas as etapas', !f.etapa) + ETAPAS_Q.map(function (e) { return op(e, ETAPA_CURTA[e], f.etapa === e); }).join('') + op('vencidas', 'Vencidas', f.etapa === 'vencidas');
-    var vistos = {}, analistas = [];
-    regs.forEach(function (r) { if (r.analista_id && !vistos[r.analista_id]) { vistos[r.analista_id] = 1; analistas.push({ id: r.analista_id, nome: r.analista_nome || '—' }); } });
-    analistas.sort(function (a, b) { return String(a.nome).localeCompare(String(b.nome), 'pt-BR'); });
-    var optA = op('', 'Todos os analistas', !f.analista) + analistas.map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
+    var optA = op('', 'Todos os analistas', !f.analista) + listaAnalistasFiltro(d, regs, f.depto).map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
     var corpo = lista.map(function (r) {
       var fila = r.etapa === 'devolutiva_cliente';
       return '<tr' + (fila ? ' style="background:rgba(194,65,12,.07)"' : '') + '><td>' + data(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
@@ -2526,9 +2523,11 @@
       try { s.dados = await api('/api/cs/painel/qualidade/sucesso/ocorrencias'); }
       catch (e) { alvo.innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; return; }
     }
+    if (!estado.qAnalistas) { try { await carregarOpcoesQ(); } catch (e) { /* segue com os analistas das ocorrências */ } }
+    s.dados.analistas = estado.qAnalistas || [];
     var bs = $('badge-sucesso'); if (bs) bs.textContent = contagemEtapasGestor(s.dados.registros).devolutiva_cliente || '';
     alvo.innerHTML = htmlSucesso(s.dados, s.f);
-    var liga = function (id, prop, evento) { var e = $(id); if (e) e.addEventListener(evento || 'change', function () { s.f[prop] = e.value; var pos = e.selectionStart; desenharSucesso(); if (prop === 'busca') { var n = $('s-busca'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { /* sem seleção */ } } } }); };
+    var liga = function (id, prop, evento) { var e = $(id); if (e) e.addEventListener(evento || 'change', function () { s.f[prop] = e.value; if (prop === 'depto') s.f.analista = ''; var pos = e.selectionStart; desenharSucesso(); if (prop === 'busca') { var n = $('s-busca'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { /* sem seleção */ } } } }); };
     liga('s-depto', 'depto'); liga('s-analista', 'analista'); liga('s-etapa', 'etapa'); liga('s-busca', 'busca', 'input');
     var at = $('s-atualizar'); if (at) at.addEventListener('click', function () { estado.s.dados = null; desenharSucesso(); });
     Array.prototype.forEach.call(alvo.querySelectorAll('[data-sabrir]'), function (b) { b.addEventListener('click', function () { abrirOcorrenciaSucesso(b.getAttribute('data-sabrir')); }); });
@@ -2564,11 +2563,25 @@
   }
 
   // ── PORTAL DO GESTOR ──────────────────────────────────────────────────────────────────
+  /** O analista do filtro aparece na ocorrência como responsável (um dos vários), como o indicado no registro ou como o principal. */
+  function casaAnalista(r, id) {
+    return String(r.analista_id) === String(id) || String(r.analista_origem_id || '') === String(id) || (r.responsaveis || []).some(function (x) { return String(x.analista_id) === String(id); });
+  }
+  /** Analistas do filtro: a lista oficial (Acessos > Analistas); com departamento escolhido, os dele. Sem a lista oficial, os que aparecem nas ocorrências. */
+  function listaAnalistasFiltro(d, regs, dep) {
+    var base = (d && d.analistas && d.analistas.length) ? d.analistas.filter(function (a) { return a.ativo !== false; }) : [];
+    if (!base.length) {
+      var vistos = {};
+      (regs || []).forEach(function (r) { if (r.analista_id && !vistos[r.analista_id]) { vistos[r.analista_id] = 1; base.push({ id: r.analista_id, nome: r.analista_nome || '—' }); } });
+    }
+    var uso = dep ? base.filter(function (a) { return depsAnalista(a).indexOf(dep) >= 0; }) : base;
+    return (uso.length ? uso : base).slice().sort(function (a, b) { return String(a.nome).localeCompare(String(b.nome), 'pt-BR'); });
+  }
   function filtrarGestor(regs, f) {
     var b = String((f && f.busca) || '').trim().toLowerCase();
     return (regs || []).filter(function (r) {
       if (f.depto && (r.departamentos || []).indexOf(f.depto) < 0) return false;
-      if (f.analista && String(r.analista_id) !== String(f.analista)) return false;
+      if (f.analista && !casaAnalista(r, f.analista)) return false;
       if (f.etapa === 'vencidas') { if (r.situacao !== 'vencido') return false; } else if (f.etapa && r.etapa !== f.etapa) return false;
       if (b && String(r.cliente_nome || '').toLowerCase().indexOf(b) < 0 && String(r.assunto || '').toLowerCase().indexOf(b) < 0) return false;
       return true;
@@ -2584,8 +2597,7 @@
     var deptos = esc_.todos ? DEPS_OCORRENCIA.map(function (x) { return x[0]; }) : (esc_.deptos || []);
     var op = function (v, rot, sel) { return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(rot) + '</option>'; };
     var optD = op('', 'Todos os departamentos', !f.depto) + deptos.map(function (x) { return op(x, rotuloDepto(x), f.depto === x); }).join('');
-    var ids = {}; regs.forEach(function (r) { if (r.analista_id) ids[r.analista_id] = r.analista_nome || '—'; });
-    var optA = op('', 'Todos os analistas', !f.analista) + Object.keys(ids).sort(function (a, b) { return ids[a].localeCompare(ids[b]); }).map(function (k) { return op(k, ids[k], String(f.analista) === String(k)); }).join('');
+    var optA = op('', 'Todos os analistas', !f.analista) + listaAnalistasFiltro(d, regs, f.depto).map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
     var optE = op('', 'Todas as etapas', !f.etapa) + ETAPAS_Q.map(function (e) { return op(e, ETAPA_CURTA[e], f.etapa === e); }).join('') + op('vencidas', 'Vencidas', f.etapa === 'vencidas');
     var corpo = lista.map(function (r) {
       var acao = r.etapa === 'registrada' ? 'Analisar e criar tratativa' : r.etapa === 'tratativa_definida' ? 'Editar / abrir para o analista' : 'Ver';
@@ -2624,9 +2636,11 @@
       try { g.dados = await api('/api/cs/painel/qualidade/gestor/ocorrencias'); await carregarOpcoesQ(); }
       catch (e) { alvo.innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; return; }
     }
+    if (!estado.qAnalistas) { try { await carregarOpcoesQ(); } catch (e) { /* segue com os analistas das ocorrências */ } }
+    g.dados.analistas = estado.qAnalistas || [];
     var bg = $('badge-gestor'); if (bg) bg.textContent = contagemEtapasGestor(g.dados.registros).registrada || '';
     alvo.innerHTML = htmlGestor(g.dados, g.f);
-    var liga = function (id, prop, evento) { var e = $(id); if (e) e.addEventListener(evento || 'change', function () { g.f[prop] = e.value; var pos = e.selectionStart; desenharGestor(); if (prop === 'busca') { var n = $('g-busca'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { /* sem seleção */ } } } }); };
+    var liga = function (id, prop, evento) { var e = $(id); if (e) e.addEventListener(evento || 'change', function () { g.f[prop] = e.value; if (prop === 'depto') g.f.analista = ''; var pos = e.selectionStart; desenharGestor(); if (prop === 'busca') { var n = $('g-busca'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { /* sem seleção */ } } } }); };
     liga('g-depto', 'depto'); liga('g-analista', 'analista'); liga('g-etapa', 'etapa'); liga('g-busca', 'busca', 'input');
     var at = $('g-atualizar'); if (at) at.addEventListener('click', function () { estado.g.dados = null; desenharGestor(); });
     Array.prototype.forEach.call(alvo.querySelectorAll('[data-gabrir]'), function (b) { b.addEventListener('click', function () { abrirOcorrenciaGestor(b.getAttribute('data-gabrir')); }); });
