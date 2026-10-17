@@ -1671,9 +1671,11 @@
         : '<div class="vazio">Nenhuma ocorrência registrada ainda. Clique em "Registrar ocorrência" para lançar a primeira.</div>') + '</div>';
   }
 
+  /** Opções do campo Tipo de ocorrência: os tipos ativos, como os administradores criaram e editaram (nome e peso ficam em "Gerenciar tipos"). */
+  function opcoesTiposOc(lista) { return '<option value="">Selecione o tipo…</option>' + (lista || []).map(function (t) { return '<option>' + esc(t) + '</option>'; }).join(''); }
   /** Formulário "Registrar ocorrência" (o miolo da janela). */
   function formularioOcorrenciaQ(o) {
-    var tipos = '<option value="">Selecione o tipo…</option>' + (o.tipos || []).map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('');
+    var tipos = opcoesTiposOc(o.tipos);
     var deps = '<option value="">Selecione o departamento…</option>' + DEPS_OCORRENCIA.map(function (d) { return '<option value="' + esc(d[0]) + '">' + esc(d[1]) + '</option>'; }).join('');
     var pri = (o.prioridades || ['Muito Alta', 'Alta', 'Média', 'Baixa']).map(function (p) { return '<option' + (p === 'Média' ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('');
     return '<div class="qa-modal-topo"><strong style="font-size:22px;color:#256050">Registrar ocorrência</strong><button type="button" class="qa-x" id="oc-fechar" aria-label="Fechar">✕</button></div>' +
@@ -1684,7 +1686,7 @@
       '</div>' +
       '<div class="qa-oc-linha qa-oc-l2">' +
         '<div class="qa-campo"><label for="oc-emp">Empresa</label><input type="text" id="oc-emp" autocomplete="off" placeholder="Digite o início do nome ou o CNPJ"><div class="qa-oc-sel" id="oc-emp-sel" hidden></div><div class="qa-oc-lista" id="oc-emp-lista" hidden></div></div>' +
-        '<div class="qa-campo"><label for="oc-tipo">Tipo de ocorrência</label><select id="oc-tipo">' + tipos + '</select></div>' +
+        '<div class="qa-campo"><label for="oc-tipo">Tipo de ocorrência <span class="req">*</span>' + (ehAdminPainel() ? ' <a href="#" id="oc-editar-tipos" class="qa-lnk">(editar lista)</a>' : '') + '</label><select id="oc-tipo">' + tipos + '</select></div>' +
         '<div class="qa-campo"><label for="oc-dep">Departamento</label><select id="oc-dep">' + deps + '</select></div>' +
       '</div>' +
       '<div class="qa-campo"><label for="oc-det">Descrição / Detalhes da ocorrência <span class="cinza" id="oc-cont">0/' + (o.max_detalhe || 2000) + '</span></label><textarea id="oc-det" rows="6" maxlength="' + (o.max_detalhe || 2000) + '" placeholder="Descrição / Detalhes da ocorrência"></textarea></div>' +
@@ -1694,11 +1696,24 @@
 
   /** Janela "Registrar ocorrência": empresa com sugestão ao digitar, descrição até 2000, anexos; ao registrar vai para o módulo, os Sinais de atenção e o risco. */
   async function abrirRegistrarOcorrencia(aoSalvar) {
+    estado.qOpcoes = null;   // sempre a lista de tipos atual (outro administrador pode ter criado ou editado tipos)
     var o; try { o = await carregarOpcoesQ(); } catch (e) { window.alert(e.message || 'Não foi possível abrir o formulário.'); return; }
     var ov = document.createElement('div'); ov.className = 'qa-overlay'; document.body.appendChild(ov);
     var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Registrar ocorrência">' + formularioOcorrenciaQ(o) + '</div>';
     $('oc-fechar').addEventListener('click', fechar); $('oc-cancel').addEventListener('click', fechar);
+    // administrador: edita a lista de tipos sem sair do formulário; ao fechar, o campo já mostra os tipos novos e os renomeados
+    var edTipos = $('oc-editar-tipos');
+    if (edTipos) edTipos.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      abrirGerenciarTipos(async function () {
+        estado.qOpcoes = null;
+        try { o = await carregarOpcoesQ(); } catch (e) { return; }
+        var s = $('oc-tipo'), atual = s.value;
+        s.innerHTML = opcoesTiposOc(o.tipos);
+        if ((o.tipos || []).indexOf(atual) >= 0) s.value = atual;
+      });
+    });
     var campo = $('oc-emp'), lista = $('oc-emp-lista'), sel = $('oc-emp-sel'), det = $('oc-det'), erro = $('oc-erro');
     var emp = null, itens = [], idx = -1, tmr = null;
     det.addEventListener('input', function () { $('oc-cont').textContent = det.value.length + '/' + (o.max_detalhe || 2000); });
