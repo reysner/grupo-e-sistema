@@ -320,6 +320,12 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 .qa-larga textarea{flex:1;min-height:112px;}
 @media (max-width:760px){.qa-grade{grid-template-columns:1fr;}.qa-tipo{flex:1 1 100%;}}
 .qa-mais{margin-bottom:8px;}
+.ficha-det > summary.ficha-sec{cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;user-select:none;}
+.ficha-det > summary::-webkit-details-marker{display:none;}
+.ficha-det > summary .sp{display:inline-block;font-size:11px;transition:transform .15s;}
+.ficha-det[open] > summary .sp{transform:rotate(90deg);}
+.ficha-det > summary:focus-visible{outline:2px solid #256050;outline-offset:2px;border-radius:4px;}
+@media (prefers-reduced-motion:reduce){.ficha-det > summary .sp{transition:none;}}
 .qa-mais summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);padding:4px 2px;list-style:none;}
 .qa-mais summary::-webkit-details-marker{display:none;}
 .qa-mais summary .sp{display:inline-block;transition:transform .15s;}

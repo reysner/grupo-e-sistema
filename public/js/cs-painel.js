@@ -1855,17 +1855,17 @@
     // Seção Atendimentos: só o que pesa (SLA vermelho, nota baixa, insatisfação, cliente sensível, pesquisa); a lista completa e os e-mails ficam no módulo Atendimento.
     var ruins = f.tickets.filter(function (t) { return t.pior_status === 'vermelho' || (t.nota_avaliacao != null && t.nota_avaliacao <= 2); });
     var sub = function (t) { return '<div class="cinza" style="font-size:12px;font-weight:700;margin:12px 0 4px">' + t + '</div>'; };
-    var atendSec = '<div class="ficha-sec">Atendimentos</div>' + resumoAt +
+    var atendSec = secaoFicha('atendimentos', 'Atendimentos', resumoAt +
       sub('Atendimentos com SLA vermelho ou nota baixa (90 dias)') + (ruins.length ? tabelaAtendimentos(ruins) : '<div class="linha-item"><span class="x">Nenhum atendimento com SLA vermelho ou nota baixa nos últimos 90 dias.</span></div>') +
-      sub('Insatisfações registradas (180 dias)') + insat + (sens ? sub('Cliente sensível (90 dias)') + sens : '') + (pesq ? sub('Pesquisas (180 dias)') + pesq : '');
+      sub('Insatisfações registradas (180 dias)') + insat + (sens ? sub('Cliente sensível (90 dias)') + sens : '') + (pesq ? sub('Pesquisas (180 dias)') + pesq : '') + '<div class="nota" style="margin-top:10px">Atendimentos do Zappy e e-mails (recebidos e sem resposta, por destinatário) estão no módulo <strong>Atendimento</strong>.</div>');
     $('ficha-corpo').innerHTML = blocos1 + blocos2 +
       '<div class="ficha-sec">Sinais de atenção</div><div>' + sinais + '</div>' +
       '<div class="ficha-sec">Considerações Sucesso do Cliente / Time Operacional</div><div id="qa-secao"></div>' +
-      '<div class="ficha-sec">Financeiro</div>' + fin +
-      '<div class="ficha-sec">Acessórias</div>' + oper + '<div id="ac-lista" style="margin-top:8px"><span class="cinza">Consultando as obrigações no Acessórias…</span></div>' +
-      '<div class="ficha-sec">Qualidade</div><div id="qa-ocorrencias"><span class="cinza">Carregando…</span></div>' +
-      atendSec +
-      '<div class="nota" style="margin-top:10px">Atendimentos do Zappy e e-mails (recebidos e sem resposta, por destinatário) estão no módulo <strong>Atendimento</strong>.</div>';
+      secaoFicha('financeiro', 'Financeiro', fin) +
+      secaoFicha('acessorias', 'Acessórias', oper + '<div id="ac-lista" style="margin-top:8px"><span class="cinza">Consultando as obrigações no Acessórias…</span></div>') +
+      secaoFicha('qualidade', 'Qualidade', '<div id="qa-ocorrencias"><span class="cinza">Carregando…</span></div>') +
+      atendSec;
+    ligarSecoesFicha();
     montarConsideracoes(c);
     carregarAcessoriasFicha(c.id);
   }
@@ -1880,6 +1880,18 @@
     } catch (e) {
       if (mesma()) $('ac-lista').innerHTML = '<div class="linha-item"><span class="x">Não foi possível listar as obrigações agora (' + esc(e.message) + '). Os totais acima vêm da última leitura.</span></div>';
     }
+  }
+
+  /** Seções da ficha que recolhem: começam recolhidas (só o nome e a setinha) e lembram, neste navegador, as que a pessoa abriu. */
+  var CHAVE_SECOES = 'cs_ficha_abertas';
+  function secoesAbertas() { try { return JSON.parse(ls(CHAVE_SECOES) || '{}') || {}; } catch (e) { return {}; } }
+  function secaoFicha(chave, titulo, corpo) {
+    return '<details class="ficha-det" data-sec="' + chave + '"' + (secoesAbertas()[chave] ? ' open' : '') + '><summary class="ficha-sec"><span class="sp">▸</span> ' + titulo + '</summary>' + corpo + '</details>';
+  }
+  function ligarSecoesFicha() {
+    Array.prototype.forEach.call(document.querySelectorAll('#ficha-corpo .ficha-det'), function (d) {
+      d.addEventListener('toggle', function () { var m = secoesAbertas(); m[d.getAttribute('data-sec')] = d.open ? 1 : 0; ls(CHAVE_SECOES, JSON.stringify(m)); });
+    });
   }
 
   function fecharFicha() { $('ficha').style.display = 'none'; document.querySelector('.ficha-box').classList.remove('larga'); }
