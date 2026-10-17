@@ -228,6 +228,16 @@ teste('nome completo no cadastro de gestores: usa o da lista de analistas (por v
   assert.strictEqual(f('4', 'Escritorial CS'), 'Escritorial CS');
   assert.strictEqual(f('6', ''), '');
 });
+teste('renomear analista: nenhum arquivo troca espaços por uma regex sem a barra invertida (isso apagava todos os "s" do nome: Maira Soares virava Maira Soare)', () => {
+  const fs = require('fs'), path = require('path');
+  const raiz = path.join(__dirname, '..', '..');
+  const arquivos = ['server/routes/analistas.js', 'public/js/app.js', 'public/js/cs-painel.js', 'server/cs/qualidade.js'];
+  const ruim = '/s' + '+/';   // a regex errada: "s" seguido de "+", sem a barra
+  arquivos.forEach((a) => assert.ok(!fs.readFileSync(path.join(raiz, a), 'utf8').includes(ruim), a + ' tem a regex ' + ruim + ' (faltou a barra invertida)'));
+  // e o jeito certo de limpar espaços preserva os "s"
+  const limpa = (t) => String(t || '').split(/\s+/).join(' ').trim();
+  assert.strictEqual(limpa('  Maira   Soares '), 'Maira Soares');
+});
 teste('quem pode ser gestor: só os analistas ativos (nome completo, com login direto ou pelo nome); sem login fica desabilitado; administrador sem analista entra para diretor/gestor final', () => {
   const an = [{ nome: 'Josiane Alves de Oliveira Cezario', user_id: null, ativo: true }, { nome: 'Annaisa Alves de Oliveira', user_id: '7', ativo: true }, { nome: 'Fulano Sem Login', user_id: null, ativo: true }, { nome: 'Antigo Desativado', user_id: null, ativo: false }];
   const us = [{ id: '1', name: 'Josiane', role: 'usuario' }, { id: '7', name: 'Anna', role: 'usuario' }, { id: '2', name: 'Teste', role: 'usuario' }, { id: '3', name: 'Escritorial CS', role: 'usuario' }, { id: '4', name: 'Reysner', role: 'administrador' }];

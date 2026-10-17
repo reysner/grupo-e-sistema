@@ -68,7 +68,7 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
     const sets = []; const vals = [];
     if (b.ativo !== undefined) { vals.push(!!b.ativo); sets.push('ativo = $' + vals.length); }
     if (b.nome !== undefined) {
-      const nome = String(b.nome || '').replace(/s+/g, ' ').trim();
+      const nome = String(b.nome || '').split(/\s+/).join(' ').trim();   // espaços repetidos viram um só (antes a barra invertida se perdeu e o "s" sumia do nome)
       if (!nome) return res.status(400).json({ error: 'O nome não pode ficar vazio.' });
       if (nome.length > 80) return res.status(400).json({ error: 'Nome longo demais (até 80 caracteres).' });
       vals.push(nome); sets.push('nome = $' + vals.length);

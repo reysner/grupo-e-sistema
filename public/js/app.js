@@ -3909,7 +3909,7 @@ const Atendimento = (() => {
     if (!a) return;
     const novo = window.prompt('Nome completo do analista:', a.nome);
     if (novo == null) return;
-    const nome = novo.replace(/s+/g, ' ').trim();
+    const nome = novo.split(/\s+/).join(' ').trim();   // (a barra invertida tinha se perdido: o "s" sumia do nome)
     if (!nome || nome === a.nome) return;
     try {
       const res = await fetch(`/api/analistas/${id}`, {

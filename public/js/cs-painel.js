@@ -39,6 +39,17 @@
   try { var abaUrl = new URLSearchParams(window.location.search).get('aba'); if (abaUrl && TITULOS[abaUrl]) estado.secao = abaUrl; } catch (e) { /* sem parâmetro */ }
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
   function data(s) { return s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) + '/' + String(s).slice(0, 4) : '—'; }
+  /** Data e hora no horário de Brasília: "17/10/2026 às 17:54" (só a data quando o valor não traz hora). */
+  function dataHora(s) {
+    if (!s) return '—';
+    var t = String(s);
+    if (t.length <= 10 || t.indexOf('T') < 0) return data(t);
+    var d = new Date(t);
+    if (isNaN(d.getTime())) return data(t);
+    var p = {};
+    new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d).forEach(function (x) { p[x.type] = x.value; });
+    return p.day + '/' + p.month + '/' + p.year + ' às ' + p.hour + ':' + p.minute;
+  }
   // Valores em R$: o perfil "Usuário" recebe tudo oculto do servidor (dados.valores_ocultos); o administrador pode ocultar na tela (botão "Valores ocultos").
   function valoresOcultos() { return !!(estado.ocultar || (estado.dados && estado.dados.valores_ocultos)); }
   function reais(v) {
@@ -1369,7 +1380,7 @@
   function notasHtml(r) {
     var n = r.notas || []; if (!n.length) return '';
     return '<div class="qa-reg-trat">' + n.map(function (x) {
-      return '<div><strong>' + esc(ROT_ACAO_Q[x.acao] || x.acao) + '</strong> · ' + data(x.em) + (x.por ? ' · ' + esc(x.por) : '') + (x.texto ? ': ' + esc(x.texto) : '') + '</div>';
+      return '<div><strong>' + esc(ROT_ACAO_Q[x.acao] || x.acao) + '</strong> · ' + dataHora(x.em) + (x.por ? ' · ' + esc(x.por) : '') + (x.texto ? ': ' + esc(x.texto) : '') + '</div>';
     }).join('') + '</div>';
   }
   function pillStatusQ(sit) {
@@ -1394,8 +1405,8 @@
     return regs.map(function (r) {
       return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao) + ' <strong>' + esc(r.tipo) + '</strong> <span class="cinza">· ' + esc((r.departamentos || []).join(', ')) + '</span></div>' +
         '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
-        '<div class="qa-reg-rod">Analista: <strong>' + esc(r.analista_nome || '—') + '</strong> · lançado em ' + data(r.criado_em) + ' por ' + esc(r.criado_por || '—') + ' · prazo ' + data(r.prazo) +
-          (r.resolvido_em ? ' · resolvido em ' + data(r.resolvido_em) : '') + '</div>' +
+        '<div class="qa-reg-rod">Analista: <strong>' + esc(r.analista_nome || '—') + '</strong> · lançado em ' + dataHora(r.criado_em) + ' por ' + esc(r.criado_por || '—') + ' · prazo ' + data(r.prazo) +
+          (r.resolvido_em ? ' · resolvido em ' + dataHora(r.resolvido_em) : '') + '</div>' +
         (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '</div>';
     }).join('');
   }
@@ -1423,8 +1434,8 @@
   function cartaoRegistroQ(r) {
     return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao) + ' <strong>' + esc(r.tipo) + '</strong> <span class="cinza">· ' + esc((r.departamentos || []).join(', ')) + '</span></div>' +
       '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
-      '<div class="qa-reg-rod">Responsável: <strong>' + esc(r.analista_nome || '—') + '</strong> · lançado em ' + data(r.criado_em) + ' por ' + esc(r.criado_por || '—') + ' · prazo ' + data(r.prazo) +
-        (r.resolvido_em ? ' · resolvido em ' + data(r.resolvido_em) : '') + '</div>' +
+      '<div class="qa-reg-rod">Responsável: <strong>' + esc(r.analista_nome || '—') + '</strong> · lançado em ' + dataHora(r.criado_em) + ' por ' + esc(r.criado_por || '—') + ' · prazo ' + data(r.prazo) +
+        (r.resolvido_em ? ' · resolvido em ' + dataHora(r.resolvido_em) : '') + '</div>' +
       (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '</div>';
   }
   function maisRecenteQ(a, b) { return String(b.criado_em || '').localeCompare(String(a.criado_em || '')); }
@@ -1667,7 +1678,7 @@
     var rs = estado.qRecentes || []; if (!rs.length) return '';
     return '<div class="card"><div class="card-title">Lançamentos dos últimos 7 dias</div><div class="card-sub">' + rs.length + ' registro(s). Clique no analista para validar, devolver, ajustar o prazo ou cancelar.</div>' +
       '<div class="table-wrap"><table><thead><tr><th>Lançado em</th><th>Empresa</th><th>Tipo</th><th>Analista</th><th class="c">Prazo</th><th class="c">Status</th></tr></thead><tbody>' + rs.map(function (r) {
-        return '<tr><td>' + data(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td>' +
+        return '<tr><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td>' +
           '<td>' + (r.analista_id ? '<button class="link" data-qan="' + esc(r.analista_id) + '">' + esc(r.analista_nome || '—') + '</button>' : '<span class="cinza">ocorrência (sem responsável)</span>') + '</td><td class="c">' + data(r.prazo) + '</td><td class="c">' + pillStatusQ(r.situacao) + '</td></tr>';
       }).join('') + '</tbody></table></div></div>';
   }
@@ -1697,7 +1708,7 @@
     return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao || r.status) + ' <strong>' + esc(r.tipo) + '</strong> ' + pillPrioridadeQ(r.prioridade) + ' <span class="cinza">· ' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</span></div>' +
       (r.assunto ? '<div class="qa-reg-txt"><strong>' + esc(r.assunto) + '</strong></div>' : '') +
       '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
-      '<div class="qa-reg-rod">Registrada em ' + data(r.criado_em) + ' por ' + esc(r.criado_por || '—') + (r.prazo ? ' · prazo ' + data(r.prazo) : '') + (r.resolvido_em ? ' · resolvida em ' + data(r.resolvido_em) : '') + '</div>' +
+      '<div class="qa-reg-rod">Registrada em ' + dataHora(r.criado_em) + ' por ' + esc(r.criado_por || '—') + (r.prazo ? ' · prazo ' + data(r.prazo) : '') + (r.resolvido_em ? ' · resolvida em ' + dataHora(r.resolvido_em) : '') + '</div>' +
       '<div class="qa-reg-rod">' + (r.etapa ? 'Etapa: <strong>' + esc(ROT_ETAPA_Q[r.etapa] || r.etapa) + '</strong>' : '') + (r.fila ? (r.etapa ? ' · ' : '') + (r.fila === 'gestor' ? 'encaminhada ao gestor de ' + esc(rotuloDepto((r.departamentos || [])[0])) : 'encaminhada ao Sucesso do Cliente (departamento sem gestor)') : '') + '</div>' +
       anexosQ(r) + (semAcoes ? '' : acoesOcorrenciaQ(r)) + (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '</div>';
   }
@@ -1788,7 +1799,7 @@
     var adm = ehAdminPainel();
     var corpo = (oc || []).map(function (r) {
       var aberta = r.status === 'aberto' || r.status === 'em_tratamento' || r.status === 'finalizada';
-      return '<tr><td>' + data(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td>' +
+      return '<tr><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td>' +
         '<td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
         '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
         '<td style="white-space:normal;min-width:260px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 150)) + '</div>' + anexosQ(r) + notasHtml(r) + '</td>' +
@@ -1842,7 +1853,7 @@
     var pri = (o.prioridades || ['Muito Alta', 'Alta', 'Média', 'Baixa']).map(function (p) { return '<option' + (p === 'Média' ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('');
     return '<div class="qa-modal-topo"><strong style="font-size:22px;color:#256050">Registrar ocorrência</strong>' + (emTela ? '' : '<button type="button" class="qa-x" id="oc-fechar" aria-label="Fechar">✕</button>') + '</div>' +
       '<div class="qa-oc-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</div>' +
-      '<div class="qa-oc-quem">Registrando como <strong>' + esc(usuarioLogadoNome() || 'você') + '</strong> em <strong>' + hojeIsoLocal().split('-').reverse().join('/') + '</strong>. Quem registra e a data ficam gravados na ocorrência.</div>' +
+      '<div class="qa-oc-quem">Registrando como <strong>' + esc(usuarioLogadoNome() || 'você') + '</strong> em <strong>' + dataHora(new Date().toISOString()) + '</strong>. Quem registra, a data e o horário ficam gravados na ocorrência.</div>' +
       '<div class="qa-oc-linha qa-oc-l1">' +
         '<div class="qa-campo"><label for="oc-assunto">Assunto da ocorrência</label><input type="text" id="oc-assunto" maxlength="100" placeholder="Qual o assunto da ocorrência?"></div>' +
         '<div class="qa-campo"><label for="oc-resp">Responsável' + (ehAdminPainel() ? ' <a href="#" id="oc-editar-resp" class="qa-lnk">(editar lista)</a>' : '') + '</label><select id="oc-resp">' + opcoesRespOc(o.analistas, '', '') + '</select><div class="qa-oc-dica" id="oc-resp-aviso" role="status" style="color:#b45309;min-height:15px"></div></div>' +
@@ -2192,7 +2203,7 @@
   function destinoCurto(r) { return r.fila === 'gestor' ? 'Gestor de ' + rotuloDepto((r.departamentos || [])[0]) : r.fila === 'sucesso' ? 'Sucesso do Cliente' : '—'; }
   function htmlMinhasOcorrencias(lista) {
     var corpo = (lista || []).map(function (r) {
-      return '<tr><td>' + data(r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td>' +
+      return '<tr><td>' + dataHora(r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td>' +
         '<td style="white-space:normal;min-width:220px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '' + anexosQ(r) + '</td><td class="c">' + data(r.prazo) + '</td><td>' + esc(destinoCurto(r)) + '</td><td class="c">' + pillEtapaQ(r.etapa) + '</td></tr>';
     }).join('');
     return '<div class="card"><div class="card-title">Minhas ocorrências</div><div class="card-sub">As ocorrências que você registrou. Quem registra não precisa ser quem trata: cada uma vai para o gestor do departamento escolhido (ou para o Sucesso do Cliente, se o departamento ainda não tem gestor).</div>' +
@@ -2220,7 +2231,7 @@
   }
   /** As devolutivas já dadas: analista, gestor (validação) e gestor final (encerramento), cada uma com nota e observação. */
   function htmlRetornos(r) {
-    var bloco = function (quem, em, nota, obs) { return '<div class="qa-reg-trat"><strong>' + quem + ' · ' + data(em) + ':</strong> ' + esc(nota) + (obs ? '<div class="cinza" style="margin-top:3px"><em>Observação:</em> ' + esc(obs) + '</div>' : '') + '</div>'; };
+    var bloco = function (quem, em, nota, obs) { return '<div class="qa-reg-trat"><strong>' + quem + ' · ' + dataHora(em) + ':</strong> ' + esc(nota) + (obs ? '<div class="cinza" style="margin-top:3px"><em>Observação:</em> ' + esc(obs) + '</div>' : '') + '</div>'; };
     var b = [];
     var comNota = (r.responsaveis || []).filter(function (x) { return x.nota; });
     if (comNota.length) comNota.forEach(function (x) { b.push(bloco('Analista (' + esc(x.nome || x.encerrado_por || '—') + ')' + (x.encerrado_em ? '' : ' · ainda não encerrou'), x.encerrado_em, x.nota, x.obs)); });
@@ -2355,7 +2366,7 @@
     return '<div class="card"><div class="card-title">Ocorrências sobre mim</div><div class="card-sub">Registradas com você como o analista indicado. Você acompanha a etapa; quem trata é definido pelo gestor do departamento.</div>' +
       '<div class="table-wrap"><table><thead><tr><th>Registrada em</th><th>Empresa</th><th>Tipo</th><th>Assunto</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' +
       lista.map(function (r) {
-        return '<tr><td>' + data(r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td>' +
+        return '<tr><td>' + dataHora(r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td>' +
           '<td style="white-space:normal;min-width:220px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '</td><td class="c">' + pillEtapaQ(r.etapa) + '</td>' +
           '<td class="c"><button type="button" class="gp-footer-btn" data-aabrir="' + esc(r.id) + '" style="width:auto">Ver</button></td></tr>';
       }).join('') + '</tbody></table></div></div>';
@@ -2363,7 +2374,7 @@
 
   function htmlPlanoGestor(r) {
     return '<div class="ficha-sec">Plano de ação do gestor</div><div class="qa-reg"><div class="qa-reg-txt">' + esc(r.plano_acao || '—') + '</div>' +
-      '<div class="qa-reg-rod">' + (nomesResp(r).length ? 'Responsáve' + (nomesResp(r).length > 1 ? 'is' : 'l') + ': <strong>' + esc(nomesResp(r).join(', ')) + '</strong> · ' : '') + 'Departamento ' + esc(rotuloDepto(r.tratativa_depto || '')) + ' · prazo <strong>' + data(r.prazo) + '</strong>' + (r.tratativa_definida_por ? ' · definido por ' + esc(r.tratativa_definida_por) : '') + (r.liberada_em ? ' · aberto em ' + data(r.liberada_em) : '') + '</div>' +
+      '<div class="qa-reg-rod">' + (nomesResp(r).length ? 'Responsáve' + (nomesResp(r).length > 1 ? 'is' : 'l') + ': <strong>' + esc(nomesResp(r).join(', ')) + '</strong> · ' : '') + 'Departamento ' + esc(rotuloDepto(r.tratativa_depto || '')) + ' · prazo <strong>' + data(r.prazo) + '</strong>' + (r.tratativa_definida_por ? ' · definido por ' + esc(r.tratativa_definida_por) : '') + (r.liberada_em ? ' · aberto em ' + dataHora(r.liberada_em) : '') + '</div>' +
       (r.gestor_obs ? '<div class="qa-reg-trat"><strong>Observação do gestor:</strong> ' + esc(r.gestor_obs) + '</div>' : '') + '</div>';
   }
   function filtrarPortal(regs, f) {
@@ -2384,7 +2395,7 @@
     var corpo = lista.map(function (r) {
       var jaEnc = (r.responsaveis || []).some(function (x) { return d.analista && String(x.analista_id) === String(d.analista.id) && x.encerrado_em; });
       var acao = r.etapa === 'com_analista' && !jaEnc ? 'Tratar' : 'Ver';
-      return '<tr><td>' + data(r.liberada_em || r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td>' +
+      return '<tr><td>' + dataHora(r.liberada_em || r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td>' +
         '<td style="white-space:normal;min-width:240px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '<div class="sub" title="' + esc(r.plano_acao || '') + '">' + esc(curtoQ(r.plano_acao || r.detalhe, 130)) + '</div></td>' +
         (d.todos ? '<td>' + esc(r.analista_nome || '—') + '</td>' : '') +
         '<td class="c">' + data(r.prazo) + '</td><td class="c">' + pillEtapaQ(r.etapa) + (r.situacao === 'vencido' ? '<div><span class="pill" style="color:#b91c1c;border-color:#b91c1c55;background:#b91c1c14">vencida</span></div>' : '') + '</td>' +
@@ -2494,7 +2505,7 @@
     var optA = op('', 'Todos os analistas', !f.analista) + listaAnalistasFiltro(d, regs, f.depto).map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
     var corpo = lista.map(function (r) {
       var fila = r.etapa === 'devolutiva_cliente';
-      return '<tr' + (fila ? ' style="background:rgba(194,65,12,.07)"' : '') + '><td>' + data(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
+      return '<tr' + (fila ? ' style="background:rgba(194,65,12,.07)"' : '') + '><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
         '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
         '<td style="white-space:normal;min-width:230px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 120)) + '</div></td>' +
         '<td>' + esc(r.analista_nome || '—') + '</td><td class="c">' + data(r.prazo) + '</td><td class="c">' + pillEtapaQ(r.etapa) + '</td>' +
@@ -2606,7 +2617,7 @@
     var optE = op('', 'Todas as etapas', !f.etapa) + ETAPAS_Q.map(function (e) { return op(e, ETAPA_CURTA[e], f.etapa === e); }).join('') + op('vencidas', 'Vencidas', f.etapa === 'vencidas');
     var corpo = lista.map(function (r) {
       var acao = r.etapa === 'registrada' ? 'Analisar e criar tratativa' : r.etapa === 'tratativa_definida' ? 'Editar / abrir para o analista' : 'Ver';
-      return '<tr><td>' + data(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
+      return '<tr><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
         '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
         '<td style="white-space:normal;min-width:240px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 140)) + '</div>' + anexosQ(r) + '</td>' +
         '<td>' + (r.analista_nome ? esc(r.analista_nome) : '<span class="cinza">—</span>') + '</td><td class="c">' + data(r.prazo) + '</td>' +
@@ -2673,7 +2684,7 @@
     }
     if (!editavel) {
       return topo + htmlRetornos(r) + '<div class="ficha-sec">Tratativa</div><div class="qa-reg"><div class="qa-reg-txt">' + esc(r.plano_acao || '—') + '</div>' +
-        '<div class="qa-reg-rod">Responsáve' + (nomesResp(r).length > 1 ? 'is' : 'l') + ': <strong>' + esc(nomesResp(r).join(', ') || (((r.filhas || []).length) ? 'conduzida pelas ocorrências vinculadas' : '—')) + '</strong> · departamento ' + esc(rotuloDepto(r.tratativa_depto || '')) + ' · prazo ' + data(r.prazo) + (r.tratativa_definida_por ? ' · definida por ' + esc(r.tratativa_definida_por) : '') + (r.liberada_em ? ' · aberta ao analista em ' + data(r.liberada_em) : '') + '</div>' +
+        '<div class="qa-reg-rod">Responsáve' + (nomesResp(r).length > 1 ? 'is' : 'l') + ': <strong>' + esc(nomesResp(r).join(', ') || (((r.filhas || []).length) ? 'conduzida pelas ocorrências vinculadas' : '—')) + '</strong> · departamento ' + esc(rotuloDepto(r.tratativa_depto || '')) + ' · prazo ' + data(r.prazo) + (r.tratativa_definida_por ? ' · definida por ' + esc(r.tratativa_definida_por) : '') + (r.liberada_em ? ' · aberta ao analista em ' + dataHora(r.liberada_em) : '') + '</div>' +
         (r.gestor_obs ? '<div class="qa-reg-trat"><strong>Observação:</strong> ' + esc(r.gestor_obs) + '</div>' : '') + '</div>' +
         (podeFilha ? '<div style="margin:8px 0">' + btnFilha + '</div>' : '') +
         '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="gt-cancel">Fechar</button></div>';
@@ -2853,7 +2864,7 @@
       $('ficha-sub').textContent = 'Considerações registradas para este analista (Sucesso do Cliente / Time Operacional)';
       var linhas = regs.map(function (r) {
         var abertos = r.status === 'aberto' || r.status === 'em_tratamento';
-        return '<tr><td>' + data(r.criado_em) + '</td><td>' + data(r.prazo) + '</td><td>' + pillStatusQ(r.situacao) + '</td>' +
+        return '<tr><td>' + dataHora(r.criado_em) + '</td><td>' + data(r.prazo) + '</td><td>' + pillStatusQ(r.situacao) + '</td>' +
           '<td style="white-space:normal">' + esc(r.cliente_nome || '—') + '<div class="sub">' + esc(r.cnpj || '') + '</div></td>' +
           '<td>' + esc(r.tipo) + '<div class="sub">' + esc((r.departamentos || []).join(', ')) + '</div></td>' +
           '<td style="white-space:normal;min-width:220px">' + esc(r.detalhe) + (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '<div class="sub">lançado por ' + esc(r.criado_por || '—') + '</div></td>' +
