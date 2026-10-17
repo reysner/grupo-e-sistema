@@ -1813,7 +1813,11 @@
     return base + '<optgroup label="' + esc('Do departamento ' + rotuloDepto(dep)) + '">' + daqui.map(op).join('') + '</optgroup><optgroup label="Outros analistas">' + outros.map(op).join('') + '</optgroup>';
   }
   /** Opções do campo Responsável da ocorrência (a mesma lista de Acessos > Analistas). */
-  function opcoesRespOc(lista, dep, sel) { return opcoesAnalistasAg(lista, dep, sel, 'Quem é o responsável?'); }
+  function opcoesRespOc(lista, dep, sel) {
+    var daqui = dep ? (lista || []).filter(function (a) { return depsAnalista(a).indexOf(dep) >= 0; }) : [];
+    var usar = daqui.length ? daqui : (lista || []);
+    return '<option value="">Quem é o responsável?</option>' + usar.map(function (a) { return '<option value="' + esc(a.id) + '"' + (sel != null && sel !== '' && String(sel) === String(a.id) ? ' selected' : '') + '>' + esc(a.nome) + '</option>'; }).join('');
+  }
   /** Aviso (não bloqueia) quando o responsável escolhido não é do departamento da ocorrência. */
   function avisoRespOc(a, dep) {
     if (!a) return '';
@@ -1823,12 +1827,12 @@
     if (!dep && ds.length > 1) return a.nome + ' atende ' + ds.map(rotuloDepto).join(' e ') + ': escolha o departamento.';
     return '';
   }
-  /** Opções do campo Departamento do formulário: com um analista escolhido, os departamentos dele vêm primeiro. */
+  /** Opções do campo Departamento do formulário: com um analista escolhido, só os departamentos dele (sem departamento cadastrado, todos). */
   function opcoesDeptoAn(a, atual) {
     var meus = depsAnalista(a), op = function (d) { return '<option value="' + esc(d[0]) + '"' + (atual === d[0] ? ' selected' : '') + '>' + esc(d[1]) + '</option>'; };
     var base = '<option value="">Selecione o departamento…</option>';
-    if (!meus.length || meus.length >= DEPS_OCORRENCIA.length) return base + DEPS_OCORRENCIA.map(op).join('');
-    return base + '<optgroup label="' + esc('Do analista') + '">' + DEPS_OCORRENCIA.filter(function (d) { return meus.indexOf(d[0]) >= 0; }).map(op).join('') + '</optgroup><optgroup label="Outros departamentos">' + DEPS_OCORRENCIA.filter(function (d) { return meus.indexOf(d[0]) < 0; }).map(op).join('') + '</optgroup>';
+    if (!meus.length) return base + DEPS_OCORRENCIA.map(op).join('');
+    return base + DEPS_OCORRENCIA.filter(function (d) { return meus.indexOf(d[0]) >= 0; }).map(op).join('');
   }
   function opcoesTiposOc(lista) { return '<option value="">Selecione o tipo…</option>' + (lista || []).map(function (t) { return '<option>' + esc(t) + '</option>'; }).join(''); }
   /** Formulário "Registrar ocorrência" (o miolo da janela). */
@@ -1894,11 +1898,12 @@
     };
     selDep.addEventListener('change', function () { depAuto = false; pintarResp(); });   // escolha da pessoa vale mais que a automática
     selResp.addEventListener('change', function () {
-      var a = acharAn(selResp.value), ds = a ? depsAnalista(a) : [];
-      if (!selDep.value || depAuto) {   // vazio ou preenchido automaticamente antes: acompanha o analista de agora
-        if (ds.length === 1) { selDep.innerHTML = opcoesDeptoAn(a, ds[0]); selDep.value = ds[0]; depAuto = true; }
-        else { selDep.innerHTML = opcoesDeptoAn(a, ''); selDep.value = ''; depAuto = false; }   // vários (ou nenhum): os dele vêm primeiro e a pessoa escolhe
-      } else selDep.innerHTML = opcoesDeptoAn(a, selDep.value);
+      var a = acharAn(selResp.value), ds = a ? depsAnalista(a) : [], atual = selDep.value;
+      if (!a && depAuto) { atual = ''; depAuto = false; }   // tirou o analista: some o departamento que veio dele
+      if (ds.length && ds.indexOf(atual) < 0) atual = '';   // o analista só atende os departamentos dele
+      if (!atual && ds.length === 1) { atual = ds[0]; depAuto = true; }   // um departamento só: já vem preenchido
+      else if (!atual) depAuto = false;
+      selDep.innerHTML = opcoesDeptoAn(a, atual); selDep.value = atual;
       pintarResp();
     });
     var edResp = $('oc-editar-resp');   // administrador: gerencia a lista de analistas aqui mesmo; ao fechar, todo o painel já usa a lista nova

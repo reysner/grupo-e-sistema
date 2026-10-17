@@ -367,10 +367,12 @@ const semLixo = (e, nome) => {
     const sem = C.t.opcoesRespOc(an, '', '');
     assert.ok(!sem.includes('optgroup') && sem.includes('>João Victor<') && sem.includes('Quem é o responsável?'), 'sem departamento escolhido: lista simples');
     const fis = C.t.opcoesRespOc(an, 'Fiscal', '2');
-    assert.ok(fis.includes('<optgroup label="Do departamento Fiscal"><option value="2" selected>João Victor</option></optgroup><optgroup label="Outros analistas">'), 'o do Fiscal vem primeiro e selecionado');
-    assert.ok(fis.includes('>Bruno Cesar Xavier<') && fis.includes('>Sem Depto<'), 'os outros seguem disponíveis');
-    assert.ok(C.t.opcoesRespOc(an, 'Legalização', '').includes('<optgroup label="Do departamento Legalização"><option value="1">Bruno Cesar Xavier</option>'), 'Bruno atende dois departamentos');
-    assert.ok(!C.t.opcoesRespOc(an, 'Pessoal', '').includes('optgroup'), 'ninguém do departamento: lista simples');
+    assert.ok(fis.includes('<option value="2" selected>João Victor</option>') && !fis.includes('Bruno Cesar Xavier') && !fis.includes('Sem Depto') && !fis.includes('optgroup'), 'com departamento escolhido: só os analistas dele');
+    const leg = C.t.opcoesRespOc(an, 'Legalização', '');
+    assert.ok(leg.includes('<option value="1">Bruno Cesar Xavier</option>') && !leg.includes('João Victor'), 'Bruno atende dois departamentos');
+    assert.ok(C.t.opcoesRespOc(an, 'Financeiro', '').includes('Bruno Cesar Xavier') && !C.t.opcoesRespOc(an, 'Financeiro', '').includes('João Victor'));
+    const pes = C.t.opcoesRespOc(an, 'Pessoal', '');
+    assert.ok(pes.includes('João Victor') && pes.includes('Bruno Cesar Xavier') && pes.includes('Sem Depto'), 'ninguém do departamento: a lista inteira, para não travar');
     assert.ok(C.t.opcoesAnalistasAg(an, 'Fiscal', '', 'Escolha o analista…').includes('Escolha o analista…'));
     assert.strictEqual(C.t.avisoRespOc(an[0], 'Legalização'), '');
     assert.strictEqual(C.t.avisoRespOc(an[1], 'Contábil'), 'João Victor não é do departamento Contábil (atende Fiscal).');
@@ -379,7 +381,10 @@ const semLixo = (e, nome) => {
     assert.strictEqual(C.t.avisoRespOc(an[1], ''), '', 'um departamento só e nada escolhido: o formulário preenche, sem aviso');
     assert.strictEqual(C.t.avisoRespOc({ nome: 'Bruno', departamentos: ['Financeiro', 'Legalização'] }, ''), 'Bruno atende Financeiro e Legalização: escolha o departamento.', 'vários departamentos: pede para escolher');
     const dp = C.t.opcoesDeptoAn({ departamentos: ['Financeiro', 'Legalização'] }, '');
-    assert.ok(dp.includes('<optgroup label="Do analista"><option value="Financeiro">Financeiro</option><option value="Legalização">Legalização</option></optgroup><optgroup label="Outros departamentos">'), 'os do analista primeiro');
+    assert.ok(dp.includes('<option value="Financeiro">Financeiro</option>') && dp.includes('<option value="Legalização">Legalização</option>') && !dp.includes('Comercial') && !dp.includes('Fiscal') && !dp.includes('Pessoal') && !dp.includes('optgroup'), 'só os dois departamentos do Bruno');
+    const um = C.t.opcoesDeptoAn({ departamentos: ['Fiscal'] }, '');
+    assert.ok(um.includes('value="Fiscal"') && !um.includes('value="Contábil"'), 'quem tem um departamento só vê só ele');
+    assert.ok(C.t.opcoesDeptoAn(null, '').includes('value="Comercial"') && C.t.opcoesDeptoAn({ departamentos: [] }, '').includes('value="Pessoal"'), 'sem analista ou sem departamento cadastrado: todos');
     assert.ok(C.t.opcoesDeptoAn({ departamentos: ['Fiscal'] }, 'Fiscal').includes('<option value="Fiscal" selected>Fiscal</option>'));
     assert.ok(!C.t.opcoesDeptoAn({ departamentos: [] }, '').includes('optgroup') && !C.t.opcoesDeptoAn(null, '').includes('optgroup'), 'sem departamento cadastrado: lista simples');
     assert.ok(C.t.formularioOcorrenciaQ({ tipos: ['Erro'], analistas: an }, true).includes('id="oc-resp-aviso"'));
