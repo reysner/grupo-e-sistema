@@ -2561,6 +2561,51 @@
     liga('gt-cancelar-oc', 'cancelar', 'Cancelar ocorrência', 'Cancelar a ocorrência');
     liga('gt-reabrir-oc', 'reabrir', 'Reabrir ocorrência', 'Reabrir a ocorrência');
   }
+  // ── TEMPO MÉDIO POR ETAPA (Portal do Gestor e Portal do Sucesso do Cliente) ───────────────────────
+  /** "45 min", "7,5 h" ou "3,2 dias". */
+  function fmtDuracao(h) {
+    if (h == null) return '—';
+    if (h < 1) return Math.max(1, Math.round(h * 60)) + ' min';
+    if (h < 48) return String(Math.round(h * 10) / 10).replace('.', ',') + ' h';
+    return String(Math.round(h / 24 * 10) / 10).replace('.', ',') + ' dias';
+  }
+  function htmlTempos(d, f) {
+    f = f || {};
+    var op = function (v, rot, sel) { return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(rot) + '</option>'; };
+    var optD = op('', 'Todos os departamentos', !f.depto) + DEPS_OCORRENCIA.map(function (x) { return op(x[0], x[1], f.depto === x[0]); }).join('');
+    var linhas = (d.etapas || []).map(function (e) {
+      return '<tr' + (e.chave === 'total' ? ' style="font-weight:700"' : '') + '><td>' + esc(e.rotulo) + '</td><td class="c">' + e.n + '</td><td class="c">' + fmtDuracao(e.media_h) + '</td><td class="c">' + fmtDuracao(e.mediana_h) + '</td><td class="c">' + fmtDuracao(e.max_h) + '</td></tr>';
+    }).join('');
+    var deps = (d.por_departamento || []).filter(function (x) { return x.encerradas > 0 || x.gestor_media_h != null; }).map(function (x) {
+      return '<tr><td>' + esc(rotuloDepto(x.departamento)) + '</td><td class="c">' + x.encerradas + '</td><td class="c">' + fmtDuracao(x.gestor_media_h) + '</td><td class="c">' + fmtDuracao(x.analista_media_h) + '</td><td class="c">' + fmtDuracao(x.total_media_h) + '</td></tr>';
+    }).join('');
+    return '<div class="filter-group" style="margin:6px 0 12px"><span class="filter-label">Registradas de</span><input class="gp-input" type="date" id="tp-de" value="' + esc(f.de || '') + '"><span class="filter-label">até</span><input class="gp-input" type="date" id="tp-ate" value="' + esc(f.ate || '') + '">' +
+      '<span class="filter-label">Departamento</span><select class="gp-select" id="tp-depto">' + optD + '</select><button type="button" class="gp-footer-btn" id="tp-atualizar" style="width:auto">↻ Atualizar</button></div>' +
+      '<div class="cinza" style="font-size:12px;margin-bottom:8px">' + d.ocorrencias + ' ocorrência(s) no filtro. Tempo corrido (inclui fim de semana). Só entra a etapa que a ocorrência já cumpriu; "com o analista" inclui o retrabalho quando o gestor devolveu.</div>' +
+      '<div class="table-wrap"><table><thead><tr><th>Etapa</th><th class="c">Casos</th><th class="c">Média</th><th class="c">Mediana</th><th class="c">Mais demorado</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' +
+      (deps ? '<div class="card-title" style="margin-top:16px">Por departamento</div><div class="table-wrap"><table><thead><tr><th>Departamento</th><th class="c">Encerradas</th><th class="c">Com o gestor</th><th class="c">Com o analista</th><th class="c">Total</th></tr></thead><tbody>' + deps + '</tbody></table></div>' : '');
+  }
+  function htmlTemposBox() {
+    return '<details class="card leg" id="tp-box"' + (estado.tpAberto ? ' open' : '') + ' style="padding:12px 20px"><summary><span class="seta">▶</span> Tempo médio por etapa <span style="font-weight:500;text-transform:none;letter-spacing:0">(clique para ver quanto tempo as ocorrências levam em cada etapa)</span></summary><div class="corpo" id="tp-corpo">' + (estado.tpAberto ? '<div class="vazio">Carregando…</div>' : '') + '</div></details>';
+  }
+  async function carregarTempos() {
+    var corpo = $('tp-corpo'); if (!corpo) return;
+    var f = estado.tpF || (estado.tpF = { de: '', ate: '', depto: '' });
+    try {
+      var d = await api('/api/cs/painel/qualidade/tempos?de=' + encodeURIComponent(f.de) + '&ate=' + encodeURIComponent(f.ate) + '&departamento=' + encodeURIComponent(f.depto));
+      corpo = $('tp-corpo'); if (!corpo) return;
+      corpo.innerHTML = htmlTempos(d, f);
+      var liga = function (id, k) { var e = $(id); if (e) e.addEventListener('change', function () { f[k] = e.value; carregarTempos(); }); };
+      liga('tp-de', 'de'); liga('tp-ate', 'ate'); liga('tp-depto', 'depto');
+      var at = $('tp-atualizar'); if (at) at.addEventListener('click', carregarTempos);
+    } catch (e) { corpo = $('tp-corpo'); if (corpo) corpo.innerHTML = '<div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div>'; }
+  }
+  function ligarTempos() {
+    var b = $('tp-box'); if (!b) return;
+    b.addEventListener('toggle', function () { estado.tpAberto = !!b.open; if (b.open) carregarTempos(); });
+    if (b.open) carregarTempos();
+  }
+
   function htmlPlanoGestor(r) {
     return '<div class="ficha-sec">Plano de ação do gestor</div><div class="qa-reg"><div class="qa-reg-txt">' + esc(r.plano_acao || '—') + '</div>' +
       '<div class="qa-reg-rod">' + (nomesResp(r).length ? 'Responsáve' + (nomesResp(r).length > 1 ? 'is' : 'l') + ': <strong>' + esc(nomesResp(r).join(', ')) + '</strong> · ' : '') + 'Departamento ' + esc(rotuloDepto(r.tratativa_depto || '')) + ' · prazo <strong>' + data(r.prazo) + '</strong>' + (r.tratativa_definida_por ? ' · definido por ' + esc(r.tratativa_definida_por) : '') + (r.liberada_em ? ' · aberto em ' + dataHora(r.liberada_em) : '') + '</div>' +
@@ -2717,7 +2762,7 @@
         '<button type="button" class="gp-footer-btn" id="s-atualizar" style="width:auto">↻ Atualizar</button></div>' +
         '<div class="card-sub">' + lista.length + ' ocorrência(s) · as da devolutiva ao cliente vêm primeiro</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Registrada em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Departamento</th><th>Assunto</th><th>Analista</th><th class="c">Prazo</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
-          : '<div class="vazio">Nenhuma ocorrência neste filtro.</div>') + '</div>';
+          : '<div class="vazio">Nenhuma ocorrência neste filtro.</div>') + '</div>' + htmlTemposBox();
   }
   async function desenharSucesso() {
     var alvo = $('sec-sucesso'); if (!alvo) return;
@@ -2732,6 +2777,7 @@
     s.dados.analistas = estado.qAnalistas || [];
     var bs = $('badge-sucesso'); if (bs) bs.textContent = contagemEtapasGestor(s.dados.registros).devolutiva_cliente || '';
     alvo.innerHTML = htmlSucesso(s.dados, s.f);
+    ligarTempos();
     var liga = function (id, prop, evento) { var e = $(id); if (e) e.addEventListener(evento || 'change', function () { s.f[prop] = e.value; if (prop === 'depto') s.f.analista = ''; var pos = e.selectionStart; desenharSucesso(); if (prop === 'busca') { var n = $('s-busca'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { /* sem seleção */ } } } }); };
     liga('s-depto', 'depto'); liga('s-analista', 'analista'); liga('s-etapa', 'etapa'); liga('s-busca', 'busca', 'input');
     var at = $('s-atualizar'); if (at) at.addEventListener('click', function () { estado.s.dados = null; desenharSucesso(); });
@@ -2832,7 +2878,7 @@
         '<button type="button" class="gp-footer-btn" id="g-atualizar" style="width:auto">↻ Atualizar</button></div>' +
         '<div class="card-sub">' + lista.length + ' ocorrência(s)' + (esc_.todos ? ' · todos os departamentos' : ' · seus departamentos: ' + esc(deptos.map(rotuloDepto).join(', '))) + '</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Registrada em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Departamento</th><th>Assunto</th><th>Responsável</th><th class="c">Prazo</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
-          : '<div class="vazio">Nenhuma ocorrência neste filtro.</div>') + '</div>';
+          : '<div class="vazio">Nenhuma ocorrência neste filtro.</div>') + '</div>' + htmlTemposBox();
   }
   async function desenharGestor() {
     var alvo = $('sec-gestor'); if (!alvo) return;
@@ -2847,6 +2893,7 @@
     g.dados.analistas = estado.qAnalistas || [];
     var bg = $('badge-gestor'); if (bg) bg.textContent = contagemEtapasGestor(g.dados.registros).registrada || '';
     alvo.innerHTML = htmlGestor(g.dados, g.f);
+    ligarTempos();
     var liga = function (id, prop, evento) { var e = $(id); if (e) e.addEventListener(evento || 'change', function () { g.f[prop] = e.value; if (prop === 'depto') g.f.analista = ''; var pos = e.selectionStart; desenharGestor(); if (prop === 'busca') { var n = $('g-busca'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { /* sem seleção */ } } } }); };
     liga('g-depto', 'depto'); liga('g-analista', 'analista'); liga('g-etapa', 'etapa'); liga('g-busca', 'busca', 'input');
     var at = $('g-atualizar'); if (at) at.addEventListener('click', function () { estado.g.dados = null; desenharGestor(); });

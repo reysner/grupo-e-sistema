@@ -24,6 +24,7 @@ const { pool } = require('../db');
 const { requireAuth } = require('../auth');
 const push = require('../push');
 const acessos = require('./acessos');
+const { calcularTempos, ACOES_DO_HISTORICO } = require('./temposEtapa');
 
 const TIPOS = ['Multa', 'Erro', 'Reclamação', 'Atraso', 'Falha de atendimento', 'Falha técnica', 'Outros'];
 const DEPARTAMENTOS = ['Comercial', 'Contábil', 'Financeiro', 'Fiscal', 'Legalização', 'Pessoal', 'Sucesso'];
@@ -241,7 +242,7 @@ function rotaAbertaGestorAnalista(metodo, caminho) {
   const m = String(metodo || '').toUpperCase();
   const c = String(caminho || '').split('?')[0].replace(/\/+$/, '') || '/';
   const p = c.split('/');   // '' + segmentos
-  if (m === 'GET') return ['/opcoes', '/empresas', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/analista/ocorrencias', '/sucesso/ocorrencias'].includes(c) || (p.length === 3 && p[1] === 'anexo');
+  if (m === 'GET') return ['/opcoes', '/empresas', '/tempos', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/analista/ocorrencias', '/sucesso/ocorrencias'].includes(c) || (p.length === 3 && p[1] === 'anexo');
   if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && p[4] === 'encerrar');
   if (m === 'PUT') return p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && p[4] === 'tratativa';
   return false;
@@ -1331,6 +1332,31 @@ router.post('/sucesso/ocorrencias/:id/encerrar', async (req, res) => {
     avisarPush(async () => [reg.criado_por_id], { titulo: 'Ocorrência encerrada', texto: (reg.cliente_nome || 'Empresa') + ' — ' + (reg.assunto || ''), url: '/cs?aba=consideracoes', tag: 'enc-' + reg.id }, req.user.id);
     res.json({ registro: await registroCompleto(reg.id) });
   } catch (e) { console.error('[qualidade] POST sucesso encerrar falhou:', e); res.status(500).json({ error: 'Erro ao encerrar o processo.' }); }
+});
+
+/**
+ * Tempo médio por etapa (ver temposEtapa.js). Administração, equipe e Sucesso do Cliente veem todas as ocorrências; o gestor, as dos departamentos dele.
+ * Filtros: de e ate (data do registro, AAAA-MM-DD) e departamento.
+ */
+router.get('/tempos', async (req, res) => {
+  try {
+    await garantirSchema();
+    const todos = await podeVerSucesso(req);
+    const esc = await escopoDaRequisicao(req);
+    if (!todos && !esc.todos && !esc.deptos.length) return res.status(403).json({ error: 'Os tempos por etapa são do gestor, do Sucesso do Cliente e da administração.' });
+    const vals = [], w = ["r.origem = 'modulo'", "r.status <> 'cancelado'"];
+    if (!todos && !esc.todos) { vals.push(esc.deptos); w.push('r.departamentos && $' + vals.length + '::text[]'); }
+    const de = String(req.query.de || ''), ate = String(req.query.ate || ''), dep = String(req.query.departamento || '');
+    if (ISO.test(de)) { vals.push(de); w.push("(r.criado_em AT TIME ZONE 'America/Sao_Paulo')::date >= $" + vals.length + '::date'); }
+    if (ISO.test(ate)) { vals.push(ate); w.push("(r.criado_em AT TIME ZONE 'America/Sao_Paulo')::date <= $" + vals.length + '::date'); }
+    if (DEPARTAMENTOS.includes(dep)) { vals.push(dep); w.push('$' + vals.length + ' = ANY(r.departamentos)'); }
+    const regs = (await pool.query('SELECT r.id, r.departamentos, r.criado_em FROM cs_qualidade_registros r WHERE ' + w.join(' AND ') + ' ORDER BY r.criado_em DESC LIMIT 3000', vals)).rows;
+    const ids = regs.map((r) => r.id);
+    const evs = ids.length ? (await pool.query('SELECT registro_id, acao, em FROM cs_qualidade_historico WHERE registro_id = ANY($1::uuid[]) AND acao = ANY($2::text[]) ORDER BY em', [ids, ACOES_DO_HISTORICO])).rows : [];
+    const porReg = {};
+    evs.forEach((e) => { (porReg[String(e.registro_id)] = porReg[String(e.registro_id)] || []).push({ acao: e.acao, em: e.em }); });
+    res.json(calcularTempos(regs.map((r) => ({ criado_em: r.criado_em, departamentos: r.departamentos, eventos: porReg[String(r.id)] || [] }))));
+  } catch (e) { console.error('[qualidade] GET /tempos falhou:', e); res.status(500).json({ error: 'Erro ao calcular os tempos por etapa.' }); }
 });
 
 /** Sugestão de empresas ao digitar: as que COMEÇAM com o texto (nome ou CNPJ) vêm primeiro; se couberem mais, as que apenas contêm. */

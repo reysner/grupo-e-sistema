@@ -78,6 +78,37 @@ const teste = async (nome, fn) => { await fn(); ok++; console.log('  ok -', nome
     assert.strictEqual(pushes[3].titulo, 'Prazo vence hoje');
   });
 
+  await teste('tempo por etapa: mede cada etapa cumprida (começo e fim registrados), com média, mediana e maior; agrupa por departamento', () => {
+    const T = require('./temposEtapa');
+    const h = (n) => new Date(Date.UTC(2026, 9, 1, 12, 0, 0) + n * 3600000).toISOString();   // n horas depois de 01/10/2026 12:00 UTC
+    const ev = (acao, n) => ({ acao, em: h(n) });
+    const regs = [
+      // completa: 4h com o gestor, 20h com o analista, 6h de validação, 10h de devolutiva = 40h no total
+      { criado_em: h(0), departamentos: ['Fiscal'], eventos: [ev('liberada', 4), ev('analista_encerrou', 24), ev('gestor_validou', 30), ev('encerrada', 40)] },
+      // devolvida uma vez: o analista encerrou duas vezes; vale o último encerramento (retrabalho entra em "com o analista")
+      { criado_em: h(0), departamentos: ['Fiscal'], eventos: [ev('liberada', 2), ev('analista_encerrou', 10), ev('analista_encerrou', 30), ev('gestor_validou', 34), ev('encerrada', 36)] },
+      // ainda com o analista: só a etapa do gestor foi cumprida
+      { criado_em: h(0), departamentos: ['Pessoal'], eventos: [ev('liberada', 6)] },
+      // ainda no começo: nada cumprido
+      { criado_em: h(0), departamentos: ['Pessoal'], eventos: [] },
+    ];
+    const r = T.calcularTempos(regs);
+    const et = (c) => r.etapas.find((e) => e.chave === c);
+    assert.strictEqual(r.ocorrencias, 4);
+    assert.deepStrictEqual([et('gestor').n, et('gestor').media_h, et('gestor').mediana_h, et('gestor').max_h], [3, 4, 4, 6], 'gestor: 4h, 2h e 6h');
+    assert.deepStrictEqual([et('analista').n, et('analista').media_h, et('analista').max_h], [2, 24, 28], 'analista: 20h e 28h (com retrabalho)');
+    assert.deepStrictEqual([et('validacao').n, et('validacao').media_h], [2, 5], 'validação: 6h e 4h');
+    assert.deepStrictEqual([et('devolutiva').n, et('devolutiva').media_h], [2, 6], 'devolutiva: 10h e 2h');
+    assert.deepStrictEqual([et('total').n, et('total').media_h, et('total').mediana_h], [2, 38, 38], 'total: 40h e 36h');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(r.por_departamento.map((d) => [d.departamento, d.encerradas, d.total_media_h]))), [['Fiscal', 2, 38], ['Pessoal', 0, null]]);
+    const vazio = T.calcularTempos([]);
+    assert.strictEqual(vazio.ocorrencias, 0);
+    assert.ok(vazio.etapas.every((e) => e.n === 0 && e.media_h === null), 'sem dados: nada a mostrar, sem erro');
+    assert.strictEqual(T.calcularTempos([{ criado_em: h(10), departamentos: [], eventos: [ev('liberada', 5)] }]).etapas[0].n, 0, 'fim antes do começo não conta');
+    assert.strictEqual(T.calcularTempos([{ criado_em: 'lixo', departamentos: ['Fiscal'], eventos: [ev('encerrada', 5)] }]).etapas.every((e) => e.n === 0), true, 'data inválida não quebra');
+    assert.strictEqual(T.calcularTempos(null).ocorrencias, 0);
+  });
+
   console.log(`\n${ok} testes passaram.`);
   process.exit(0);
 })().catch((e) => { console.error('FALHOU:', e); process.exit(1); });
