@@ -1375,7 +1375,7 @@
   // O nome do analista vem sempre da lista de analistas (renomear lá renomeia aqui). Entra no termômetro de Atendimento do risco.
   var ROT_STATUS_Q = { aberto: 'Aberto', em_tratamento: 'Em tratamento', finalizada: 'Finalizada · validar', resolvido: 'Resolvido', cancelado: 'Cancelado', vencido: 'Vencido' };
   var COR_STATUS_Q = { aberto: '#b45309', em_tratamento: '#2563eb', finalizada: '#7c3aed', resolvido: '#166534', cancelado: '#6b7280', vencido: '#b91c1c' };
-  var ROT_ACAO_Q = { nota: 'Nota', iniciada: 'Iniciou a tratativa', finalizada: 'Finalizou', devolvida: 'Devolvida ao analista', validada: 'Encerrada pela liderança', liberada: 'Aberta para o analista', analista_encerrou: 'Analista encerrou a tratativa', gestor_validou: 'Gestor validou', encerrada: 'Processo encerrado' };
+  var ROT_ACAO_Q = { cancelada: 'Cancelada', reaberta: 'Reaberta', nota: 'Nota', iniciada: 'Iniciou a tratativa', finalizada: 'Finalizou', devolvida: 'Devolvida ao analista', validada: 'Encerrada pela liderança', liberada: 'Aberta para o analista', analista_encerrou: 'Analista encerrou a tratativa', gestor_validou: 'Gestor validou', encerrada: 'Processo encerrado' };
   /** Linha do tempo (notas e eventos) de um registro. */
   function notasHtml(r) {
     var n = r.notas || []; if (!n.length) return '';
@@ -1689,7 +1689,7 @@
   }
   // ── MÓDULO QUALIDADE: ocorrências, pesos e lista ──────────────────────────────────────
   var DEPS_OCORRENCIA = [['Comercial', 'Comercial'], ['Contábil', 'Contábil'], ['Financeiro', 'Financeiro'], ['Fiscal', 'Fiscal'], ['Legalização', 'Legalização'], ['Pessoal', 'Pessoal'], ['Sucesso', 'Sucesso do Cliente']];
-  var ROT_ETAPA_Q = { registrada: 'registrada, aguardando análise', tratativa_definida: 'tratativa definida', com_analista: 'com o analista', validacao_gestor: 'em validação do gestor', devolutiva_cliente: 'devolutiva ao cliente (Sucesso do Cliente)', encerrada: 'encerrada' };
+  var ROT_ETAPA_Q = { registrada: 'registrada, aguardando análise', tratativa_definida: 'tratativa definida', com_analista: 'com o analista', validacao_gestor: 'em validação do gestor', devolutiva_cliente: 'devolutiva ao cliente (Sucesso do Cliente)', encerrada: 'encerrada', cancelada: 'cancelada' };
   var COR_PRIORIDADE = { 'Muito Alta': '#b91c1c', Alta: '#c2410c', 'Média': '#1d4ed8', Baixa: '#6b7280' };
   function rotuloDepto(d) { return d === 'Sucesso' ? 'Sucesso do Cliente' : d; }
   function pillPrioridadeQ(p) {
@@ -2321,9 +2321,9 @@
   }
 
   // ── Qualidade para quem só registra (gestor ou analista): registrar e acompanhar as próprias ocorrências ──
-  var ETAPA_CURTA = { registrada: 'Aguardando análise', tratativa_definida: 'Tratativa definida', com_analista: 'Com o analista', validacao_gestor: 'Em validação', devolutiva_cliente: 'Devolutiva ao cliente', encerrada: 'Encerrada' };
-  var COR_ETAPA = { registrada: '#b45309', tratativa_definida: '#2563eb', com_analista: '#7c3aed', validacao_gestor: '#0e7490', devolutiva_cliente: '#c2410c', encerrada: '#166534' };
-  var ETAPAS_Q = ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada'];
+  var ETAPA_CURTA = { registrada: 'Aguardando análise', tratativa_definida: 'Tratativa definida', com_analista: 'Com o analista', validacao_gestor: 'Em validação', devolutiva_cliente: 'Devolutiva ao cliente', encerrada: 'Encerrada', cancelada: 'Cancelada' };
+  var COR_ETAPA = { registrada: '#b45309', tratativa_definida: '#2563eb', com_analista: '#7c3aed', validacao_gestor: '#0e7490', devolutiva_cliente: '#c2410c', encerrada: '#166534', cancelada: '#6b7280' };
+  var ETAPAS_Q = ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada', 'cancelada'];
   function pillEtapaQ(e) { var c = COR_ETAPA[e] || '#6b7280'; return '<span class="pill" style="color:' + c + ';border-color:' + c + '55;background:' + c + '14">' + esc(ETAPA_CURTA[e] || e || '—') + '</span>'; }
   var OBS_REGISTRO = 'Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.';
   function destinoCurto(r) { return r.fila === 'gestor' ? 'Gestor de ' + rotuloDepto((r.departamentos || [])[0]) : r.fila === 'sucesso' ? 'Sucesso do Cliente' : '—'; }
@@ -2498,6 +2498,53 @@
       }).join('') + '</tbody></table></div></div>';
   }
 
+  // ── CANCELAR OU REABRIR UMA OCORRÊNCIA ──────────────────────────────────────────────────────
+  /** Cancelar ou reabrir (gestor do departamento, gestor final e administração; o servidor confere). Sempre com motivo. */
+  function htmlAcoesOcorrencia(r) {
+    var cancelavel = ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente'].indexOf(r.etapa) >= 0;
+    var reabrivel = r.etapa === 'cancelada' || r.etapa === 'encerrada';
+    if (!cancelavel && !reabrivel) return '';
+    return '<div class="ficha-sec">' + (cancelavel ? 'Cancelar' : 'Reabrir') + '</div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0">' +
+      (cancelavel
+        ? '<button type="button" class="gp-footer-btn qa-excluir" id="gt-cancelar-oc" style="width:auto">Cancelar esta ocorrência</button><span class="cinza" style="font-size:12px">Fica registrada como cancelada, com o motivo, e sai do risco. Dá para reabrir depois.</span>'
+        : '<button type="button" class="gp-footer-btn" id="gt-reabrir-oc" style="width:auto">Reabrir esta ocorrência</button><span class="cinza" style="font-size:12px">' + (r.etapa === 'encerrada' ? 'Volta para o analista tratar de novo (só o gestor final e a administração).' : 'Volta para a etapa em que estava.') + '</span>') + '</div>';
+  }
+  /** Janela pequena que pede o motivo; aoConfirmar devolve uma mensagem de erro (fica na janela) ou null (fecha). */
+  function pedirMotivo(titulo, textoBotao, aoConfirmar) {
+    var ov = document.createElement('div'); ov.className = 'qa-overlay'; document.body.appendChild(ov);
+    var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
+    ov.innerHTML = '<div class="qa-modal" role="dialog" aria-label="' + esc(titulo) + '"><div class="qa-modal-topo"><strong>' + esc(titulo) + '</strong><button type="button" class="qa-x" id="pm-fechar" aria-label="Fechar">✕</button></div>' +
+      '<div class="qa-campo"><label for="pm-motivo">Motivo <span class="req">*</span> <span class="cinza" id="pm-cont">0/600</span></label><textarea id="pm-motivo" rows="4" maxlength="600" placeholder="Explique em poucas palavras (fica no histórico)"></textarea></div>' +
+      '<div class="qa-oc-linha qa-oc-bot"><button type="button" class="qa-btn-cancel" id="pm-cancel" style="background:#64748b">Voltar</button><button type="button" class="qa-btn-ok" id="pm-ok">' + esc(textoBotao) + '</button></div><div class="pop-erro" id="pm-erro" role="alert"></div></div>';
+    var t = $('pm-motivo');
+    t.addEventListener('input', function () { $('pm-cont').textContent = t.value.length + '/600'; });
+    $('pm-fechar').addEventListener('click', fechar); $('pm-cancel').addEventListener('click', fechar);
+    $('pm-ok').addEventListener('click', async function () {
+      var m = t.value.trim(), erro = $('pm-erro'), b = $('pm-ok');
+      if (m.length < 5) { erro.textContent = 'Informe o motivo (mínimo de 5 caracteres).'; return; }
+      erro.textContent = ''; b.disabled = true;
+      var msg = await aoConfirmar(m);
+      if (msg) { erro.textContent = msg; b.disabled = false; } else fechar();
+    });
+    t.focus();
+  }
+  /** Liga os botões Cancelar / Reabrir de uma janela de ocorrência; depois mexe, recarrega a tela de quem chamou. */
+  function ligarAcoesOcorrencia(r, fecharJanela, recarregar) {
+    var base = '/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id);
+    var liga = function (id, acao, titulo, botao) {
+      var b = $(id); if (!b) return;
+      b.addEventListener('click', function () {
+        pedirMotivo(titulo, botao, async function (motivo) {
+          var x = await postarQ(base + '/' + acao, { motivo: motivo });
+          if (!x.ok) return x.j.error || 'Não foi possível concluir.';
+          fecharJanela(); recarregar();
+          return null;
+        });
+      });
+    };
+    liga('gt-cancelar-oc', 'cancelar', 'Cancelar ocorrência', 'Cancelar a ocorrência');
+    liga('gt-reabrir-oc', 'reabrir', 'Reabrir ocorrência', 'Reabrir a ocorrência');
+  }
   function htmlPlanoGestor(r) {
     return '<div class="ficha-sec">Plano de ação do gestor</div><div class="qa-reg"><div class="qa-reg-txt">' + esc(r.plano_acao || '—') + '</div>' +
       '<div class="qa-reg-rod">' + (nomesResp(r).length ? 'Responsáve' + (nomesResp(r).length > 1 ? 'is' : 'l') + ': <strong>' + esc(nomesResp(r).join(', ')) + '</strong> · ' : '') + 'Departamento ' + esc(rotuloDepto(r.tratativa_depto || '')) + ' · prazo <strong>' + data(r.prazo) + '</strong>' + (r.tratativa_definida_por ? ' · definido por ' + esc(r.tratativa_definida_por) : '') + (r.liberada_em ? ' · aberto em ' + dataHora(r.liberada_em) : '') + '</div>' +
@@ -2674,7 +2721,8 @@
     var at = $('s-atualizar'); if (at) at.addEventListener('click', function () { estado.s.dados = null; desenharSucesso(); });
     Array.prototype.forEach.call(alvo.querySelectorAll('[data-sabrir]'), function (b) { b.addEventListener('click', function () { abrirOcorrenciaSucesso(b.getAttribute('data-sabrir')); }); });
   }
-  function htmlOcorrenciaSucesso(r, final) {
+  function htmlOcorrenciaSucesso(r, final) { return htmlOcorrenciaSucessoBase(r, final) + ((final || perfilCs().admin) ? htmlAcoesOcorrencia(r) : ''); }
+  function htmlOcorrenciaSucessoBase(r, final) {
     var topo = '<div class="qa-modal-topo"><strong style="font-size:20px;color:#256050">' + esc(r.assunto || 'Ocorrência') + '</strong><button type="button" class="qa-x" id="so-fechar" aria-label="Fechar">✕</button></div>' +
       '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' + cartaoOcorrenciaQ(r, true) + (r.plano_acao ? htmlPlanoGestor(r) : '') + htmlRetornos(r);
     if (r.etapa !== 'devolutiva_cliente') return topo + '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="so-cancel">Fechar</button></div>';
@@ -2690,6 +2738,7 @@
     var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Ocorrência">' + htmlOcorrenciaSucesso(r, !!d.final) + '</div>';
     $('so-fechar').addEventListener('click', fechar); $('so-cancel').addEventListener('click', fechar);
+    if (d.final || perfilCs().admin) ligarAcoesOcorrencia(r, fechar, function () { estado.s.dados = null; desenharSucesso(); });
     if (!$('so-encerrar')) return;
     ligarContador('so');
     var erro = $('so-erro');
@@ -2788,7 +2837,8 @@
     Array.prototype.forEach.call(alvo.querySelectorAll('[data-gabrir]'), function (b) { b.addEventListener('click', function () { abrirOcorrenciaGestor(b.getAttribute('data-gabrir')); }); });
   }
   /** Janela da ocorrência no Portal do Gestor: detalhes e a tratativa (editável até abrir para o analista). */
-  function htmlTratativaGestor(r, analistas) {
+  function htmlTratativaGestor(r, analistas) { return htmlTratativaGestorBase(r, analistas) + htmlAcoesOcorrencia(r); }
+  function htmlTratativaGestorBase(r, analistas) {
     var editavel = r.etapa === 'registrada' || r.etapa === 'tratativa_definida';
     var depAtual = r.tratativa_depto || (r.departamentos || [])[0] || '';
     var podeFilha = r.origem !== 'filha' && ['registrada', 'tratativa_definida', 'com_analista'].indexOf(r.etapa) >= 0;
@@ -2835,6 +2885,7 @@
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Ocorrência">' + htmlTratativaGestor(r, estado.qAnalistas || []) + '</div>';
     $('gt-fechar').addEventListener('click', fechar); $('gt-cancel').addEventListener('click', fechar);
     if ($('gt-filha')) $('gt-filha').addEventListener('click', function () { abrirFilhaGestor(r, fechar); });
+    ligarAcoesOcorrencia(r, fechar, function () { estado.g.dados = null; desenharGestor(); });
     if ($('gv-validar')) {   // validação do que o analista tratou
       ligarContador('gv');
       var verro = $('gv-erro'), base = '/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id);

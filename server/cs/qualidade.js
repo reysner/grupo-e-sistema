@@ -189,7 +189,7 @@ function deveAvisar(user, reg, deptosGestor) {
 
 /** Etapa do fluxo → status que o risco de churn lê (aplicado quando a etapa muda). */
 const JA_MUDOU = 'Esta ocorrência acabou de ser atualizada por outra pessoa. Atualize a tela e confira antes de continuar.';
-const ETAPA_STATUS = { registrada: 'aberto', tratativa_definida: 'aberto', com_analista: 'em_tratamento', validacao_gestor: 'finalizada', devolutiva_cliente: 'finalizada', encerrada: 'resolvido' };
+const ETAPA_STATUS = { registrada: 'aberto', tratativa_definida: 'aberto', com_analista: 'em_tratamento', validacao_gestor: 'finalizada', devolutiva_cliente: 'finalizada', encerrada: 'resolvido', cancelada: 'cancelado' };
 
 /** Cada passo do fluxo: de qual etapa sai e para qual vai. Quem pode dar o passo é conferido na rota. */
 const TRANSICOES = {
@@ -198,6 +198,8 @@ const TRANSICOES = {
   gestor_devolver: { de: ['validacao_gestor'], para: 'com_analista', erro: 'Esta ocorrência não está aguardando a validação do gestor.' },
   gestor_validar: { de: ['validacao_gestor'], para: 'devolutiva_cliente', erro: 'Esta ocorrência não está aguardando a validação do gestor.' },
   filha_validar: { de: ['validacao_gestor'], para: 'encerrada', erro: 'Esta ocorrência vinculada não está aguardando a validação do gestor.' },   // a filha não tem devolutiva ao cliente: validada, está encerrada
+  cancelar: { de: ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente'], para: 'cancelada', erro: 'Só dá para cancelar uma ocorrência que ainda não foi encerrada nem cancelada.' },
+  reabrir_encerrada: { de: ['encerrada'], para: 'com_analista', erro: 'Só dá para reabrir uma ocorrência encerrada ou cancelada.' },
   final_encerrar: { de: ['devolutiva_cliente'], para: 'encerrada', erro: 'Esta ocorrência ainda não foi validada pelo gestor: não está na devolutiva ao cliente.' },
 };
 function transicao(acao, etapa) {
@@ -217,6 +219,19 @@ function validarEncerramento(corpo) {
   return { ok: true, valores: { nota, obs: obs || null } };
 }
 const textoNota = (v) => v.nota + (v.obs ? ' — Observação: ' + v.obs : '');
+/** Motivo de cancelar ou reabrir (obrigatório, 5 a 600 caracteres). */
+function validarMotivo(corpo) {
+  const b = corpo || {};
+  const motivo = String(b.motivo == null ? '' : b.motivo).trim();
+  if (motivo.length < 5) return { ok: false, erro: 'Informe o motivo (mínimo de 5 caracteres).' };
+  if (motivo.length > MAX_TRATATIVA) return { ok: false, erro: 'O motivo passa de ' + MAX_TRATATIVA + ' caracteres.' };
+  return { ok: true, valores: { motivo } };
+}
+/** Ao reabrir uma cancelada, volta para a etapa em que estava (se não souber, para o começo). */
+function destinoDaReabertura(etapaAntes) {
+  const para = ETAPAS.includes(etapaAntes) && etapaAntes !== 'encerrada' ? etapaAntes : 'registrada';
+  return { para, status: ETAPA_STATUS[para] };
+}
 
 /**
  * Rotas do Qualidade abertas a quem é só gestor ou só analista (acesso_qualidade): registrar ocorrência, ver as próprias, perfil, gestores e,
@@ -227,7 +242,7 @@ function rotaAbertaGestorAnalista(metodo, caminho) {
   const c = String(caminho || '').split('?')[0].replace(/\/+$/, '') || '/';
   const p = c.split('/');   // '' + segmentos
   if (m === 'GET') return ['/opcoes', '/empresas', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/analista/ocorrencias', '/sucesso/ocorrencias'].includes(c) || (p.length === 3 && p[1] === 'anexo');
-  if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && p[4] === 'encerrar');
+  if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && p[4] === 'encerrar');
   if (m === 'PUT') return p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && p[4] === 'tratativa';
   return false;
 }
@@ -433,6 +448,7 @@ function garantirSchema() {
       // o analista indicado no registro nunca se perde (o gestor pode pôr outros para tratar); filhas = ocorrências de alinhamento (origem 'filha')
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS analista_origem_id TEXT'))
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS pai_id UUID REFERENCES cs_qualidade_registros(id) ON DELETE CASCADE'))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS etapa_antes TEXT'))   // etapa em que estava ao ser cancelada (para reabrir no mesmo ponto)
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS mostrar_pai BOOLEAN NOT NULL DEFAULT false'))   // filha: o gestor escolheu mostrar a origem (e o analista do registro) a quem vai tratar
       .then(() => pool.query(`CREATE TABLE IF NOT EXISTS cs_qualidade_resp (
         registro_id UUID NOT NULL REFERENCES cs_qualidade_registros(id) ON DELETE CASCADE, analista_id TEXT NOT NULL,
@@ -461,7 +477,7 @@ async function anexarNotas(lista) {
   if (!lista.length) return lista;
   try {
     const { rows } = await pool.query(
-      `SELECT registro_id, em, por, acao, texto FROM cs_qualidade_historico WHERE registro_id = ANY($1::uuid[]) AND acao IN ('nota', 'iniciada', 'finalizada', 'devolvida', 'validada', 'liberada', 'analista_encerrou', 'gestor_validou', 'encerrada') ORDER BY em ASC`,
+      `SELECT registro_id, em, por, acao, texto FROM cs_qualidade_historico WHERE registro_id = ANY($1::uuid[]) AND acao IN ('nota', 'iniciada', 'finalizada', 'devolvida', 'validada', 'liberada', 'analista_encerrou', 'gestor_validou', 'encerrada', 'cancelada', 'reaberta') ORDER BY em ASC`,
       [lista.map((r) => r.id)]);
     const por = {}; rows.forEach((h) => { (por[h.registro_id] = por[h.registro_id] || []).push({ em: h.em, por: h.por, acao: h.acao, texto: h.texto }); });
     return lista.map((r) => ({ ...r, notas: por[r.id] || [] }));
@@ -988,7 +1004,7 @@ router.get('/gestor/ocorrencias', async (req, res) => {
     if (!esc.todos && !esc.deptos.length) return res.status(403).json({ error: 'Você não é gestor de nenhum departamento. A administração cadastra os gestores em Qualidade > Gerenciar gestores.' });
     const vals = []; let filtro = '';
     if (!esc.todos) { vals.push(esc.deptos); filtro = ` AND (r.departamentos && $1::text[]${esc.sucesso ? " OR r.fila = 'sucesso'" : ''})`; }
-    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.origem IN ('modulo', 'filha') AND r.status <> 'cancelado'${filtro} ORDER BY r.criado_em DESC LIMIT 500`, vals);
+    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.origem IN ('modulo', 'filha')${filtro} ORDER BY r.criado_em DESC LIMIT 500`, vals);
     res.json({ escopo: esc, registros: await completar(rows) });
   } catch (e) { console.error('[qualidade] GET /gestor/ocorrencias falhou:', e); res.status(500).json({ error: 'Erro ao ler as ocorrências do gestor.' }); }
 });
@@ -1222,6 +1238,65 @@ router.post('/gestor/ocorrencias/:id/devolver', async (req, res) => {
   } catch (e) { console.error('[qualidade] POST devolver falhou:', e); res.status(500).json({ error: 'Erro ao devolver ao analista.' }); }
 });
 
+/** Gestor do departamento, gestor final e administração cancelam e reabrem; sempre com motivo. */
+async function podeCancelarOuReabrir(req, reg) {
+  if (req.user && req.user.role === 'administrador') return true;
+  const esc = await escopoDaRequisicao(req);
+  if (ocorrenciaNoEscopo(esc, reg)) return true;
+  return ehGestorFinal(req.user.id);
+}
+router.post('/gestor/ocorrencias/:id/cancelar', async (req, res) => {
+  try {
+    await garantirSchema();
+    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, departamentos, fila, assunto, cliente_nome, origem, pai_id, analista_id');
+    if (!reg) return res.status(404).json({ error: 'Ocorrência não encontrada.' });
+    if (!(await podeCancelarOuReabrir(req, reg))) return res.status(403).json({ error: 'Só o gestor do departamento, o gestor final ou a administração cancelam uma ocorrência.' });
+    const t = transicao('cancelar', reg.etapa);
+    if (!t.ok) return res.status(409).json({ error: t.erro });
+    const v = validarMotivo(req.body);
+    if (!v.ok) return res.status(400).json({ error: v.erro });
+    const idsResp = await idsDosResponsaveis(reg.id, reg.analista_id);   // antes de mudar qualquer coisa
+    const up = await pool.query("UPDATE cs_qualidade_registros SET etapa_antes = etapa, etapa = 'cancelada', status = 'cancelado', atualizado_em = NOW() WHERE id = $1 AND etapa = $2", [reg.id, reg.etapa]);
+    if (!up.rowCount) return res.status(409).json({ error: JA_MUDOU });
+    await pool.query("UPDATE cs_qualidade_registros SET etapa_antes = etapa, etapa = 'cancelada', status = 'cancelado', atualizado_em = NOW() WHERE pai_id = $1 AND etapa NOT IN ('encerrada', 'cancelada')", [reg.id]);   // as vinculadas abertas vão junto
+    await registrar(reg.id, req.user.name, 'cancelada', v.valores.motivo);
+    if (reg.pai_id) {   // cancelou uma vinculada: a original deixa de esperar por ela
+      await registrar(reg.pai_id, req.user.name, 'nota', 'Ocorrência vinculada cancelada: ' + (reg.assunto || ''));
+      await tentarAvancarParaValidacao(reg.pai_id, req.user.name, null, req.user.id);
+    }
+    avisarPush(async () => idsResp, { titulo: 'Ocorrência cancelada', texto: (reg.cliente_nome || 'Empresa') + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(v.valores.motivo, 100), url: '/cs?aba=analista', tag: 'canc-' + reg.id }, req.user.id);
+    res.json({ registro: await registroCompleto(reg.id) });
+  } catch (e) { console.error('[qualidade] POST cancelar falhou:', e); res.status(500).json({ error: 'Erro ao cancelar a ocorrência.' }); }
+});
+router.post('/gestor/ocorrencias/:id/reabrir', async (req, res) => {
+  try {
+    await garantirSchema();
+    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, etapa_antes, departamentos, fila, assunto, cliente_nome, origem, pai_id, analista_id');
+    if (!reg) return res.status(404).json({ error: 'Ocorrência não encontrada.' });
+    const reabreEncerrada = reg.etapa === 'encerrada';
+    if (reabreEncerrada) {
+      if (!(req.user.role === 'administrador' || (await ehGestorFinal(req.user.id)))) return res.status(403).json({ error: 'Só o gestor final ou a administração reabrem uma ocorrência encerrada.' });
+    } else if (!(await podeCancelarOuReabrir(req, reg))) return res.status(403).json({ error: 'Só o gestor do departamento, o gestor final ou a administração reabrem uma ocorrência.' });
+    let alvo;
+    if (reabreEncerrada) { const t = transicao('reabrir_encerrada', reg.etapa); if (!t.ok) return res.status(409).json({ error: t.erro }); alvo = { para: t.para, status: t.status }; }
+    else if (reg.etapa === 'cancelada') alvo = destinoDaReabertura(reg.etapa_antes);
+    else return res.status(409).json({ error: 'Só dá para reabrir uma ocorrência encerrada ou cancelada.' });
+    const v = validarMotivo(req.body);
+    if (!v.ok) return res.status(400).json({ error: v.erro });
+    if (reg.origem === 'filha' && reg.pai_id) {   // a vinculada só volta enquanto a original ainda está em tratamento
+      const pai = (await pool.query('SELECT etapa FROM cs_qualidade_registros WHERE id = $1', [reg.pai_id])).rows[0];
+      if (!pai || !['registrada', 'tratativa_definida', 'com_analista'].includes(pai.etapa)) return res.status(409).json({ error: 'A ocorrência original já passou da fase de tratamento (ou foi cancelada): reabra a original primeiro.' });
+    }
+    const limpar = reabreEncerrada ? ', resolvido_em = NULL, resolvido_por = NULL, encerrada_em = NULL, encerrada_por = NULL, final_nota = NULL, final_obs = NULL, validacao_nota = NULL, validacao_obs = NULL, validacao_em = NULL, validacao_por = NULL' : '';
+    const up = await pool.query('UPDATE cs_qualidade_registros SET etapa = $1, status = $2, etapa_antes = NULL' + limpar + ', atualizado_em = NOW() WHERE id = $3 AND etapa = $4', [alvo.para, alvo.status, reg.id, reg.etapa]);
+    if (!up.rowCount) return res.status(409).json({ error: JA_MUDOU });
+    if (reabreEncerrada) await pool.query('UPDATE cs_qualidade_resp SET encerrado_em = NULL WHERE registro_id = $1', [reg.id]);   // cada responsável trata e encerra de novo
+    await registrar(reg.id, req.user.name, 'reaberta', v.valores.motivo);
+    if (alvo.para === 'com_analista') avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Ocorrência reaberta', texto: (reg.cliente_nome || 'Empresa') + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(v.valores.motivo, 100), url: '/cs?aba=analista', tag: 'reab-' + reg.id + '-' + Date.now() }, req.user.id);
+    res.json({ registro: await registroCompleto(reg.id) });
+  } catch (e) { console.error('[qualidade] POST reabrir falhou:', e); res.status(500).json({ error: 'Erro ao reabrir a ocorrência.' }); }
+});
+
 /** PORTAL DO SUCESSO DO CLIENTE: todas as ocorrências (o dashboard de todos). Vê a equipe do painel e quem é do Sucesso do Cliente; só o gestor final encerra. */
 async function podeVerSucesso(req) {
   if (podeEquipe(req.user)) return true;
@@ -1232,7 +1307,7 @@ router.get('/sucesso/ocorrencias', async (req, res) => {
   try {
     await garantirSchema();
     if (!(await podeVerSucesso(req))) return res.status(403).json({ error: 'O portal do Sucesso do Cliente é da equipe do Sucesso do Cliente.' });
-    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.origem IN ('modulo', 'filha') AND r.status <> 'cancelado' ORDER BY (r.etapa = 'devolutiva_cliente') DESC, r.criado_em DESC LIMIT 500`);
+    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.origem IN ('modulo', 'filha') ORDER BY (r.etapa = 'devolutiva_cliente') DESC, r.criado_em DESC LIMIT 500`);
     res.json({ final: await ehGestorFinal(req.user.id), registros: await completar(rows) });
   } catch (e) { console.error('[qualidade] GET /sucesso/ocorrencias falhou:', e); res.status(500).json({ error: 'Erro ao ler as ocorrências do Sucesso do Cliente.' }); }
 });
@@ -1585,4 +1660,4 @@ routerAnalista.post('/:id/nota', async (req, res) => {
   } catch (e) { console.error('[qualidade] POST /nota falhou:', e); res.status(500).json({ error: 'Erro ao salvar a nota.' }); }
 });
 
-module.exports = { mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };

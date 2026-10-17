@@ -81,6 +81,8 @@ teste('logs: cada ação que muda algo vira uma frase clara (e consulta nunca vi
   assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/filha', { assunto: 'Alinhar com o Bruno' }).texto, 'Abriu uma ocorrência vinculada: Alinhar com o Bruno');
   assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/validar').acao, 'validar');
   assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/devolver').acao, 'devolver');
+  assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/cancelar', { motivo: 'Duplicada' }).texto, 'Cancelou a ocorrência: Duplicada');
+  assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/reabrir', { motivo: 'Cliente voltou' }).acao, 'reabrir');
   assert.strictEqual(d('POST', '/api/cs/painel/qualidade/analista/ocorrencias/abc/encerrar').texto, 'Encerrou a sua parte da tratativa');
   assert.strictEqual(d('POST', '/api/cs/painel/qualidade/analista/ocorrencias/abc/nota').acao, 'editar');
   assert.strictEqual(d('POST', '/api/cs/painel/qualidade/sucesso/ocorrencias/abc/encerrar').texto, 'Encerrou o processo (gestor final)');

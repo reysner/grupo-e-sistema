@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { TIPO_PLANO, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { TIPO_PLANO, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -141,6 +141,7 @@ teste('lista branca do gestor/analista: registrar, ver as próprias, perfil, ges
   ['/analista/ocorrencias/u1/nota', '/analista/ocorrencias/u1/encerrar', '/gestor/ocorrencias/u1/validar', '/gestor/ocorrencias/u1/devolver', '/sucesso/ocorrencias/u1/encerrar'].forEach((c) => ok('POST', c));
   no('POST', '/sucesso/ocorrencias/u1/abrir'); no('POST', '/analista/ocorrencias/u1/validar'); no('POST', '/gestor/ocorrencias/u1/encerrar'); no('GET', '/analista/ocorrencias/u1'); no('PUT', '/sucesso/ocorrencias/u1/encerrar'); no('DELETE', '/analista/ocorrencias/u1');
   ok('POST', '/gestor/ocorrencias/u1/filha'); no('POST', '/gestor/ocorrencias/u1/excluir'); no('POST', '/analista/ocorrencias/u1/filha');
+  ok('POST', '/gestor/ocorrencias/u1/cancelar'); ok('POST', '/gestor/ocorrencias/u1/reabrir'); no('POST', '/analista/ocorrencias/u1/cancelar'); no('DELETE', '/gestor/ocorrencias/u1/cancelar');
   no('POST', '/'); no('POST', '/gestores'); no('POST', '/tipos'); no('PATCH', '/abc'); no('DELETE', '/abc'); no('DELETE', '/gestores/1'); no('PUT', '/vinculo/1'); no('PUT', '/gestor/ocorrencias/x'); no('POST', '/gestor/ocorrencias/x/tratar');
 });
 teste('escopo do Portal do Gestor: administração vê tudo; gestor vê os departamentos dele; gestor do Sucesso também vê o que ficou sem gestor', () => {
@@ -175,7 +176,7 @@ teste('tratativa do gestor: plano, responsável, departamento (o da ocorrência 
   assert.strictEqual(validarTratativaGestor(Object.assign({}, b, { obs: 'a'.repeat(601) }), 'Fiscal', '2026-10-17').ok, false);
 });
 teste('etapa → status do risco: aberta até a tratativa; em tratamento com o analista; finalizada na validação e na devolutiva; resolvida ao encerrar', () => {
-  assert.deepStrictEqual(ETAPA_STATUS, { registrada: 'aberto', tratativa_definida: 'aberto', com_analista: 'em_tratamento', validacao_gestor: 'finalizada', devolutiva_cliente: 'finalizada', encerrada: 'resolvido' });
+  assert.deepStrictEqual(ETAPA_STATUS, { registrada: 'aberto', tratativa_definida: 'aberto', com_analista: 'em_tratamento', validacao_gestor: 'finalizada', devolutiva_cliente: 'finalizada', encerrada: 'resolvido', cancelada: 'cancelado' });
 });
 teste('gestores: o papel "final" (quem encerra no Sucesso do Cliente) é aceito', () => {
   assert.strictEqual(validarGestor({ user_id: 'u1', departamento: 'Sucesso', papel: 'final' }).valores.papel, 'final');
@@ -201,7 +202,13 @@ teste('fluxo: cada passo só sai da etapa certa e leva à seguinte (e o status d
   assert.strictEqual(v('final_encerrar', 'encerrada').ok, false, 'não encerra duas vezes');
   assert.strictEqual(v('inventada', 'registrada').ok, false);
   assert.ok(v('final_encerrar', 'registrada').erro.includes('não foi validada'));
-  assert.deepStrictEqual(Object.keys(TRANSICOES), ['abrir', 'analista_encerrar', 'gestor_devolver', 'gestor_validar', 'filha_validar', 'final_encerrar']);
+  assert.deepStrictEqual(Object.keys(TRANSICOES), ['abrir', 'analista_encerrar', 'gestor_devolver', 'gestor_validar', 'filha_validar', 'cancelar', 'reabrir_encerrada', 'final_encerrar']);
+  assert.deepStrictEqual(v('cancelar', 'com_analista'), { ok: true, para: 'cancelada', status: 'cancelado' });
+  assert.deepStrictEqual(v('cancelar', 'registrada'), { ok: true, para: 'cancelada', status: 'cancelado' });
+  assert.strictEqual(v('cancelar', 'encerrada').ok, false, 'encerrada não se cancela: reabre');
+  assert.strictEqual(v('cancelar', 'cancelada').ok, false, 'não cancela duas vezes');
+  assert.deepStrictEqual(v('reabrir_encerrada', 'encerrada'), { ok: true, para: 'com_analista', status: 'em_tratamento' });
+  assert.strictEqual(v('reabrir_encerrada', 'com_analista').ok, false);
   assert.deepStrictEqual(v('filha_validar', 'validacao_gestor'), { ok: true, para: 'encerrada', status: 'resolvido' }, 'a filha validada já está encerrada');
   assert.strictEqual(v('filha_validar', 'com_analista').ok, false);
 });
@@ -238,9 +245,20 @@ teste('renomear analista: nenhum arquivo troca espaços por uma regex sem a barr
   const limpa = (t) => String(t || '').split(/\s+/).join(' ').trim();
   assert.strictEqual(limpa('  Maira   Soares '), 'Maira Soares');
 });
+teste('cancelar e reabrir: motivo obrigatório; cancelada volta para a etapa em que estava; sem etapa conhecida volta ao começo', () => {
+  assert.strictEqual(validarMotivo({ motivo: '  Duplicada  ' }).valores.motivo, 'Duplicada');
+  assert.strictEqual(validarMotivo({ motivo: 'ok' }).ok, false);
+  assert.strictEqual(validarMotivo({}).ok, false);
+  assert.strictEqual(validarMotivo({ motivo: 'a'.repeat(601) }).ok, false);
+  assert.deepStrictEqual(destinoDaReabertura('com_analista'), { para: 'com_analista', status: 'em_tratamento' });
+  assert.deepStrictEqual(destinoDaReabertura('validacao_gestor'), { para: 'validacao_gestor', status: 'finalizada' });
+  assert.deepStrictEqual(destinoDaReabertura('registrada'), { para: 'registrada', status: 'aberto' });
+  assert.deepStrictEqual(destinoDaReabertura(null), { para: 'registrada', status: 'aberto' }, 'sem registro da etapa anterior');
+  assert.deepStrictEqual(destinoDaReabertura('encerrada'), { para: 'registrada', status: 'aberto' }, 'encerrada não é destino de reabertura de cancelada');
+});
 teste('mudança de etapa: todo UPDATE que muda a etapa (ou define a tratativa) só vale se a ocorrência ainda estiver na etapa de onde sai (duplo clique ou duas pessoas ao mesmo tempo)', () => {
   const fonte = require('fs').readFileSync(require('path').join(__dirname, 'qualidade.js'), 'utf8');
-  const partidas = ["SET etapa = 'encerrada'", 'SET etapa = $1', 'SET plano_acao = $1', "SET etapa = 'com_analista'"];
+  const partidas = ["SET etapa = 'encerrada'", 'SET etapa = $1', 'SET plano_acao = $1', "SET etapa = 'com_analista'"];   // (o cancelar tem a mesma trava, conferida logo abaixo)
   let achadas = 0;
   partidas.forEach((p) => {
     let i = fonte.indexOf('UPDATE cs_qualidade_registros ' + p);
@@ -253,6 +271,7 @@ teste('mudança de etapa: todo UPDATE que muda a etapa (ou define a tratativa) s
   });
   assert.ok(achadas >= 7, 'esperava achar as mudanças de etapa (achei ' + achadas + ')');
   assert.ok(fonte.includes('const JA_MUDOU'), 'a mensagem para quem chegou depois existe');
+  assert.ok(fonte.includes("etapa = 'cancelada', status = 'cancelado', atualizado_em = NOW() WHERE id = $1 AND etapa = $2"), 'cancelar também só vale na etapa de origem');
 });
 teste('quem pode ser gestor: só os analistas ativos (nome completo, com login direto ou pelo nome); sem login fica desabilitado; administrador sem analista entra para diretor/gestor final', () => {
   const an = [{ nome: 'Josiane Alves de Oliveira Cezario', user_id: null, ativo: true }, { nome: 'Annaisa Alves de Oliveira', user_id: '7', ativo: true }, { nome: 'Fulano Sem Login', user_id: null, ativo: true }, { nome: 'Antigo Desativado', user_id: null, ativo: false }];
@@ -306,7 +325,7 @@ teste('Portal do Sucesso do Cliente acompanha TODOS os casos: a lista não filtr
   const fonte = require('fs').readFileSync(require('path').join(__dirname, 'qualidade.js'), 'utf8');
   const i = fonte.indexOf("router.get('/sucesso/ocorrencias'"), j = fonte.indexOf("router.post('/sucesso/ocorrencias/:id/encerrar'", i);
   const rota = fonte.slice(i, j);
-  assert.ok(rota.includes("r.origem IN ('modulo', 'filha')") && rota.includes("r.status <> 'cancelado'"), 'lista tudo que não foi cancelado, ocorrências e filhas');
+  assert.ok(rota.includes("r.origem IN ('modulo', 'filha')") && !rota.includes("r.status <> 'cancelado'"), 'lista tudo, inclusive as canceladas (com a etapa Cancelada): ocorrências e filhas');
   const semOrdem = rota.split('ORDER BY')[0];
   assert.ok(!semOrdem.includes('departamentos') && !semOrdem.includes('r.fila') && !semOrdem.includes('etapa NOT IN') && !semOrdem.includes('criado_por_id'), 'sem filtro por departamento, fila, etapa ou quem abriu');
   const k = fonte.indexOf("router.post('/ocorrencias'"), l = fonte.indexOf('res.status(201)', k);
