@@ -29,7 +29,7 @@ const TIPOS = ['Multa', 'Erro', 'Reclamação', 'Atraso', 'Falha de atendimento'
 const DEPARTAMENTOS = ['Comercial', 'Contábil', 'Financeiro', 'Fiscal', 'Legalização', 'Pessoal', 'Sucesso'];
 const STATUS = ['aberto', 'em_tratamento', 'finalizada', 'resolvido', 'cancelado'];
 const ROTULO_STATUS = { aberto: 'Aberto', em_tratamento: 'Em tratamento', finalizada: 'Finalizada (aguardando validação)', resolvido: 'Resolvido', cancelado: 'Cancelado' };
-const MAX_DETALHE = 2000;   // "Descreva a tratativa" da ficha e "Descrição / Detalhes da ocorrência" (era 600; ampliado a pedido do Reysner, 17/10/2026)
+const MAX_DETALHE = 1500;   // "Descreva a tratativa" da ficha, "Descrição / Detalhes da ocorrência" e plano de ação do gestor (era 600; 2000 em 17/10/2026; 1500 em 18/10/2026 para a tela ficar mais curta)
 const PRIORIDADES = ['Muito Alta', 'Alta', 'Média', 'Baixa'];
 const PAPEIS_GESTOR = ['gestor', 'diretor', 'final'];   // final = o gestor que encerra o processo no portal do Sucesso do Cliente (etapa 3)
 /**

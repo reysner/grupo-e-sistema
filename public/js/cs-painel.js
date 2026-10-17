@@ -407,11 +407,12 @@
     var lista = p.saidas.filter(function (s) { return s.tipo === estado.abaChurn; });
     // Saída "a confirmar" (sem motivo no Acessórias e sem resposta da Receita): o administrador decide se conta como churn. Vale no mês da saída.
     var decide = !!(d.usuario && d.usuario.papel === 'administrador') && lista.some(function (s) { return s.origem === 'presumida'; });
+    var mostraMotivo = estado.abaChurn !== 'baixa';   // baixa não é churn: não tem motivo para classificar
     var linhas = lista.map(function (s) {
       var t = TIPO_SAIDA[s.tipo];
       return '<tr><td style="white-space:normal">' + esc(s.nome) + '<div class="sub">' + esc(s.cnpj || '') + '</div></td><td class="c">' + data(s.data_entrada) + '</td><td class="c">' + data(s.data_saida) + '</td>' +
         '<td class="c"><span class="pill" style="color:' + t.cor + ';border-color:' + t.cor + '55;background:' + t.cor + '14">' + t.rot + '</span></td>' +
-        '<td>' + selectMotivoChurn(s) + '</td>' +
+        (mostraMotivo ? '<td>' + selectMotivoChurn(s) + '</td>' : '') +
         (decide ? '<td class="c" style="white-space:nowrap">' + (s.origem !== 'presumida' ? '' : '<button class="gp-footer-btn" style="width:auto;padding:4px 8px;display:inline-flex" data-decide="transferida" data-id="' + esc(s.id) + '" data-nome="' + esc(s.nome) + '" data-saida="' + esc(s.data_saida) + '" title="Confirma a transferência (conta como churn no mês da saída)">Confirmar transferência</button> <button class="gp-footer-btn" style="width:auto;padding:4px 8px;display:inline-flex" data-decide="baixa" data-id="' + esc(s.id) + '" data-nome="' + esc(s.nome) + '" data-saida="' + esc(s.data_saida) + '" title="É baixa: não conta como churn">É baixa</button>') + '</td>' : '') + '</tr>';
     }).join('');
     $('sec-churn').innerHTML =
@@ -425,7 +426,7 @@
       '<div class="nota">Período de <strong>' + data(p.ini) + '</strong> a <strong>' + data(p.fim) + '</strong>. Contam como churn as saídas cujo motivo no Acessórias começa com: <strong>' + d.churn.padroes.map(esc).join('</strong>, <strong>') + '</strong>. Baixas não contam. Quando o Acessórias não informa o motivo, a situação do CNPJ na Receita ajuda a separar baixa de transferência; o que não for possível é presumido como transferência (marcado "presumida"; o administrador pode trocar para baixa). Só CNPJ.</div>' +
       '<div class="card"><div class="card-title">Saídas do período</div><div class="card-sub">Clique na aba para ver cada tipo de saída.</div>' +
         '<div class="tabs" id="abas-churn">' + abas.map(function (a) { return '<button data-aba="' + a[0] + '" class="' + (estado.abaChurn === a[0] ? 'active' : '') + '">' + a[1] + ' (' + cont(a[0]) + ')</button>'; }).join('') + '</div>' +
-        (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Entrada</th><th class="c">Saída</th><th class="c">Tipo</th><th>Motivo do churn</th>' + (decide ? '<th class="c">Decisão</th>' : '') + '</tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhuma saída deste tipo no período.</div>') +
+        (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Entrada</th><th class="c">Saída</th><th class="c">Tipo</th>' + (mostraMotivo ? '<th>Motivo do churn</th>' : '') + (decide ? '<th class="c">Decisão</th>' : '') + '</tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhuma saída deste tipo no período.</div>') +
       '</div>' +
       '<div class="gp-chart-card"><div class="gp-chart-title">Churn mês a mês — últimos 12 meses</div><div class="gp-chart-wrap"><canvas id="g-churn2"></canvas></div></div>';
     ligarSelectsMotivo('#sec-churn', function () { desenharChurn(); });
@@ -1604,8 +1605,9 @@
     var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); estado.qOpcoes = null; estado.qResumo = null; if (aoFechar) aoFechar(); };
     var desenhar = async function () {
       var j = await api('/api/cs/painel/qualidade/tipos');
-      ov.innerHTML = '<div class="qa-modal" role="dialog" aria-label="Gerenciar tipos de registro"><div class="qa-modal-topo"><strong>Gerenciar tipos de registro</strong><button type="button" class="qa-x" id="qt-fechar" aria-label="Fechar">✕</button></div>' +
+      ov.innerHTML = '<div class="qa-modal qa-modal-gest" role="dialog" aria-label="Gerenciar tipos de registro"><div class="qa-modal-topo"><strong>Gerenciar tipos de registro</strong><button type="button" class="qa-x" id="qt-fechar" aria-label="Fechar">✕</button></div>' +
         '<div class="cinza" style="font-size:12px;margin-bottom:10px">O <strong>peso</strong> é quantos pontos o registro soma no termômetro de Atendimento do risco do cliente (0 só registra, sem pesar; máximo 50).</div>' +
+        '<details class="qa-resumo-calc" open style="margin-bottom:12px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface2)"><summary style="cursor:pointer;font-weight:700;font-size:13px">Como o peso entra no cálculo do risco de churn</summary><div style="display:grid;gap:8px;margin-top:8px;font-size:12.5px;line-height:1.5">' + resumoCalculoQ() + '</div></details>' +
         '<div class="qa-modal-novo"><input id="qt-novo" type="text" maxlength="40" placeholder="Novo tipo (ex.: Retrabalho)"><input id="qt-peso-novo" type="number" min="0" max="50" value="10" style="max-width:70px" title="Peso no risco (pontos)"><button type="button" class="gp-footer-btn" id="qt-add" style="width:auto">+ Adicionar</button></div>' +
         '<div class="qa-modal-lista">' + j.tipos.map(function (t) {
           return '<div class="qa-an-linha" data-id="' + t.id + '"><span style="display:flex;gap:6px;align-items:center;flex:1;min-width:0">' +
@@ -1751,15 +1753,20 @@
   });
 
   /** Quadro "Como a Tratativa pesa no risco de churn": só o administrador vê; o peso de cada tipo se edita aqui e tipos novos já entram no formulário. */
+  /** O resumo de como as ocorrências pesam no termômetro Tratativas do risco (texto único, usado na janela de Tipos de registro). */
+  function resumoCalculoQ() {
+    return '' +
+      '<div><strong>Quem alimenta</strong><br>Só o que é <strong>registrado no módulo Qualidade</strong> (erro, multa, reclamação, atraso, falha…): aparece nos Sinais de atenção da ficha, na seção Qualidade da empresa, no card Tratativas da Visão Geral e pesa no risco, que agora tem quatro critérios: Financeiro, Atendimento, Operacional e Tratativas. O plano de ação escrito na ficha ("Descreva a tratativa") <strong>não conta</strong>.</div>' +
+      '<div><strong>Como cada ocorrência pesa</strong><br>Vale o <strong>dobro do peso do seu tipo</strong> (tabela abaixo), multiplicado por: 1,5 se o prazo venceu · 1 em aberto ou em tratamento · 0,5 finalizada aguardando validação · 0,25 resolvida. Ocorrência com mais de 45 dias vale metade. Vale o que foi registrado nos últimos 90 dias, a soma é limitada a 100 por cliente e a cancelada não entra.</div>' +
+      '<div><strong>Quando entra na média</strong><br>Só enquanto houver tratativa em aberto (aberta, em tratamento ou finalizada aguardando validação). Sem pendência o termômetro fica de fora: uma tratativa resolvida não esconde um cliente com Financeiro alto e o risco não vira "parcial" à toa. Um termômetro a partir de 75 pontos já gera alerta e sobe o cliente para, no mínimo, Médio.</div>';
+  }
   function comoPesaTratativa(tipos, aberto) {
     var linhas = (tipos || []).map(function (t) {
       return '<tr><td>' + esc(t.nome) + '</td><td class="c"><input type="number" class="qt-inline" min="0" max="50" value="' + t.peso + '" data-tid="' + esc(t.id) + '" aria-label="Peso de ' + esc(t.nome) + '"></td><td class="c"><strong>' + (t.peso * 2) + '</strong></td></tr>';
     }).join('');
     var novo = '<tr><td><input type="text" class="qt-novo-nome" id="qpn-nome" maxlength="40" placeholder="Novo tipo (ex.: Retrabalho)"></td><td class="c"><input type="number" class="qt-inline" id="qpn-peso" min="0" max="50" value="10" aria-label="Peso do novo tipo"></td><td class="c"><button type="button" class="gp-footer-btn" id="qpn-add" style="width:auto">+ Adicionar tipo</button></td></tr>';
     return '<details class="card leg" id="q-peso-box"' + (aberto ? ' open' : '') + ' style="padding:12px 20px"><summary><span class="seta">▶</span> 🔒 Como a Tratativa pesa no risco de churn <span style="font-weight:500;text-transform:none;letter-spacing:0">(só administradores · clique para expandir)</span></summary><div class="corpo">' +
-      '<div><strong>Quem alimenta</strong><br>Só o que é <strong>registrado no módulo Qualidade</strong> (erro, multa, reclamação, atraso, falha…): aparece nos Sinais de atenção da ficha, na seção Qualidade da empresa, no card Tratativas da Visão Geral e pesa no risco, que agora tem quatro critérios: Financeiro, Atendimento, Operacional e Tratativas. O plano de ação escrito na ficha ("Descreva a tratativa") <strong>não conta</strong>.</div>' +
-      '<div><strong>Como cada ocorrência pesa</strong><br>Vale o <strong>dobro do peso do seu tipo</strong> (tabela abaixo), multiplicado por: 1,5 se o prazo venceu · 1 em aberto ou em tratamento · 0,5 finalizada aguardando validação · 0,25 resolvida. Ocorrência com mais de 45 dias vale metade. Vale o que foi registrado nos últimos 90 dias, a soma é limitada a 100 por cliente e a cancelada não entra.</div>' +
-      '<div><strong>Quando entra na média</strong><br>Só enquanto houver tratativa em aberto (aberta, em tratamento ou finalizada aguardando validação). Sem pendência o termômetro fica de fora: uma tratativa resolvida não esconde um cliente com Financeiro alto e o risco não vira "parcial" à toa. Um termômetro a partir de 75 pontos já gera alerta e sobe o cliente para, no mínimo, Médio.</div>' +
+      resumoCalculoQ() +
       '<div><strong>Pesos por tipo</strong> <span class="cinza">(edite o peso e saia do campo para salvar; um tipo novo já aparece no formulário Registrar ocorrência)</span>' +
         '<div class="table-wrap" style="margin-top:6px"><table><thead><tr><th>Tipo</th><th class="c">Peso do tipo (0 a 50)</th><th class="c">Vale na Tratativa (×2)</th></tr></thead><tbody>' + linhas + novo + '</tbody></table></div></div>' +
       '</div></details>';
@@ -1805,12 +1812,12 @@
         '<div class="qa-campo"><label for="oc-tipo">Tipo de ocorrência <span class="req">*</span>' + (ehAdminPainel() ? ' <a href="#" id="oc-editar-tipos" class="qa-lnk">(editar lista)</a>' : '') + '</label><select id="oc-tipo">' + tipos + '</select></div>' +
         '<div class="qa-campo"><label for="oc-dep">Departamento</label><select id="oc-dep">' + deps + '</select></div>' +
       '</div>' +
-      '<div class="qa-campo"><label for="oc-det">Descrição / Detalhes da ocorrência <span class="cinza" id="oc-cont">0/' + (o.max_detalhe || 2000) + '</span></label><textarea id="oc-det" rows="6" maxlength="' + (o.max_detalhe || 2000) + '" placeholder="Descrição / Detalhes da ocorrência"></textarea></div>' +
+      '<div class="qa-campo"><label for="oc-det">Descrição / Detalhes da ocorrência <span class="cinza" id="oc-cont">0/' + (o.max_detalhe || 1500) + '</span></label><textarea id="oc-det" rows="6" maxlength="' + (o.max_detalhe || 1500) + '" placeholder="Descrição / Detalhes da ocorrência"></textarea></div>' +
       '<div class="qa-oc-linha qa-oc-bot"><button type="button" class="qa-btn-ok" id="oc-ok">✉ OK - Registrar</button><button type="button" class="qa-btn-cancel" id="oc-cancel">' + (emTela ? '↩ Limpar' : '↩ Cancelar') + '</button></div>' +
       '<div class="pop-erro" id="oc-erro" role="alert"></div>';
   }
 
-  /** Janela "Registrar ocorrência": empresa com sugestão ao digitar, descrição até 2000, anexos; ao registrar vai para o módulo, os Sinais de atenção e o risco. */
+  /** Janela "Registrar ocorrência": empresa com sugestão ao digitar, descrição até 1500, anexos; ao registrar vai para o módulo, os Sinais de atenção e o risco. */
   async function abrirRegistrarOcorrencia(aoSalvar, raiz) {
     estado.qOpcoes = null;   // sempre a lista de tipos atual (outro administrador pode ter criado ou editado tipos)
     var o; try { o = await carregarOpcoesQ(); } catch (e) { window.alert(e.message || 'Não foi possível abrir o formulário.'); return; }
@@ -1839,7 +1846,7 @@
     });
     var campo = $('oc-emp'), lista = $('oc-emp-lista'), sel = $('oc-emp-sel'), det = $('oc-det'), erro = $('oc-erro');
     var emp = null, itens = [], idx = -1, tmr = null;
-    det.addEventListener('input', function () { $('oc-cont').textContent = det.value.length + '/' + (o.max_detalhe || 2000); });
+    det.addEventListener('input', function () { $('oc-cont').textContent = det.value.length + '/' + (o.max_detalhe || 1500); });
     var desenhaLista = function () {
       lista.hidden = false;
       lista.innerHTML = itens.length ? itens.map(function (e, i) { return '<div class="qa-oc-item' + (i === idx ? ' ativo' : '') + '" data-i="' + i + '">' + esc(e.nome) + ' <span class="cinza">' + esc(e.cnpj || '') + '</span></div>'; }).join('')
@@ -2428,7 +2435,7 @@
         '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="gt-cancel">Fechar</button></div>';
     }
     return topo + '<div class="ficha-sec">Criar a tratativa</div>' +
-      '<div class="qa-campo"><label for="gt-plano">Plano de ação <span class="req">*</span> <span class="cinza" id="gt-cont">0/2000</span></label><textarea id="gt-plano" rows="5" maxlength="2000" placeholder="O que será feito para resolver e evitar que se repita">' + esc(r.plano_acao || '') + '</textarea></div>' +
+      '<div class="qa-campo"><label for="gt-plano">Plano de ação <span class="req">*</span> <span class="cinza" id="gt-cont">0/1500</span></label><textarea id="gt-plano" rows="5" maxlength="2000" placeholder="O que será feito para resolver e evitar que se repita">' + esc(r.plano_acao || '') + '</textarea></div>' +
       '<div class="qa-oc-linha qa-g-grid">' +
         '<div class="qa-campo"><label for="gt-analista">Responsável <span class="req">*</span></label><select id="gt-analista">' + optA + '</select></div>' +
         '<div class="qa-campo"><label for="gt-depto">Departamento que trata <span class="req">*</span></label><select id="gt-depto">' + optD + '</select></div>' +
@@ -2463,8 +2470,8 @@
     }
     if (!$('gt-salvar')) return;
     var plano = $('gt-plano'), erro = $('gt-erro');
-    plano.addEventListener('input', function () { $('gt-cont').textContent = plano.value.length + '/2000'; });
-    $('gt-cont').textContent = plano.value.length + '/2000';
+    plano.addEventListener('input', function () { $('gt-cont').textContent = plano.value.length + '/1500'; });
+    $('gt-cont').textContent = plano.value.length + '/1500';
     var salvar = async function (abrir) {
       erro.textContent = '';
       var corpo = { plano: plano.value, analista_id: $('gt-analista').value, departamento: $('gt-depto').value, prazo: $('gt-prazo').value, obs: $('gt-obs').value };
@@ -2557,7 +2564,6 @@
         quem.map(function (a) { return '<button type="button" class="gp-footer-btn" data-qan="' + esc(a.id) + '" style="width:auto">' + esc(a.nome) + ' (' + a.a_validar + ')</button>'; }).join('') + '</div></div>';
     }
     alvo.innerHTML =
-      '<div class="card qa-modal-oc qa-oc-inline" id="q-form-inline"><div class="vazio">Carregando o formulário…</div></div>' +
       '<div class="gp-kpi-row">' +
         kpi('#7c3aed', 'A validar', tot.a_validar, 'finalizadas pelo analista, aguardando você') +
         kpi('#b45309', 'Em aberto', tot.abertos, 'aguardando o analista começar') +
@@ -2565,7 +2571,9 @@
         kpi('#b91c1c', 'Vencidos', tot.vencidos, 'prazo passou e ainda não foi resolvido') +
         kpi('#166534', 'Resolvidos', tot.resolvidos, 'considerações encerradas') +
       '</div>' +
-      aviso + recentesQ();
+      aviso +
+      '<div class="card qa-modal-oc qa-oc-inline" id="q-form-inline"><div class="vazio">Carregando o formulário…</div></div>' +
+      recentesQ();
     var atualiza = function () { estado.qResumo = null; desenharQualidadeMod(); };
     var fi = $('q-form-inline'); if (fi) abrirRegistrarOcorrencia(atualiza, fi);
     Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-qan]'), function (bt) { bt.addEventListener('click', function () { abrirFichaAnalistaQ(bt.getAttribute('data-qan')); }); });

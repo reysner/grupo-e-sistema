@@ -26,9 +26,9 @@ teste('"Todos" vira todos os departamentos; departamento desconhecido é ignorad
   assert.strictEqual(validarRegistro(Object.assign({}, base, { departamentos: ['Marte'] }), HOJE).ok, false);
   assert.strictEqual(validarRegistro(Object.assign({}, base, { departamentos: [] }), HOJE).ok, false);
 });
-teste('descrição: mínimo de 5 e máximo de 2000 caracteres', () => {
+teste('descrição: mínimo de 5 e máximo de 1500 caracteres', () => {
   assert.strictEqual(validarRegistro(Object.assign({}, base, { detalhe: 'oi' }), HOJE).ok, false);
-  assert.strictEqual(validarRegistro(Object.assign({}, base, { detalhe: 'a'.repeat(2000) }), HOJE).ok, true);
+  assert.strictEqual(validarRegistro(Object.assign({}, base, { detalhe: 'a'.repeat(1500) }), HOJE).ok, true);
   assert.strictEqual(validarRegistro(Object.assign({}, base, { detalhe: 'a'.repeat(2001) }), HOJE).ok, false);
 });
 teste('prazo: hoje vale, ontem não, além de um ano não; cliente e analista são obrigatórios', () => {
@@ -252,7 +252,7 @@ teste('ocorrência: prazo para execução é obrigatório, não pode ser passado
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prazo: '2026-10-15' }), t, '2026-10-16').ok, false, 'ontem não');
 });
 
-teste('ocorrência: empresa, assunto (3 a 100), tipo da lista e descrição (5 a 2000, mantém as quebras de linha)', () => {
+teste('ocorrência: empresa, assunto (3 a 100), tipo da lista e descrição (5 a 1500, mantém as quebras de linha)', () => {
   const t = ['Erro'];
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { cliente_id: '' }), t).ok, false);
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { assunto: 'ab' }), t).ok, false);
@@ -261,7 +261,7 @@ teste('ocorrência: empresa, assunto (3 a 100), tipo da lista e descrição (5 a
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { tipo: 'Multa' }), t).ok, false, 'tipo fora da lista ativa');
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { tipo: 'Retrabalho' }), ['Retrabalho']).ok, true, 'tipo novo cadastrado entra na lista');
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { detalhe: 'oi' }), t).ok, false);
-  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { detalhe: 'a'.repeat(2000) }), t).ok, true);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { detalhe: 'a'.repeat(1500) }), t).ok, true);
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { detalhe: 'a'.repeat(2001) }), t).ok, false);
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { detalhe: 'linha 1\r\nlinha 2  \nlinha 3' }), t).valores.detalhe, 'linha 1\nlinha 2\nlinha 3');
 });

@@ -459,3 +459,7 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 /* Registrar ocorrência direto na tela de Qualidade (18/10/2026) */
 .qa-oc-inline{padding:24px 28px;}
 .qa-oc-inline .qa-oc-bot{max-width:none;}
+
+.qa-oc-inline{padding:18px 24px;}
+.qa-oc-inline textarea{min-height:110px;}
+.qa-oc-inline .qa-modal-topo{margin-bottom:6px;}
