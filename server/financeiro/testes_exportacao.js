@@ -457,7 +457,7 @@ const semLixo = (e, nome) => {
     assert.strictEqual(C.t.dataHora(null), '—');
     assert.strictEqual(C.t.dataHora('lixo'), 'lixo'.slice(8, 10) + '/' + 'lixo'.slice(5, 7) + '/' + 'lixo'.slice(0, 4), 'valor estranho não quebra a tela');
     const f = C.t.formularioOcorrenciaQ({ tipos: ['Erro'], analistas: [] }, true);
-    assert.ok(/em <strong>\d{2}\/\d{2}\/\d{4} às \d{2}:\d{2}<\/strong>/.test(f), 'o formulário mostra a data e a hora do registro');
+    assert.ok(/em <strong>\d{2}\/\d{2}\/\d{4}<\/strong>\./.test(f) && !/às \d{2}:\d{2}/.test(f), 'o formulário mostra só a data (o horário real é gravado ao registrar)');
   });
   await teste('cs: perfil no /cs — administrador vê tudo; gestor só Qualidade e Portal do Gestor; analista só Qualidade e Portal do Analista; equipe de sempre não ganha os portais', () => {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.perfilDe({ role: 'administrador' }))), { completo: true, admin: true, gestor: true, analista: true });

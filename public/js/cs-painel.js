@@ -1853,7 +1853,7 @@
     var pri = (o.prioridades || ['Muito Alta', 'Alta', 'Média', 'Baixa']).map(function (p) { return '<option' + (p === 'Média' ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('');
     return '<div class="qa-modal-topo"><strong style="font-size:22px;color:#256050">Registrar ocorrência</strong>' + (emTela ? '' : '<button type="button" class="qa-x" id="oc-fechar" aria-label="Fechar">✕</button>') + '</div>' +
       '<div class="qa-oc-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</div>' +
-      '<div class="qa-oc-quem">Registrando como <strong>' + esc(usuarioLogadoNome() || 'você') + '</strong> em <strong>' + dataHora(new Date().toISOString()) + '</strong>. Quem registra, a data e o horário ficam gravados na ocorrência.</div>' +
+      '<div class="qa-oc-quem">Registrando como <strong>' + esc(usuarioLogadoNome() || 'você') + '</strong> em <strong>' + hojeIsoLocal().split('-').reverse().join('/') + '</strong>. Quem registra, a data e o horário ficam gravados na ocorrência.</div>' +
       '<div class="qa-oc-linha qa-oc-l1">' +
         '<div class="qa-campo"><label for="oc-assunto">Assunto da ocorrência</label><input type="text" id="oc-assunto" maxlength="100" placeholder="Qual o assunto da ocorrência?"></div>' +
         '<div class="qa-campo"><label for="oc-resp">Responsável' + (ehAdminPainel() ? ' <a href="#" id="oc-editar-resp" class="qa-lnk">(editar lista)</a>' : '') + '</label><select id="oc-resp">' + opcoesRespOc(o.analistas, '', '') + '</select><div class="qa-oc-dica" id="oc-resp-aviso" role="status" style="color:#b45309;min-height:15px"></div></div>' +
@@ -1904,16 +1904,15 @@
     var acharAn = function (id) { return daLista().filter(function (a) { return String(a.id) === String(id); })[0]; };
     var depAuto = false;   // true quando o departamento veio do analista (e não de uma escolha da pessoa)
     var pintarResp = function () {   // regrupa a lista pelo departamento escolhido e mostra o aviso, sem bloquear nada
-      selResp.innerHTML = opcoesRespOc(daLista(), selDep.value, selResp.value);
+      selResp.innerHTML = opcoesRespOc(daLista(), '', selResp.value);   // sempre todos os analistas: dá para trocar de analista mesmo com o departamento marcado errado
       avisoResp.textContent = avisoRespOc(acharAn(selResp.value), selDep.value);
     };
     selDep.addEventListener('change', function () { depAuto = false; pintarResp(); });   // escolha da pessoa vale mais que a automática
     selResp.addEventListener('change', function () {
       var a = acharAn(selResp.value), ds = a ? depsAnalista(a) : [], atual = selDep.value;
-      if (!a && depAuto) { atual = ''; depAuto = false; }   // tirou o analista: some o departamento que veio dele
-      if (ds.length && ds.indexOf(atual) < 0) atual = '';   // o analista só atende os departamentos dele
-      if (!atual && ds.length === 1) { atual = ds[0]; depAuto = true; }   // um departamento só: já vem preenchido
-      else if (!atual) depAuto = false;
+      if (!a) { if (depAuto) { atual = ''; depAuto = false; } }   // tirou o analista: some o departamento que veio dele
+      else if (ds.length === 1) { atual = ds[0]; depAuto = true; }   // um departamento só: o departamento muda sozinho para o dele
+      else if (ds.length > 1) { if (ds.indexOf(atual) < 0) atual = ''; depAuto = false; }   // vários (ex.: Bruno): fica só entre os dele; mantém o marcado se for um deles
       selDep.innerHTML = opcoesDeptoAn(a, atual); selDep.value = atual;
       pintarResp();
     });
