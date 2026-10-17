@@ -1679,7 +1679,7 @@
     return '<div class="card"><div class="card-title">Lançamentos dos últimos 7 dias</div><div class="card-sub">' + rs.length + ' registro(s). Clique no analista para validar, devolver, ajustar o prazo ou cancelar.</div>' +
       '<div class="table-wrap"><table><thead><tr><th>Lançado em</th><th>Empresa</th><th>Tipo</th><th>Analista</th><th class="c">Prazo</th><th class="c">Status</th></tr></thead><tbody>' + rs.map(function (r) {
         return '<tr><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td>' +
-          '<td>' + (r.analista_id ? '<button class="link" data-qan="' + esc(r.analista_id) + '">' + esc(r.analista_nome || '—') + '</button>' : '<span class="cinza">ocorrência (sem responsável)</span>') + '</td><td class="c">' + data(r.prazo) + '</td><td class="c">' + pillStatusQ(r.situacao) + '</td></tr>';
+          '<td>' + (r.analista_id ? '<button class="link" data-qan="' + esc(r.analista_id) + '">' + esc(r.analista_nome || '—') + '</button>' : '<span class="cinza">ocorrência (sem responsável)</span>') + '</td><td class="c">' + celPrazo(r) + '</td><td class="c">' + pillStatusQ(r.situacao) + '</td></tr>';
       }).join('') + '</tbody></table></div></div>';
   }
   function filtroQ() { return estado.filtroQ || (estado.filtroQ = { busca: '', todos: false }); }
@@ -2078,8 +2078,8 @@
   }
   // ── ACESSOS: abas Logs de atividades e Backup ───────────────────────────────────────────────
   var ABAS_ADM = [['acessos', 'Acessos'], ['logs', 'Logs de atividades'], ['backup', 'Backup']];
-  var ROT_MOD_LOG = { 'cs-qualidade': 'Qualidade', 'cs-acessos': 'Acessos', 'cs-analistas': 'Analistas', 'cs-backup': 'Backup', admin: 'Administração' };
-  var COR_ACAO_LOG = { criar: '#166534', editar: '#2563eb', excluir: '#b91c1c', abrir: '#7c3aed', validar: '#0e7490', devolver: '#b45309', encerrar: '#166534', anexar: '#6b7280', backup: '#256050' };
+  var ROT_MOD_LOG = { 'cs-alertas': 'Alertas de prazo', 'cs-qualidade': 'Qualidade', 'cs-acessos': 'Acessos', 'cs-analistas': 'Analistas', 'cs-backup': 'Backup', admin: 'Administração' };
+  var COR_ACAO_LOG = { alerta: '#b45309', cancelar: '#6b7280', reabrir: '#7c3aed', criar: '#166534', editar: '#2563eb', excluir: '#b91c1c', abrir: '#7c3aed', validar: '#0e7490', devolver: '#b45309', encerrar: '#166534', anexar: '#6b7280', backup: '#256050' };
   function htmlAbasAdm(aba) {
     return '<div class="tabs" id="abas-adm">' + ABAS_ADM.map(function (a) { return '<button type="button" data-adm-aba="' + a[0] + '" class="' + (aba === a[0] ? 'active' : '') + '">' + a[1] + '</button>'; }).join('') + '</div>';
   }
@@ -2330,7 +2330,7 @@
   function htmlMinhasOcorrencias(lista) {
     var corpo = (lista || []).map(function (r) {
       return '<tr><td>' + dataHora(r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td>' +
-        '<td style="white-space:normal;min-width:220px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '' + anexosQ(r) + '</td><td class="c">' + data(r.prazo) + '</td><td>' + esc(destinoCurto(r)) + '</td><td class="c">' + pillEtapaQ(r.etapa) + '</td></tr>';
+        '<td style="white-space:normal;min-width:220px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '' + anexosQ(r) + '</td><td class="c">' + celPrazo(r) + '</td><td>' + esc(destinoCurto(r)) + '</td><td class="c">' + pillEtapaQ(r.etapa) + '</td></tr>';
     }).join('');
     return '<div class="card"><div class="card-title">Minhas ocorrências</div><div class="card-sub">As ocorrências que você registrou. Quem registra não precisa ser quem trata: cada uma vai para o gestor do departamento escolhido (ou para o Sucesso do Cliente, se o departamento ainda não tem gestor).</div>' +
       ((lista || []).length ? '<div class="table-wrap"><table><thead><tr><th>Registrada em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Assunto</th><th class="c">Prazo</th><th>Encaminhada a</th><th class="c">Etapa</th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
@@ -2373,6 +2373,22 @@
     return rs.length ? rs : (r.analista_nome ? [r.analista_nome] : []);
   }
   /** Marca "vinculada" na lista, para a filha não parecer uma ocorrência nova. */
+  /** Prazo perto ou vencido (só enquanto a ocorrência está em andamento): "vence amanhã", "vence hoje", "vencida há N dias". */
+  function rotuloPrazo(prazo, etapa, hoje) {
+    if (!prazo || ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente'].indexOf(etapa) < 0) return null;
+    var a = String(hoje || hojeIsoLocal()).split('-'), b = String(prazo).slice(0, 10).split('-');
+    if (a.length < 3 || b.length < 3) return null;
+    var dias = Math.round((Date.UTC(+b[0], +b[1] - 1, +b[2]) - Date.UTC(+a[0], +a[1] - 1, +a[2])) / 86400000);
+    if (isNaN(dias)) return null;
+    if (dias < 0) return { txt: 'vencida há ' + (-dias) + (dias === -1 ? ' dia' : ' dias'), cor: '#b91c1c' };
+    if (dias === 0) return { txt: 'vence hoje', cor: '#c2410c' };
+    if (dias === 1) return { txt: 'vence amanhã', cor: '#b45309' };
+    return null;
+  }
+  function celPrazo(r, hoje) {
+    var l = rotuloPrazo(r.prazo, r.etapa, hoje);
+    return data(r.prazo) + (l ? '<div class="sub" style="color:' + l.cor + ';font-weight:700">' + l.txt + '</div>' : '');
+  }
   function marcaFilha(r) { return r && r.origem === 'filha' ? ' <span class="pill" style="color:#7c3aed;border-color:#7c3aed55;background:#7c3aed14;font-size:10px">vinculada</span>' : ''; }
   /** De qual ocorrência a filha veio (só aparece se o gestor quis mostrar) e as ocorrências vinculadas da original. */
   function htmlVinculos(r) {
@@ -2571,7 +2587,7 @@
       return '<tr><td>' + dataHora(r.liberada_em || r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td>' +
         '<td style="white-space:normal;min-width:240px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '<div class="sub" title="' + esc(r.plano_acao || '') + '">' + esc(curtoQ(r.plano_acao || r.detalhe, 130)) + '</div></td>' +
         (d.todos ? '<td>' + esc(r.analista_nome || '—') + '</td>' : '') +
-        '<td class="c">' + data(r.prazo) + '</td><td class="c">' + pillEtapaQ(r.etapa) + (r.situacao === 'vencido' ? '<div><span class="pill" style="color:#b91c1c;border-color:#b91c1c55;background:#b91c1c14">vencida</span></div>' : '') + '</td>' +
+        '<td class="c">' + celPrazo(r) + '</td><td class="c">' + pillEtapaQ(r.etapa) + (r.situacao === 'vencido' ? '<div><span class="pill" style="color:#b91c1c;border-color:#b91c1c55;background:#b91c1c14">vencida</span></div>' : '') + '</td>' +
         '<td class="c" style="white-space:nowrap"><button type="button" class="gp-footer-btn" data-aabrir="' + esc(r.id) + '" style="width:auto">' + acao + '</button></td></tr>';
     }).join('');
     return '<div class="qa-obs" style="margin-bottom:14px">ℹ Trâmite: o gestor do departamento analisa a ocorrência, cria a tratativa e abre para você. <strong>Sua tratativa será validada pelo seu gestor.</strong> Depois da nota que você deixar, a ocorrência é direcionada ao <strong>Sucesso do Cliente</strong>, que faz a devolutiva ao cliente.</div>' +
@@ -2681,7 +2697,7 @@
       return '<tr' + (fila ? ' style="background:rgba(194,65,12,.07)"' : '') + '><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
         '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
         '<td style="white-space:normal;min-width:230px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 120)) + '</div></td>' +
-        '<td>' + esc(r.analista_nome || '—') + '</td><td class="c">' + data(r.prazo) + '</td><td class="c">' + pillEtapaQ(r.etapa) + '</td>' +
+        '<td>' + esc(r.analista_nome || '—') + '</td><td class="c">' + celPrazo(r) + '</td><td class="c">' + pillEtapaQ(r.etapa) + '</td>' +
         '<td class="c" style="white-space:nowrap"><button type="button" class="gp-footer-btn" data-sabrir="' + esc(r.id) + '" style="width:auto">' + (fila ? (d.final ? 'Devolutiva e encerrar' : 'Ver devolutiva') : 'Ver') + '</button></td></tr>';
     }).join('');
     return '<div class="qa-obs" style="margin-bottom:14px">ℹ Aqui o Sucesso do Cliente recebe a devolutiva do gestor, faz as formalizações com o cliente e <strong>encerra o caso</strong>. ' + (d.final ? 'Você é o <strong>gestor final</strong>: só você encerra o processo.' : 'Só o <strong>gestor final</strong> encerra o processo (para um diretor não encerrar achando que está encerrando só no departamento dele).') + '</div>' +
@@ -2795,7 +2811,7 @@
       return '<tr><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
         '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
         '<td style="white-space:normal;min-width:240px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 140)) + '</div>' + anexosQ(r) + '</td>' +
-        '<td>' + (r.analista_nome ? esc(r.analista_nome) : '<span class="cinza">—</span>') + '</td><td class="c">' + data(r.prazo) + '</td>' +
+        '<td>' + (r.analista_nome ? esc(r.analista_nome) : '<span class="cinza">—</span>') + '</td><td class="c">' + celPrazo(r) + '</td>' +
         '<td class="c">' + pillEtapaQ(r.etapa) + (r.situacao === 'vencido' ? '<div><span class="pill" style="color:#b91c1c;border-color:#b91c1c55;background:#b91c1c14">vencida</span></div>' : '') + '</td>' +
         '<td class="c" style="white-space:nowrap"><button type="button" class="gp-footer-btn" data-gabrir="' + esc(r.id) + '" style="width:auto">' + acao + '</button></td></tr>';
     }).join('');

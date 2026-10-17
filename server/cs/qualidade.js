@@ -1660,4 +1660,14 @@ routerAnalista.post('/:id/nota', async (req, res) => {
   } catch (e) { console.error('[qualidade] POST /nota falhou:', e); res.status(500).json({ error: 'Erro ao salvar a nota.' }); }
 });
 
-module.exports = { validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+/** Alerta de prazo das ocorrências (o agendador do index.js chama todo dia de manhã; ver alertasPrazo.js). */
+async function rodarAlertasPrazo() {
+  await garantirSchema();
+  return require('./alertasPrazo').rodar({
+    pool, hoje: hojeBrasilia(), idsGestoresDe, idsDosResponsaveis, idsSucesso, avisarPush,
+    notificar: async (titulo, mensagem) => { try { await pool.query("INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ('qualidade_prazo', $1, $2, 'cs-qualidade')", [titulo, mensagem]); } catch (e) { /* sem a tabela do sino ainda: segue só com o push */ } },
+    registrarLog: (texto) => require('./auditoria').registrar({ id: 'sistema', name: 'Sistema' }, 'alerta', 'cs-alertas', texto, null),
+  });
+}
+
+module.exports = { rodarAlertasPrazo, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };

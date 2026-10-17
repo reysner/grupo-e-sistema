@@ -206,6 +206,21 @@ initDB().then(async () => {
 
   setInterval(() => pruneExpiredTokens().catch(console.error), 24 * 60 * 60 * 1000);
 
+  // Qualidade: alerta de prazo das ocorrências, todo dia às 8h (Brasília). O aviso de cada prazo sai uma vez só, mesmo que o servidor reinicie no dia.
+  const alertasPrazoDoDia = new Set();
+  const checarAlertasPrazo = async () => {
+    try {
+      const f = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false }).formatToParts(new Date());
+      const get = (t) => (f.find((p) => p.type === t) || {}).value;
+      if (Number(get('hour')) !== 8) return;
+      const dia = get('year') + '-' + get('month') + '-' + get('day');
+      if (alertasPrazoDoDia.has(dia)) return;
+      alertasPrazoDoDia.add(dia);
+      console.log('[Qualidade] Alerta de prazo:', await require('./cs/qualidade').rodarAlertasPrazo());
+    } catch (e) { console.error('[Qualidade] Falha no alerta de prazo:', e.message); }
+  };
+  setInterval(checarAlertasPrazo, 10 * 60 * 1000);
+
   // Sucesso do Cliente — ingestão automática periódica (não depende de ninguém clicar em nada)
   if (process.env.ZAPPY_BASE_URL && process.env.ZAPPY_TOKEN) {
     const { ingerirTickets } = require('./cs/ingestao');
