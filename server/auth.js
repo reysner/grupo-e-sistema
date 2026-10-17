@@ -84,6 +84,8 @@ function requireAuth(req, res, next) {
     // Módulo Qualidade dentro do /cs (17/10/2026): gestor (cadastrado em Gerenciar gestores) e analista (acesso_qualidade) só CHEGAM às rotas de Qualidade;
     // o que cada um alcança lá dentro é decidido pela própria rota (lista branca em server/cs/qualidade.js).
     const isCsQualidadeRoute = rotaCompleta.startsWith('/api/cs/painel/qualidade') && !!(payload.acesso_gestor || payload.acesso_qualidade);
+    // Push do navegador: cada pessoa cadastra o próprio aparelho, seja qual for o perfil (a rota só mexe nos aparelhos dela).
+    const isPushRoute = rotaCompleta.startsWith('/api/push/');
     // Minha Nota (28/08/2026, self-service da Gamificação): rotas
     // /gam/minha-* e /gam/meus-* — a nota/tickets da PRÓPRIA pessoa,
     // resolvida no backend a partir do login (nunca aceita um
@@ -112,7 +114,7 @@ function requireAuth(req, res, next) {
       const permitido = isTicketRoute || isAuthOuPerfil
         || (payload.acesso_minha_nota && isMinhaNotaRoute)
         || (payload.acesso_legalizacao && isLegalizacaoRoute)
-        || isCsPainelRoute || isFinanceiroRoute || isQualidadeRoute || isCsQualidadeRoute;
+        || isCsPainelRoute || isFinanceiroRoute || isQualidadeRoute || isCsQualidadeRoute || isPushRoute;
       if (!permitido) return res.status(403).json({ error: 'Acesso restrito ao portal contábil.' });
     }
     // Colaborador: só pode ver a própria nota (ou Legalização, se
@@ -120,7 +122,7 @@ function requireAuth(req, res, next) {
     // clientes, outros colaboradores etc. Papel "puro", pra quem não deve
     // ter NENHUM outro acesso (diferente dos checkboxes acima, que
     // ADICIONAM uma tela a um perfil que já tem outra coisa).
-    if (payload.role === 'colaborador' && !(isMinhaNotaRoute || isAuthOuPerfil || (payload.acesso_legalizacao && isLegalizacaoRoute) || isCsPainelRoute || isFinanceiroRoute || isQualidadeRoute || isCsQualidadeRoute)) {
+    if (payload.role === 'colaborador' && !(isMinhaNotaRoute || isAuthOuPerfil || (payload.acesso_legalizacao && isLegalizacaoRoute) || isCsPainelRoute || isFinanceiroRoute || isQualidadeRoute || isCsQualidadeRoute || isPushRoute)) {
       return res.status(403).json({ error: 'Acesso restrito à sua nota da Gamificação.' });
     }
     next();

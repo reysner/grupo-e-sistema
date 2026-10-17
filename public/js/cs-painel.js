@@ -137,7 +137,14 @@
   function iniciarAvisosCs() {
     if (estado.avisosIniciados || !window.Avisos) return;
     estado.avisosIniciados = true;
-    window.Avisos.montarControle($('avisos-ctl'), { aoMudar: function () { avisosDesde = null; sondarAvisos(); } });
+    window.Avisos.montarControle($('avisos-ctl'), {
+      token: function () { return ls(K_TOKEN) || ''; },
+      // clique no aviso: abre a aba certa sem recarregar a página
+      navegar: function (url) {
+        var u = new URL(url, window.location.origin), aba = u.searchParams.get('aba');
+        if (u.pathname === '/cs' && aba && TITULOS[aba]) { irPara(aba); if (aba === 'gestor' || aba === 'analista' || aba === 'sucesso') { estado.g = null; estado.a = null; estado.s = null; if (aba === 'gestor') desenharGestor(); } window.focus(); } else window.location.href = url;
+      },
+      aoMudar: function () { avisosDesde = null; sondarAvisos(); } });
     sondarAvisos();
   }
 
@@ -189,6 +196,7 @@
     $('titulo').textContent = TITULOS[sec][0];
     $('subtitulo').textContent = TITULOS[sec][1];
     $('filtro-periodo').style.display = (sec === 'visao' || sec === 'churn') ? 'flex' : 'none';
+    pintarBotaoValores();   // some nos portais
     var ativa = $('sec-' + sec); if (ativa) ativa.scrollTop = 0;
     if (sec === 'consideracoes' && estado.dados && !estado.qResumo) desenharQualidadeMod();   // recarrega depois de um registro novo
     ['btn-csv', 'btn-pdf'].forEach(function (id) { var b = $(id); if (b) b.style.display = SEC_EXPORTA[sec] ? 'inline-flex' : 'none'; });
@@ -2537,9 +2545,11 @@
   $('btn-csv').addEventListener('click', function () { exportar('csv'); });
   $('btn-pdf').addEventListener('click', function () { exportar('pdf'); });
   // Botão "Valores ocultos" (só administrador): esconde todo valor em R$ na tela, para apresentar sem mostrar valores. Lembra a escolha neste navegador.
+  /** O botão "Ocultar valores" só faz sentido onde há valores em R$: os portais (Gestor, Analista e Sucesso do Cliente) não têm. */
+  function botaoValoresVisivel(admin, sec) { return !!admin && ['gestor', 'analista', 'sucesso'].indexOf(sec) < 0; }
   function pintarBotaoValores() {
     var b = $('btn-valores'); var admin = estado.dados && estado.dados.usuario && estado.dados.usuario.papel === 'administrador';
-    b.style.display = admin ? 'inline-flex' : 'none';
+    b.style.display = botaoValoresVisivel(admin, estado.secao) ? 'inline-flex' : 'none';
     b.textContent = estado.ocultar ? '🙈 Valores ocultos' : '👁 Ocultar valores';
     b.className = 'gp-footer-btn' + (estado.ocultar ? ' ativo' : '');
   }

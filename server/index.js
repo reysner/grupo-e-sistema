@@ -65,6 +65,7 @@ app.use('/api/data',   dataRoutes);
 app.use('/api/users',  usersRoutes);
 app.use('/api/cs/categorias', require('./cs/categorias').router);  // Categorias Diamante/Ouro/Prata/Bronze (antes de /api/cs)
 app.use('/api/cs/painel/churn-motivos', require('./cs/churnMotivos').router);   // Churn por motivo e Fechamento do mês (antes de /api/cs/painel)
+app.use('/api/push', require('./push').router);   // avisos push do navegador (chave, cadastrar e descadastrar o aparelho; qualquer pessoa logada)
 app.use('/api/cs/painel/qualidade', require('./cs/qualidade').router);   // Qualidade: considerações por cliente e analista (antes de /api/cs/painel)
 app.use('/api/qualidade', require('./cs/qualidade').routerAnalista);       // Minhas tratativas: o analista logado vê e trata os próprios registros
 app.use('/api/cs/churn', require('./cs/churnSaidas').router);  // Churn por saídas (as três 'Transferida por…')

@@ -1818,7 +1818,9 @@ const Notificacoes = (() => {
     const { data, naoLidas } = await res.json();
     // Avisos do navegador (notificação do sistema + som) para o que chegou desde a última checagem; a primeira leitura só marca o ponto de partida.
     try {
-      const novos = data.filter(n => !n.lida && !_vistos.has(n.id));
+      // com o push ativo neste aparelho, as ocorrências de Qualidade já chegam por ele (não repete o aviso)
+      const cobertos = window.Avisos && window.Avisos.pushAtivo() ? ['qualidade_lancada', 'qualidade_liberada', 'qualidade_finalizada'] : [];
+      const novos = data.filter(n => !n.lida && !_vistos.has(n.id) && cobertos.indexOf(n.tipo) < 0);
       data.forEach(n => _vistos.add(n.id));
       if (_primeira) _primeira = false;
       else if (window.Avisos && novos.length) {
@@ -1893,7 +1895,7 @@ const Notificacoes = (() => {
   }
 
   function iniciar() {
-    if (window.Avisos) window.Avisos.montarControle(document.getElementById('avisos-ctl'));
+    if (window.Avisos) window.Avisos.montarControle(document.getElementById('avisos-ctl'), { token: _tk });
     checar();
     // Verifica a cada minuto (o aviso do navegador depende disso)
     _interval = setInterval(checar, 60 * 1000);

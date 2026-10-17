@@ -619,10 +619,10 @@ router.get('/analista/:id', async (req, res) => {
 router.get('/gestores', async (req, res) => {
   try {
     await garantirSchema();
-    const { rows } = await pool.query(`SELECT g.id, g.user_id, g.departamento, g.papel, u.name, u.email FROM cs_qualidade_gestores g JOIN users u ON u.id::text = g.user_id WHERE u.active = true ORDER BY u.name`);
+    const { rows } = await pool.query(`SELECT g.id, g.user_id, g.departamento, g.papel, u.name, u.email FROM cs_qualidade_gestores g JOIN users u ON u.id::text = g.user_id WHERE u.active = 1 ORDER BY u.name`);
     const departamentos = DEPARTAMENTOS.map((d) => ({ codigo: d, rotulo: rotuloDepto(d), gestores: rows.filter((g) => g.departamento === d).map((g) => ({ id: g.id, user_id: g.user_id, nome: g.name, email: g.email, papel: g.papel })) }));
     const resp = { departamentos };
-    if (req.user.role === 'administrador') resp.usuarios = (await pool.query('SELECT id::text AS id, name, email, role FROM users WHERE active = true ORDER BY name')).rows;
+    if (req.user.role === 'administrador') resp.usuarios = (await pool.query('SELECT id::text AS id, name, email, role FROM users WHERE active = 1 ORDER BY name')).rows;
     res.json(resp);
   } catch (e) { console.error('[qualidade] GET /gestores falhou:', e); res.status(500).json({ error: 'Erro ao ler os gestores.' }); }
 });
@@ -632,7 +632,7 @@ router.post('/gestores', async (req, res) => {
   if (!v.ok) return res.status(400).json({ error: v.erro });
   try {
     await garantirSchema();
-    const u = (await pool.query('SELECT id::text AS id, name FROM users WHERE id::text = $1 AND active = true', [v.valores.user_id])).rows[0];
+    const u = (await pool.query('SELECT id::text AS id, name FROM users WHERE id::text = $1 AND active = 1', [v.valores.user_id])).rows[0];
     if (!u) return res.status(404).json({ error: 'Pessoa não encontrada entre os usuários ativos.' });
     const ins = await pool.query(
       `INSERT INTO cs_qualidade_gestores (user_id, departamento, papel, criado_por) VALUES ($1, $2, $3, $4)
@@ -794,7 +794,7 @@ router.post('/ocorrencias', async (req, res) => {
     const c = cli.rows[0];
     // encaminhamento: gestor(es) do departamento escolhido; sem gestor cadastrado, vai para o Sucesso do Cliente
     const gest = (await pool.query(
-      `SELECT g.papel, u.name FROM cs_qualidade_gestores g JOIN users u ON u.id::text = g.user_id WHERE g.departamento = $1 AND u.active = true ORDER BY u.name`, [x.departamento])).rows;
+      `SELECT g.papel, u.name FROM cs_qualidade_gestores g JOIN users u ON u.id::text = g.user_id WHERE g.departamento = $1 AND u.active = 1 ORDER BY u.name`, [x.departamento])).rows;
     const dest = destinoDaOcorrencia(x.departamento, gest), textoDest = textoDestino(x.departamento, dest);
     const ins = await pool.query(
       `INSERT INTO cs_qualidade_registros (cliente_id, cnpj, cliente_nome, tipo, departamentos, detalhe, assunto, prioridade, prazo, origem, fila, criado_por, criado_por_id)

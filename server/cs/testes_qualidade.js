@@ -174,6 +174,10 @@ teste('etapa → status do risco: aberta até a tratativa; em tratamento com o a
 teste('gestores: o papel "final" (quem encerra no Sucesso do Cliente) é aceito', () => {
   assert.strictEqual(validarGestor({ user_id: 'u1', departamento: 'Sucesso', papel: 'final' }).valores.papel, 'final');
 });
+teste('users.active é inteiro (1/0): nenhuma consulta do módulo compara com true (isso daria erro no banco)', () => {
+  const fonte = require('fs').readFileSync(require('path').join(__dirname, 'qualidade.js'), 'utf8');
+  assert.ok(!/(^|[^a-z_])active = (true|false)/i.test(fonte), 'use active = 1');
+});
 teste('etapas do fluxo na ordem combinada', () => {
   assert.deepStrictEqual(ETAPAS, ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada']);
 });
