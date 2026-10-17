@@ -1907,12 +1907,12 @@
       selResp.innerHTML = opcoesRespOc(daLista(), '', selResp.value);   // sempre todos os analistas: dá para trocar de analista mesmo com o departamento marcado errado
       avisoResp.textContent = avisoRespOc(acharAn(selResp.value), selDep.value);
     };
-    selDep.addEventListener('change', function () { depAuto = false; pintarResp(); });   // escolha da pessoa vale mais que a automática
+    selDep.addEventListener('change', function () { depAuto = !!selResp.value; pintarResp(); });   // escolhido com um analista na tela: pertence a ele e some se o analista sair; escolhido antes de qualquer analista: fica
     selResp.addEventListener('change', function () {
       var a = acharAn(selResp.value), ds = a ? depsAnalista(a) : [], atual = selDep.value;
       if (!a) { if (depAuto) { atual = ''; depAuto = false; } }   // tirou o analista: some o departamento que veio dele
       else if (ds.length === 1) { atual = ds[0]; depAuto = true; }   // um departamento só: o departamento muda sozinho para o dele
-      else if (ds.length > 1) { if (ds.indexOf(atual) < 0) atual = ''; depAuto = false; }   // vários (ex.: Bruno): fica só entre os dele; mantém o marcado se for um deles
+      else if (ds.length > 1) { if (ds.indexOf(atual) < 0) { atual = ''; depAuto = false; } }   // vários (ex.: Bruno): fica só entre os dele; mantém o marcado se for um deles
       selDep.innerHTML = opcoesDeptoAn(a, atual); selDep.value = atual;
       pintarResp();
     });
