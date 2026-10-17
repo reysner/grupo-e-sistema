@@ -70,8 +70,8 @@ teste('tratativas: pesa pelo tipo (dobro), vencida x1,5, a validar x0,5, resolvi
   assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 2, peso: 0 }]).pontos, 0);                  // peso 0 = só registra, não pesa
   // resolvida entra na soma enquanto houver outra pendente
   assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 1 }, { tipo: 'Erro', status: 'resolvido', dias: 1 }]).pontos, 58);   // 50 + 30 x 0,25 = 57,5
-  assert.ok(t([{ tipo: 'Atraso', status: 'aberto', dias: 2, vencida: true }]).detalhe[0].includes('1 em aberto (1 com prazo vencido)'));
-  assert.ok(t([{ tipo: 'Atraso', status: 'aberto', dias: 2 }]).detalhe[0].includes('ocorrências: Atraso'));
+  assert.strictEqual(t([{ tipo: 'Atraso', status: 'aberto', dias: 2, vencida: true }]).detalhe[0], '1 consideração de qualidade registrada nos últimos 90 dias (1 em aberto, 1 com prazo vencido)');
+  assert.strictEqual(t([{ tipo: 'Atraso', status: 'aberto', dias: 2 }, { tipo: 'Erro', status: 'finalizada', dias: 2 }, { tipo: 'Multa', status: 'resolvido', dias: 2 }]).detalhe[0], '3 considerações de qualidade registradas nos últimos 90 dias (1 em aberto, 1 aguardando validação)');
 });
 
 teste('tratativas: sem pendência fica sem dado (fora da média) e não deixa o risco parcial', () => {
@@ -91,7 +91,7 @@ teste('tratativas: com pendência entra na média, aparece nos motivos e um term
   assert.strictEqual(r.pontos, 19);          // 75/4
   assert.strictEqual(r.alerta, true);
   assert.strictEqual(r.nivel, 'Médio');
-  assert.ok(r.motivos[0].startsWith('Tratativas:'));
+  assert.ok(r.motivos[0].includes('consideração de qualidade registrada nos últimos 90 dias'));
 });
 
 teste('atendimento: abandono de atendimento não conta mais (decisão de 16/10/2026)', () => {
@@ -156,6 +156,26 @@ teste('entregas: usa o Status do Acessórias (PzTéc não é atraso; dispensada 
   ];
   assert.deepStrictEqual(classificarEntregas(lista, HOJE), { total: 6, atrasadasEntregues: 1, vencidasPendentes: 2 });
   assert.deepStrictEqual(classificarEntregas([], HOJE), { total: 0, atrasadasEntregues: 0, vencidasPendentes: 0 });
+});
+
+teste('entregas: a lista da ficha traz só as com problema (vencidas primeiro), ignora dispensada e tarefa interna, e bate com a contagem', () => {
+  const { classificarEntregas, detalharEntregas } = require('./risco');
+  const g = { multa: true };
+  const lista = [
+    { ...g, nome: 'DAS - MENSAL', competencia: '09/2026', status: 'Atrasada!', prazo: '2026-10-05', atraso: '2026-10-10', entrega: null },
+    { ...g, nome: 'FGTS', competencia: '08/2026', status: 'Ent. atrasada', prazo: '2026-09-05', atraso: '2026-09-07', entrega: '2026-09-20' },
+    { ...g, nome: 'DCTFWEB', competencia: '07/2026', status: 'Pendente', prazo: '2026-08-10', atraso: '2026-08-15', entrega: null },
+    { ...g, nome: 'PGDAS', status: 'Ent. antecipada', prazo: '2026-10-01', atraso: '2026-10-05', entrega: '2026-09-30' },
+    { ...g, nome: 'IRPF', status: 'Dispensada', prazo: '2026-04-01', atraso: '2026-04-05', entrega: null },
+    { multa: false, nome: 'BALANCETE MENSAL', status: 'Atrasada!', prazo: '2026-07-01', atraso: '2026-07-05', entrega: null },
+  ];
+  const d = detalharEntregas(lista, '2026-10-17');
+  assert.deepStrictEqual(d.map((i) => i.nome + ':' + i.situacao), ['DCTFWEB:vencida', 'DAS - MENSAL:vencida', 'FGTS:atrasada']);   // vencidas primeiro, a mais antiga antes
+  assert.strictEqual(d[0].competencia, '07/2026');
+  const c = classificarEntregas(lista, '2026-10-17');
+  assert.deepStrictEqual([c.total, c.atrasadasEntregues, c.vencidasPendentes], [4, 1, 2]);
+  assert.strictEqual(d.length, c.atrasadasEntregues + c.vencidasPendentes);
+  assert.deepStrictEqual(detalharEntregas([], '2026-10-17'), []);
 });
 
 teste('entregas: só as que chegam ao cliente (nomes reais do Acessórias)', () => {

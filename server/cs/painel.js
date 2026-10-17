@@ -19,6 +19,7 @@ const risco = require('./risco');
 const categorias = require('./categorias');
 const churn = require('./churnSaidas');
 const questor = require('./questorDados');
+const acessorias = require('../acessoriasClient');
 
 const PAPEIS = ['administrador', 'usuario'];
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -316,6 +317,26 @@ router.get('/cliente/:id', async (req, res) => {
   } catch (err) {
     console.error('[painel] GET /cliente falhou:', err);
     res.status(500).json({ error: 'Erro ao carregar a ficha do cliente.' });
+  }
+});
+
+/**
+ * Seção "Acessórias" da ficha: quais obrigações estão em aberto (venceram sem entrega) ou foram entregues com atraso nos últimos 90 dias.
+ * A lista vem do Acessórias na hora de abrir a ficha (o painel só guarda os totais); só entram as entregas que chegam ao cliente.
+ */
+router.get('/cliente/:id/acessorias', async (req, res) => {
+  try {
+    const base = await montarBase(false, TTL_FICHA_MS);
+    const c = base.clientes.find((x) => x.id === req.params.id);
+    if (!c) return res.status(404).json({ error: 'Cliente não encontrado (o painel só mostra CNPJ ativo).' });
+    const token = process.env.ACESSORIAS_API_TOKEN;
+    if (!token) return res.status(503).json({ error: 'A leitura do Acessórias não está configurada.' });
+    const hoje = churn.hojeBrasilia();
+    const lista = await acessorias.listarEntregasEmpresa(c.cnpj, { token, ini: churn.somarDias(hoje, -90), fim: hoje });
+    res.json({ janela_dias: 90, consultado_em: new Date().toISOString(), suspenso: !!(c.risco && c.risco.suspenso), itens: risco.detalharEntregas(lista, hoje) });
+  } catch (err) {
+    console.error('[painel] GET /cliente/:id/acessorias falhou:', err.message);
+    res.status(502).json({ error: 'Não foi possível consultar o Acessórias agora.' });
   }
 });
 

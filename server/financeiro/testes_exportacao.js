@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, resumoQ: resumoQ, chipOcorrenciaQ: chipOcorrenciaQ, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, comoPesaTratativa: comoPesaTratativa, abrirNovoMotivoChurn: abrirNovoMotivoChurn }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, listaOcorrenciasQ: listaOcorrenciasQ, tabelaAcessorias: tabelaAcessorias, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, comoPesaTratativa: comoPesaTratativa, abrirNovoMotivoChurn: abrirNovoMotivoChurn }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null, tratativas: 75 }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -166,12 +166,18 @@ const semLixo = (e, nome) => {
     assert.ok(!f.includes('Tipo de registro') && !f.includes('id="qa-tipo"') && !f.includes('qa-editar-tipos'), 'a ficha não pede mais o tipo de registro');
     assert.ok(f.includes('Departamentos envolvidos'));
     assert.ok(C.t.formularioQAntigo(o).includes('Descreva a ocorrência'), 'o layout antigo continua guardado');
-    assert.strictEqual(C.t.resumoQ('apuração   do imposto com valor divergente'), 'apuração do imposto com valor divergente');
-    const longo = 'Erro na apuração do imposto da competência de setembro: valor do ISS calculado sobre a base errada e guia enviada ao cliente sem conferência.';
-    const r = C.t.resumoQ(longo);
-    assert.ok(r.length <= 91 && r.endsWith('…') && !r.includes('  '), r);
-    const chip = C.t.chipOcorrenciaQ({ tipo: 'Erro', departamentos: ['Fiscal'], detalhe: longo, criado_em: '2026-10-16T12:00:00Z', prazo: '2026-10-20', situacao: 'vencido', analista_nome: 'Josiane' });
-    assert.ok(chip.includes('<strong>Erro</strong>') && chip.includes('Fiscal') && chip.includes('apuração do imposto') && chip.includes('Vencido') && chip.includes('title='));
+  });
+  await teste('cs: ficha — seção Qualidade lista só o que foi lançado no módulo (a mais recente à vista, as anteriores recolhidas); seção Acessórias lista as obrigações', () => {
+    const reg = (id, em, origem, detalhe, status) => ({ id, origem, tipo: 'Erro', departamentos: ['Fiscal'], detalhe, analista_nome: 'Josiane', criado_em: em, criado_por: 'Larissa', prazo: '2026-10-20', situacao: 'aberto', status: status || 'aberto', notas: [] });
+    const h = C.t.listaOcorrenciasQ([reg('a', '2026-10-10T12:00:00Z', 'modulo', 'apuração do ISS errada'), reg('b', '2026-10-16T12:00:00Z', 'modulo', 'guia com valor divergente'), reg('c', '2026-10-17T12:00:00Z', 'ficha', 'plano de ação da ficha'), reg('d', '2026-10-17T13:00:00Z', 'modulo', 'cancelada', 'cancelado')]);
+    assert.ok(h.includes('guia com valor divergente') && h.includes('<details class="qa-mais">') && h.includes('1 registro anterior') && h.includes('apuração do ISS errada'));
+    assert.ok(h.indexOf('guia com valor divergente') < h.indexOf('<details') && h.indexOf('apuração do ISS errada') > h.indexOf('<details'));
+    assert.ok(!h.includes('plano de ação da ficha') && !h.includes('>cancelada<'), 'plano da ficha e cancelada não entram');
+    assert.ok(C.t.listaOcorrenciasQ([]).includes('Nenhuma ocorrência lançada no módulo Qualidade'));
+    assert.ok(C.t.listaOcorrenciasQ([reg('c', '2026-10-17T12:00:00Z', 'ficha', 'só plano')]).includes('Nenhuma ocorrência'));
+    const t = C.t.tabelaAcessorias([{ nome: 'DAS - MENSAL', competencia: '09/2026', prazo: '2026-10-05', atraso: '2026-10-10', entrega: null, situacao: 'vencida' }, { nome: 'FGTS', competencia: '08/2026', prazo: '2026-09-05', atraso: null, entrega: '2026-09-20', situacao: 'atrasada' }]);
+    assert.ok(t.includes('DAS - MENSAL') && t.includes('Vencida sem entrega') && t.includes('Entregue com atraso em') && t.includes('09/2026'));
+    assert.ok(C.t.tabelaAcessorias([]).includes('Nenhuma obrigação em aberto'));
   });
   await teste('cs: "Outro" no motivo do churn abre a janela para escrever o motivo sem quebrar', () => {
     C.t.abrirNovoMotivoChurn('x1', () => {}, () => {});

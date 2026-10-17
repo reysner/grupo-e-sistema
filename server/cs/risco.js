@@ -207,18 +207,37 @@ function entregaChegaAoCliente(e) {
  * "Ent. atrasada", "Atrasada!", "Pendente", "Dispensada"). "Ent. PzTéc" = entregue depois do prazo técnico (interno)
  * mas dentro do prazo legal → NÃO é atraso. Dispensada não é entrega devida.
  */
+/** Situação de uma entrega: null = não conta (não chega ao cliente ou dispensada) · 'ok' · 'atrasada' (entregue com atraso) · 'vencida' (venceu sem entrega). */
+function situacaoEntrega(e, hoje) {
+  if (!entregaChegaAoCliente(e)) return null;
+  const st = String(e.status || '').toLowerCase();
+  if (st.includes('dispensada')) return null;
+  if (st.includes('ent. atrasada')) return 'atrasada';
+  if (st.includes('atrasada!')) return 'vencida';
+  if (!e.entrega && (e.atraso || e.prazo) && (e.atraso || e.prazo) < hoje) return 'vencida'; // pendente já vencida
+  return 'ok';
+}
 function classificarEntregas(lista, hoje) {
   let total = 0, atrasadasEntregues = 0, vencidasPendentes = 0;
   for (const e of lista || []) {
-    if (!entregaChegaAoCliente(e)) continue;
-    const st = String(e.status || '').toLowerCase();
-    if (st.includes('dispensada')) continue;
+    const s = situacaoEntrega(e, hoje);
+    if (!s) continue;
     total++;
-    if (st.includes('ent. atrasada')) atrasadasEntregues++;
-    else if (st.includes('atrasada!')) vencidasPendentes++;
-    else if (!e.entrega && (e.atraso || e.prazo) && (e.atraso || e.prazo) < hoje) vencidasPendentes++; // pendente já vencida
+    if (s === 'atrasada') atrasadasEntregues++;
+    else if (s === 'vencida') vencidasPendentes++;
   }
   return { total, atrasadasEntregues, vencidasPendentes };
+}
+/** As entregas com problema (venceu sem entrega ou entregue com atraso), para a seção Acessórias da ficha: as vencidas primeiro, da mais antiga para a mais nova. */
+function detalharEntregas(lista, hoje) {
+  const itens = [];
+  for (const e of lista || []) {
+    const s = situacaoEntrega(e, hoje);
+    if (s !== 'vencida' && s !== 'atrasada') continue;
+    itens.push({ nome: e.nome, competencia: e.competencia || null, prazo: e.prazo || null, atraso: e.atraso || null, entrega: e.entrega || null, situacao: s });
+  }
+  const data = (i) => i.atraso || i.prazo || '9999-12-31';
+  return itens.sort((a, b) => (a.situacao === b.situacao ? data(a).localeCompare(data(b)) : a.situacao === 'vencida' ? -1 : 1));
 }
 
 let _sincronizando = false;
@@ -342,4 +361,4 @@ router.post('/sincronizar-entregas', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true, mensagem: 'Leitura das entregas iniciada em segundo plano (200 empresas por rodada). Reabra a tela daqui a alguns minutos.' });
 });
 
-module.exports = { router, calcularTodos, gravarSuspensosOmie, sincronizarEntregas, classificarEntregas, entregaChegaAoCliente, salvarFoto };
+module.exports = { router, calcularTodos, gravarSuspensosOmie, sincronizarEntregas, classificarEntregas, detalharEntregas, entregaChegaAoCliente, salvarFoto };

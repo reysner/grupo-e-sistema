@@ -143,10 +143,11 @@ function termometroTratativas(e) {
   });
   const abertas = pend.filter(emAndamento).length, vencidas = pend.filter((q) => q.vencida && emAndamento(q)).length, aValidar = pend.length - abertas;
   const partes = [];
-  if (abertas) partes.push(`${abertas} em aberto${vencidas ? ` (${vencidas} com prazo vencido)` : ''}`);
+  if (abertas) partes.push(`${abertas} em aberto`);
+  if (vencidas) partes.push(`${vencidas} com prazo vencido`);
   if (aValidar) partes.push(`${aValidar} aguardando validação`);
-  const tipos = Array.from(new Set(pend.map((q) => q.tipo).filter(Boolean)));
-  return { pontos: limitar(p), detalhe: [`Tratativas: ${partes.join(', ')}${tipos.length ? ` · ocorrências: ${tipos.join(', ')}` : ''}`] };
+  // o resumo nos Sinais de atenção é curto; o detalhe de cada ocorrência fica na seção Qualidade da ficha
+  return { pontos: limitar(p), detalhe: [`${plural(qs.length, 'consideração de qualidade registrada', 'considerações de qualidade registradas')} nos últimos 90 dias (${partes.join(', ')})`] };
 }
 
 /** Junta os termômetros. pesos/cortes opcionais (config do admin). */

@@ -1375,7 +1375,6 @@
       '<div class="pop-erro" id="qa-erro" role="alert"></div></div>';
   }
 
-  var DIAS_SINAL_Q = 90;
   /** Cartão de um plano de ação (registro feito na ficha). */
   function cartaoRegistroQ(r) {
     return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao) + ' <strong>' + esc(r.tipo) + '</strong> <span class="cinza">· ' + esc((r.departamentos || []).join(', ')) + '</span></div>' +
@@ -1389,43 +1388,28 @@
   function listaRegistrosQ(regs) {
     var planos = (regs || []).filter(function (r) { return r.origem !== 'modulo'; }).sort(maisRecenteQ);
     if (!planos.length) return '<div class="linha-item"><span class="x">Nenhum plano de ação registrado para este cliente.</span></div>';
-    var h = cartaoRegistroQ(planos[0]);
-    if (planos.length > 1) {
-      h += '<details class="qa-mais"><summary><span class="sp">▸</span> ' + (planos.length - 1) + (planos.length - 1 === 1 ? ' registro anterior' : ' registros anteriores') + '</summary>' + planos.slice(1).map(cartaoRegistroQ).join('') + '</details>';
-    }
+    return recolhivelQ(planos);
+  }
+  /** Lista com o mais recente à vista e os anteriores recolhidos sob uma seta (<details>). */
+  function recolhivelQ(lista) {
+    var h = cartaoRegistroQ(lista[0]);
+    if (lista.length > 1) h += '<details class="qa-mais"><summary><span class="sp">▸</span> ' + (lista.length - 1) + (lista.length - 1 === 1 ? ' registro anterior' : ' registros anteriores') + '</summary>' + lista.slice(1).map(cartaoRegistroQ).join('') + '</details>';
     return h;
   }
-  /** Resumo de uma frase do que o analista descreveu (até ~90 caracteres, cortando em palavra inteira). */
-  function resumoQ(txt) {
-    var t = String(txt || '').split(/\s+/).join(' ').trim();
-    if (t.length <= 90) return t;
-    return t.slice(0, 90).replace(/\s+\S*$/, '') + '…';
+  /** Seção Qualidade da ficha: as ocorrências LANÇADAS NO MÓDULO Qualidade (origem "modulo"), com tipo, departamentos, descrição, responsável, prazo e andamento. */
+  function listaOcorrenciasQ(regs) {
+    var oc = (regs || []).filter(function (r) { return r.origem === 'modulo' && r.status !== 'cancelado'; }).sort(maisRecenteQ);
+    if (!oc.length) return '<div class="linha-item"><span class="x">Nenhuma ocorrência lançada no módulo Qualidade para este cliente.</span></div>';
+    return recolhivelQ(oc);
   }
-  /** Linha dos Sinais de atenção para uma ocorrência lançada no módulo Qualidade: tipo, departamentos, data e o resumo do que foi apontado. */
-  function chipOcorrenciaQ(r) {
-    var cor = r.situacao === 'resolvido' ? '#6b7280' : '#dc2626';
-    var titulo = r.tipo + ' · ' + (r.departamentos || []).join(', ') + '\n' + (r.detalhe || '') + '\nResponsável: ' + (r.analista_nome || '—') + ' · prazo ' + data(r.prazo) + ' · ' + (ROT_STATUS_Q[r.situacao] || r.situacao);
-    return '<span class="chip chip-q" title="' + esc(titulo) + '" style="color:' + cor + ';border-color:' + cor + '55"><strong>' + esc(r.tipo) + '</strong> · ' + esc((r.departamentos || []).join(', ')) + ' · ' + data(r.criado_em) +
-      (r.detalhe ? ' — ' + esc(resumoQ(r.detalhe)) : '') + ' · ' + esc(ROT_STATUS_Q[r.situacao] || r.situacao) + '</span>';
-  }
-  /**
-   * Sinais de atenção: só entram as ocorrências lançadas no módulo Qualidade (origem "modulo") dos últimos 90 dias. A mais recente fica em
-   * evidência, ao lado da inadimplência e das entregas; as anteriores ficam recolhidas atrás da seta do canto do título.
-   */
-  function atualizarSinaisQ(regs) {
-    var ref = Date.now() - DIAS_SINAL_Q * 86400000;
-    var rec = (regs || []).filter(function (r) { return r.origem === 'modulo' && r.status !== 'cancelado' && new Date(r.criado_em).getTime() >= ref; }).sort(maisRecenteQ);
-    var q = $('sinais-q'), mais = $('sinais-mais'), seta = $('sinais-seta'), vazio = $('sinais-vazio');
-    if (!q) return;
-    q.innerHTML = rec.length ? chipOcorrenciaQ(rec[0]) : '';
-    if (rec.length && vazio) vazio.style.display = 'none';
-    var extra = rec.slice(1);
-    if (mais) { mais.innerHTML = extra.map(chipOcorrenciaQ).join(''); mais.hidden = true; }
-    if (seta) {
-      seta.hidden = !extra.length; seta.setAttribute('aria-expanded', 'false');
-      var rot = $('sinais-seta-rot'); if (rot) rot.textContent = extra.length === 1 ? '+1 anterior' : '+' + extra.length + ' anteriores';
-      seta.onclick = function () { var abre = !!mais.hidden; mais.hidden = !abre; seta.setAttribute('aria-expanded', abre ? 'true' : 'false'); };
-    }
+  /** Seção Acessórias da ficha: as obrigações que venceram sem entrega ou foram entregues com atraso. */
+  function tabelaAcessorias(itens) {
+    if (!itens.length) return '<div class="linha-item"><span class="x">Nenhuma obrigação em aberto ou atrasada nos últimos 90 dias.</span></div>';
+    return '<div class="table-wrap"><table><thead><tr><th>Obrigação</th><th class="c">Competência</th><th class="c">Prazo</th><th class="c">Situação</th></tr></thead><tbody>' + itens.map(function (i) {
+      var venc = i.situacao === 'vencida', cor = venc ? '#dc2626' : '#d97706';
+      return '<tr><td style="white-space:normal">' + esc(i.nome) + '</td><td class="c">' + esc(i.competencia || '—') + '</td><td class="c">' + data(i.atraso || i.prazo) + '</td>' +
+        '<td class="c"><span class="pill" style="color:' + cor + ';border-color:' + cor + '55;background:' + cor + '14">' + (venc ? 'Vencida sem entrega' : 'Entregue com atraso' + (i.entrega ? ' em ' + data(i.entrega) : '')) + '</span></td></tr>';
+    }).join('') + '</tbody></table></div>';
   }
 
   /** Formulário do plano de ação: só os Departamentos em cima (sem tipo de registro); "Descreva a tratativa" ao lado do Responsável e do Prazo. */
@@ -1456,7 +1440,7 @@
       var o = await carregarOpcoesQ();
       var lista = await api('/api/cs/painel/qualidade/cliente/' + encodeURIComponent(c.id));
       alvo.innerHTML = formularioQ(o) + '<div class="qa-lista">' + listaRegistrosQ(lista.registros) + '</div>';
-      try { atualizarSinaisQ(lista.registros); } catch (e) { /* os sinais nunca derrubam o formulário */ }
+      var oc = $('qa-ocorrencias'); if (oc) oc.innerHTML = listaOcorrenciasQ(lista.registros);
       var cont = $('qa-cont'), det = $('qa-detalhe');
       det.addEventListener('input', function () { cont.textContent = det.value.length + '/' + o.max_detalhe; });
       var todos = $('qa-dep-todos');
@@ -1855,21 +1839,37 @@
     oper += e && e.total ? '<div class="blocos">' + bloco('Entregas (90 dias)', e.total, 'lidas do Acessórias em ' + data(e.atualizado_em), null) + bloco('Entregues com atraso', e.atrasadas_entregues, 'status "Ent. atrasada"', e.atrasadas_entregues ? '#dc2626' : null) + bloco('Vencidas sem entrega', e.vencidas_pendentes, 'status "Atrasada!" ou pendente vencida', e.vencidas_pendentes ? '#dc2626' : null) + '</div>'
       : '<div class="linha-item"><span class="x">Sem entregas lidas do Acessórias para este cliente no período' + (e ? ' (última leitura em ' + data(e.atualizado_em) + ')' : ' (ainda não lido)') + '.</span></div>';
 
-    // O motivo "Tratativas: ..." (resumo do termômetro) vira, depois que os registros chegam, o detalhe de cada ocorrência lançada no módulo Qualidade.
-    var chipMotivo = function (m) { return '<span class="chip" style="color:#dc2626;border-color:#dc262655">' + esc(m) + '</span>'; };
-    var motivos = r.motivos || [], ehTrat = function (m) { return /^Tratativas:/.test(m); };
-    var chipsBase = motivos.filter(function (m) { return !ehTrat(m); }).map(chipMotivo).join('');
-    var chipsTrat = motivos.filter(ehTrat).map(chipMotivo).join('');
-    var sinais = chipsBase + '<span id="sinais-q">' + chipsTrat + '</span>' + (chipsBase || chipsTrat ? '' : '<span class="cinza" id="sinais-vazio">nenhum sinal de atenção</span>') + '<div id="sinais-mais" hidden></div>';
+    // Sinais de atenção = só o resumo de cada critério; o detalhe fica nas seções Financeiro, Acessórias, Qualidade e Atendimentos logo abaixo.
+    var sinais = (r.motivos || []).map(function (m) { return '<span class="chip" style="color:#dc2626;border-color:#dc262655">' + esc(m) + '</span>'; }).join('') || '<span class="cinza">nenhum sinal de atenção</span>';
 
-    // 16/10/2026: a ficha fica só com risco, categoria, sinais de atenção e financeiro. Atendimento e e-mails vivem no módulo Atendimento;
-    // insatisfações e entregas saíram daqui por pedido do Reysner (as variáveis acima seguem montadas para quando a próxima etapa as reaproveitar).
+    // Seção Atendimentos: só o que pesa (SLA vermelho, nota baixa, insatisfação, cliente sensível, pesquisa); a lista completa e os e-mails ficam no módulo Atendimento.
+    var ruins = f.tickets.filter(function (t) { return t.pior_status === 'vermelho' || (t.nota_avaliacao != null && t.nota_avaliacao <= 2); });
+    var sub = function (t) { return '<div class="cinza" style="font-size:12px;font-weight:700;margin:12px 0 4px">' + t + '</div>'; };
+    var atendSec = '<div class="ficha-sec">Atendimentos</div>' + resumoAt +
+      sub('Atendimentos com SLA vermelho ou nota baixa (90 dias)') + (ruins.length ? tabelaAtendimentos(ruins) : '<div class="linha-item"><span class="x">Nenhum atendimento com SLA vermelho ou nota baixa nos últimos 90 dias.</span></div>') +
+      sub('Insatisfações registradas (180 dias)') + insat + (sens ? sub('Cliente sensível (90 dias)') + sens : '') + (pesq ? sub('Pesquisas (180 dias)') + pesq : '');
     $('ficha-corpo').innerHTML = blocos1 + blocos2 +
-      '<div class="ficha-sec sec-flex"><span>Sinais de atenção</span><button type="button" class="seta-btn" id="sinais-seta" aria-expanded="false" hidden title="Mostrar ou recolher as ocorrências anteriores"><span class="sp">▾</span> <span id="sinais-seta-rot"></span></button></div><div>' + sinais + '</div>' +
+      '<div class="ficha-sec">Sinais de atenção</div><div>' + sinais + '</div>' +
       '<div class="ficha-sec">Considerações Sucesso do Cliente / Time Operacional</div><div id="qa-secao"></div>' +
       '<div class="ficha-sec">Financeiro</div>' + fin +
+      '<div class="ficha-sec">Acessórias</div>' + oper + '<div id="ac-lista" style="margin-top:8px"><span class="cinza">Consultando as obrigações no Acessórias…</span></div>' +
+      '<div class="ficha-sec">Qualidade</div><div id="qa-ocorrencias"><span class="cinza">Carregando…</span></div>' +
+      atendSec +
       '<div class="nota" style="margin-top:10px">Atendimentos do Zappy e e-mails (recebidos e sem resposta, por destinatário) estão no módulo <strong>Atendimento</strong>.</div>';
     montarConsideracoes(c);
+    carregarAcessoriasFicha(c.id);
+  }
+
+  /** Lista de obrigações do Acessórias (em aberto ou com atraso), consultada na hora; mostra o resultado só se a ficha ainda é a do mesmo cliente. */
+  async function carregarAcessoriasFicha(id) {
+    var mesma = function () { return !!$('ac-lista') && !!estado.ficha && String(estado.ficha.cliente.id) === String(id); };
+    try {
+      var j = await api('/api/cs/painel/cliente/' + encodeURIComponent(id) + '/acessorias');
+      if (!mesma()) return;
+      $('ac-lista').innerHTML = tabelaAcessorias(j.itens || []) + '<div class="cinza" style="font-size:11px;margin-top:4px">Consultado no Acessórias agora (últimos ' + j.janela_dias + ' dias). Só entram as entregas que chegam ao cliente.</div>';
+    } catch (e) {
+      if (mesma()) $('ac-lista').innerHTML = '<div class="linha-item"><span class="x">Não foi possível listar as obrigações agora (' + esc(e.message) + '). Os totais acima vêm da última leitura.</span></div>';
+    }
   }
 
   function fecharFicha() { $('ficha').style.display = 'none'; document.querySelector('.ficha-box').classList.remove('larga'); }
