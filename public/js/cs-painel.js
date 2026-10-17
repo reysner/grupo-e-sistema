@@ -1536,7 +1536,7 @@
       var j = await api('/api/cs/painel/qualidade/analistas');
       var logins = [];
       try { logins = ((await api('/api/users')).users || []).filter(function (u) { return u.ativo !== false; }); } catch (e) { logins = []; }
-      ov.innerHTML = '<div class="qa-modal" role="dialog" aria-label="Gerenciar analistas"><div class="qa-modal-topo"><strong>Gerenciar analistas</strong><button type="button" class="qa-x" id="qa-fechar" aria-label="Fechar">✕</button></div>' +
+      ov.innerHTML = '<div class="qa-modal qa-modal-an" role="dialog" aria-label="Gerenciar analistas"><div class="qa-modal-topo"><strong>Gerenciar analistas</strong><button type="button" class="qa-x" id="qa-fechar" aria-label="Fechar">✕</button></div>' +
         '<div class="qa-modal-novo"><input id="qa-novo" type="text" placeholder="Nome completo do novo analista"><button type="button" class="gp-footer-btn" id="qa-add" style="width:auto">+ Adicionar</button></div>' +
         '<div class="cinza" style="font-size:12px;margin:8px 0">Cada analista pode ter um <strong>login</strong> ligado (necessário para ser gestor(a) e para receber avisos). <button type="button" class="gp-footer-btn" id="qa-auto" style="width:auto;display:inline-block;padding:2px 8px">Ligar logins automaticamente</button> liga os que casam com o nome; os demais você escolhe na lista de cada analista.</div>' +
         '<div class="qa-modal-lista">' + j.analistas.map(function (a) {

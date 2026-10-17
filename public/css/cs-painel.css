@@ -449,3 +449,9 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 .ac-legenda .ac-sw{width:18px;height:18px;font-size:11px;cursor:default;vertical-align:middle;margin-right:4px;}
 .ac-legenda .ac-sw:hover{transform:none;border-color:var(--border);}
 @media (max-width:700px){.ac-mx .ac-nome{min-width:190px;}.ac-nome .ac-quem{max-width:110px;}}
+
+/* Gerenciar analistas: janela larga, cada linha com nome, login ligado e as três ações visíveis (18/10/2026) */
+.qa-modal.qa-modal-an{max-width:min(1040px,97vw);}
+.qa-modal-an .qa-an-linha{gap:16px;}
+.qa-modal-an .qa-an-linha>span:first-child{flex:1;min-width:0;}
+.qa-modal-an .qa-an-linha select{width:100%;max-width:460px;}
