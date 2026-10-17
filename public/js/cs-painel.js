@@ -2319,10 +2319,10 @@
       '<div class="cinza" style="font-size:12px;margin-bottom:10px">A ocorrência vai para o gestor do departamento escolhido. Departamento sem gestor: vai para o Sucesso do Cliente. Pode haver mais de um gestor por departamento; o diretor fica acima do gestor (diretores costumam ser administradores e já enxergam tudo, por isso não recebem a fila). O gestor final é quem encerra o processo no portal do Sucesso do Cliente.</div>' +
       (j.departamentos || []).map(function (d) {
         var chips = d.gestores.length ? d.gestores.map(function (g) {
-          return '<span class="qg-chip">' + esc(g.nome) + ' <small>' + (g.papel === 'diretor' ? 'diretor' : g.papel === 'final' ? 'gestor final' : 'gestor') + '</small><button type="button" data-gdel="' + esc(g.id) + '" title="Retirar" aria-label="Retirar ' + esc(g.nome) + '">✕</button></span>';
+          return '<span class="qg-chip">' + esc(g.nome) + ' <small>' + (g.papel === 'diretor' ? 'diretor(a)' : g.papel === 'final' ? 'gestor(a) final' : 'gestor(a)') + '</small><button type="button" data-gdel="' + esc(g.id) + '" title="Retirar" aria-label="Retirar ' + esc(g.nome) + '">✕</button></span>';
         }).join('') : '<span class="cinza">sem gestor: as ocorrências vão para o Sucesso do Cliente</span>';
         return '<div class="qg-dep"><div class="qg-dep-nome">' + esc(d.rotulo) + '</div><div class="qg-chips">' + chips + '</div>' +
-          '<div class="qg-add"><select data-gsel="' + esc(d.codigo) + '">' + optU + '</select><select data-gpap="' + esc(d.codigo) + '"><option value="gestor">Gestor</option><option value="diretor">Diretor</option><option value="final">Gestor final</option></select>' +
+          '<div class="qg-add"><select data-gsel="' + esc(d.codigo) + '">' + optU + '</select><select data-gpap="' + esc(d.codigo) + '"><option value="gestor">Gestor(a)</option><option value="diretor">Diretor(a)</option><option value="final">Gestor(a) final</option></select>' +
           '<button type="button" class="gp-footer-btn" data-gadd="' + esc(d.codigo) + '" style="width:auto">+ Adicionar</button></div></div>';
       }).join('') + '<div class="pop-erro" id="qg-erro" role="alert"></div>';
   }

@@ -332,7 +332,7 @@ const semLixo = (e, nome) => {
     const j = { departamentos: [{ codigo: 'Fiscal', rotulo: 'Fiscal', gestores: [{ id: 1, user_id: 'u1', nome: 'Eduardo', papel: 'gestor' }, { id: 2, user_id: 'u2', nome: 'Denisa', papel: 'diretor' }] }, { codigo: 'Sucesso', rotulo: 'Sucesso do Cliente', gestores: [] }], usuarios: [{ id: 'u1', name: 'Eduardo' }, { id: 'u3', name: 'Thais <T>' }] };
     const h = C.t.htmlGestoresQ(j);
     assert.ok(h.includes('Gerenciar gestores por departamento') && h.includes('>Fiscal<') && h.includes('>Sucesso do Cliente<'));
-    assert.ok(h.includes('Eduardo <small>gestor</small>') && h.includes('Denisa <small>diretor</small>') && h.includes('data-gdel="1"') && h.includes('data-gdel="2"'));
+    assert.ok(h.includes('Eduardo <small>gestor(a)</small>') && h.includes('Denisa <small>diretor(a)</small>') && h.includes('data-gdel="1"') && h.includes('data-gdel="2"'));
     assert.ok(h.includes('sem gestor: as ocorrências vão para o Sucesso do Cliente'));
     assert.ok(h.includes('data-gadd="Fiscal"') && h.includes('data-gadd="Sucesso"') && h.includes('<option value="u3">Thais &lt;T&gt;</option>'));
   });
