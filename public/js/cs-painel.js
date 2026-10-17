@@ -1528,10 +1528,15 @@
   }
 
   /** Janela simples para o administrador editar o nome completo, ativar/desativar e incluir analistas (a mesma lista do módulo Atendimento). */
+  /** A lista de analistas é uma só (Gerenciar analistas): ao mudar, joga fora o que estava guardado e redesenha o portal que estiver aberto. */
+  function refrescarAnalistasEmTodoLugar() {
+    estado.qAnalistas = null; estado.qResumo = null; estado.g = null; estado.a = null; estado.s = null;
+    if (estado.secao === 'gestor') desenharGestor(); else if (estado.secao === 'analista') desenharAnalista(); else if (estado.secao === 'sucesso') desenharSucesso();
+  }
   async function abrirGerenciarAnalistas(aoFechar) {
     var ov = document.createElement('div'); ov.className = 'qa-overlay';
     document.body.appendChild(ov);
-    var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); estado.qAnalistas = null; if (aoFechar) aoFechar(); };
+    var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); refrescarAnalistasEmTodoLugar(); if (aoFechar) aoFechar(); };
     var desenhar = async function () {
       var j = await api('/api/cs/painel/qualidade/analistas');
       var logins = [];
@@ -1792,6 +1797,8 @@
   }
 
   /** Opções do campo Tipo de ocorrência: os tipos ativos, como os administradores criaram e editaram (nome e peso ficam em "Gerenciar tipos"). */
+  /** Opções do campo Responsável: os analistas ativos, com o nome completo (a mesma lista de Acessos > Analistas). */
+  function opcoesRespOc(lista) { return '<option value="">A definir pelo gestor</option>' + (lista || []).map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.nome) + '</option>'; }).join(''); }
   function opcoesTiposOc(lista) { return '<option value="">Selecione o tipo…</option>' + (lista || []).map(function (t) { return '<option>' + esc(t) + '</option>'; }).join(''); }
   /** Formulário "Registrar ocorrência" (o miolo da janela). */
   function formularioOcorrenciaQ(o, emTela) {
@@ -1803,6 +1810,7 @@
       '<div class="qa-oc-quem">Registrando como <strong>' + esc(usuarioLogadoNome() || 'você') + '</strong> em <strong>' + hojeIsoLocal().split('-').reverse().join('/') + '</strong>. Quem registra e a data ficam gravados na ocorrência.</div>' +
       '<div class="qa-oc-linha qa-oc-l1">' +
         '<div class="qa-campo"><label for="oc-assunto">Assunto da ocorrência</label><input type="text" id="oc-assunto" maxlength="100" placeholder="Qual o assunto da ocorrência?"></div>' +
+        '<div class="qa-campo"><label for="oc-resp">Responsável' + (ehAdminPainel() ? ' <a href="#" id="oc-editar-resp" class="qa-lnk">(editar lista)</a>' : '') + '</label><select id="oc-resp">' + opcoesRespOc(o.analistas) + '</select></div>' +
         '<div class="qa-campo"><label for="oc-anexo">Arquivo anexo</label><input type="file" id="oc-anexo" multiple><div class="cinza qa-oc-dica">Até ' + (o.max_anexos || 5) + ' arquivos de ' + Math.round((o.max_anexo || 10485760) / 1048576) + ' MB cada</div></div>' +
         '<div class="qa-campo"><label for="oc-prior">Prioridade</label><select id="oc-prior">' + pri + '</select></div>' +
         '<div class="qa-campo"><label for="oc-prazo">Prazo para execução <span class="req">*</span></label><input type="date" id="oc-prazo" min="' + hojeIsoLocal() + '"></div>' +
@@ -1820,7 +1828,8 @@
   /** Janela "Registrar ocorrência": empresa com sugestão ao digitar, descrição até 1500, anexos; ao registrar vai para o módulo, os Sinais de atenção e o risco. */
   async function abrirRegistrarOcorrencia(aoSalvar, raiz) {
     estado.qOpcoes = null;   // sempre a lista de tipos atual (outro administrador pode ter criado ou editado tipos)
-    var o; try { o = await carregarOpcoesQ(); } catch (e) { window.alert(e.message || 'Não foi possível abrir o formulário.'); return; }
+    var o; try { o = await carregarOpcoesQ(true); } catch (e) { window.alert(e.message || 'Não foi possível abrir o formulário.'); return; }
+    o = Object.assign({}, o, { analistas: estado.qAnalistas || [] });   // lista de analistas sempre atual (nome completo)
     var ov = null, fechar;
     if (raiz) {   // direto na tela de Qualidade: sem janela; "Limpar" recomeça o formulário
       raiz.innerHTML = formularioOcorrenciaQ(o, true);
@@ -1842,6 +1851,16 @@
         var s = $('oc-tipo'), atual = s.value;
         s.innerHTML = opcoesTiposOc(o.tipos);
         if ((o.tipos || []).indexOf(atual) >= 0) s.value = atual;
+      });
+    });
+    var edResp = $('oc-editar-resp');   // administrador: gerencia a lista de analistas aqui mesmo; ao fechar, todo o painel já usa a lista nova
+    if (edResp) edResp.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      abrirGerenciarAnalistas(async function () {
+        try { await carregarOpcoesQ(true); } catch (e) { return; }
+        var s = $('oc-resp'), atual = s.value;
+        s.innerHTML = opcoesRespOc(estado.qAnalistas);
+        if ((estado.qAnalistas || []).some(function (a) { return String(a.id) === String(atual); })) s.value = atual;
       });
     });
     var campo = $('oc-emp'), lista = $('oc-emp-lista'), sel = $('oc-emp-sel'), det = $('oc-det'), erro = $('oc-erro');
@@ -1892,7 +1911,7 @@
       var reabrir = function () { ok.disabled = false; ok.textContent = '✉ OK - Registrar'; };
       try {
         var r = await chamarApi('/api/cs/painel/qualidade/ocorrencias', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cliente_id: emp.id, assunto: assunto, tipo: tipo, prioridade: $('oc-prior').value, departamento: dep, prazo: prazo, detalhe: det.value }) });
+          body: JSON.stringify({ cliente_id: emp.id, assunto: assunto, tipo: tipo, prioridade: $('oc-prior').value, departamento: dep, prazo: prazo, detalhe: det.value, analista_id: $('oc-resp').value || null }) });
         var j = await r.json().catch(function () { return {}; });
         if (!r.ok) { erro.textContent = j.error || 'Não foi possível registrar a ocorrência.'; reabrir(); return; }
         var falhas = [];
@@ -2435,7 +2454,7 @@
         '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="gt-cancel">Fechar</button></div>';
     }
     return topo + '<div class="ficha-sec">Criar a tratativa</div>' +
-      '<div class="qa-campo"><label for="gt-plano">Plano de ação <span class="req">*</span> <span class="cinza" id="gt-cont">0/1500</span></label><textarea id="gt-plano" rows="5" maxlength="2000" placeholder="O que será feito para resolver e evitar que se repita">' + esc(r.plano_acao || '') + '</textarea></div>' +
+      '<div class="qa-campo"><label for="gt-plano">Plano de ação <span class="req">*</span> <span class="cinza" id="gt-cont">0/1500</span></label><textarea id="gt-plano" rows="5" maxlength="1500" placeholder="O que será feito para resolver e evitar que se repita">' + esc(r.plano_acao || '') + '</textarea></div>' +
       '<div class="qa-oc-linha qa-g-grid">' +
         '<div class="qa-campo"><label for="gt-analista">Responsável <span class="req">*</span></label><select id="gt-analista">' + optA + '</select></div>' +
         '<div class="qa-campo"><label for="gt-depto">Departamento que trata <span class="req">*</span></label><select id="gt-depto">' + optD + '</select></div>' +

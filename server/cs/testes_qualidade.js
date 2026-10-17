@@ -252,6 +252,13 @@ teste('ocorrência: prazo para execução é obrigatório, não pode ser passado
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prazo: '2026-10-15' }), t, '2026-10-16').ok, false, 'ontem não');
 });
 
+teste('ocorrência: responsável é opcional (vazio vira nulo) e vai junto quando informado', () => {
+  const t = ['Erro'], base = { cliente_id: '1', assunto: 'Guia errada', tipo: 'Erro', prioridade: 'Alta', departamento: 'Fiscal', detalhe: 'Detalhe da ocorrência', prazo: '2026-12-01' };
+  const v0 = validarOcorrencia(base, t, '2026-10-18');
+  assert.strictEqual(v0.ok, true); assert.strictEqual(v0.valores.analista_id, null);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, base, { analista_id: '' }), t, '2026-10-18').valores.analista_id, null);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, base, { analista_id: ' 12 ' }), t, '2026-10-18').valores.analista_id, '12');
+});
 teste('ocorrência: empresa, assunto (3 a 100), tipo da lista e descrição (5 a 1500, mantém as quebras de linha)', () => {
   const t = ['Erro'];
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { cliente_id: '' }), t).ok, false);

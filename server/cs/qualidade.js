@@ -94,7 +94,7 @@ function idsResponsaveis(corpo) {
 
 /**
  * Valida uma OCORRÊNCIA lançada no módulo Qualidade (empresa, assunto, tipo, prioridade, departamento, descrição).
- * Tem prazo para execução (obrigatório), mas ainda não tem responsável: quem trata é definido pelo gestor (Portal do Gestor, próxima etapa).
+ * Tem prazo para execução (obrigatório). O responsável (analista) é opcional: quem registra pode sugerir, e o gestor confirma ou troca ao criar a tratativa.
  */
 function validarOcorrencia(corpo, tiposPermitidos, hoje) {
   const b = corpo || {};
@@ -118,7 +118,8 @@ function validarOcorrencia(corpo, tiposPermitidos, hoje) {
   if (!ISO.test(prazo) || isNaN(Date.parse(prazo + 'T12:00:00Z'))) return { ok: false, erro: 'Informe o prazo para execução.' };
   if (prazo < h) return { ok: false, erro: 'O prazo não pode ser uma data que já passou.' };
   if (prazo > somarDias(h, 365)) return { ok: false, erro: 'O prazo passa de um ano: escolha uma data mais próxima.' };
-  return { ok: true, valores: { cliente_id, assunto, tipo, prioridade, departamento, detalhe, prazo } };
+  const analista_id = texto(b.analista_id, 80) || null;
+  return { ok: true, valores: { cliente_id, assunto, tipo, prioridade, departamento, detalhe, prazo, analista_id } };
 }
 
 const rotuloDepto = (d) => (d === 'Sucesso' ? 'Sucesso do Cliente' : d);
@@ -1063,14 +1064,19 @@ router.post('/ocorrencias', async (req, res) => {
     const cli = await pool.query(`SELECT id::text AS id, nome_empresa, regexp_replace(cnpj, '\\D', '', 'g') AS cnpj FROM clientes WHERE id::text = $1 AND status = 'ativo'`, [x.cliente_id]);
     if (!cli.rows.length) return res.status(404).json({ error: 'Empresa não encontrada entre os clientes ativos.' });
     const c = cli.rows[0];
+    if (x.analista_id) {   // responsável sugerido: tem de estar na lista de analistas e ativo
+      const an = (await pool.query('SELECT nome, ativo FROM analistas WHERE id::text = $1', [x.analista_id])).rows[0];
+      if (!an) return res.status(404).json({ error: 'Responsável não encontrado na lista de analistas.' });
+      if (!an.ativo) return res.status(400).json({ error: an.nome + ' está desativado na lista de analistas.' });
+    }
     // encaminhamento: gestor(es) do departamento escolhido; sem gestor cadastrado, vai para o Sucesso do Cliente
     const gest = (await pool.query(
       `SELECT g.papel, u.name FROM cs_qualidade_gestores g JOIN users u ON u.id::text = g.user_id WHERE g.departamento = $1 AND u.active = 1 ORDER BY u.name`, [x.departamento])).rows;
     const dest = destinoDaOcorrencia(x.departamento, gest), textoDest = textoDestino(x.departamento, dest);
     const ins = await pool.query(
-      `INSERT INTO cs_qualidade_registros (cliente_id, cnpj, cliente_nome, tipo, departamentos, detalhe, assunto, prioridade, prazo, origem, fila, criado_por, criado_por_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'modulo', $10, $11, $12) RETURNING id`,
-      [c.id, soDigitos(c.cnpj), c.nome_empresa, x.tipo, [x.departamento], x.detalhe, x.assunto, x.prioridade, x.prazo, dest.fila, req.user.name || null, req.user.id || null]);
+      `INSERT INTO cs_qualidade_registros (cliente_id, cnpj, cliente_nome, tipo, departamentos, detalhe, assunto, prioridade, prazo, origem, fila, criado_por, criado_por_id, analista_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'modulo', $10, $11, $12, $13) RETURNING id`,
+      [c.id, soDigitos(c.cnpj), c.nome_empresa, x.tipo, [x.departamento], x.detalhe, x.assunto, x.prioridade, x.prazo, dest.fila, req.user.name || null, req.user.id || null, x.analista_id]);
     await registrar(ins.rows[0].id, req.user.name, 'criado', x.tipo + ' · ' + x.prioridade + ' · ' + x.assunto);
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [ins.rows[0].id]);
     await notificarLancamento(rows[0], req.user.name, textoDest);
