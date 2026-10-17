@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, secaoFicha: secaoFicha, listaOcorrenciasQ: listaOcorrenciasQ, tabelaAcessorias: tabelaAcessorias, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, comoPesaTratativa: comoPesaTratativa, abrirNovoMotivoChurn: abrirNovoMotivoChurn }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, secaoFicha: secaoFicha, listaOcorrenciasQ: listaOcorrenciasQ, tabelaAcessorias: tabelaAcessorias, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, cartaoOcorrenciaQ: cartaoOcorrenciaQ, tabelaOcorrenciasMod: tabelaOcorrenciasMod, formularioOcorrenciaQ: formularioOcorrenciaQ, comoPesaTratativa: comoPesaTratativa, abrirNovoMotivoChurn: abrirNovoMotivoChurn }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null, tratativas: 75 }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -192,11 +192,37 @@ const semLixo = (e, nome) => {
     C.t.abrirNovoMotivoChurn('x1', () => {}, () => {});
   });
   await teste('cs: quadro "Como a Tratativa pesa" mostra o peso de cada tipo (dobro) e o que não conta', () => {
-    const h = C.t.comoPesaTratativa([{ nome: 'Multa', peso: 25 }, { nome: 'Erro', peso: 15 }]);
+    const h = C.t.comoPesaTratativa([{ id: 1, nome: 'Multa', peso: 25 }, { id: 2, nome: 'Erro', peso: 15 }]);
     assert.ok(h.includes('só administradores') && h.includes('Como a Tratativa pesa'));
-    assert.ok(h.includes('<td>Multa</td><td class="c">25</td><td class="c"><strong>50</strong></td>') && h.includes('<td>Erro</td><td class="c">15</td><td class="c"><strong>30</strong></td>'));
+    assert.ok(h.includes('value="25" data-tid="1"') && h.includes('<strong>50</strong>') && h.includes('value="15" data-tid="2"') && h.includes('<strong>30</strong>'), 'o peso de cada tipo é editável e mostra o dobro');
+    assert.ok(h.includes('id="qpn-nome"') && h.includes('id="qpn-add"'), 'dá para incluir tipo novo');
+    assert.ok(!h.includes('id="q-peso-box" open') && C.t.comoPesaTratativa([], true).includes('id="q-peso-box" open'), 'lembra se estava aberto');
     assert.ok(h.includes('1,5') && h.includes('0,25') && h.includes('não conta') && h.includes('mais de 45 dias'));
-    assert.ok(C.t.comoPesaTratativa([]).includes('Nenhum tipo ativo'));
+    assert.ok(C.t.comoPesaTratativa([]).includes('id="qpn-add"'), 'sem tipos ainda dá para incluir o primeiro');
+  });
+  await teste('cs: Registrar ocorrência — campos pedidos, prioridades e departamentos da lista, descrição até 2000, tipos cadastrados', () => {
+    const f = C.t.formularioOcorrenciaQ({ tipos: ['Erro', 'Retrabalho'], prioridades: ['Muito Alta', 'Alta', 'Média', 'Baixa'], max_detalhe: 2000, max_anexo: 10485760, max_anexos: 5 });
+    ['Registrar ocorrência', 'Assunto da ocorrência', 'Qual o assunto da ocorrência?', 'Arquivo anexo', 'Prioridade', 'Empresa', 'Tipo de ocorrência', 'Departamento', 'Descrição / Detalhes da ocorrência', 'OK - Registrar', 'Cancelar'].forEach((t) => assert.ok(f.includes(t), 'falta: ' + t));
+    assert.ok(!f.includes('Solicitação interna') && !f.includes('interna'), 'sem a caixa de solicitação interna');
+    assert.ok(f.includes('0/2000') && f.includes('maxlength="2000"'));
+    assert.ok(f.indexOf('>Muito Alta<') < f.indexOf('>Alta<') && f.indexOf('>Alta<') < f.indexOf('>Média<') && f.indexOf('>Média<') < f.indexOf('>Baixa<'), 'ordem das prioridades');
+    assert.ok(f.includes('<option selected>Média</option>'), 'Média vem marcada');
+    ['Comercial', 'Contábil', 'Financeiro', 'Fiscal', 'Legalização', 'Pessoal', 'Sucesso do Cliente'].forEach((d) => assert.ok(f.includes('>' + d + '</option>'), 'departamento ' + d));
+    assert.ok(f.includes('<option>Retrabalho</option>'), 'tipo novo cadastrado aparece no formulário');
+    assert.ok(f.includes('Até 5 arquivos de 10 MB cada'));
+  });
+  await teste('cs: lista de ocorrências do módulo — ações da liderança, excluir só do administrador, anexos e cartão da ficha', () => {
+    const r = (id, status) => ({ id, status, situacao: status, tipo: 'Erro', prioridade: 'Alta', departamentos: ['Sucesso'], assunto: 'Guia errada', detalhe: 'Linha 1\nlinha 2', cliente_nome: 'ALFA LTDA', criado_em: '2026-10-17T12:00:00Z', criado_por: 'Larissa', anexos: [{ id: 'a1', nome: 'guia.pdf', tamanho: 2048 }], notas: [] });
+    const adm = C.t.tabelaOcorrenciasMod([r('x1', 'aberto'), r('x2', 'resolvido')]);
+    assert.ok(adm.includes('data-oc-res="x1"') && adm.includes('data-oc-can="x1"') && !adm.includes('data-oc-res="x2"'), 'resolver e cancelar só nas abertas');
+    assert.ok(adm.includes('data-oc-del="x1"') && adm.includes('data-oc-del="x2"'), 'administrador exclui');
+    assert.ok(adm.includes('Sucesso do Cliente') && adm.includes('Guia errada') && adm.includes('data-anexo="a1"') && adm.includes('2 KB'));
+    const papel = C.t.estado.dados.usuario; C.t.estado.dados.usuario = { papel: 'usuario' };
+    assert.ok(!C.t.tabelaOcorrenciasMod([r('x1', 'aberto')]).includes('data-oc-del'), 'usuário não exclui');
+    C.t.estado.dados.usuario = papel;
+    assert.ok(C.t.tabelaOcorrenciasMod([]).includes('Nenhuma ocorrência registrada ainda'));
+    const c = C.t.cartaoOcorrenciaQ(r('x1', 'aberto'));
+    assert.ok(c.includes('<strong>Erro</strong>') && c.includes('Alta') && c.includes('Guia errada') && c.includes('Linha 1\nlinha 2') && c.includes('guia.pdf') && c.includes('Sucesso do Cliente'));
   });
   await teste('cs: análise traz o grupo consolidado e cada empresa; zero vira "sem faturamento"; CPF aparece', () => {
     const e = C.t.dadosExport('analise');

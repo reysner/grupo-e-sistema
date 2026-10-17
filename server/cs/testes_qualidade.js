@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { TIPO_PLANO, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { TIPO_PLANO, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -26,10 +26,10 @@ teste('"Todos" vira todos os departamentos; departamento desconhecido é ignorad
   assert.strictEqual(validarRegistro(Object.assign({}, base, { departamentos: ['Marte'] }), HOJE).ok, false);
   assert.strictEqual(validarRegistro(Object.assign({}, base, { departamentos: [] }), HOJE).ok, false);
 });
-teste('descrição: mínimo de 5 e máximo de 1500 caracteres', () => {
+teste('descrição: mínimo de 5 e máximo de 2000 caracteres', () => {
   assert.strictEqual(validarRegistro(Object.assign({}, base, { detalhe: 'oi' }), HOJE).ok, false);
-  assert.strictEqual(validarRegistro(Object.assign({}, base, { detalhe: 'a'.repeat(1500) }), HOJE).ok, true);
-  assert.strictEqual(validarRegistro(Object.assign({}, base, { detalhe: 'a'.repeat(1501) }), HOJE).ok, false);
+  assert.strictEqual(validarRegistro(Object.assign({}, base, { detalhe: 'a'.repeat(2000) }), HOJE).ok, true);
+  assert.strictEqual(validarRegistro(Object.assign({}, base, { detalhe: 'a'.repeat(2001) }), HOJE).ok, false);
 });
 teste('prazo: hoje vale, ontem não, além de um ano não; cliente e analista são obrigatórios', () => {
   assert.strictEqual(validarRegistro(Object.assign({}, base, { prazo: '2026-10-16' }), HOJE).ok, true);
@@ -84,6 +84,30 @@ teste('mais de um responsável: aceita lista ou um só, tira repetidos e vazios,
   assert.deepStrictEqual(idsResponsaveis({}), []);
   assert.deepStrictEqual(idsResponsaveis(null), []);
   assert.strictEqual(idsResponsaveis({ analistas_ids: Array.from({ length: 30 }, (_, i) => String(i + 1)) }).length, 20);
+});
+
+const oc = { cliente_id: '123', assunto: 'Guia enviada com valor errado', tipo: 'Erro', prioridade: 'Média', departamento: 'Fiscal', detalhe: 'O cliente pagou a diferença e pediu retificação.' };
+teste('ocorrência: aceita o formulário completo; prioridades e departamentos são os combinados', () => {
+  const v = validarOcorrencia(oc, ['Erro', 'Multa']);
+  assert.strictEqual(v.ok, true);
+  assert.deepStrictEqual(PRIORIDADES, ['Muito Alta', 'Alta', 'Média', 'Baixa']);
+  PRIORIDADES.forEach((p) => assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prioridade: p }), ['Erro']).ok, true, p));
+  ['Comercial', 'Contábil', 'Financeiro', 'Fiscal', 'Legalização', 'Pessoal', 'Sucesso'].forEach((d) => assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { departamento: d }), ['Erro']).ok, true, d));
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prioridade: 'Urgente' }), ['Erro']).ok, false);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { departamento: 'Marte' }), ['Erro']).ok, false);
+});
+teste('ocorrência: empresa, assunto (3 a 100), tipo da lista e descrição (5 a 2000, mantém as quebras de linha)', () => {
+  const t = ['Erro'];
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { cliente_id: '' }), t).ok, false);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { assunto: 'ab' }), t).ok, false);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { assunto: 'a'.repeat(101) }), t).ok, false);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { assunto: 'a'.repeat(100) }), t).ok, true);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { tipo: 'Multa' }), t).ok, false, 'tipo fora da lista ativa');
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { tipo: 'Retrabalho' }), ['Retrabalho']).ok, true, 'tipo novo cadastrado entra na lista');
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { detalhe: 'oi' }), t).ok, false);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { detalhe: 'a'.repeat(2000) }), t).ok, true);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { detalhe: 'a'.repeat(2001) }), t).ok, false);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { detalhe: 'linha 1\r\nlinha 2  \nlinha 3' }), t).valores.detalhe, 'linha 1\nlinha 2\nlinha 3');
 });
 
 teste('fluxo: finalizar exige o que foi feito; a liderança encerra (resolvido) sem novo texto se a tratativa já existe', () => {

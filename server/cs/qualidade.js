@@ -27,7 +27,10 @@ const TIPOS = ['Multa', 'Erro', 'Reclamação', 'Atraso', 'Falha de atendimento'
 const DEPARTAMENTOS = ['Comercial', 'Contábil', 'Financeiro', 'Fiscal', 'Legalização', 'Pessoal', 'Sucesso'];
 const STATUS = ['aberto', 'em_tratamento', 'finalizada', 'resolvido', 'cancelado'];
 const ROTULO_STATUS = { aberto: 'Aberto', em_tratamento: 'Em tratamento', finalizada: 'Finalizada (aguardando validação)', resolvido: 'Resolvido', cancelado: 'Cancelado' };
-const MAX_DETALHE = 1500;   // "Descreva a tratativa" da ficha (era 600; ampliado a pedido do Reysner, 17/10/2026)
+const MAX_DETALHE = 2000;   // "Descreva a tratativa" da ficha e "Descrição / Detalhes da ocorrência" (era 600; ampliado a pedido do Reysner, 17/10/2026)
+const PRIORIDADES = ['Muito Alta', 'Alta', 'Média', 'Baixa'];
+const MAX_ANEXO = 10 * 1024 * 1024;   // por arquivo (ficam no banco)
+const MAX_ANEXOS = 5;               // por ocorrência
 const MAX_TRATATIVA = 600;
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const PAPEIS = ['administrador', 'usuario'];
@@ -75,6 +78,30 @@ function idsResponsaveis(corpo) {
   const ids = [];
   bruto.forEach((x) => { const t = texto(x, 80); if (t && !ids.includes(t)) ids.push(t); });
   return ids.slice(0, 20);
+}
+
+/**
+ * Valida uma OCORRÊNCIA lançada no módulo Qualidade (empresa, assunto, tipo, prioridade, departamento, descrição).
+ * Não tem analista nem prazo: a ocorrência fica aberta até a liderança resolver ou cancelar.
+ */
+function validarOcorrencia(corpo, tiposPermitidos) {
+  const b = corpo || {};
+  const cliente_id = texto(b.cliente_id, 80);
+  if (!cliente_id) return { ok: false, erro: 'Escolha a empresa na lista que aparece enquanto você digita.' };
+  const assunto = texto(b.assunto, 101);
+  if (assunto.length < 3) return { ok: false, erro: 'Informe o assunto da ocorrência (mínimo de 3 caracteres).' };
+  if (assunto.length > 100) return { ok: false, erro: 'O assunto passa de 100 caracteres.' };
+  const tipo = (tiposPermitidos || TIPOS).find((t) => t === b.tipo);
+  if (!tipo) return { ok: false, erro: 'Escolha o tipo de ocorrência.' };
+  const prioridade = PRIORIDADES.find((p) => p === b.prioridade) || null;
+  if (!prioridade) return { ok: false, erro: 'Escolha a prioridade.' };
+  const departamento = DEPARTAMENTOS.find((d) => d === b.departamento);
+  if (!departamento) return { ok: false, erro: 'Escolha o departamento.' };
+  // a descrição guarda as quebras de linha (por isso não passa por texto())
+  const detalhe = String(b.detalhe == null ? '' : b.detalhe).replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
+  if (detalhe.length < 5) return { ok: false, erro: 'Descreva a ocorrência (mínimo de 5 caracteres).' };
+  if (detalhe.length > MAX_DETALHE) return { ok: false, erro: 'A descrição passa de ' + MAX_DETALHE + ' caracteres.' };
+  return { ok: true, valores: { cliente_id, assunto, tipo, prioridade, departamento, detalhe } };
 }
 
 /** Valida a mudança de um registro: status, prazo e/ou tratativa. */
@@ -161,6 +188,15 @@ function garantirSchema() {
       // origem: 'ficha' = plano de ação escrito na ficha do cliente (informativo: não entra nos Sinais de atenção, no card Tratativa nem no risco);
       // 'modulo' = lançado no módulo Qualidade (aparece nos Sinais de atenção, alimenta o card Tratativa e pesa no risco de churn).
       .then(() => pool.query("ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS origem TEXT NOT NULL DEFAULT 'ficha'"))
+      // ocorrências do módulo: assunto e prioridade; ainda sem responsável nem prazo (a tratativa por departamento vem na próxima etapa)
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS assunto TEXT'))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS prioridade TEXT'))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ALTER COLUMN analista_id DROP NOT NULL'))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ALTER COLUMN prazo DROP NOT NULL'))
+      .then(() => pool.query(`CREATE TABLE IF NOT EXISTS cs_qualidade_anexos (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(), registro_id UUID NOT NULL REFERENCES cs_qualidade_registros(id) ON DELETE CASCADE,
+        nome TEXT NOT NULL, mime TEXT, tamanho INT NOT NULL, dados BYTEA NOT NULL, criado_por TEXT, criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW())`))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_anexos ENABLE ROW LEVEL SECURITY'))
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ENABLE ROW LEVEL SECURITY'))
       .then(() => pool.query('CREATE INDEX IF NOT EXISTS cs_qualidade_cliente_idx ON cs_qualidade_registros (cliente_id)'))
       .then(() => pool.query('CREATE INDEX IF NOT EXISTS cs_qualidade_analista_idx ON cs_qualidade_registros (analista_id)'))
@@ -193,7 +229,7 @@ function soEquipe(req, res, next) {
 }
 
 const COLUNAS = `r.id, r.cliente_id, r.cnpj, r.cliente_nome, r.tipo, r.departamentos, r.detalhe, r.analista_id, a.nome AS analista_nome,
-       to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.status, r.origem, r.criado_por, r.criado_em, r.resolvido_em, r.resolvido_por, r.tratativa, r.validado_em, r.validado_por`;
+       to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.status, r.origem, r.assunto, r.prioridade, r.criado_por, r.criado_em, r.resolvido_em, r.resolvido_por, r.tratativa, r.validado_em, r.validado_por`;
 const DE = `FROM cs_qualidade_registros r LEFT JOIN analistas a ON a.id::text = r.analista_id`;
 const comSituacao = (rows) => rows.map((r) => ({ ...r, situacao: situacao(r.status, r.prazo), status_rotulo: ROTULO_STATUS[r.status] }));
 
@@ -209,6 +245,16 @@ async function anexarNotas(lista) {
   } catch (e) { return lista.map((r) => ({ ...r, notas: [] })); }
 }
 
+/** Anexa a cada registro a lista de arquivos (sem o conteúdo): [{ id, nome, tamanho }]. */
+async function anexarAnexos(lista) {
+  if (!lista.length) return lista;
+  try {
+    const { rows } = await pool.query('SELECT id, registro_id, nome, tamanho FROM cs_qualidade_anexos WHERE registro_id = ANY($1::uuid[]) ORDER BY criado_em', [lista.map((r) => r.id)]);
+    const por = {}; rows.forEach((a) => { (por[a.registro_id] = por[a.registro_id] || []).push({ id: a.id, nome: a.nome, tamanho: a.tamanho }); });
+    return lista.map((r) => ({ ...r, anexos: por[r.id] || [] }));
+  } catch (e) { return lista.map((r) => ({ ...r, anexos: [] })); }
+}
+
 /**
  * Aviso no sino a TODOS os administradores quando alguém lança uma consideração de Qualidade. O sino é compartilhado: qualquer administrador
  * que abrir o aviso chega ao módulo Qualidade do /cs, onde todos podem interagir (validar, devolver, cancelar, ajustar prazo).
@@ -218,6 +264,12 @@ async function notificarLancamento(reg, lancador) {
     await pool.query(`CREATE TABLE IF NOT EXISTS notificacoes (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(), tipo TEXT NOT NULL, titulo TEXT NOT NULL, mensagem TEXT NOT NULL,
       lida BOOLEAN DEFAULT false, link_modulo TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`);
+    if (reg.origem === 'modulo') {   // ocorrência registrada no módulo
+      await pool.query(
+        `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ('qualidade_lancada', $1, $2, 'cs-qualidade')`,
+        ['Nova ocorrência registrada: ' + reg.tipo, (lancador || 'Alguém') + ' registrou uma ocorrência (' + reg.tipo + ', prioridade ' + (reg.prioridade || '—') + ') em "' + (reg.cliente_nome || 'cliente') + '": ' + (reg.assunto || '') + ' — ' + (reg.departamentos || []).join(', ') + '.']);
+      return;
+    }
     const prazo = String(reg.prazo || '').split('-').reverse().join('/');
     await pool.query(
       `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ('qualidade_lancada', $1, $2, 'cs-qualidade')`,
@@ -275,7 +327,7 @@ const soAdmin = (req, res, next) => {
 router.get('/opcoes', async (req, res) => {
   try {
     const tipos = await tiposAtivos();
-    res.json({ tipos: tipos.map((t) => t.nome), departamentos: DEPARTAMENTOS, status: STATUS, max_detalhe: MAX_DETALHE, max_tratativa: MAX_TRATATIVA });
+    res.json({ tipos: tipos.map((t) => t.nome), departamentos: DEPARTAMENTOS, prioridades: PRIORIDADES, status: STATUS, max_detalhe: MAX_DETALHE, max_tratativa: MAX_TRATATIVA, max_anexo: MAX_ANEXO, max_anexos: MAX_ANEXOS });
   } catch (e) { console.error('[qualidade] GET /opcoes falhou:', e); res.status(500).json({ error: 'Erro ao ler as opções.' }); }
 });
 
@@ -352,7 +404,7 @@ router.get('/cliente/:clienteId', async (req, res) => {
   try {
     await garantirSchema();
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.cliente_id = $1 ORDER BY r.criado_em DESC LIMIT 100`, [String(req.params.clienteId)]);
-    res.json({ registros: await anexarNotas(comSituacao(rows)) });
+    res.json({ registros: await anexarAnexos(await anexarNotas(comSituacao(rows))) });
   } catch (e) { console.error('[qualidade] GET /cliente falhou:', e); res.status(500).json({ error: 'Erro ao ler os registros do cliente.' }); }
 });
 
@@ -428,6 +480,88 @@ router.get('/analista/:id', async (req, res) => {
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.analista_id = $1 ORDER BY r.criado_em DESC LIMIT 300`, [String(req.params.id)]);
     res.json({ analista: a.rows[0], registros: await anexarNotas(comSituacao(rows)) });
   } catch (e) { console.error('[qualidade] GET /analista falhou:', e); res.status(500).json({ error: 'Erro ao ler os registros do analista.' }); }
+});
+
+/** Sugestão de empresas ao digitar: as que COMEÇAM com o texto (nome ou CNPJ) vêm primeiro; se couberem mais, as que apenas contêm. */
+router.get('/empresas', async (req, res) => {
+  try {
+    const q = texto(req.query.q, 60);
+    if (q.length < 1) return res.json({ empresas: [] });
+    const esc = q.replace(/[\\%_]/g, '\\$&');
+    const dig = soDigitos(q);
+    const prefixo = (await pool.query(
+      `SELECT id::text AS id, nome_empresa AS nome, cnpj FROM clientes
+        WHERE status = 'ativo' AND (nome_empresa ILIKE $1 OR ($2 <> '' AND regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g') LIKE $2 || '%'))
+        ORDER BY nome_empresa LIMIT 15`, [esc + '%', dig.length >= 2 ? dig : ''])).rows;
+    let lista = prefixo;
+    if (lista.length < 15 && q.length >= 3) {
+      const ja = lista.map((e) => e.id);
+      const contem = (await pool.query(
+        `SELECT id::text AS id, nome_empresa AS nome, cnpj FROM clientes WHERE status = 'ativo' AND nome_empresa ILIKE $1 AND NOT (id::text = ANY($2::text[])) ORDER BY nome_empresa LIMIT $3`,
+        ['%' + esc + '%', ja, 15 - lista.length])).rows;
+      lista = lista.concat(contem);
+    }
+    res.json({ empresas: lista });
+  } catch (e) { console.error('[qualidade] GET /empresas falhou:', e); res.status(500).json({ error: 'Erro ao buscar as empresas.' }); }
+});
+
+/** REGISTRAR OCORRÊNCIA: lança no módulo Qualidade (aparece nos Sinais de atenção da empresa, alimenta o card Tratativas e pesa no risco de churn). */
+router.post('/ocorrencias', async (req, res) => {
+  try {
+    const tipos = (await tiposAtivos()).map((t) => t.nome);
+    const v = validarOcorrencia(req.body, tipos);
+    if (!v.ok) return res.status(400).json({ error: v.erro });
+    const x = v.valores;
+    const cli = await pool.query(`SELECT id::text AS id, nome_empresa, regexp_replace(cnpj, '\\D', '', 'g') AS cnpj FROM clientes WHERE id::text = $1 AND status = 'ativo'`, [x.cliente_id]);
+    if (!cli.rows.length) return res.status(404).json({ error: 'Empresa não encontrada entre os clientes ativos.' });
+    const c = cli.rows[0];
+    const ins = await pool.query(
+      `INSERT INTO cs_qualidade_registros (cliente_id, cnpj, cliente_nome, tipo, departamentos, detalhe, assunto, prioridade, origem, criado_por, criado_por_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'modulo', $9, $10) RETURNING id`,
+      [c.id, soDigitos(c.cnpj), c.nome_empresa, x.tipo, [x.departamento], x.detalhe, x.assunto, x.prioridade, req.user.name || null, req.user.id || null]);
+    await registrar(ins.rows[0].id, req.user.name, 'criado', x.tipo + ' · ' + x.prioridade + ' · ' + x.assunto);
+    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [ins.rows[0].id]);
+    await notificarLancamento(rows[0], req.user.name);
+    res.status(201).json({ registro: comSituacao(rows)[0] });
+  } catch (e) { console.error('[qualidade] POST /ocorrencias falhou:', e); res.status(500).json({ error: 'Erro ao registrar a ocorrência.' }); }
+});
+
+/** Anexo de uma ocorrência: o arquivo vai no corpo da requisição (bytes) e o nome em ?nome=. Até 5 arquivos de 10 MB por ocorrência. */
+router.post('/ocorrencias/:id/anexo', express.raw({ type: () => true, limit: MAX_ANEXO + 1024 }), async (req, res) => {
+  try {
+    await garantirSchema();
+    const reg = (await pool.query("SELECT id FROM cs_qualidade_registros WHERE id::text = $1 AND origem = 'modulo'", [String(req.params.id)])).rows[0];
+    if (!reg) return res.status(404).json({ error: 'Ocorrência não encontrada.' });
+    const dados = Buffer.isBuffer(req.body) ? req.body : null;
+    if (!dados || !dados.length) return res.status(400).json({ error: 'Arquivo vazio.' });
+    if (dados.length > MAX_ANEXO) return res.status(413).json({ error: 'O arquivo passa de ' + Math.round(MAX_ANEXO / 1048576) + ' MB.' });
+    const n = (await pool.query('SELECT COUNT(*)::int AS n FROM cs_qualidade_anexos WHERE registro_id = $1', [reg.id])).rows[0].n;
+    if (n >= MAX_ANEXOS) return res.status(400).json({ error: 'No máximo ' + MAX_ANEXOS + ' arquivos por ocorrência.' });
+    const nome = texto(req.query.nome, 150).replace(/[\\/:*?"<>|]/g, '_') || 'arquivo';
+    const mime = texto(req.query.tipo, 100) || 'application/octet-stream';   // o arquivo sempre chega como binário; o tipo original vem em ?tipo=
+    const ins = await pool.query('INSERT INTO cs_qualidade_anexos (registro_id, nome, mime, tamanho, dados, criado_por) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, nome, tamanho', [reg.id, nome, mime, dados.length, dados, req.user.name || null]);
+    res.status(201).json({ anexo: ins.rows[0] });
+  } catch (e) { console.error('[qualidade] POST anexo falhou:', e); res.status(500).json({ error: 'Erro ao guardar o anexo.' }); }
+});
+
+/** Baixa um anexo (sempre como arquivo para salvar; nunca é aberto dentro do sistema). */
+router.get('/anexo/:anexoId', async (req, res) => {
+  try {
+    await garantirSchema();
+    const a = (await pool.query('SELECT nome, mime, dados FROM cs_qualidade_anexos WHERE id::text = $1', [String(req.params.anexoId)])).rows[0];
+    if (!a) return res.status(404).json({ error: 'Anexo não encontrado.' });
+    res.set({ 'Content-Type': a.mime || 'application/octet-stream', 'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(a.nome), 'X-Content-Type-Options': 'nosniff' });
+    res.send(a.dados);
+  } catch (e) { console.error('[qualidade] GET anexo falhou:', e); res.status(500).json({ error: 'Erro ao baixar o anexo.' }); }
+});
+
+/** Ocorrências lançadas no módulo (as mais recentes primeiro; canceladas ficam de fora). */
+router.get('/ocorrencias', async (req, res) => {
+  try {
+    await garantirSchema();
+    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.origem = 'modulo' AND r.status <> 'cancelado' ORDER BY r.criado_em DESC LIMIT 200`);
+    res.json({ registros: await anexarAnexos(await anexarNotas(comSituacao(rows))) });
+  } catch (e) { console.error('[qualidade] GET /ocorrencias falhou:', e); res.status(500).json({ error: 'Erro ao ler as ocorrências.' }); }
 });
 
 router.patch('/:id', async (req, res) => {
@@ -651,4 +785,4 @@ routerAnalista.post('/:id/nota', async (req, res) => {
   } catch (e) { console.error('[qualidade] POST /nota falhou:', e); res.status(500).json({ error: 'Erro ao salvar a nota.' }); }
 });
 
-module.exports = { router, routerAnalista, validarTipo, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { router, routerAnalista, validarTipo, validarOcorrencia, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };

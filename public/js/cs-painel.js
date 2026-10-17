@@ -1391,16 +1391,17 @@
     return recolhivelQ(planos);
   }
   /** Lista com o mais recente à vista e os anteriores recolhidos sob uma seta (<details>). */
-  function recolhivelQ(lista) {
-    var h = cartaoRegistroQ(lista[0]);
-    if (lista.length > 1) h += '<details class="qa-mais"><summary><span class="sp">▸</span> ' + (lista.length - 1) + (lista.length - 1 === 1 ? ' registro anterior' : ' registros anteriores') + '</summary>' + lista.slice(1).map(cartaoRegistroQ).join('') + '</details>';
+  function recolhivelQ(lista, cartao) {
+    cartao = cartao || cartaoRegistroQ;
+    var h = cartao(lista[0]);
+    if (lista.length > 1) h += '<details class="qa-mais"><summary><span class="sp">▸</span> ' + (lista.length - 1) + (lista.length - 1 === 1 ? ' registro anterior' : ' registros anteriores') + '</summary>' + lista.slice(1).map(cartao).join('') + '</details>';
     return h;
   }
   /** Seção Qualidade da ficha: as ocorrências LANÇADAS NO MÓDULO Qualidade (origem "modulo"), com tipo, departamentos, descrição, responsável, prazo e andamento. */
   function listaOcorrenciasQ(regs) {
     var oc = (regs || []).filter(function (r) { return r.origem === 'modulo' && r.status !== 'cancelado'; }).sort(maisRecenteQ);
     if (!oc.length) return '<div class="linha-item"><span class="x">Nenhuma ocorrência lançada no módulo Qualidade para este cliente.</span></div>';
-    return recolhivelQ(oc);
+    return recolhivelQ(oc, cartaoOcorrenciaQ);
   }
   /** Seção Acessórias da ficha: as obrigações que venceram sem entrega ou foram entregues com atraso. */
   function tabelaAcessorias(itens) {
@@ -1591,7 +1592,7 @@
     return '<div class="card"><div class="card-title">Lançamentos dos últimos 7 dias</div><div class="card-sub">' + rs.length + ' registro(s). Clique no analista para validar, devolver, ajustar o prazo ou cancelar.</div>' +
       '<div class="table-wrap"><table><thead><tr><th>Lançado em</th><th>Empresa</th><th>Tipo</th><th>Analista</th><th class="c">Prazo</th><th class="c">Status</th></tr></thead><tbody>' + rs.map(function (r) {
         return '<tr><td>' + data(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td>' +
-          '<td><button class="link" data-qan="' + esc(r.analista_id) + '">' + esc(r.analista_nome || '—') + '</button></td><td class="c">' + data(r.prazo) + '</td><td class="c">' + pillStatusQ(r.situacao) + '</td></tr>';
+          '<td>' + (r.analista_id ? '<button class="link" data-qan="' + esc(r.analista_id) + '">' + esc(r.analista_nome || '—') + '</button>' : '<span class="cinza">ocorrência (sem responsável)</span>') + '</td><td class="c">' + data(r.prazo) + '</td><td class="c">' + pillStatusQ(r.situacao) + '</td></tr>';
       }).join('') + '</tbody></table></div></div>';
   }
   function filtroQ() { return estado.filtroQ || (estado.filtroQ = { busca: '', todos: false }); }
@@ -1599,24 +1600,174 @@
     estado.qResumo = await api('/api/cs/painel/qualidade/resumo');
     try { estado.qRecentes = (await api('/api/cs/painel/qualidade/recentes?dias=7')).registros; } catch (e) { estado.qRecentes = []; }
   }
-  /** Quadro "Como a Tratativa pesa no risco de churn": só o administrador vê, no módulo Qualidade (pedido do Reysner, 17/10/2026). */
-  function comoPesaTratativa(tipos) {
-    var linhas = (tipos || []).map(function (t) { return '<tr><td>' + esc(t.nome) + '</td><td class="c">' + t.peso + '</td><td class="c"><strong>' + (t.peso * 2) + '</strong></td></tr>'; }).join('');
-    return '<details class="card leg" style="padding:12px 20px"><summary><span class="seta">▶</span> 🔒 Como a Tratativa pesa no risco de churn <span style="font-weight:500;text-transform:none;letter-spacing:0">(só administradores · clique para expandir)</span></summary><div class="corpo">' +
-      '<div><strong>Quem alimenta</strong><br>Só o que é <strong>lançado no módulo Qualidade</strong> (erro, multa, reclamação, atraso, falha…): aparece nos Sinais de atenção da ficha, no card Tratativas da Visão Geral e pesa no risco, que agora tem quatro critérios: Financeiro, Atendimento, Operacional e Tratativas. O plano de ação escrito na ficha ("Descreva a tratativa") <strong>não conta</strong>.</div>' +
-      '<div><strong>Como cada ocorrência pesa</strong><br>Vale o <strong>dobro do peso do seu tipo</strong> (tabela abaixo), multiplicado por: 1,5 se o prazo venceu · 1 em aberto ou em tratamento · 0,5 finalizada aguardando validação · 0,25 resolvida. Ocorrência com mais de 45 dias vale metade. Vale o que foi lançado nos últimos 90 dias, a soma é limitada a 100 por cliente e a cancelada não entra.</div>' +
+  // ── MÓDULO QUALIDADE: ocorrências, pesos e lista ──────────────────────────────────────
+  var DEPS_OCORRENCIA = [['Comercial', 'Comercial'], ['Contábil', 'Contábil'], ['Financeiro', 'Financeiro'], ['Fiscal', 'Fiscal'], ['Legalização', 'Legalização'], ['Pessoal', 'Pessoal'], ['Sucesso', 'Sucesso do Cliente']];
+  var COR_PRIORIDADE = { 'Muito Alta': '#b91c1c', Alta: '#c2410c', 'Média': '#1d4ed8', Baixa: '#6b7280' };
+  function rotuloDepto(d) { return d === 'Sucesso' ? 'Sucesso do Cliente' : d; }
+  function pillPrioridadeQ(p) {
+    if (!p) return '<span class="cinza">—</span>';
+    var c = COR_PRIORIDADE[p] || '#6b7280';
+    return '<span class="pill" style="color:' + c + ';border-color:' + c + '55;background:' + c + '14">' + esc(p) + '</span>';
+  }
+  function tamanhoTxt(n) { n = Number(n) || 0; return n >= 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  function curtoQ(t, n) { t = String(t || '').split(/\s+/).join(' ').trim(); return t.length <= n ? t : t.slice(0, n).replace(/\s+\S*$/, '') + '…'; }
+  function anexosQ(r) {
+    var a = r.anexos || []; if (!a.length) return '';
+    return '<div class="qa-anexos">' + a.map(function (x) { return '<a href="#" data-anexo="' + esc(x.id) + '" data-nome="' + esc(x.nome) + '" title="Baixar o arquivo">📎 ' + esc(x.nome) + ' <span class="cinza">(' + tamanhoTxt(x.tamanho) + ')</span></a>'; }).join('') + '</div>';
+  }
+  /** Cartão de uma ocorrência (seção Qualidade da ficha): tipo, prioridade, departamento, assunto, descrição, anexos e andamento. */
+  function cartaoOcorrenciaQ(r) {
+    return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao || r.status) + ' <strong>' + esc(r.tipo) + '</strong> ' + pillPrioridadeQ(r.prioridade) + ' <span class="cinza">· ' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</span></div>' +
+      (r.assunto ? '<div class="qa-reg-txt"><strong>' + esc(r.assunto) + '</strong></div>' : '') +
+      '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
+      '<div class="qa-reg-rod">Registrada em ' + data(r.criado_em) + ' por ' + esc(r.criado_por || '—') + (r.resolvido_em ? ' · resolvida em ' + data(r.resolvido_em) : '') + '</div>' +
+      anexosQ(r) + (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '</div>';
+  }
+  async function baixarAnexoQ(id, nome) {
+    try {
+      var r = await chamarApi('/api/cs/painel/qualidade/anexo/' + encodeURIComponent(id));
+      if (!r.ok) { var j = await r.json().catch(function () { return {}; }); window.alert(j.error || 'Não foi possível baixar o anexo.'); return; }
+      var url = URL.createObjectURL(await r.blob());
+      var a = document.createElement('a'); a.href = url; a.download = nome || 'anexo'; document.body.appendChild(a); a.click();
+      setTimeout(function () { if (a.parentNode) a.parentNode.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+    } catch (e) { window.alert('Sem conexão com o servidor. Tente de novo.'); }
+  }
+  if (document.addEventListener) document.addEventListener('click', function (ev) {
+    var a = ev.target && ev.target.closest ? ev.target.closest('[data-anexo]') : null;
+    if (a) { ev.preventDefault(); baixarAnexoQ(a.getAttribute('data-anexo'), a.getAttribute('data-nome')); }
+  });
+
+  /** Quadro "Como a Tratativa pesa no risco de churn": só o administrador vê; o peso de cada tipo se edita aqui e tipos novos já entram no formulário. */
+  function comoPesaTratativa(tipos, aberto) {
+    var linhas = (tipos || []).map(function (t) {
+      return '<tr><td>' + esc(t.nome) + '</td><td class="c"><input type="number" class="qt-inline" min="0" max="50" value="' + t.peso + '" data-tid="' + esc(t.id) + '" aria-label="Peso de ' + esc(t.nome) + '"></td><td class="c"><strong>' + (t.peso * 2) + '</strong></td></tr>';
+    }).join('');
+    var novo = '<tr><td><input type="text" class="qt-novo-nome" id="qpn-nome" maxlength="40" placeholder="Novo tipo (ex.: Retrabalho)"></td><td class="c"><input type="number" class="qt-inline" id="qpn-peso" min="0" max="50" value="10" aria-label="Peso do novo tipo"></td><td class="c"><button type="button" class="gp-footer-btn" id="qpn-add" style="width:auto">+ Adicionar tipo</button></td></tr>';
+    return '<details class="card leg" id="q-peso-box"' + (aberto ? ' open' : '') + ' style="padding:12px 20px"><summary><span class="seta">▶</span> 🔒 Como a Tratativa pesa no risco de churn <span style="font-weight:500;text-transform:none;letter-spacing:0">(só administradores · clique para expandir)</span></summary><div class="corpo">' +
+      '<div><strong>Quem alimenta</strong><br>Só o que é <strong>registrado no módulo Qualidade</strong> (erro, multa, reclamação, atraso, falha…): aparece nos Sinais de atenção da ficha, na seção Qualidade da empresa, no card Tratativas da Visão Geral e pesa no risco, que agora tem quatro critérios: Financeiro, Atendimento, Operacional e Tratativas. O plano de ação escrito na ficha ("Descreva a tratativa") <strong>não conta</strong>.</div>' +
+      '<div><strong>Como cada ocorrência pesa</strong><br>Vale o <strong>dobro do peso do seu tipo</strong> (tabela abaixo), multiplicado por: 1,5 se o prazo venceu · 1 em aberto ou em tratamento · 0,5 finalizada aguardando validação · 0,25 resolvida. Ocorrência com mais de 45 dias vale metade. Vale o que foi registrado nos últimos 90 dias, a soma é limitada a 100 por cliente e a cancelada não entra.</div>' +
       '<div><strong>Quando entra na média</strong><br>Só enquanto houver tratativa em aberto (aberta, em tratamento ou finalizada aguardando validação). Sem pendência o termômetro fica de fora: uma tratativa resolvida não esconde um cliente com Financeiro alto e o risco não vira "parcial" à toa. Um termômetro a partir de 75 pontos já gera alerta e sobe o cliente para, no mínimo, Médio.</div>' +
-      '<div><strong>Pesos por tipo</strong> <span class="cinza">(mudam em "Gerenciar tipos de registro")</span>' +
-        (linhas ? '<div class="table-wrap" style="margin-top:6px"><table><thead><tr><th>Tipo</th><th class="c">Peso do tipo</th><th class="c">Vale na Tratativa (×2)</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<br>Nenhum tipo ativo cadastrado.') + '</div>' +
+      '<div><strong>Pesos por tipo</strong> <span class="cinza">(edite o peso e saia do campo para salvar; um tipo novo já aparece no formulário Registrar ocorrência)</span>' +
+        '<div class="table-wrap" style="margin-top:6px"><table><thead><tr><th>Tipo</th><th class="c">Peso do tipo (0 a 50)</th><th class="c">Vale na Tratativa (×2)</th></tr></thead><tbody>' + linhas + novo + '</tbody></table></div></div>' +
       '</div></details>';
+  }
+
+  /** Tabela "Ocorrências registradas": a lista do módulo, com as ações da liderança (resolver, cancelar; excluir só o administrador). */
+  function tabelaOcorrenciasMod(oc) {
+    var adm = ehAdminPainel();
+    var corpo = (oc || []).map(function (r) {
+      var aberta = r.status === 'aberto' || r.status === 'em_tratamento' || r.status === 'finalizada';
+      return '<tr><td>' + data(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td>' +
+        '<td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
+        '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
+        '<td style="white-space:normal;min-width:260px"><strong>' + esc(r.assunto || '—') + '</strong><div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 150)) + '</div>' + anexosQ(r) + notasHtml(r) + '</td>' +
+        '<td class="c">' + pillStatusQ(r.situacao || r.status) + '</td>' +
+        '<td class="c" style="white-space:nowrap">' +
+          (aberta ? '<button type="button" class="gp-footer-btn" data-oc-res="' + esc(r.id) + '" style="width:auto">Resolver</button> <button type="button" class="gp-footer-btn" data-oc-can="' + esc(r.id) + '" style="width:auto">Cancelar</button> ' : '') +
+          (adm ? '<button type="button" class="gp-footer-btn qa-excluir" data-oc-del="' + esc(r.id) + '" style="width:auto" title="Apaga a ocorrência de vez (teste ou lançamento errado)">Excluir</button>' : '') + '</td></tr>';
+    }).join('');
+    return '<div class="card"><div class="card-title">Ocorrências registradas</div><div class="card-sub">' + (oc || []).length + ' ocorrência(s). Cada uma aparece nos Sinais de atenção e na seção Qualidade da empresa e pesa no termômetro Tratativas enquanto estiver em aberto.</div>' +
+      ((oc || []).length ? '<div class="table-wrap"><table><thead><tr><th>Registrada em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Departamento</th><th>Assunto</th><th class="c">Status</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
+        : '<div class="vazio">Nenhuma ocorrência registrada ainda. Clique em "Registrar ocorrência" para lançar a primeira.</div>') + '</div>';
+  }
+
+  /** Formulário "Registrar ocorrência" (o miolo da janela). */
+  function formularioOcorrenciaQ(o) {
+    var tipos = '<option value="">Selecione o tipo…</option>' + (o.tipos || []).map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('');
+    var deps = '<option value="">Selecione o departamento…</option>' + DEPS_OCORRENCIA.map(function (d) { return '<option value="' + esc(d[0]) + '">' + esc(d[1]) + '</option>'; }).join('');
+    var pri = (o.prioridades || ['Muito Alta', 'Alta', 'Média', 'Baixa']).map(function (p) { return '<option' + (p === 'Média' ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('');
+    return '<div class="qa-modal-topo"><strong style="font-size:22px;color:#256050">Registrar ocorrência</strong><button type="button" class="qa-x" id="oc-fechar" aria-label="Fechar">✕</button></div>' +
+      '<div class="qa-oc-linha qa-oc-l1">' +
+        '<div class="qa-campo"><label for="oc-assunto">Assunto da ocorrência</label><input type="text" id="oc-assunto" maxlength="100" placeholder="Qual o assunto da ocorrência?"></div>' +
+        '<div class="qa-campo"><label for="oc-anexo">Arquivo anexo</label><input type="file" id="oc-anexo" multiple><div class="cinza qa-oc-dica">Até ' + (o.max_anexos || 5) + ' arquivos de ' + Math.round((o.max_anexo || 10485760) / 1048576) + ' MB cada</div></div>' +
+        '<div class="qa-campo"><label for="oc-prior">Prioridade</label><select id="oc-prior">' + pri + '</select></div>' +
+      '</div>' +
+      '<div class="qa-oc-linha qa-oc-l2">' +
+        '<div class="qa-campo"><label for="oc-emp">Empresa</label><input type="text" id="oc-emp" autocomplete="off" placeholder="Digite o início do nome ou o CNPJ"><div class="qa-oc-sel" id="oc-emp-sel" hidden></div><div class="qa-oc-lista" id="oc-emp-lista" hidden></div></div>' +
+        '<div class="qa-campo"><label for="oc-tipo">Tipo de ocorrência</label><select id="oc-tipo">' + tipos + '</select></div>' +
+        '<div class="qa-campo"><label for="oc-dep">Departamento</label><select id="oc-dep">' + deps + '</select></div>' +
+      '</div>' +
+      '<div class="qa-campo"><label for="oc-det">Descrição / Detalhes da ocorrência <span class="cinza" id="oc-cont">0/' + (o.max_detalhe || 2000) + '</span></label><textarea id="oc-det" rows="6" maxlength="' + (o.max_detalhe || 2000) + '" placeholder="Descrição / Detalhes da ocorrência"></textarea></div>' +
+      '<div class="qa-oc-linha qa-oc-bot"><button type="button" class="qa-btn-ok" id="oc-ok">✉ OK - Registrar</button><button type="button" class="qa-btn-cancel" id="oc-cancel">↩ Cancelar</button></div>' +
+      '<div class="pop-erro" id="oc-erro" role="alert"></div>';
+  }
+
+  /** Janela "Registrar ocorrência": empresa com sugestão ao digitar, descrição até 2000, anexos; ao registrar vai para o módulo, os Sinais de atenção e o risco. */
+  async function abrirRegistrarOcorrencia(aoSalvar) {
+    var o; try { o = await carregarOpcoesQ(); } catch (e) { window.alert(e.message || 'Não foi possível abrir o formulário.'); return; }
+    var ov = document.createElement('div'); ov.className = 'qa-overlay'; document.body.appendChild(ov);
+    var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
+    ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Registrar ocorrência">' + formularioOcorrenciaQ(o) + '</div>';
+    $('oc-fechar').addEventListener('click', fechar); $('oc-cancel').addEventListener('click', fechar);
+    var campo = $('oc-emp'), lista = $('oc-emp-lista'), sel = $('oc-emp-sel'), det = $('oc-det'), erro = $('oc-erro');
+    var emp = null, itens = [], idx = -1, tmr = null;
+    det.addEventListener('input', function () { $('oc-cont').textContent = det.value.length + '/' + (o.max_detalhe || 2000); });
+    var desenhaLista = function () {
+      lista.hidden = false;
+      lista.innerHTML = itens.length ? itens.map(function (e, i) { return '<div class="qa-oc-item' + (i === idx ? ' ativo' : '') + '" data-i="' + i + '">' + esc(e.nome) + ' <span class="cinza">' + esc(e.cnpj || '') + '</span></div>'; }).join('')
+        : '<div class="qa-oc-item cinza">Nenhuma empresa ativa encontrada com esse início.</div>';
+    };
+    var escolhe = function (i) {
+      var e = itens[i]; if (!e) return;
+      emp = e; campo.value = e.nome; lista.hidden = true; sel.hidden = false; sel.textContent = '✔ ' + e.nome + (e.cnpj ? ' · ' + e.cnpj : '');
+    };
+    campo.addEventListener('input', function () {
+      emp = null; sel.hidden = true; clearTimeout(tmr);
+      var q = campo.value.trim(); if (!q) { lista.hidden = true; return; }
+      tmr = setTimeout(async function () {
+        try { itens = (await api('/api/cs/painel/qualidade/empresas?q=' + encodeURIComponent(q))).empresas || []; } catch (e) { itens = []; }
+        idx = -1; desenhaLista();
+      }, 200);
+    });
+    campo.addEventListener('keydown', function (ev) {
+      if (lista.hidden || !itens.length) return;
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); idx = Math.min(itens.length - 1, idx + 1); desenhaLista(); }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); idx = Math.max(0, idx - 1); desenhaLista(); }
+      else if (ev.key === 'Enter') { ev.preventDefault(); escolhe(idx >= 0 ? idx : 0); }
+      else if (ev.key === 'Escape') { lista.hidden = true; }
+    });
+    lista.addEventListener('mousedown', function (ev) { var d = ev.target && ev.target.closest ? ev.target.closest('[data-i]') : null; if (d) { ev.preventDefault(); escolhe(parseInt(d.getAttribute('data-i'), 10)); } });
+    $('oc-ok').addEventListener('click', async function () {
+      erro.textContent = '';
+      var assunto = $('oc-assunto').value.trim(), tipo = $('oc-tipo').value, dep = $('oc-dep').value, texto = det.value.trim();
+      var arqs = Array.prototype.slice.call(($('oc-anexo').files || []));
+      if (assunto.length < 3) { erro.textContent = 'Qual o assunto da ocorrência?'; return; }
+      if (!emp) { erro.textContent = 'Qual a empresa? Digite o início do nome e escolha na lista.'; return; }
+      if (!tipo) { erro.textContent = 'Escolha o tipo de ocorrência.'; return; }
+      if (!dep) { erro.textContent = 'Qual o departamento?'; return; }
+      if (texto.length < 5) { erro.textContent = 'Descreva a ocorrência (mínimo de 5 caracteres).'; return; }
+      if (arqs.length > (o.max_anexos || 5)) { erro.textContent = 'Só é possível anexar até ' + (o.max_anexos || 5) + ' arquivos.'; return; }
+      var grande = arqs.filter(function (f) { return f.size > (o.max_anexo || 10485760); })[0];
+      if (grande) { erro.textContent = 'O arquivo "' + grande.name + '" passa de ' + Math.round((o.max_anexo || 10485760) / 1048576) + ' MB.'; return; }
+      if (!window.confirm('Deseja realmente registrar esta ocorrência para "' + emp.nome + '"?')) return;
+      var ok = $('oc-ok'); ok.disabled = true; ok.textContent = 'Registrando…';
+      var reabrir = function () { ok.disabled = false; ok.textContent = '✉ OK - Registrar'; };
+      try {
+        var r = await chamarApi('/api/cs/painel/qualidade/ocorrencias', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cliente_id: emp.id, assunto: assunto, tipo: tipo, prioridade: $('oc-prior').value, departamento: dep, detalhe: det.value }) });
+        var j = await r.json().catch(function () { return {}; });
+        if (!r.ok) { erro.textContent = j.error || 'Não foi possível registrar a ocorrência.'; reabrir(); return; }
+        var falhas = [];
+        for (var i = 0; i < arqs.length; i++) {
+          ok.textContent = 'Enviando anexo ' + (i + 1) + ' de ' + arqs.length + '…';
+          try {
+            var ra = await chamarApi('/api/cs/painel/qualidade/ocorrencias/' + encodeURIComponent(j.registro.id) + '/anexo?nome=' + encodeURIComponent(arqs[i].name) + '&tipo=' + encodeURIComponent(arqs[i].type || ''), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: arqs[i] });
+            if (!ra.ok) { var ja = await ra.json().catch(function () { return {}; }); falhas.push(arqs[i].name + ': ' + (ja.error || 'falhou')); }
+          } catch (e) { falhas.push(arqs[i].name + ': sem conexão'); }
+        }
+        fechar();
+        if (falhas.length) window.alert('A ocorrência foi registrada, mas nem todos os anexos subiram:\n' + falhas.join('\n'));
+        if (aoSalvar) aoSalvar();
+      } catch (e) { erro.textContent = 'Sem conexão com o servidor. Tente de novo.'; reabrir(); }
+    });
+    if ($('oc-assunto').focus) $('oc-assunto').focus();
   }
 
   async function desenharQualidadeMod() {
     var alvo = $('sec-consideracoes'); if (!alvo) return;
-    var f = filtroQ();
     try { if (!estado.qResumo) { alvo.innerHTML = '<div class="vazio">Carregando…</div>'; await carregarResumoQ(); } }
     catch (e) { alvo.innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; return; }
-    var r = estado.qResumo, b = f.busca.trim().toLowerCase();
+    var r = estado.qResumo;
     var tot = { abertos: 0, em_tratamento: 0, vencidos: 0, resolvidos: 0, a_validar: 0 };
     r.analistas.forEach(function (a) { tot.abertos += a.abertos; tot.em_tratamento += a.em_tratamento; tot.vencidos += a.vencidos; tot.resolvidos += a.resolvidos; tot.a_validar += a.a_validar || 0; });
     var bq = $('badge-qualmod'); if (bq) bq.textContent = tot.a_validar || '';          // aviso no menu: tratativas finalizadas aguardando validação
@@ -1627,25 +1778,17 @@
         'O analista informou que concluiu: abra o analista, confira o que foi feito e clique em "Dar como finalizado" para encerrar o processo (ou "Devolver ao analista").</div><div class="qa-aviso-acoes">' +
         quem.map(function (a) { return '<button type="button" class="gp-footer-btn" data-qan="' + esc(a.id) + '" style="width:auto">' + esc(a.nome) + ' (' + a.a_validar + ')</button>'; }).join('') + '</div></div>';
     }
-    var lista = r.analistas.filter(function (a) {
-      if (!f.todos && !a.total) return false;
-      return !b || (a.nome || '').toLowerCase().indexOf(b) >= 0;
-    });
-    var corpo = lista.map(function (a) {
-      return '<tr><td><button class="link" data-qan="' + esc(a.id) + '">' + esc(a.nome) + '</button>' + (a.ativo ? '' : ' <span class="cinza">(desativado)</span>') + '</td>' +
-        '<td class="c">' + (a.a_validar ? '<span class="pill" style="color:#7c3aed;border-color:#7c3aed55;background:#7c3aed14"><strong>' + a.a_validar + '</strong></span>' : '0') + '</td>' +
-        '<td class="c">' + (a.abertos ? '<strong>' + a.abertos + '</strong>' : '0') + '</td><td class="c">' + (a.em_tratamento || 0) + '</td>' +
-        '<td class="c">' + (a.vencidos ? '<strong style="color:#b91c1c">' + a.vencidos + '</strong>' : '0') + '</td><td class="c">' + (a.resolvidos || 0) + '</td>' +
-        '<td class="c">' + data(a.ultimo_lancamento) + '</td><td class="c">' + data(a.proximo_prazo) + '</td>' +
-        '<td class="c">' + (a.user_id ? '<span title="Este analista tem login ligado e vê as próprias tratativas">✔</span>' : '<span class="cinza" title="Sem login ligado: abra o analista para ligar">—</span>') + '</td></tr>';
-    }).join('');
     var pesoBox = '';
     if (ehAdminPainel()) {
       var tiposQ = [];
       try { tiposQ = ((await api('/api/cs/painel/qualidade/tipos')).tipos || []).filter(function (t) { return t.ativo; }); } catch (e) { tiposQ = []; }
-      pesoBox = comoPesaTratativa(tiposQ);
+      pesoBox = comoPesaTratativa(tiposQ, estado.qPesoAberto);
     }
+    var oc = [];
+    try { oc = (await api('/api/cs/painel/qualidade/ocorrencias')).registros || []; } catch (e) { oc = []; }
     alvo.innerHTML =
+      '<div class="qa-barra"><button type="button" class="login-btn" id="q-registrar" style="width:auto;margin:0;padding:10px 22px">＋ Registrar ocorrência</button>' +
+        (ehAdminPainel() ? '<button type="button" class="gp-footer-btn" id="q-gerenciar" style="width:auto">Gerenciar analistas</button><button type="button" class="gp-footer-btn" id="q-tipos" style="width:auto">Gerenciar tipos de registro</button>' : '') + '</div>' +
       '<div class="gp-kpi-row">' +
         kpi('#7c3aed', 'A validar', tot.a_validar, 'finalizadas pelo analista, aguardando você') +
         kpi('#b45309', 'Em aberto', tot.abertos, 'aguardando o analista começar') +
@@ -1653,21 +1796,56 @@
         kpi('#b91c1c', 'Vencidos', tot.vencidos, 'prazo passou e ainda não foi resolvido') +
         kpi('#166534', 'Resolvidos', tot.resolvidos, 'considerações encerradas') +
       '</div>' +
-      aviso + recentesQ() + pesoBox +
-      '<div class="nota"><strong>Como funciona.</strong> A consideração é registrada na ficha do cliente (Gestão da Permanência) pelo Sucesso do Cliente ou pelo Time Operacional, com analista e prazo. ' +
-        'Aqui a lista é por analista: clique no nome para ver cada registro, o prazo e o status. O analista trata pela página <strong>Minhas tratativas</strong> (/qualidade). ' +
-        'Os planos de ação feitos na ficha são informativos e não pesam no risco; só o que é lançado aqui no módulo alimenta os Sinais de atenção e o termômetro Tratativas do risco de churn.' + (r.sem_analista ? ' <span style="color:#b91c1c">' + r.sem_analista + ' registro(s) sem analista na lista.</span>' : '') + '</div>' +
-      '<div class="card"><div class="filter-group" style="margin-bottom:14px"><span class="filter-label">Buscar</span><input class="gp-input" id="q-busca" placeholder="Nome do analista" value="' + esc(f.busca) + '">' +
-        '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="q-todos"' + (f.todos ? ' checked' : '') + '> mostrar analistas sem registro</label>' +
-        (ehAdminPainel() ? '<button type="button" class="gp-footer-btn" id="q-gerenciar" style="width:auto">Gerenciar analistas</button><button type="button" class="gp-footer-btn" id="q-tipos" style="width:auto">Gerenciar tipos de registro</button>' : '') + '</div>' +
-        '<div class="card-sub">' + lista.length + ' analista(s) · ordem alfabética. Clique no nome para ver os registros.</div>' +
-        (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Analista</th><th class="c">A validar</th><th class="c">Em aberto</th><th class="c">Em tratamento</th><th class="c">Vencidos</th><th class="c">Resolvidos</th><th class="c">Último lançamento</th><th class="c">Próximo prazo</th><th class="c">Login</th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
-          : '<div class="vazio">Nenhum registro de qualidade ainda. Registre a primeira consideração na ficha de um cliente (Gestão da Permanência).</div>') + '</div>';
-    var campo = $('q-busca'); if (campo) campo.addEventListener('input', function () { f.busca = campo.value; var pos = campo.selectionStart; desenharQualidadeMod(); var n = $('q-busca'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* sem seleção */ } });
-    var st = $('q-todos'); if (st) st.addEventListener('change', function () { f.todos = st.checked; desenharQualidadeMod(); });
-    var g = $('q-gerenciar'); if (g) g.addEventListener('click', function () { abrirGerenciarAnalistas(function () { estado.qResumo = null; desenharQualidadeMod(); }); });
-    var gt = $('q-tipos'); if (gt) gt.addEventListener('click', function () { abrirGerenciarTipos(function () { desenharQualidadeMod(); }); });
+      aviso + recentesQ() + pesoBox + tabelaOcorrenciasMod(oc);
+    var atualiza = function () { estado.qResumo = null; desenharQualidadeMod(); };
+    var reg = $('q-registrar'); if (reg) reg.addEventListener('click', function () { abrirRegistrarOcorrencia(atualiza); });
+    var g = $('q-gerenciar'); if (g) g.addEventListener('click', function () { abrirGerenciarAnalistas(atualiza); });
+    var gt = $('q-tipos'); if (gt) gt.addEventListener('click', function () { estado.qOpcoes = null; abrirGerenciarTipos(function () { desenharQualidadeMod(); }); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-qan]'), function (bt) { bt.addEventListener('click', function () { abrirFichaAnalistaQ(bt.getAttribute('data-qan')); }); });
+    var box = $('q-peso-box'); if (box) box.addEventListener('toggle', function () { estado.qPesoAberto = !!box.open; });
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes .qt-inline[data-tid]'), function (inp) {
+      inp.addEventListener('change', async function () {
+        var resp = await chamarApi('/api/cs/painel/qualidade/tipos/' + encodeURIComponent(inp.getAttribute('data-tid')), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ peso: inp.value }) });
+        var j = await resp.json().catch(function () { return {}; });
+        if (!resp.ok) window.alert(j.error || 'Não foi possível salvar o peso.');
+        estado.qOpcoes = null; desenharQualidadeMod();
+      });
+    });
+    var add = $('qpn-add'); if (add) add.addEventListener('click', async function () {
+      var nome = $('qpn-nome').value;
+      var resp = await chamarApi('/api/cs/painel/qualidade/tipos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: nome, peso: $('qpn-peso').value }) });
+      var j = await resp.json().catch(function () { return {}; });
+      if (!resp.ok) { window.alert(j.error || 'Não foi possível incluir o tipo.'); return; }
+      estado.qOpcoes = null; estado.qPesoAberto = true; desenharQualidadeMod();
+    });
+    var muda = async function (id, corpo, msg) {
+      var resp = await chamarApi('/api/cs/painel/qualidade/' + encodeURIComponent(id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+      var j = await resp.json().catch(function () { return {}; });
+      if (!resp.ok) { window.alert(j.error || msg); return; }
+      atualiza();
+    };
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-oc-res]'), function (b) {
+      b.addEventListener('click', function () {
+        var t = window.prompt('O que foi feito para resolver esta ocorrência? (mínimo de 5 caracteres)');
+        if (t === null) return;
+        muda(b.getAttribute('data-oc-res'), { status: 'resolvido', tratativa: t }, 'Não foi possível resolver a ocorrência.');
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-oc-can]'), function (b) {
+      b.addEventListener('click', function () {
+        if (!window.confirm('Cancelar esta ocorrência? Ela deixa de aparecer e de pesar no risco (fica no histórico).')) return;
+        muda(b.getAttribute('data-oc-can'), { status: 'cancelado' }, 'Não foi possível cancelar a ocorrência.');
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-oc-del]'), function (b) {
+      b.addEventListener('click', async function () {
+        if (!window.confirm('Excluir esta ocorrência de vez? Isso não pode ser desfeito. (Para só tirar do risco e manter o histórico, use Cancelar.)')) return;
+        var resp = await chamarApi('/api/cs/painel/qualidade/' + encodeURIComponent(b.getAttribute('data-oc-del')), { method: 'DELETE' });
+        var j = await resp.json().catch(function () { return {}; });
+        if (!resp.ok) { window.alert(j.error || 'Não foi possível excluir.'); return; }
+        atualiza();
+      });
+    });
   }
 
   async function abrirFichaAnalistaQ(id) {
