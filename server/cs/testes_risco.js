@@ -1,7 +1,7 @@
 'use strict';
 // Rodar: node server/cs/testes_risco.js  (lógica pura, sem banco nem rede)
 const assert = require('assert');
-const { termometroFinanceiro, termometroAtendimento, termometroOperacional, calcularRisco, diasEntre } = require('./riscoCalculo');
+const { termometroFinanceiro, termometroAtendimento, termometroOperacional, termometroTratativas, calcularRisco, diasEntre } = require('./riscoCalculo');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -53,17 +53,45 @@ teste('atendimento: notas baixas, SLA vermelho, detratores e sensíveis somam e 
   assert.strictEqual(termometroAtendimento({ notasBaixas: 3, slaVermelho: 4, detratores: 2 }).pontos, 100); // 60+20+30 = 110 -> 100
 });
 
-teste('atendimento: considerações de Qualidade pesam pelo tipo, resolvida e antiga valem metade, cancelada não entra, teto de 40', () => {
-  const t = (qualidade) => termometroAtendimento({ qualidade });
-  assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 5 }]).pontos, 25);
-  assert.strictEqual(t([{ tipo: 'Erro', status: 'em_tratamento', dias: 5 }]).pontos, 15);
-  assert.strictEqual(t([{ tipo: 'Reclamação', status: 'resolvido', dias: 5 }]).pontos, 10);          // resolvida: metade
-  assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 60 }]).pontos, 13);                  // passou de 45 dias: metade (arredondado)
-  assert.strictEqual(t([{ tipo: 'Multa', status: 'cancelado', dias: 1 }]).pontos, 0);
-  assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 1 }, { tipo: 'Multa', status: 'aberto', dias: 1 }]).pontos, 40);   // teto
-  assert.ok(t([{ tipo: 'Atraso', status: 'aberto', dias: 2 }]).detalhe[0].includes('consideração de qualidade'));
-  assert.strictEqual(t([{ tipo: 'Tipo novo', status: 'aberto', dias: 2, peso: 18 }]).pontos, 18);       // peso vem do cadastro de tipos
-  assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 2, peso: 0 }]).pontos, 0);            // peso 0 = só registra, não pesa
+teste('atendimento: a Qualidade não pesa mais aqui (virou o termômetro Tratativas)', () => {
+  assert.strictEqual(termometroAtendimento({ qualidade: [{ tipo: 'Multa', status: 'aberto', dias: 5 }] }).pontos, 0);
+});
+
+teste('tratativas: pesa pelo tipo (dobro), vencida x1,5, a validar x0,5, resolvida x0,25, antiga metade, cancelada não entra, teto 100', () => {
+  const t = (qualidade) => termometroTratativas({ qualidade });
+  assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 5 }]).pontos, 50);
+  assert.strictEqual(t([{ tipo: 'Erro', status: 'em_tratamento', dias: 5 }]).pontos, 30);
+  assert.strictEqual(t([{ tipo: 'Erro', status: 'aberto', dias: 5, vencida: true }]).pontos, 45);            // prazo vencido: x1,5
+  assert.strictEqual(t([{ tipo: 'Erro', status: 'finalizada', dias: 5 }]).pontos, 15);                       // aguardando validação: x0,5
+  assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 60 }]).pontos, 25);                          // passou de 45 dias: metade
+  assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 1 }, { tipo: 'Multa', status: 'cancelado', dias: 1 }]).pontos, 50);   // cancelada não entra
+  assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 1 }, { tipo: 'Multa', status: 'aberto', dias: 1, vencida: true }, { tipo: 'Erro', status: 'aberto', dias: 1 }]).pontos, 100);   // teto
+  assert.strictEqual(t([{ tipo: 'Tipo novo', status: 'aberto', dias: 2, peso: 18 }]).pontos, 36);           // peso do cadastro de tipos
+  assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 2, peso: 0 }]).pontos, 0);                  // peso 0 = só registra, não pesa
+  // resolvida entra na soma enquanto houver outra pendente
+  assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 1 }, { tipo: 'Erro', status: 'resolvido', dias: 1 }]).pontos, 58);   // 50 + 30 x 0,25 = 57,5
+  assert.ok(t([{ tipo: 'Atraso', status: 'aberto', dias: 2, vencida: true }]).detalhe[0].includes('1 em aberto (1 com prazo vencido)'));
+  assert.ok(t([{ tipo: 'Atraso', status: 'aberto', dias: 2 }]).detalhe[0].includes('ocorrências: Atraso'));
+});
+
+teste('tratativas: sem pendência fica sem dado (fora da média) e não deixa o risco parcial', () => {
+  assert.strictEqual(termometroTratativas({ qualidade: [] }).pontos, null);
+  assert.strictEqual(termometroTratativas({ qualidade: [{ tipo: 'Multa', status: 'resolvido', dias: 3 }] }).pontos, null);
+  assert.strictEqual(termometroTratativas({}).pontos, null);
+  const r = calcularRisco({ financeiro: { pontos: 60, detalhe: ['f'] }, atendimento: { pontos: 20, detalhe: ['a'] }, operacional: { pontos: 10, detalhe: ['o'] }, tratativas: { pontos: null, detalhe: ['nada'] } });
+  assert.strictEqual(r.parcial, false);
+  assert.deepStrictEqual(r.sem_dado, []);
+  assert.strictEqual(r.pontos, 30);          // (60+20+10)/3: a Tratativa sem pendência não dilui
+});
+
+teste('tratativas: com pendência entra na média, aparece nos motivos e um termômetro muito alto dá alerta', () => {
+  const t = termometroTratativas({ qualidade: [{ tipo: 'Multa', status: 'aberto', dias: 2, vencida: true }] });   // 75
+  const r = calcularRisco({ financeiro: { pontos: 0, detalhe: ['f'] }, atendimento: { pontos: 0, detalhe: ['a'] }, operacional: { pontos: 0, detalhe: ['o'] }, tratativas: t });
+  assert.strictEqual(t.pontos, 75);
+  assert.strictEqual(r.pontos, 19);          // 75/4
+  assert.strictEqual(r.alerta, true);
+  assert.strictEqual(r.nivel, 'Médio');
+  assert.ok(r.motivos[0].startsWith('Tratativas:'));
 });
 
 teste('atendimento: abandono de atendimento não conta mais (decisão de 16/10/2026)', () => {

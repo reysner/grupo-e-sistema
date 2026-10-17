@@ -111,19 +111,19 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, resumoQ: resumoQ, chipOcorrenciaQ: chipOcorrenciaQ, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm }');
   C.t.estado.dados = {
     clientes: [
-      { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
-      { id: '2', nome: 'ALFA FILIAL LTDA', cnpj: '11.222.333/0002-62', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'soma do grupo "Grupo A", 2 empresas: R$ 1.300,00 (faixa R$ 1.000 a 1.999)', honorario: 500, regime: null, questor: { faturamento: 0, funcionarios: 0, aviso: 'Natureza sem configuração' }, risco: risco('Baixo', 5, { financeiro: 0, atendimento: 0, operacional: null }) },
+      { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null, tratativas: 75 }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
+      { id: '2', nome: 'ALFA FILIAL LTDA', cnpj: '11.222.333/0002-62', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'soma do grupo "Grupo A", 2 empresas: R$ 1.300,00 (faixa R$ 1.000 a 1.999)', honorario: 500, regime: null, questor: { faturamento: 0, funcionarios: 0, aviso: 'Natureza sem configuração' }, risco: risco('Baixo', 5, { financeiro: 0, atendimento: 0, operacional: null, tratativas: null }) },
       { id: '3', nome: 'GAMA LTDA', cnpj: '77.888.999/0001-33', grupo: null, tipo_doc: 'CNPJ', categoria: null, categoria_motivo: null, honorario: null, regime: 'Simples Nacional', questor: null, risco: risco('Suspenso', null, { financeiro: null, atendimento: null, operacional: null }, { suspenso: true }) },
     ],
     clientes_outros: [{ id: '9', nome: 'JOAO DA SILVA', cnpj: '123.456.789-09', tipo_doc: 'CPF', grupo: null, categoria: null, honorario: 100, regime: null, questor: null }],
     totais: { clientes: 3, risco: { Alto: 1, 'Médio': 0, Baixo: 1, Suspenso: 1, Incompleto: 0 }, suspensos: 1, sem_reclamacao_30d: 3, categorias: { Diamante: 0, Ouro: 2, Prata: 0, Bronze: 0, sem_categoria: 1 },
-      termometros: { financeiro: { com_dado: 2, em_alerta: 1, medio_ou_mais: 1 }, atendimento: { com_dado: 2, em_alerta: 0, medio_ou_mais: 0 }, operacional: { com_dado: 0, em_alerta: 0, medio_ou_mais: 0 } } },
+      termometros: { financeiro: { com_dado: 2, em_alerta: 1, medio_ou_mais: 1 }, atendimento: { com_dado: 2, em_alerta: 0, medio_ou_mais: 0 }, operacional: { com_dado: 0, em_alerta: 0, medio_ou_mais: 0 }, tratativas: { com_dado: 1, sem_dado: 1, em_alerta: 1, medio_ou_mais: 1 } } },
     churn: { periodos: { ultimos_12_meses: { ini: '2025-10-01', fim: '2026-10-13', base: 10, saidas_contadas: 1, taxa: 10, taxa_teto: 12, menos_de_90_dias: 0, fora_do_churn: { a_confirmar: 0, baixas: 0, outras_saidas: 0 },
       saidas: [{ nome: 'SAIU LTDA', cnpj: '10.000.000/0001-00', data_entrada: '2024-01-01', data_saida: '2026-05-01', tipo: 'transferida', origem: 'acessorias', na_base: true }, { nome: 'NOVA LTDA', cnpj: '20.000.000/0001-00', data_entrada: '2026-02-01', data_saida: '2026-04-01', tipo: 'baixa', origem: 'receita', na_base: false }] } }, padroes: [], evolucao: [] },
-    config: { cortes: { medio: 30, alto: 60 }, pesos: { financeiro: 1, atendimento: 1, operacional: 1 } }, usuario: { papel: 'administrador' },
+    config: { cortes: { medio: 30, alto: 60 }, pesos: { financeiro: 1, atendimento: 1, operacional: 1, tratativas: 1 } }, usuario: { papel: 'administrador' },
   };
   await teste('cs: todas as seções geram colunas e linhas coerentes', () => {
     C.t.estado.filtroRisco.nivel = 'todos';
@@ -133,6 +133,43 @@ const semLixo = (e, nome) => {
       semLixo(e, 'cs/' + sec);
     }
     assert.strictEqual(C.t.dadosExport('qualidade'), null);
+  });
+  await teste('cs: risco e visão geral exportam o 4º critério (Tratativas); sem pendência fica em branco', () => {
+    C.t.estado.filtroRisco.nivel = 'todos';
+    const r = C.t.dadosExport('risco');
+    assert.ok(r.colunas.includes('Tratativas'));
+    const i = r.colunas.indexOf('Tratativas');
+    assert.strictEqual(r.linhas.find((l) => l[0] === 'ALFA LTDA')[i], 75);
+    assert.strictEqual(r.linhas.find((l) => l[0] === 'ALFA FILIAL LTDA')[i], '');
+    assert.ok(C.t.dadosExport('visao').linhas.some((l) => String(l[0]).includes('Termômetro Tratativas')));
+    assert.ok(C.t.celTerm(C.t.estado.dados.clientes[1], 'tratativas').includes('—'), 'sem pendência não vira "sem dado"');
+  });
+  await teste('cs: ficha — plano de ação mostra só o mais recente (anteriores recolhidos), com "Responsável", e ignora o que veio do módulo', () => {
+    const reg = (id, em, origem, detalhe) => ({ id, origem, tipo: 'Erro', departamentos: ['Fiscal'], detalhe, analista_nome: 'Josiane', criado_em: em, criado_por: 'Larissa', prazo: '2026-10-20', situacao: 'aberto', status: 'aberto', notas: [] });
+    const h = C.t.listaRegistrosQ([reg('a', '2026-10-10T12:00:00Z', 'ficha', 'plano antigo'), reg('b', '2026-10-16T12:00:00Z', 'ficha', 'plano novo'), reg('c', '2026-10-17T12:00:00Z', 'modulo', 'ocorrência do módulo')]);
+    assert.ok(h.includes('plano novo') && h.includes('<details class="qa-mais">') && h.includes('1 registro anterior') && h.includes('plano antigo'));
+    assert.ok(h.indexOf('plano novo') < h.indexOf('<details'), 'o mais recente fica fora da seta');
+    assert.ok(h.indexOf('plano antigo') > h.indexOf('<details'), 'o anterior fica dentro da seta');
+    assert.ok(!h.includes('ocorrência do módulo'), 'o que veio do módulo Qualidade não é plano de ação');
+    assert.ok(h.includes('Responsável:') && !h.includes('Analista:'));
+    assert.ok(!C.t.listaRegistrosQ([reg('d', '2026-10-17T12:00:00Z', 'ficha', 'só um')]).includes('<details'), 'com um só registro não há seta');
+    assert.ok(C.t.listaRegistrosQ([]).includes('Nenhum plano de ação'));
+    assert.ok(C.t.listaRegistrosQAntigo([reg('a', '2026-10-10T12:00:00Z', 'ficha', 'x')]).includes('Analista:'), 'o layout antigo continua guardado');
+  });
+  await teste('cs: ficha — formulário novo (Descreva a tratativa + Responsável + Prazo) e Sinais de atenção com resumo da ocorrência', () => {
+    const o = { tipos: ['Erro', 'Multa'], departamentos: ['Fiscal', 'Contábil'], max_detalhe: 600 };
+    const f = C.t.formularioQ(o);
+    assert.ok(f.includes('Descreva a tratativa:') && f.includes('Responsável') && !f.includes('Descreva a ocorrência') && !f.includes('>Analista'));
+    assert.ok(f.includes('class="qa-grade"') && f.indexOf('id="qa-detalhe"') < f.indexOf('id="qa-analista"') && f.indexOf('id="qa-analista"') < f.indexOf('id="qa-prazo"'));
+    assert.ok(f.indexOf('Departamentos envolvidos') < f.indexOf('Descreva a tratativa:'));
+    assert.ok(f.includes('não entra no card Tratativa nem no risco'));
+    assert.ok(C.t.formularioQAntigo(o).includes('Descreva a ocorrência'), 'o layout antigo continua guardado');
+    assert.strictEqual(C.t.resumoQ('apuração   do imposto com valor divergente'), 'apuração do imposto com valor divergente');
+    const longo = 'Erro na apuração do imposto da competência de setembro: valor do ISS calculado sobre a base errada e guia enviada ao cliente sem conferência.';
+    const r = C.t.resumoQ(longo);
+    assert.ok(r.length <= 91 && r.endsWith('…') && !r.includes('  '), r);
+    const chip = C.t.chipOcorrenciaQ({ tipo: 'Erro', departamentos: ['Fiscal'], detalhe: longo, criado_em: '2026-10-16T12:00:00Z', prazo: '2026-10-20', situacao: 'vencido', analista_nome: 'Josiane' });
+    assert.ok(chip.includes('<strong>Erro</strong>') && chip.includes('Fiscal') && chip.includes('apuração do imposto') && chip.includes('Vencido') && chip.includes('title='));
   });
   await teste('cs: análise traz o grupo consolidado e cada empresa; zero vira "sem faturamento"; CPF aparece', () => {
     const e = C.t.dadosExport('analise');
@@ -303,8 +340,8 @@ const semLixo = (e, nome) => {
   await teste('cs: risco e churn trazem os campos certos', () => {
     const r = C.t.dadosExport('risco');
     const alfa = r.linhas.find((l) => l[0] === 'ALFA LTDA');
-    assert.deepStrictEqual([alfa[3], alfa[4], alfa[5], alfa[7], alfa[10]], ['Alto', 70, 90, 'sem dado', 'Inadimplente: 3 títulos | Nota baixa']);
-    assert.strictEqual(r.linhas.find((l) => l[0] === 'GAMA LTDA')[8], 'Sim');
+    assert.deepStrictEqual([alfa[3], alfa[4], alfa[5], alfa[7], alfa[8], alfa[11]], ['Alto', 70, 90, 'sem dado', 75, 'Inadimplente: 3 títulos | Nota baixa']);
+    assert.strictEqual(r.linhas.find((l) => l[0] === 'GAMA LTDA')[9], 'Sim');
     const c = C.t.dadosExport('churn');
     assert.strictEqual(c.linhas.length, 2);
     assert.deepStrictEqual([...c.linhas[0].slice(2, 6)], ['01/01/2024', '01/05/2026', 'Transferida', 'Sim']);

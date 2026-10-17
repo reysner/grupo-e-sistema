@@ -3195,7 +3195,7 @@ ${isAdmin ? _churnLeituraHtml() : ''}
   function _riscoTermometros(r) {
     const t = r.termometros || {};
     const v = (x) => (x == null ? '—' : x);
-    return 'Fin ' + v(t.financeiro) + ' · Atend ' + v(t.atendimento) + ' · Oper ' + v(t.operacional);
+    return 'Fin ' + v(t.financeiro) + ' · Atend ' + v(t.atendimento) + ' · Oper ' + v(t.operacional) + (t.tratativas != null ? ' · Trat ' + t.tratativas : '');
   }
   function _riscoCelula(c) {
     if (c.status !== 'ativo') return '<span style="color:var(--gray-400)">—</span>';

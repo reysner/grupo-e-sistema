@@ -125,7 +125,7 @@ async function montarBase(forcar, ttl = TTL_MS) {
   const resumoCat = { Diamante: 0, Ouro: 0, Prata: 0, Bronze: 0, sem_categoria: 0 };
   for (const c of lista) { resumoRisco[c.risco.nivel]++; if (c.categoria) resumoCat[c.categoria]++; else resumoCat.sem_categoria++; }
   const termometros = {};
-  for (const t of ['financeiro', 'atendimento', 'operacional']) {
+  for (const t of ['financeiro', 'atendimento', 'operacional', 'tratativas']) {
     const com = lista.filter((c) => c.risco.termometros[t] != null && !c.risco.suspenso);   // suspensos não entram nas estatísticas de risco
     termometros[t] = { com_dado: com.length, sem_dado: lista.length - com.length, em_alerta: com.filter((c) => c.risco.termometros[t] >= (r.config.cortes.alto)).length, medio_ou_mais: com.filter((c) => c.risco.termometros[t] >= r.config.cortes.medio).length };
   }
@@ -204,7 +204,7 @@ function proximoPasso(c, extra) {
   const pontos = (k) => (t[k] == null ? -1 : t[k]);
   if (c.risco.nivel === 'Baixo' || c.risco.nivel === 'Incompleto') return 'Sem ação por enquanto: acompanhar nas próximas semanas.';
   if (c.risco.suspenso) return 'Contrato suspenso no Omie: a ação é de cobrança. Combinar a regularização com o financeiro e, se o cliente pagar, reativar o contrato no Omie para retomar as entregas.';
-  const dom = ['financeiro', 'atendimento', 'operacional'].sort((a, b) => pontos(b) - pontos(a))[0];
+  const dom = ['financeiro', 'atendimento', 'operacional', 'tratativas'].sort((a, b) => pontos(b) - pontos(a))[0];
   if (dom === 'financeiro') {
     const f = extra.financeiro[0];
     return f && f.qtd_atrasados
@@ -212,6 +212,7 @@ function proximoPasso(c, extra) {
       : 'Conferir a situação financeira com o financeiro e reportar na reunião de segunda.';
   }
   if (dom === 'atendimento') return 'Ligar para o cliente: houve falha de atendimento (insatisfação, nota baixa ou prazo estourado). Registrar o retorno como insatisfação, se for o caso.';
+  if (dom === 'tratativas') return 'Cobrar o responsável pela tratativa: há ocorrência de qualidade em aberto (erro, multa, reclamação, atraso...). Conferir o prazo no módulo Qualidade e combinar o retorno ao cliente.';
   return 'Conferir com a equipe responsável as entregas atrasadas ou vencidas no Acessórias e combinar a regularização.';
 }
 

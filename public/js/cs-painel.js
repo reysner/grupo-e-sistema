@@ -6,8 +6,8 @@
   var K_TOKEN = 'cs_token', K_REFRESH = 'cs_refresh', K_USER = 'cs_user';
 
   var COR_RISCO = { 'Alto': '#dc2626', 'Médio': '#d97706', 'Baixo': '#10b981', 'Incompleto': '#9ca3af', 'Suspenso': '#6b21a8' };
-  var COR_TERM = { financeiro: '#b45309', atendimento: '#7c3aed', operacional: '#ef4444' };
-  var NOME_TERM = { financeiro: 'Financeiro', atendimento: 'Atendimento', operacional: 'Operacional' };
+  var COR_TERM = { financeiro: '#b45309', atendimento: '#7c3aed', operacional: '#ef4444', tratativas: '#0e7490' };
+  var NOME_TERM = { financeiro: 'Financeiro', atendimento: 'Atendimento', operacional: 'Operacional', tratativas: 'Tratativas' };
   var COR_CAT = { 'Diamante': '#0891b2', 'Ouro': '#c99a06', 'Prata': '#6b7280', 'Bronze': '#b45309' };
   var ICONE_CAT = { 'Diamante': '💎', 'Ouro': '🥇', 'Prata': '🥈', 'Bronze': '🥉' };
   var TIPO_SAIDA = {
@@ -187,7 +187,7 @@
   }
   function celTerm(c, t) {
     var p = c.risco.termometros[t];
-    if (p == null) return '<span class="cinza">sem dado</span>';
+    if (p == null) return t === 'tratativas' ? '<span class="cinza">—</span>' : '<span class="cinza">sem dado</span>';
     var n = nivelTerm(p, estado.dados.config.cortes), cor = COR_RISCO[n];
     return '<span style="color:' + cor + ';font-weight:700;white-space:nowrap">' + p + '</span>';
   }
@@ -216,22 +216,22 @@
         '<div class="num"><span class="pct" style="color:' + cor + '">' + (avaliados ? pct(n, avaliados) + '%' : '—') + '</span><span class="qtd">' + n + ' <small>cliente' + (n === 1 ? '' : 's') + '</small></span></div><div class="reg">' + regra + '</div></button>';
     };
     var c = d.config.cortes;
-    var tres = ['financeiro', 'atendimento', 'operacional'].map(function (k) {
+    var tres = ['financeiro', 'atendimento', 'operacional', 'tratativas'].map(function (k) {
       var tm = t.termometros[k];
       var com = d.clientes.filter(function (x) { return x.risco.termometros[k] != null; });
       var alto = com.filter(function (x) { return nivelTerm(x.risco.termometros[k], c) === 'Alto'; }).length;
       var med = com.filter(function (x) { return nivelTerm(x.risco.termometros[k], c) === 'Médio'; }).length;
       var bai = com.length - alto - med;
-      var perg = { financeiro: 'O cliente está com honorário em atraso?', atendimento: 'O cliente teve falha de atendimento ou reclamou?', operacional: 'Estamos entregando guias e fechamentos no prazo?' }[k];
-      var regua = { financeiro: 'Fonte: Omie. Pesa os dias do título mais antigo em atraso e a quantidade de títulos.', atendimento: 'Fonte: Zappy depois da revisão da Gamificação, mais insatisfações registradas e pesquisas. Falha marcada como indevida não conta.', operacional: 'Fonte: entregas do Acessórias nos últimos 90 dias (entregues com atraso e vencidas sem entrega).' }[k];
+      var perg = { financeiro: 'O cliente está com honorário em atraso?', atendimento: 'O cliente teve falha de atendimento ou reclamou?', operacional: 'Estamos entregando guias e fechamentos no prazo?', tratativas: 'As ocorrências lançadas no módulo Qualidade estão sendo tratadas no prazo?' }[k];
+      var regua = { financeiro: 'Fonte: Omie. Pesa os dias do título mais antigo em atraso e a quantidade de títulos.', atendimento: 'Fonte: Zappy depois da revisão da Gamificação, mais insatisfações registradas e pesquisas. Falha marcada como indevida não conta.', operacional: 'Fonte: entregas do Acessórias nos últimos 90 dias (entregues com atraso e vencidas sem entrega).', tratativas: 'Fonte: módulo Qualidade (erro, multa, reclamação, atraso, falha…, últimos 90 dias). Prazo vencido pesa mais; só entra na média enquanto houver tratativa em aberto. O plano de ação escrito na ficha não conta.' }[k];
       return '<div class="tres-card" style="border-top-color:' + COR_TERM[k] + '"><div class="tres-nome">' + NOME_TERM[k].toUpperCase() + '</div><div class="tres-perg">' + perg + '</div>' +
         '<div class="tres-dest"><b style="color:' + COR_TERM[k] + '">' + (com.length ? pct(alto + med, com.length) + '%' : '—') + '</b><span>em risco Médio ou Alto · ' + (alto + med) + ' de ' + com.length + ' com dado</span></div>' +
         barra([{ rot: 'Alto', n: alto, cor: COR_RISCO.Alto }, { rot: 'Médio', n: med, cor: COR_RISCO['Médio'] }, { rot: 'Baixo', n: bai, cor: COR_RISCO.Baixo }]) +
-        (tm.sem_dado ? '<div class="sub" style="margin-top:6px">' + tm.sem_dado + ' cliente(s) sem dado deste indicador (não presumimos que está em dia).</div>' : '') +
+        (tm.sem_dado ? '<div class="sub" style="margin-top:6px">' + tm.sem_dado + (k === 'tratativas' ? ' cliente(s) sem tratativa em aberto (não entram na média).' : ' cliente(s) sem dado deste indicador (não presumimos que está em dia).') + '</div>' : '') +
         '<div class="tres-regua">' + regua + '</div></div>';
     }).join('');
 
-    var dominantes = { financeiro: 0, atendimento: 0, operacional: 0 };
+    var dominantes = { financeiro: 0, atendimento: 0, operacional: 0, tratativas: 0 };
     d.clientes.filter(function (x) { return x.risco.nivel === 'Alto' || x.risco.nivel === 'Médio'; }).forEach(function (x) {
       var k = Object.keys(x.risco.termometros).filter(function (t2) { return x.risco.termometros[t2] != null; }).sort(function (a, b) { return x.risco.termometros[b] - x.risco.termometros[a]; })[0];
       if (k) dominantes[k]++;
@@ -239,7 +239,7 @@
     var emRisco = t.risco.Alto + t.risco['Médio'];
     var pontos = [];
     if (t.risco.Alto) pontos.push('<strong>' + t.risco.Alto + ' cliente(s) em Alto risco</strong>: abra a Gestão da Permanência e combine o próximo passo de cada um.');
-    if (emRisco) pontos.push('Dos ' + emRisco + ' clientes em risco Alto ou Médio, o termômetro que mais pesa é <strong>Financeiro em ' + dominantes.financeiro + '</strong>, Atendimento em ' + dominantes.atendimento + ' e Operacional em ' + dominantes.operacional + '.');
+    if (emRisco) pontos.push('Dos ' + emRisco + ' clientes em risco Alto ou Médio, o termômetro que mais pesa é <strong>Financeiro em ' + dominantes.financeiro + '</strong>, Atendimento em ' + dominantes.atendimento + ', Operacional em ' + dominantes.operacional + ' e Tratativas em ' + dominantes.tratativas + '.');
     if (t.termometros.operacional.com_dado === 0) pontos.push('O termômetro <strong>Operacional ainda está sem dado</strong> (entregas do Acessórias em leitura). Enquanto isso, o risco é calculado só com Financeiro e Atendimento.');
     if (t.suspensos) pontos.push('<strong>' + t.suspensos + ' cliente(s) com contrato suspenso no Omie</strong>' + (t.suspensos_lidos_em ? ' (lista lida em ' + data(t.suspensos_lidos_em) + ', atualizada toda segunda)' : '') + ': a ação é de cobrança e as entregas deles não entram no Operacional. Filtre pelo selo ⏸ Suspenso na Gestão da Permanência.');
     if (p.fora_do_churn && p.fora_do_churn.a_confirmar) pontos.push(p.fora_do_churn.a_confirmar + ' saída(s) ainda <strong>a confirmar</strong> (sem motivo lido do Acessórias): o churn real fica entre ' + p.taxa + '% e ' + p.taxa_teto + '%.');
@@ -255,11 +255,11 @@
         kpi('#10b981', 'Sem reclamação no mês', t.sem_reclamacao_30d, pct(t.sem_reclamacao_30d, t.clientes) + '% dos clientes · últimos 30 dias') +
         kpi('#b45309', 'Em Alto risco', t.risco.Alto, t.risco['Médio'] + ' em Médio risco') +
       '</div>' +
-      '<div class="risco-card"><div class="risco-head"><div><div class="risco-titulo">RISCO DE PERDA</div><div class="risco-sub">Combina os três termômetros, cliente a cliente · ' + avaliados + ' clientes avaliados</div></div>' +
+      '<div class="risco-card"><div class="risco-head"><div><div class="risco-titulo">RISCO DE PERDA</div><div class="risco-sub">Combina os quatro termômetros, cliente a cliente · ' + avaliados + ' clientes avaliados</div></div>' +
         (alertas ? '<div class="risco-alerta">⚠️ ' + alertas + ' alerta(s): termômetro muito alto em cliente de Médio risco</div>' : '') + '</div>' +
         '<div class="risco-blocos">' + blocoRisco('Alto', 'a partir de ' + c.alto + ' pontos') + blocoRisco('Médio', c.medio + ' a ' + (c.alto - 1) + ' pontos') + blocoRisco('Baixo', 'abaixo de ' + c.medio + ' pontos') + '</div>' +
-        '<div class="sub">Os pesos dos três termômetros hoje são ' + ['financeiro', 'atendimento', 'operacional'].map(function (k) { return NOME_TERM[k] + ' ' + d.config.pesos[k]; }).join(' · ') + ' (serão calibrados rodando, a partir das reuniões semanais).</div></div>' +
-      '<div class="ficha-sec" style="margin-top:6px">Detalhamento do risco</div><div class="tres">' + tres + '</div>' +
+        '<div class="sub">Os pesos dos quatro termômetros hoje são ' + ['financeiro', 'atendimento', 'operacional', 'tratativas'].map(function (k) { return NOME_TERM[k] + ' ' + d.config.pesos[k]; }).join(' · ') + ' (serão calibrados rodando, a partir das reuniões semanais).</div></div>' +
+      '<div class="ficha-sec" style="margin-top:6px">Detalhamento do risco</div><div class="tres quatro">' + tres + '</div>' +
       '<div id="visao-fechamento" style="margin-top:14px"></div>' +
       '<div class="gp-charts-row">' +
         '<div class="gp-chart-card"><div class="gp-chart-title">Churn mês a mês — últimos 12 meses</div><div class="gp-chart-wrap"><canvas id="g-churn"></canvas></div></div>' +
@@ -301,10 +301,10 @@
     var corpo = mostrar.map(function (c) {
       var chips = (c.risco.motivos || []).slice(0, 3).map(function (m) { return '<span class="chip" style="color:#dc2626;border-color:#dc262655">' + esc(m) + '</span>'; }).join('');
       return '<tr><td style="min-width:220px;max-width:280px;white-space:normal">' + nomeLink(c) + '</td><td class="c">' + pillCat(c) + '</td><td class="c">' + pillRisco(c.risco) + '</td>' +
-        '<td class="c">' + celTerm(c, 'financeiro') + '</td><td class="c">' + celTerm(c, 'atendimento') + '</td><td class="c">' + celTerm(c, 'operacional') + '</td>' +
+        '<td class="c">' + celTerm(c, 'financeiro') + '</td><td class="c">' + celTerm(c, 'atendimento') + '</td><td class="c">' + celTerm(c, 'operacional') + '</td><td class="c">' + celTerm(c, 'tratativas') + '</td>' +
         '<td style="min-width:280px;white-space:normal">' + (chips || '<span class="cinza">sem sinais</span>') + '</td></tr>';
     }).join('');
-    return { n: lista.length, html: lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Categoria</th><th class="c">Risco</th><th class="c">Financeiro</th><th class="c">Atendimento</th><th class="c">Operacional</th><th>O que está puxando</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' +
+    return { n: lista.length, html: lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Categoria</th><th class="c">Risco</th><th class="c">Financeiro</th><th class="c">Atendimento</th><th class="c">Operacional</th><th class="c">Tratativas</th><th>O que está puxando</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' +
       (lista.length > mostrar.length ? '<div class="vazio">Mostrando ' + mostrar.length + ' de ' + lista.length + '. <button class="link" id="r-todos">Mostrar todos</button></div>' : '') : '<div class="vazio">Nenhum cliente neste filtro.</div>' };
   }
   function desenharRisco() {
@@ -314,14 +314,15 @@
       '<details class="card leg" style="padding:12px 20px"><summary><span class="seta">▶</span> 📏 Legenda — como o risco é calculado <span style="font-weight:500;text-transform:none;letter-spacing:0">(clique para expandir)</span></summary><div class="corpo">' +
         '<div><strong style="color:#dc2626">Risco de perda</strong><br>Média dos termômetros que têm dado, de 0 a 100. Médio a partir de ' + d.config.cortes.medio + ', Alto a partir de ' + d.config.cortes.alto + '. Um termômetro muito alto sozinho gera alerta e sobe o cliente para Médio.</div>' +
         '<div><strong style="color:' + COR_TERM.financeiro + '">Financeiro</strong><br>Dias de atraso do título mais antigo (até 15 dias = 25 pontos; acima de 90 = 90), mais 10 pontos com 3 ou mais títulos. Cliente marcado como inadimplente crônico fica em 70, no mínimo.</div>' +
-        '<div><strong style="color:' + COR_TERM.atendimento + '">Atendimento</strong><br>Insatisfações registradas (pesam pela gravidade e diminuem depois de 90 dias), notas baixas, e SLA vermelho do Zappy <em>depois da revisão da Gamificação</em>, considerações de qualidade registradas na ficha (multa, erro, reclamação, atraso, falha), e detratores das pesquisas.</div>' +
+        '<div><strong style="color:' + COR_TERM.atendimento + '">Atendimento</strong><br>Insatisfações registradas (pesam pela gravidade e diminuem depois de 90 dias), notas baixas, e SLA vermelho do Zappy <em>depois da revisão da Gamificação</em>, e detratores das pesquisas.</div>' +
         '<div><strong style="color:' + COR_TERM.operacional + '">Operacional</strong><br>Proporção das entregas do Acessórias (últimos 90 dias) que chegam ao cliente e foram entregues com atraso ou venceram sem entrega: guias e declarações com multa, folha, FGTS, DCTFWeb, INSS e envios ao cliente. Tarefas internas (balancete, renovação de certificado, aniversário de sócio, cadastros) não contam. Entrega dentro do prazo técnico ou do prazo legal não é atraso. Só conta com <strong>5 entregas ou mais</strong> no período (com menos, a taxa não é confiável: fica sem dado). Empresa com contrato <strong>Suspenso no Omie</strong> (selo ⏸) também fica fora do Operacional: o atraso dela já pesa no Financeiro.</div>' +
+        '<div><strong style="color:' + COR_TERM.tratativas + '">Tratativas</strong><br>Ocorrências <strong>lançadas no módulo Qualidade</strong> (erro, multa, reclamação, atraso, falha…) dos últimos 90 dias e o andamento da tratativa de cada uma: cada ocorrência vale o dobro do peso do seu tipo, mais se o prazo venceu, menos se já foi finalizada ou resolvida. Só entra na média enquanto houver tratativa em aberto. O que se escreve em "Descreva a tratativa" na ficha é plano de ação e <strong>não conta</strong>.</div>' +
       '</div></details>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px">' +
         '<span class="filter-label">Buscar</span><input class="gp-input" id="r-busca" placeholder="Nome ou CNPJ" value="' + esc(f.busca) + '">' +
         '<span class="filter-label">Risco</span><select class="gp-select" id="r-nivel">' + opt('AltoMedio', 'Alto e Médio', f.nivel === 'AltoMedio') + opt('Alto', 'Só Alto', f.nivel === 'Alto') + opt('Médio', 'Só Médio', f.nivel === 'Médio') + opt('Baixo', 'Baixo', f.nivel === 'Baixo') + opt('Suspenso', 'Suspensos (fora do risco)', f.nivel === 'Suspenso') + opt('todos', 'Todos', f.nivel === 'todos') + '</select>' +
         '<span class="filter-label">Categoria</span><select class="gp-select" id="r-cat">' + opt('', 'Todas', !f.cat) + ['Diamante', 'Ouro', 'Prata', 'Bronze'].map(function (k) { return opt(k, k, f.cat === k); }).join('') + '</select>' +
-        '<span class="filter-label">Pesa mais</span><select class="gp-select" id="r-term">' + opt('', 'Qualquer', !f.term) + ['financeiro', 'atendimento', 'operacional'].map(function (k) { return opt(k, NOME_TERM[k], f.term === k); }).join('') + '</select>' +
+        '<span class="filter-label">Pesa mais</span><select class="gp-select" id="r-term">' + opt('', 'Qualquer', !f.term) + ['financeiro', 'atendimento', 'operacional', 'tratativas'].map(function (k) { return opt(k, NOME_TERM[k], f.term === k); }).join('') + '</select>' +
         '<label style="font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="r-atend"' + (f.soAtend ? ' checked' : '') + '> só com sinal de Atendimento</label></div>' +
       '<div id="r-lista"></div></div>';
     pintarListaRisco();
@@ -1307,8 +1308,8 @@
     return estado.qOpcoes;
   }
 
-  /** Lista de registros (cartões) usada na ficha do cliente. */
-  function listaRegistrosQ(regs) {
+  /** LAYOUT ANTIGO guardado (17/10/2026): lista de registros sem recolher, com "Analista:". Também na tag Git consideracoes-sucesso-time-operacional-antigo. */
+  function listaRegistrosQAntigo(regs) {
     if (!regs.length) return '<div class="linha-item"><span class="x">Nenhuma consideração registrada para este cliente.</span></div>';
     return regs.map(function (r) {
       return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao) + ' <strong>' + esc(r.tipo) + '</strong> <span class="cinza">· ' + esc((r.departamentos || []).join(', ')) + '</span></div>' +
@@ -1319,7 +1320,8 @@
     }).join('');
   }
 
-  function formularioQ(o) {
+  /** LAYOUT ANTIGO guardado (17/10/2026): Tipo, Analista e Prazo na mesma linha; "Descreva a ocorrência" embaixo, em largura total. */
+  function formularioQAntigo(o) {
     var optTipos = '<option value="">Selecione</option>' + o.tipos.map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('');
     var optAn = '<option value="">Selecione</option>' + (estado.qAnalistas || []).map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.nome) + '</option>'; }).join('');
     var deps = o.departamentos.map(function (d) { return '<label class="qa-dep"><input type="checkbox" class="qa-dep-ck" value="' + esc(d) + '"> ' + esc(d) + '</label>'; }).join('');
@@ -1337,6 +1339,82 @@
       '<div class="pop-erro" id="qa-erro" role="alert"></div></div>';
   }
 
+  var DIAS_SINAL_Q = 90;
+  /** Cartão de um plano de ação (registro feito na ficha). */
+  function cartaoRegistroQ(r) {
+    return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao) + ' <strong>' + esc(r.tipo) + '</strong> <span class="cinza">· ' + esc((r.departamentos || []).join(', ')) + '</span></div>' +
+      '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
+      '<div class="qa-reg-rod">Responsável: <strong>' + esc(r.analista_nome || '—') + '</strong> · lançado em ' + data(r.criado_em) + ' por ' + esc(r.criado_por || '—') + ' · prazo ' + data(r.prazo) +
+        (r.resolvido_em ? ' · resolvido em ' + data(r.resolvido_em) : '') + '</div>' +
+      (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '</div>';
+  }
+  function maisRecenteQ(a, b) { return String(b.criado_em || '').localeCompare(String(a.criado_em || '')); }
+  /** Planos de ação da ficha: só o mais recente aparece; os anteriores ficam recolhidos sob uma seta. */
+  function listaRegistrosQ(regs) {
+    var planos = (regs || []).filter(function (r) { return r.origem !== 'modulo'; }).sort(maisRecenteQ);
+    if (!planos.length) return '<div class="linha-item"><span class="x">Nenhum plano de ação registrado para este cliente.</span></div>';
+    var h = cartaoRegistroQ(planos[0]);
+    if (planos.length > 1) {
+      h += '<details class="qa-mais"><summary><span class="sp">▸</span> ' + (planos.length - 1) + (planos.length - 1 === 1 ? ' registro anterior' : ' registros anteriores') + '</summary>' + planos.slice(1).map(cartaoRegistroQ).join('') + '</details>';
+    }
+    return h;
+  }
+  /** Resumo de uma frase do que o analista descreveu (até ~90 caracteres, cortando em palavra inteira). */
+  function resumoQ(txt) {
+    var t = String(txt || '').split(/\s+/).join(' ').trim();
+    if (t.length <= 90) return t;
+    return t.slice(0, 90).replace(/\s+\S*$/, '') + '…';
+  }
+  /** Linha dos Sinais de atenção para uma ocorrência lançada no módulo Qualidade: tipo, departamentos, data e o resumo do que foi apontado. */
+  function chipOcorrenciaQ(r) {
+    var cor = r.situacao === 'resolvido' ? '#6b7280' : '#dc2626';
+    var titulo = r.tipo + ' · ' + (r.departamentos || []).join(', ') + '\n' + (r.detalhe || '') + '\nResponsável: ' + (r.analista_nome || '—') + ' · prazo ' + data(r.prazo) + ' · ' + (ROT_STATUS_Q[r.situacao] || r.situacao);
+    return '<span class="chip chip-q" title="' + esc(titulo) + '" style="color:' + cor + ';border-color:' + cor + '55"><strong>' + esc(r.tipo) + '</strong> · ' + esc((r.departamentos || []).join(', ')) + ' · ' + data(r.criado_em) +
+      (r.detalhe ? ' — ' + esc(resumoQ(r.detalhe)) : '') + ' · ' + esc(ROT_STATUS_Q[r.situacao] || r.situacao) + '</span>';
+  }
+  /**
+   * Sinais de atenção: só entram as ocorrências lançadas no módulo Qualidade (origem "modulo") dos últimos 90 dias. A mais recente fica em
+   * evidência, ao lado da inadimplência e das entregas; as anteriores ficam recolhidas atrás da seta do canto do título.
+   */
+  function atualizarSinaisQ(regs) {
+    var ref = Date.now() - DIAS_SINAL_Q * 86400000;
+    var rec = (regs || []).filter(function (r) { return r.origem === 'modulo' && r.status !== 'cancelado' && new Date(r.criado_em).getTime() >= ref; }).sort(maisRecenteQ);
+    var q = $('sinais-q'), mais = $('sinais-mais'), seta = $('sinais-seta'), vazio = $('sinais-vazio');
+    if (!q) return;
+    q.innerHTML = rec.length ? chipOcorrenciaQ(rec[0]) : '';
+    if (rec.length && vazio) vazio.style.display = 'none';
+    var extra = rec.slice(1);
+    if (mais) { mais.innerHTML = extra.map(chipOcorrenciaQ).join(''); mais.hidden = true; }
+    if (seta) {
+      seta.hidden = !extra.length; seta.setAttribute('aria-expanded', 'false');
+      var rot = $('sinais-seta-rot'); if (rot) rot.textContent = extra.length === 1 ? '+1 anterior' : '+' + extra.length + ' anteriores';
+      seta.onclick = function () { var abre = !!mais.hidden; mais.hidden = !abre; seta.setAttribute('aria-expanded', abre ? 'true' : 'false'); };
+    }
+  }
+
+  /** Formulário do plano de ação: Tipo e Departamentos em cima; "Descreva a tratativa" ao lado do Responsável e do Prazo. */
+  function formularioQ(o) {
+    var optTipos = '<option value="">Selecione</option>' + o.tipos.map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('');
+    var optAn = '<option value="">Selecione</option>' + (estado.qAnalistas || []).map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.nome) + '</option>'; }).join('');
+    var deps = o.departamentos.map(function (d) { return '<label class="qa-dep"><input type="checkbox" class="qa-dep-ck" value="' + esc(d) + '"> ' + esc(d) + '</label>'; }).join('');
+    return '<div class="qa-form">' +
+      '<div class="qa-linha">' +
+        '<div class="qa-campo qa-tipo"><label for="qa-tipo">Tipo de registro <span class="req">*</span>' + (ehAdminPainel() ? ' <a href="#" id="qa-editar-tipos" class="qa-lnk">(editar lista)</a>' : '') + '</label><select id="qa-tipo">' + optTipos + '</select></div>' +
+        '<div class="qa-campo qa-deps-campo"><label>Departamentos envolvidos <span class="req">*</span></label><div class="qa-deps"><label class="qa-dep"><input type="checkbox" id="qa-dep-todos"> <strong>Todos</strong></label>' + deps + '</div></div>' +
+      '</div>' +
+      '<div class="qa-grade">' +
+        '<div class="qa-campo qa-larga"><label for="qa-detalhe">Descreva a tratativa: <span class="req">*</span> <span class="cinza" id="qa-cont">0/' + o.max_detalhe + '</span></label>' +
+          '<textarea id="qa-detalhe" maxlength="' + o.max_detalhe + '" rows="4" placeholder="Ex.: plano de ação sobre o que aparece em Sinais de atenção: guia retificada, cliente avisado, conferência dobrada no fechamento."></textarea></div>' +
+        '<div class="qa-lateral">' +
+          '<div class="qa-campo"><label for="qa-analista">Responsável <span class="req">*</span>' + (ehAdminPainel() ? ' <a href="#" id="qa-editar-an" class="qa-lnk">(editar lista)</a>' : '') + '</label><select id="qa-analista">' + optAn + '</select></div>' +
+          '<div class="qa-campo"><label for="qa-prazo">Prazo para execução <span class="req">*</span></label><input type="date" id="qa-prazo" min="' + hojeIsoLocal() + '"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="qa-acoes"><button type="button" class="login-btn" id="qa-salvar" style="width:auto;margin:0;padding:9px 22px">Salvar</button>' +
+        '<span class="cinza">Registra com a data de hoje e o seu nome (' + esc(usuarioLogadoNome() || 'você') + '). Plano de ação: não entra no card Tratativa nem no risco de churn.</span></div>' +
+      '<div class="pop-erro" id="qa-erro" role="alert"></div></div>';
+  }
+
   async function montarConsideracoes(c) {
     var alvo = $('qa-secao'); if (!alvo) return;
     alvo.innerHTML = '<div class="cinza">Carregando…</div>';
@@ -1344,6 +1422,7 @@
       var o = await carregarOpcoesQ();
       var lista = await api('/api/cs/painel/qualidade/cliente/' + encodeURIComponent(c.id));
       alvo.innerHTML = formularioQ(o) + '<div class="qa-lista">' + listaRegistrosQ(lista.registros) + '</div>';
+      try { atualizarSinaisQ(lista.registros); } catch (e) { /* os sinais nunca derrubam o formulário */ }
       var cont = $('qa-cont'), det = $('qa-detalhe');
       det.addEventListener('input', function () { cont.textContent = det.value.length + '/' + o.max_detalhe; });
       var todos = $('qa-dep-todos');
@@ -1359,9 +1438,9 @@
         var corpo = { cliente_id: c.id, tipo: $('qa-tipo').value, departamentos: deps, detalhe: det.value, analista_id: $('qa-analista').value, prazo: $('qa-prazo').value };
         if (!corpo.tipo) { erro.textContent = 'Escolha o tipo de registro.'; return; }
         if (!deps.length) { erro.textContent = 'Escolha ao menos um departamento envolvido.'; return; }
-        if (!corpo.analista_id) { erro.textContent = 'Escolha o analista responsável.'; return; }
+        if (!corpo.analista_id) { erro.textContent = 'Escolha o responsável.'; return; }
         if (!corpo.prazo) { erro.textContent = 'Informe o prazo para execução.'; return; }
-        if (det.value.trim().length < 5) { erro.textContent = 'Descreva a ocorrência (mínimo de 5 caracteres).'; return; }
+        if (det.value.trim().length < 5) { erro.textContent = 'Descreva a tratativa (mínimo de 5 caracteres).'; return; }
         $('qa-salvar').disabled = true;
         try {
           var resp = await chamarApi('/api/cs/painel/qualidade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
@@ -1644,6 +1723,7 @@
         linha('Financeiro com dado', t.termometros.financeiro.com_dado, t.termometros.financeiro.sem_dado + ' sem dado do Omie.') +
         linha('Atendimento com dado', t.termometros.atendimento.com_dado, 'Sem ocorrência conta como 0 (nenhuma falha registrada).') +
         linha('Operacional com dado', t.termometros.operacional.com_dado, 'Entregas do Acessórias lidas para ' + t.operacional_lido + ' empresas; ' + t.termometros.operacional.sem_dado + ' ainda sem entregas no período.') +
+        linha('Tratativas com dado', t.termometros.tratativas.com_dado, 'Só tem dado quem tem ocorrência lançada no módulo Qualidade com tratativa em aberto (últimos 90 dias); os demais ficam de fora da média.') +
         linha('Sem categoria', t.categorias.sem_categoria, 'Sem honorário cadastrado e sem grupo ou TAG que defina a categoria.') +
       '</tbody></table></div></div>' +
       '<div class="card"><div class="card-title">Fontes</div><div class="card-sub" style="margin-bottom:0;line-height:1.8">Financeiro: Omie (títulos em aberto) · Atendimento: Zappy depois da revisão da Gamificação, insatisfações e pesquisas registradas no Grupo-E · Operacional: entregas do Acessórias · Categorias: honorário do Grupo-E e TAGs do Acessórias · Churn: motivo de cancelamento do Acessórias e situação do CNPJ na Receita. Atualizado em ' + new Date(d.gerado_em).toLocaleString('pt-BR') + '.</div></div>';
@@ -1672,12 +1752,12 @@
     var termBloco = function (k) {
       var p = r.termometros[k];
       var det = (r.detalhes && r.detalhes[k] && r.detalhes[k][0]) || '';
-      if (p == null) return bloco(NOME_TERM[k], 'Sem dado', esc(det || 'sem informação desta fonte'), null);
+      if (p == null) return bloco(NOME_TERM[k], k === 'tratativas' ? 'Nada em aberto' : 'Sem dado', esc(det || 'sem informação desta fonte'), null);
       var n = nivelTerm(p, cortes);
       return bloco(NOME_TERM[k], n + ' · ' + p, esc(det), COR_RISCO[n]);
     };
     var blocos1 = '<div class="blocos">' + bloco('Risco de perda', r.nivel + (r.pontos != null ? ' · ' + r.pontos : '') + (r.alerta ? ' ⚠️' : ''), r.alerta ? '<span style="color:#dc2626">termômetro muito alto: alerta</span>' : 'média dos termômetros com dado', COR_RISCO[r.nivel]) + '</div>' +
-      '<div class="blocos">' + termBloco('financeiro') + termBloco('atendimento') + termBloco('operacional') + '</div>';
+      '<div class="blocos">' + termBloco('financeiro') + termBloco('atendimento') + termBloco('operacional') + termBloco('tratativas') + '</div>';
     var blocos2 = '<div class="blocos" style="margin-bottom:6px">' +
       bloco('Categoria', c.categoria ? ICONE_CAT[c.categoria] + ' ' + esc(c.categoria) : 'Sem categoria', esc(motivoTxt(c.categoria_motivo)), c.categoria ? COR_CAT[c.categoria] : null) +
       bloco('Honorário', reais(c.honorario), c.grupo ? 'soma do grupo entra na categoria' : 'mensal') + '</div>';
@@ -1725,12 +1805,17 @@
     oper += e && e.total ? '<div class="blocos">' + bloco('Entregas (90 dias)', e.total, 'lidas do Acessórias em ' + data(e.atualizado_em), null) + bloco('Entregues com atraso', e.atrasadas_entregues, 'status "Ent. atrasada"', e.atrasadas_entregues ? '#dc2626' : null) + bloco('Vencidas sem entrega', e.vencidas_pendentes, 'status "Atrasada!" ou pendente vencida', e.vencidas_pendentes ? '#dc2626' : null) + '</div>'
       : '<div class="linha-item"><span class="x">Sem entregas lidas do Acessórias para este cliente no período' + (e ? ' (última leitura em ' + data(e.atualizado_em) + ')' : ' (ainda não lido)') + '.</span></div>';
 
-    var sinais = (r.motivos || []).map(function (m) { return '<span class="chip" style="color:#dc2626;border-color:#dc262655">' + esc(m) + '</span>'; }).join('') || '<span class="cinza">nenhum sinal de atenção</span>';
+    // O motivo "Tratativas: ..." (resumo do termômetro) vira, depois que os registros chegam, o detalhe de cada ocorrência lançada no módulo Qualidade.
+    var chipMotivo = function (m) { return '<span class="chip" style="color:#dc2626;border-color:#dc262655">' + esc(m) + '</span>'; };
+    var motivos = r.motivos || [], ehTrat = function (m) { return /^Tratativas:/.test(m); };
+    var chipsBase = motivos.filter(function (m) { return !ehTrat(m); }).map(chipMotivo).join('');
+    var chipsTrat = motivos.filter(ehTrat).map(chipMotivo).join('');
+    var sinais = chipsBase + '<span id="sinais-q">' + chipsTrat + '</span>' + (chipsBase || chipsTrat ? '' : '<span class="cinza" id="sinais-vazio">nenhum sinal de atenção</span>') + '<div id="sinais-mais" hidden></div>';
 
     // 16/10/2026: a ficha fica só com risco, categoria, sinais de atenção e financeiro. Atendimento e e-mails vivem no módulo Atendimento;
     // insatisfações e entregas saíram daqui por pedido do Reysner (as variáveis acima seguem montadas para quando a próxima etapa as reaproveitar).
     $('ficha-corpo').innerHTML = blocos1 + blocos2 +
-      '<div class="ficha-sec">Sinais de atenção</div><div>' + sinais + '</div>' +
+      '<div class="ficha-sec sec-flex"><span>Sinais de atenção</span><button type="button" class="seta-btn" id="sinais-seta" aria-expanded="false" hidden title="Mostrar ou recolher as ocorrências anteriores"><span class="sp">▾</span> <span id="sinais-seta-rot"></span></button></div><div>' + sinais + '</div>' +
       '<div class="ficha-sec">Considerações Sucesso do Cliente / Time Operacional</div><div id="qa-secao"></div>' +
       '<div class="ficha-sec">Financeiro</div>' + fin +
       '<div class="nota" style="margin-top:10px">Atendimentos do Zappy e e-mails (recebidos e sem resposta, por destinatário) estão no módulo <strong>Atendimento</strong>.</div>';
@@ -1775,7 +1860,7 @@
         ['Clientes sem reclamação nos últimos 30 dias', t.sem_reclamacao_30d],
         ['Categoria Diamante', t.categorias.Diamante], ['Categoria Ouro', t.categorias.Ouro], ['Categoria Prata', t.categorias.Prata], ['Categoria Bronze', t.categorias.Bronze], ['Sem categoria', t.categorias.sem_categoria],
       ];
-      ['financeiro', 'atendimento', 'operacional'].forEach(function (k) {
+      ['financeiro', 'atendimento', 'operacional', 'tratativas'].forEach(function (k) {
         var tm = t.termometros[k];
         lin.push(['Termômetro ' + NOME_TERM[k] + ': clientes com dado', tm.com_dado]); lin.push(['Termômetro ' + NOME_TERM[k] + ': em alerta', tm.em_alerta]); lin.push(['Termômetro ' + NOME_TERM[k] + ': Médio ou mais', tm.medio_ou_mais]);
       });
@@ -1831,12 +1916,12 @@
       var fr = estado.filtroRisco, lr = filtrarRisco();
       var fx = ['Risco: ' + (ROT_NIVEL[fr.nivel] || fr.nivel)]; if (fr.busca) fx.push('Busca: ' + fr.busca); if (fr.cat) fx.push('Categoria: ' + fr.cat); if (fr.term) fx.push('Pesa mais: ' + NOME_TERM[fr.term]); if (fr.soAtend) fx.push('Só com sinal de Atendimento');
       return { arquivo: 'cs-gestao-da-permanencia', titulo: 'Painel do Sucesso do Cliente - Gestão da Permanência', filtros: [lr.length + ' cliente(s) · ' + fx.join(' · ') + ' · ordem alfabética', aviso],
-        colunas: ['Cliente', 'CNPJ', 'Categoria', 'Risco', 'Pontos', 'Financeiro', 'Atendimento', 'Operacional', 'Suspenso no Omie', 'Honorário (R$)', 'O que está puxando'],
+        colunas: ['Cliente', 'CNPJ', 'Categoria', 'Risco', 'Pontos', 'Financeiro', 'Atendimento', 'Operacional', 'Tratativas', 'Suspenso no Omie', 'Honorário (R$)', 'O que está puxando'],
         linhas: lr.map(function (c) {
           var tm = c.risco.termometros, v = function (x) { return x == null ? 'sem dado' : x; };
-          return [c.nome, c.cnpj || '', c.categoria || '', c.risco.nivel, c.risco.pontos == null ? '' : c.risco.pontos, v(tm.financeiro), v(tm.atendimento), v(tm.operacional), c.risco.suspenso ? 'Sim' : '', moedaExp(c.honorario), (c.risco.motivos || []).join(' | ')];
+          return [c.nome, c.cnpj || '', c.categoria || '', c.risco.nivel, c.risco.pontos == null ? '' : c.risco.pontos, v(tm.financeiro), v(tm.atendimento), v(tm.operacional), tm.tratativas == null ? '' : tm.tratativas, c.risco.suspenso ? 'Sim' : '', moedaExp(c.honorario), (c.risco.motivos || []).join(' | ')];
         }),
-        alinhar: ['left', 'left', 'left', 'center', 'center', 'center', 'center', 'center', 'center', 'right', 'left'], fonte: 7 };
+        alinhar: ['left', 'left', 'left', 'center', 'center', 'center', 'center', 'center', 'center', 'center', 'right', 'left'], fonte: 7 };
     }
     if (sec === 'churn') {
       var pc = periodoAtual();

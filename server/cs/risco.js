@@ -142,11 +142,12 @@ async function calcularTodos({ detalhes = false } = {}) {
   if (!zappyRows) zappyRows = await consultar(zappySemRevisao, [], 'zappy sem revisão') || [];
   const zappy = new Map(zappyRows.map((r) => [r.cliente_id, r]));
 
-  // Considerações de Qualidade (ficha do cliente): entram no termômetro de Atendimento. Tabela ausente = segue sem.
+  // Ocorrências de Qualidade (ficha do cliente) e o andamento da tratativa: alimentam o termômetro Tratativas. Tabela ausente = segue sem.
+  const hojeSP = "(NOW() AT TIME ZONE 'America/Sao_Paulo')::date";
   const qualidade = new Map();
-  ((await consultar(`SELECT r.cliente_id, r.tipo, r.status, (CURRENT_DATE - r.criado_em::date)::int AS dias, t.peso FROM cs_qualidade_registros r LEFT JOIN cs_qualidade_tipos t ON t.nome = r.tipo WHERE r.criado_em >= NOW() - INTERVAL '90 days' AND r.status <> 'cancelado'`, [], 'qualidade'))
-    || (await consultar(`SELECT cliente_id, tipo, status, (CURRENT_DATE - criado_em::date)::int AS dias, NULL::int AS peso FROM cs_qualidade_registros WHERE criado_em >= NOW() - INTERVAL '90 days' AND status <> 'cancelado'`, [], 'qualidade (sem tipos)')) || [])
-    .forEach((q) => { (qualidade.get(q.cliente_id) || qualidade.set(q.cliente_id, []).get(q.cliente_id)).push({ tipo: q.tipo, status: q.status, dias: q.dias, peso: q.peso }); });
+  ((await consultar(`SELECT r.cliente_id, r.tipo, r.status, (CURRENT_DATE - r.criado_em::date)::int AS dias, t.peso, (r.status IN ('aberto', 'em_tratamento') AND r.prazo < ${hojeSP}) AS vencida FROM cs_qualidade_registros r LEFT JOIN cs_qualidade_tipos t ON t.nome = r.tipo WHERE r.criado_em >= NOW() - INTERVAL '90 days' AND r.status <> 'cancelado' AND COALESCE(to_jsonb(r)->>'origem', 'ficha') = 'modulo'`, [], 'qualidade'))
+    || (await consultar(`SELECT cliente_id, tipo, status, (CURRENT_DATE - criado_em::date)::int AS dias, NULL::int AS peso, (status IN ('aberto', 'em_tratamento') AND prazo < ${hojeSP}) AS vencida FROM cs_qualidade_registros r WHERE criado_em >= NOW() - INTERVAL '90 days' AND status <> 'cancelado' AND COALESCE(to_jsonb(r)->>'origem', 'ficha') = 'modulo'`, [], 'qualidade (sem tipos)')) || [])
+    .forEach((q) => { (qualidade.get(q.cliente_id) || qualidade.set(q.cliente_id, []).get(q.cliente_id)).push({ tipo: q.tipo, status: q.status, dias: q.dias, peso: q.peso, vencida: !!q.vencida }); });
 
   const entregas = new Map(((await consultar(`SELECT doc, total, atrasadas_entregues, vencidas_pendentes FROM cliente_entregas_resumo`, [], 'entregas')) || []).map((r) => [r.doc, r]));
 
@@ -166,9 +167,10 @@ async function calcularTodos({ detalhes = false } = {}) {
       financeiro: calc.termometroFinanceiro({ temDado: coberto.has(doc) || !!ab, qtdAtrasados: ab ? ab.qtd : 0, valorAtrasado: ab ? ab.valor : 0, maisAntigo: ab ? ab.mais_antigo : null, cronico: c.cronico, hoje }),
       atendimento: calc.termometroAtendimento({
         insatisfacoes: insat.get(doc) || [], sensiveis: sensiveis.get(doc) || [], notasBaixas: z.notas_baixas || 0,
-        slaVermelho: z.sla_vermelho || 0, qualidade: qualidade.get(String(c.id)) || [], detratores: detratores.get(doc) || 0, tickets90: z.tickets90 || 0,
+        slaVermelho: z.sla_vermelho || 0, detratores: detratores.get(doc) || 0, tickets90: z.tickets90 || 0,
       }),
       operacional: calc.termometroOperacional({ temDado: !!e, total: e ? e.total : 0, atrasadasEntregues: e ? e.atrasadas_entregues : 0, vencidasPendentes: e ? e.vencidas_pendentes : 0, suspenso }),
+      tratativas: calc.termometroTratativas({ qualidade: qualidade.get(String(c.id)) || [] }),
     };
     const r = calc.calcularRisco(termometros, config.pesos, config.cortes);
     // Cliente SUSPENSO (contrato suspenso no Omie) NÃO conta em risco (Reysner, 09/10/2026): fica com nível "Suspenso", sem pontos, fora de Alto/Médio/Baixo,
@@ -319,7 +321,7 @@ router.get('/config', requireAuth, requireAdmin, async (req, res) => {
 router.put('/config', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { pesos, cortes } = req.body || {};
-    const p = {}; calc.TERMOMETROS.forEach((t) => { p[t] = Number(pesos && pesos[t]); });
+    const p = {}; calc.TERMOMETROS.forEach((t) => { p[t] = pesos && pesos[t] === undefined && !calc.TERMOMETROS_BASE.includes(t) ? 1 : Number(pesos && pesos[t]); });   // peso não informado de um termômetro novo vale 1
     if (!calc.TERMOMETROS.every((t) => p[t] >= 0) || calc.TERMOMETROS.every((t) => p[t] === 0)) return res.status(400).json({ error: 'Informe pesos de 0 em diante (ao menos um maior que zero).' });
     const c = { medio: Number(cortes && cortes.medio), alto: Number(cortes && cortes.alto) };
     if (!(c.medio > 0 && c.alto > c.medio && c.alto <= 100)) return res.status(400).json({ error: 'Os cortes precisam estar em ordem: Médio < Alto, até 100.' });

@@ -146,6 +146,9 @@ function garantirSchema() {
         atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(), resolvido_em TIMESTAMPTZ, resolvido_por TEXT, tratativa TEXT)`)
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS validado_em TIMESTAMPTZ'))
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS validado_por TEXT'))
+      // origem: 'ficha' = plano de ação escrito na ficha do cliente (informativo: não entra nos Sinais de atenção, no card Tratativa nem no risco);
+      // 'modulo' = lançado no módulo Qualidade (aparece nos Sinais de atenção, alimenta o card Tratativa e pesa no risco de churn).
+      .then(() => pool.query("ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS origem TEXT NOT NULL DEFAULT 'ficha'"))
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ENABLE ROW LEVEL SECURITY'))
       .then(() => pool.query('CREATE INDEX IF NOT EXISTS cs_qualidade_cliente_idx ON cs_qualidade_registros (cliente_id)'))
       .then(() => pool.query('CREATE INDEX IF NOT EXISTS cs_qualidade_analista_idx ON cs_qualidade_registros (analista_id)'))
@@ -178,7 +181,7 @@ function soEquipe(req, res, next) {
 }
 
 const COLUNAS = `r.id, r.cliente_id, r.cnpj, r.cliente_nome, r.tipo, r.departamentos, r.detalhe, r.analista_id, a.nome AS analista_nome,
-       to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.status, r.criado_por, r.criado_em, r.resolvido_em, r.resolvido_por, r.tratativa, r.validado_em, r.validado_por`;
+       to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.status, r.origem, r.criado_por, r.criado_em, r.resolvido_em, r.resolvido_por, r.tratativa, r.validado_em, r.validado_por`;
 const DE = `FROM cs_qualidade_registros r LEFT JOIN analistas a ON a.id::text = r.analista_id`;
 const comSituacao = (rows) => rows.map((r) => ({ ...r, situacao: situacao(r.status, r.prazo), status_rotulo: ROTULO_STATUS[r.status] }));
 

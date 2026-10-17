@@ -3,18 +3,21 @@
  * Risco de perda do cliente — regras de cálculo (Etapa 3 do painel de Risco, alinhamento Reysner × Larissa 05/10/2026).
  * Lógica PURA (sem banco, sem rede) pra poder testar; a leitura dos dados fica em risco.js.
  *
- * Três termômetros, cada um de 0 a 100 (quanto maior, pior):
+ * Quatro termômetros, cada um de 0 a 100 (quanto maior, pior):
  *   - Financeiro:   inadimplência (títulos em atraso no Omie, inadimplente crônico);
  *   - Atendimento:  insatisfações registradas, clientes sensíveis, pesquisas, notas baixas e SLA vermelho no Zappy;
- *   - Operacional:  entregas do Acessórias atrasadas ou vencidas sem entrega.
+ *   - Operacional:  entregas do Acessórias atrasadas ou vencidas sem entrega;
+ *   - Tratativas:   ocorrências de qualidade (erro, multa, reclamação, atraso...) e o andamento da tratativa de cada uma (17/10/2026).
  * Risco = média ponderada dos termômetros que TÊM dado (pesos iniciais iguais, "vamos fixar mais adiante").
  * Dado ausente não é presumido: termômetro sem dado fica de fora e o risco é marcado como parcial.
  */
 
-const PESOS_PADRAO = { financeiro: 1, atendimento: 1, operacional: 1 };
+const PESOS_PADRAO = { financeiro: 1, atendimento: 1, operacional: 1, tratativas: 1 };
 const CORTES_PADRAO = { medio: 30, alto: 60 };
 const ALERTA_TERMOMETRO = 75; // um termômetro sozinho nessa faixa já puxa o cliente pra, no mínimo, Médio
-const TERMOMETROS = ['financeiro', 'atendimento', 'operacional'];
+const TERMOMETROS = ['financeiro', 'atendimento', 'operacional', 'tratativas'];
+// Tratativas só tem "dado" enquanto houver tratativa em aberto: ausência é "nada a tratar", não falta de informação (não deixa o risco "parcial").
+const TERMOMETROS_BASE = ['financeiro', 'atendimento', 'operacional'];
 
 const PESO_GRAVIDADE_INSATISFACAO = { 'muito alta': 40, alta: 30, media: 20, baixa: 10, 'muito baixa': 5 };
 const PESO_GRAVIDADE_SENSIVEL = { 'muito alta': 30, alta: 22, media: 15, baixa: 8, 'muito baixa': 4 };
@@ -55,14 +58,13 @@ function termometroFinanceiro(e) {
  * Atendimento. entrada: {
  *   insatisfacoes:[{gravidade, dias}], sensiveis:[{gravidade, dias}], notasBaixas:n (≤2 nos últimos 90d),
  *   slaVermelho:n (tickets com SLA vermelho nos últimos 90d),   (abandono de atendimento NÃO entra mais: decisão do Reysner, 16/10/2026)
- *   detratores:n (NPS ≤ 6 nos últimos 180d), tickets90:n,
- *   qualidade:[{tipo, status, dias}] (considerações registradas na ficha pelo Sucesso do Cliente / Time Operacional, últimos 90d) }
+ *   detratores:n (NPS ≤ 6 nos últimos 180d), tickets90:n }
+ * As ocorrências de qualidade registradas na ficha NÃO pesam aqui: viraram o termômetro Tratativas (para não contar duas vezes).
  * Notas baixas e SLA vermelho chegam JÁ DEPOIS da revisão da Gamificação (o que foi marcado "indevida" não entra).
  * Sempre tem dado: ausência de ocorrências = 0 pontos.
  */
-/** Pontos de cada tipo de consideração de Qualidade (decisão do Reysner, 16/10/2026: entra como um dos indicadores do risco; pesos ajustáveis aqui). */
+/** Peso de cada tipo de ocorrência de Qualidade quando o cadastro de tipos não informa (ajustável na tela de tipos). */
 const PESO_QUALIDADE = { 'multa': 25, 'reclamacao': 20, 'falha de atendimento': 20, 'erro': 15, 'atraso': 10, 'falha tecnica': 10, 'outros': 5 };
-const TETO_QUALIDADE = 40;
 
 function termometroAtendimento(e) {
   const x = e || {};
@@ -84,16 +86,6 @@ function termometroAtendimento(e) {
 
   const sla = Number(x.slaVermelho) || 0;
   if (sla) { pontos += Math.min(20, sla * 5); detalhe.push(`${plural(sla, 'ticket', 'tickets')} com SLA vermelho nos últimos 90 dias`); }
-
-  // Qualidade: cada consideração pesa pelo tipo; resolvida vale metade e, passados 45 dias, também metade; cancelada não entra.
-  const qs = (x.qualidade || []).filter((q) => q && q.status !== 'cancelado' && (q.dias == null || q.dias <= 90));
-  if (qs.length) {
-    let pq = 0;
-    qs.forEach((q) => { pq += (Number.isFinite(Number(q.peso)) && q.peso !== null && q.peso !== undefined ? Number(q.peso) : (PESO_QUALIDADE[norm(q.tipo)] ?? 5)) * (q.status === 'resolvido' || q.status === 'finalizada' ? 0.5 : 1) * ((q.dias || 0) > 45 ? 0.5 : 1); });
-    pontos += Math.min(TETO_QUALIDADE, Math.round(pq));
-    const abertas = qs.filter((q) => q.status !== 'resolvido' && q.status !== 'finalizada').length;
-    detalhe.push(`${plural(qs.length, 'consideração de qualidade registrada', 'considerações de qualidade registradas')} nos últimos 90 dias${abertas ? ` (${abertas} em aberto)` : ''}`);
-  }
 
   const det = Number(x.detratores) || 0;
   if (det) { pontos += Math.min(30, det * 15); detalhe.push(`${plural(det, 'pesquisa de detrator', 'pesquisas de detrator')} (NPS até 6) nos últimos 180 dias`); }
@@ -126,10 +118,41 @@ function termometroOperacional(e) {
   return { pontos: limitar(taxa * 200), detalhe };
 }
 
-/** Junta os três termômetros. pesos/cortes opcionais (config do admin). */
+/**
+ * Tratativas. entrada: { qualidade:[{tipo, status, dias, peso, vencida}] } — as ocorrências registradas na ficha do cliente (erro, multa,
+ * reclamação, atraso, falha...) dos últimos 90 dias e o andamento da tratativa de cada uma. Só entra o que é LANÇADO NO MÓDULO QUALIDADE
+ * (origem 'modulo'): é o mesmo registro dos "Sinais de atenção". O plano de ação escrito na ficha ("Descreva a tratativa", origem 'ficha')
+ * não entra aqui nem no risco (decisão do Reysner, 17/10/2026). Cancelada não entra.
+ * Só tem dado enquanto houver tratativa em aberto (aberto, em tratamento ou finalizada aguardando validação); sem pendência o
+ * termômetro fica de fora da média, para não diluir o risco dos outros (nada a tratar não é sinal de saúde nem de risco).
+ * Cada ocorrência vale o DOBRO do peso do seu tipo (multa 50, reclamação e falha de atendimento 40, erro 30, atraso e falha técnica 20,
+ * outros 10; o peso do cadastro de tipos manda quando existe), multiplicado por: 1,5 se o prazo da tratativa venceu, 1 em aberto ou em
+ * tratamento, 0,5 finalizada (aguardando validação), 0,25 resolvida; ocorrência com mais de 45 dias vale metade. Soma limitada a 100.
+ */
+const FATOR_TRATATIVA = { aberto: 1, em_tratamento: 1, finalizada: 0.5, resolvido: 0.25 };
+function termometroTratativas(e) {
+  const qs = ((e && e.qualidade) || []).filter((q) => q && q.status !== 'cancelado' && (q.dias == null || q.dias <= 90));
+  const emAndamento = (q) => q.status === 'aberto' || q.status === 'em_tratamento';
+  const pend = qs.filter((q) => emAndamento(q) || q.status === 'finalizada');
+  if (!pend.length) return { pontos: null, detalhe: [qs.length ? `Nenhuma tratativa em aberto (${plural(qs.length, 'ocorrência resolvida', 'ocorrências resolvidas')} nos últimos 90 dias)` : 'Nenhuma tratativa em aberto'] };
+  let p = 0;
+  qs.forEach((q) => {
+    const peso = q.peso !== null && q.peso !== undefined && Number.isFinite(Number(q.peso)) ? Number(q.peso) : (PESO_QUALIDADE[norm(q.tipo)] ?? 5);
+    const fator = q.vencida && emAndamento(q) ? 1.5 : (FATOR_TRATATIVA[q.status] ?? 1);
+    p += peso * 2 * fator * ((q.dias || 0) > 45 ? 0.5 : 1);
+  });
+  const abertas = pend.filter(emAndamento).length, vencidas = pend.filter((q) => q.vencida && emAndamento(q)).length, aValidar = pend.length - abertas;
+  const partes = [];
+  if (abertas) partes.push(`${abertas} em aberto${vencidas ? ` (${vencidas} com prazo vencido)` : ''}`);
+  if (aValidar) partes.push(`${aValidar} aguardando validação`);
+  const tipos = Array.from(new Set(pend.map((q) => q.tipo).filter(Boolean)));
+  return { pontos: limitar(p), detalhe: [`Tratativas: ${partes.join(', ')}${tipos.length ? ` · ocorrências: ${tipos.join(', ')}` : ''}`] };
+}
+
+/** Junta os termômetros. pesos/cortes opcionais (config do admin). */
 function calcularRisco(termometros, pesos = PESOS_PADRAO, cortes = CORTES_PADRAO) {
   const usados = TERMOMETROS.filter((t) => termometros[t] && termometros[t].pontos != null && (pesos[t] ?? 1) > 0);
-  const semDado = TERMOMETROS.filter((t) => !termometros[t] || termometros[t].pontos == null);
+  const semDado = TERMOMETROS_BASE.filter((t) => !termometros[t] || termometros[t].pontos == null);
   if (!usados.length) return { pontos: null, nivel: 'Incompleto', parcial: true, sem_dado: semDado, alerta: false, motivos: [], termometros };
 
   const somaPesos = usados.reduce((s, t) => s + (pesos[t] ?? 1), 0);
@@ -147,7 +170,7 @@ function calcularRisco(termometros, pesos = PESOS_PADRAO, cortes = CORTES_PADRAO
 }
 
 module.exports = {
-  PESOS_PADRAO, CORTES_PADRAO, ALERTA_TERMOMETRO, TERMOMETROS, diasEntre,
+  PESOS_PADRAO, CORTES_PADRAO, ALERTA_TERMOMETRO, TERMOMETROS, TERMOMETROS_BASE, diasEntre,
   MIN_ENTREGAS_OPERACIONAL,
-  termometroFinanceiro, termometroAtendimento, termometroOperacional, calcularRisco,
+  termometroFinanceiro, termometroAtendimento, termometroOperacional, termometroTratativas, calcularRisco,
 };
