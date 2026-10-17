@@ -111,11 +111,33 @@
     var rt = ls(K_REFRESH), tk = ls(K_TOKEN);
     if (!silencioso && rt && tk) fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ refreshToken: rt }) }).catch(function () {});
     ls(K_TOKEN, null); ls(K_REFRESH, null); ls(K_USER, null);
+    clearTimeout(avisoTimer); avisosDesde = null;
     estado.dados = null;
     mostrarLogin(silencioso ? 'Sua sessão expirou. Entre de novo.' : '');
   }
 
   // ── carga ────────────────────────────────────────────────────────────────────
+  // Avisos de ocorrência nova (notificação do navegador + som): consulta a cada minuto, só com os avisos ligados neste navegador.
+  var avisoTimer = null, avisosDesde = null;
+  async function sondarAvisos() {
+    clearTimeout(avisoTimer);
+    try {
+      if (window.Avisos && window.Avisos.ativo()) {
+        var j = await api('/api/cs/painel/qualidade/avisos' + (avisosDesde ? '?desde=' + encodeURIComponent(avisosDesde) : ''));
+        j.itens.forEach(function (a) { window.Avisos.alertar({ titulo: a.titulo, texto: a.texto, tag: a.id, aoClicar: function () { irPara('consideracoes'); } }); });
+        avisosDesde = j.agora;
+        if (j.itens.length && estado.secao === 'consideracoes') { estado.qResumo = null; desenharQualidadeMod(); }   // a tela já mostra o novo
+      } else avisosDesde = null;
+    } catch (e) { /* o aviso nunca derruba a página */ }
+    avisoTimer = setTimeout(sondarAvisos, 60 * 1000);
+  }
+  function iniciarAvisosCs() {
+    if (estado.avisosIniciados || !window.Avisos) return;
+    estado.avisosIniciados = true;
+    window.Avisos.montarControle($('avisos-ctl'), { aoMudar: function () { avisosDesde = null; sondarAvisos(); } });
+    sondarAvisos();
+  }
+
   async function iniciar(forcar) {
     $('login-screen').style.display = 'none';
     $('app').style.display = 'block';
@@ -131,6 +153,7 @@
       pintarBotaoValores();
       estado.churnLivre = null;
       desenharTudo();
+      iniciarAvisosCs();
     } catch (e) {
       ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; });
     }

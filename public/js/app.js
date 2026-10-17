@@ -1809,11 +1809,24 @@ const Notificacoes = (() => {
   const _tk = () => localStorage.getItem('ge_token') || '';
   let _open = false;
   let _interval = null;
+  const _vistos = new Set();   // ids já vistos: só o que chega depois dispara o aviso do navegador
+  let _primeira = true;
 
   async function checar() {
     const res = await fetch('/api/data/notificacoes', { headers: { Authorization: 'Bearer ' + _tk() } });
     if (!res || !res.ok) return;
     const { data, naoLidas } = await res.json();
+    // Avisos do navegador (notificação do sistema + som) para o que chegou desde a última checagem; a primeira leitura só marca o ponto de partida.
+    try {
+      const novos = data.filter(n => !n.lida && !_vistos.has(n.id));
+      data.forEach(n => _vistos.add(n.id));
+      if (_primeira) _primeira = false;
+      else if (window.Avisos && novos.length) {
+        const limpa = (x) => String(x == null ? '' : x).replace(/<[^>]*>/g, '');
+        if (novos.length > 3) window.Avisos.alertar({ titulo: novos.length + ' novas notificações', texto: 'Abra o sino para ver.', tag: 'ge-varias' });
+        else novos.forEach(n => window.Avisos.alertar({ titulo: limpa(n.titulo), texto: limpa(n.mensagem), tag: n.id }));
+      }
+    } catch (e) { /* o aviso nunca derruba o sino */ }
     const badge = document.getElementById('notif-badge');
     if (badge) {
       badge.hidden = naoLidas === 0;
@@ -1880,9 +1893,10 @@ const Notificacoes = (() => {
   }
 
   function iniciar() {
+    if (window.Avisos) window.Avisos.montarControle(document.getElementById('avisos-ctl'));
     checar();
-    // Verifica a cada 2 minutos
-    _interval = setInterval(checar, 2 * 60 * 1000);
+    // Verifica a cada minuto (o aviso do navegador depende disso)
+    _interval = setInterval(checar, 60 * 1000);
     // Fechar ao clicar fora
     document.addEventListener('click', function(e) {
       const panel = document.getElementById('notif-panel');

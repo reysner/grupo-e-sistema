@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { TIPO_PLANO, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { TIPO_PLANO, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -118,6 +118,18 @@ teste('prazo da ocorrência: administrador ou gestor/diretor do departamento; ni
   assert.strictEqual(podeAlterarPrazo({ role: 'usuario' }, ['Fiscal'], ['Pessoal']), false);
   assert.strictEqual(podeAlterarPrazo({ role: 'usuario' }, ['Fiscal'], []), false);
   assert.strictEqual(podeAlterarPrazo(null, ['Fiscal'], ['Fiscal']), true, 'quem é gestor do departamento altera mesmo sem outro papel');
+});
+teste('aviso de ocorrência nova: administração (menos quem registrou); gestor só do departamento; Sucesso do Cliente quando não há gestor', () => {
+  const adm = { id: 'a1', role: 'administrador' }, ges = { id: 'g1', role: 'colaborador' };
+  const r = (extra) => Object.assign({ criado_por_id: 'x9', fila: 'gestor', departamentos: ['Fiscal'] }, extra);
+  assert.strictEqual(deveAvisar(adm, r(), []), true);
+  assert.strictEqual(deveAvisar(adm, r({ criado_por_id: 'a1' }), []), false, 'quem registrou não é avisado');
+  assert.strictEqual(deveAvisar(ges, r(), ['Fiscal']), true);
+  assert.strictEqual(deveAvisar(ges, r(), ['Pessoal']), false, 'gestor de outro departamento não recebe');
+  assert.strictEqual(deveAvisar(ges, r(), []), false);
+  assert.strictEqual(deveAvisar(ges, r({ fila: 'sucesso', departamentos: ['Pessoal'] }), ['Sucesso']), true, 'sem gestor no departamento: vai para o Sucesso do Cliente');
+  assert.strictEqual(deveAvisar(ges, r({ fila: 'sucesso', departamentos: ['Pessoal'] }), ['Fiscal']), false);
+  assert.strictEqual(deveAvisar(null, r(), []), false);
 });
 teste('etapas do fluxo na ordem combinada', () => {
   assert.deepStrictEqual(ETAPAS, ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada']);

@@ -153,6 +153,20 @@ function podeAlterarPrazo(user, departamentos, deptosDoUsuario) {
   return (departamentos || []).some((d) => meus.includes(d));
 }
 
+/**
+ * Quem recebe o aviso de uma ocorrência nova: a administração (menos quem registrou); o gestor do departamento quando a ocorrência foi para o
+ * gestor; e, quando foi para o Sucesso do Cliente (departamento sem gestor), quem é gestor do Sucesso do Cliente. Quem registrou nunca é avisado.
+ */
+function deveAvisar(user, reg, deptosGestor) {
+  if (!user || !reg) return false;
+  if (reg.criado_por_id && String(reg.criado_por_id) === String(user.id)) return false;
+  if (user.role === 'administrador') return true;
+  const meus = deptosGestor || [];
+  if (reg.fila === 'gestor') return (reg.departamentos || []).some((d) => meus.includes(d));
+  if (reg.fila === 'sucesso') return meus.includes('Sucesso');
+  return false;
+}
+
 /** Valida a mudança de um registro: status, prazo e/ou tratativa. */
 function validarMudanca(corpo, hoje, opts) {
   const b = corpo || {};
@@ -574,6 +588,29 @@ router.delete('/gestores/:id', async (req, res) => {
   } catch (e) { console.error('[qualidade] DELETE /gestores falhou:', e); res.status(500).json({ error: 'Erro ao retirar o gestor.' }); }
 });
 
+/**
+ * Avisos para o navegador (notificação + som) de ocorrências NOVAS desde o ponto informado em ?desde= (o "agora" devolvido na chamada anterior).
+ * A primeira chamada, sem desde, só devolve o ponto de partida. Não vai além das últimas 24 horas.
+ */
+router.get('/avisos', async (req, res) => {
+  try {
+    await garantirSchema();
+    const agora = (await pool.query('SELECT NOW() AS t')).rows[0].t.toISOString();
+    const d = Date.parse(req.query.desde || '');
+    if (!Number.isFinite(d)) return res.json({ agora, itens: [] });
+    const desde = new Date(Math.max(d, Date.now() - 24 * 3600 * 1000)).toISOString();
+    const meus = (await pool.query('SELECT departamento FROM cs_qualidade_gestores WHERE user_id = $1', [String(req.user.id)])).rows.map((g) => g.departamento);
+    const { rows } = await pool.query(
+      `SELECT r.id, r.cliente_nome, r.tipo, r.prioridade, r.assunto, r.departamentos, r.fila, r.criado_por_id, r.criado_em
+         FROM cs_qualidade_registros r WHERE r.origem = 'modulo' AND r.status <> 'cancelado' AND r.criado_em > $1 ORDER BY r.criado_em`, [desde]);
+    const itens = rows.filter((r) => deveAvisar(req.user, r, meus)).map((r) => ({
+      id: r.id, em: r.criado_em, titulo: 'Nova ocorrência: ' + r.tipo + ' (' + (r.prioridade || '—') + ')',
+      texto: (r.cliente_nome || 'Empresa') + ' — ' + (r.assunto || '') + ' · ' + rotuloDepto((r.departamentos || [])[0]),
+    }));
+    res.json({ agora, itens });
+  } catch (e) { console.error('[qualidade] GET /avisos falhou:', e); res.status(500).json({ error: 'Erro ao ler os avisos.' }); }
+});
+
 /** Sugestão de empresas ao digitar: as que COMEÇAM com o texto (nome ou CNPJ) vêm primeiro; se couberem mais, as que apenas contêm. */
 router.get('/empresas', async (req, res) => {
   try {
@@ -886,4 +923,4 @@ routerAnalista.post('/:id/nota', async (req, res) => {
   } catch (e) { console.error('[qualidade] POST /nota falhou:', e); res.status(500).json({ error: 'Erro ao salvar a nota.' }); }
 });
 
-module.exports = { router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
