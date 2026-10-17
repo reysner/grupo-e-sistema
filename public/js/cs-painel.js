@@ -1531,10 +1531,14 @@
     var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); estado.qAnalistas = null; if (aoFechar) aoFechar(); };
     var desenhar = async function () {
       var j = await api('/api/cs/painel/qualidade/analistas');
+      var logins = [];
+      try { logins = ((await api('/api/users')).users || []).filter(function (u) { return u.ativo !== false; }); } catch (e) { logins = []; }
       ov.innerHTML = '<div class="qa-modal" role="dialog" aria-label="Gerenciar analistas"><div class="qa-modal-topo"><strong>Gerenciar analistas</strong><button type="button" class="qa-x" id="qa-fechar" aria-label="Fechar">✕</button></div>' +
         '<div class="qa-modal-novo"><input id="qa-novo" type="text" placeholder="Nome completo do novo analista"><button type="button" class="gp-footer-btn" id="qa-add" style="width:auto">+ Adicionar</button></div>' +
+        '<div class="cinza" style="font-size:12px;margin:8px 0">Cada analista pode ter um <strong>login</strong> ligado (necessário para ser gestor(a) e para receber avisos). <button type="button" class="gp-footer-btn" id="qa-auto" style="width:auto;display:inline-block;padding:2px 8px">Ligar logins automaticamente</button> liga os que casam com o nome; os demais você escolhe na lista de cada analista.</div>' +
         '<div class="qa-modal-lista">' + j.analistas.map(function (a) {
-          return '<div class="qa-an-linha"><span class="' + (a.ativo ? '' : 'qa-an-inativo') + '">' + esc(a.nome) + '</span><span class="qa-an-acoes">' +
+          var selLogin = '<select data-vinc="' + esc(a.id) + '" aria-label="Login de ' + esc(a.nome) + '" style="display:block;margin-top:4px;max-width:100%;font-size:12px"><option value="">Sem login ligado</option>' + logins.map(function (u) { return '<option value="' + esc(u.id) + '"' + (String(a.user_id) === String(u.id) ? ' selected' : '') + '>' + esc(u.name) + ' · ' + esc(u.email) + '</option>'; }).join('') + '</select>';
+          return '<div class="qa-an-linha"><span class="' + (a.ativo ? '' : 'qa-an-inativo') + '">' + esc(a.nome) + selLogin + '</span><span class="qa-an-acoes">' +
             '<button type="button" class="gp-footer-btn" data-ren="' + esc(a.id) + '" data-nome="' + esc(a.nome) + '" style="width:auto">Editar nome</button>' +
             '<button type="button" class="gp-footer-btn" data-tog="' + esc(a.id) + '" data-ativo="' + (a.ativo ? '1' : '0') + '" style="width:auto">' + (a.ativo ? 'Desativar' : 'Reativar') + '</button>' +
             '<button type="button" class="gp-footer-btn qa-excluir" data-del="' + esc(a.id) + '" data-nome="' + esc(a.nome) + '" style="width:auto" title="Tira o analista da lista de vez">Excluir</button></span></div>';
@@ -1547,6 +1551,19 @@
         if (!r.ok) { falha(x.error || 'Não foi possível salvar.'); return false; }
         return true;
       };
+      Array.prototype.forEach.call(ov.querySelectorAll('[data-vinc]'), function (sel) {
+        sel.addEventListener('change', async function () {
+          var r = await chamarApi('/api/cs/painel/qualidade/vinculo/' + encodeURIComponent(sel.getAttribute('data-vinc')), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: sel.value || null }) });
+          if (!r.ok) { var x = await r.json().catch(function () { return {}; }); falha(x.error || 'Não foi possível ligar o login.'); } else { falha(''); estado.qResumo = null; }
+        });
+      });
+      $('qa-auto').addEventListener('click', async function () {
+        var r = await chamarApi('/api/cs/painel/qualidade/vinculos/automatico', { method: 'POST' });
+        var x = await r.json().catch(function () { return {}; });
+        if (!r.ok) { falha(x.error || 'Não foi possível ligar os logins.'); return; }
+        window.alert((x.ligados.length ? 'Logins ligados: ' + x.ligados.length + '\n' + x.ligados.join('\n') : 'Nenhum login novo casou com o nome.') + (x.sem_par.length ? '\n\nSem login (escolha na lista de cada um): ' + x.sem_par.length : ''));
+        desenhar();
+      });
       $('qa-add').addEventListener('click', async function () {
         var nome = $('qa-novo').value.replace(/\s+/g, ' ').trim(); if (!nome) { falha('Digite o nome.'); return; }
         var r = await chamarApi('/api/analistas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: nome }) });

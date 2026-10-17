@@ -218,6 +218,7 @@ teste('nome completo no cadastro de gestores: usa o da lista de analistas (por v
   assert.strictEqual(f('9', 'Eduardo'), 'Eduardo de Queiroz Cançado Junior', 'vínculo pelo login vence');
   assert.strictEqual(f('2', 'Eduardo'), 'Eduardo', 'dois Eduardos sem vínculo: não chuta');
   assert.strictEqual(f('5', 'Guilherme'), 'Guilherme de Barros Amaro', 'colaborador da Gamificação ligado ao login');
+  assert.strictEqual(nomeCompletoDoLogin({ id: '8', name: 'Elma' }, [{ nome: 'Elma Aparecida Oliveira', user_id: null }], [{ nome: 'Elma', user_id: '8' }]), 'Elma Aparecida Oliveira', 'colaborador com nome curto não impede de achar o analista');
   assert.strictEqual(f('3', 'MAIRA'), 'Maira Souza', 'sem acento nem maiúsculas');
   assert.strictEqual(f('4', 'Escritorial CS'), 'Escritorial CS');
   assert.strictEqual(f('6', ''), '');

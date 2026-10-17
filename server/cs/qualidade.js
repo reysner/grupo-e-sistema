@@ -650,15 +650,22 @@ router.get('/analista/:id', async (req, res) => {
 /** Nome completo de um login: o do analista ligado a ele, o do colaborador da Gamificação, o igual sem acento, ou o único analista que começa com o nome do login (ex.: "Josiane" → "Josiane Silva"). Sem par, fica o nome do login. */
 function nomeCompletoDoLogin(user, analistas, colabs) {
   const id = String(user.id), nome = String(user.name || '').trim();
-  const porId = (analistas || []).find((a) => a.user_id != null && String(a.user_id) === id) || (colabs || []).find((c) => c.user_id != null && String(c.user_id) === id);
-  if (porId && porId.nome) return String(porId.nome).trim();
-  const alvo = semAcento(nome);
-  if (!alvo) return nome;
+  const doAnalista = (analistas || []).find((a) => a.user_id != null && String(a.user_id) === id);
+  if (doAnalista && doAnalista.nome) return String(doAnalista.nome).trim();
+  const colab = (colabs || []).find((c) => c.user_id != null && String(c.user_id) === id);
   const livres = (analistas || []).filter((a) => a.user_id == null || String(a.user_id) === id);
-  const igual = livres.find((a) => semAcento(a.nome) === alvo);
-  if (igual) return String(igual.nome).trim();
-  const comecam = livres.filter((a) => semAcento(a.nome).startsWith(alvo + ' '));
-  return comecam.length === 1 ? String(comecam[0].nome).trim() : nome;
+  // tenta o nome do login e o do colaborador da Gamificação (muitas vezes só o primeiro nome) contra a lista de analistas
+  for (const cand of [nome, colab && colab.nome]) {
+    const alvo = semAcento(cand);
+    if (!alvo) continue;
+    const igual = livres.find((a) => semAcento(a.nome) === alvo);
+    if (igual) return String(igual.nome).trim();
+    const comecam = livres.filter((a) => semAcento(a.nome).startsWith(alvo + ' '));
+    if (comecam.length === 1) return String(comecam[0].nome).trim();
+  }
+  // sem analista correspondente: o nome mais completo entre o do login e o do colaborador
+  const cn = colab && colab.nome ? String(colab.nome).trim() : '';
+  return cn.length > nome.length ? cn : nome;
 }
 /** Quem pode ser escolhido como gestor: a lista de analistas ativos (nome completo), cada um com o login vinculado (direto ou pelo nome); sem login não dá para ser gestor. Administradores sem analista correspondente entram também (diretor, gestor final). */
 // Logins compartilhados/de sistema que não são pessoas: nunca aparecem nas escolhas de gestor (nem como administrador).
@@ -676,7 +683,7 @@ function pessoasParaGestor(analistas, users, colabs) {
       if (par.length === 1) u = par[0];
     }
     if (u) usados.add(String(u.id));
-    return { id: u ? String(u.id) : '', name: String(a.nome).trim(), sem_login: !u };
+    return { id: u ? String(u.id) : '', name: String(a.nome).trim(), sem_login: !u, analista_id: a.id != null ? String(a.id) : null, ja_ligado: !!(u && a.user_id != null && String(a.user_id) === String(u.id)) };
   });
   logins.filter((x) => x.role === 'administrador' && !usados.has(String(x.id))).forEach((x) => lista.push({ id: String(x.id), name: nomeCompletoDoLogin(x, analistas, colabs), sem_login: false, admin: true }));
   return lista.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
@@ -695,13 +702,30 @@ router.get('/gestores', async (req, res) => {
     const departamentos = DEPARTAMENTOS.map((d) => ({ codigo: d, rotulo: rotuloDepto(d), gestores: rows.filter((g) => g.departamento === d).map((g) => ({ id: g.id, user_id: g.user_id, nome: g.name, email: g.email, papel: g.papel })) }));
     const resp = { departamentos };
     if (req.user.role === 'administrador') {
-      const analistas = (await pool.query('SELECT nome, user_id, ativo FROM analistas')).rows;
+      const analistas = (await pool.query('SELECT id, nome, user_id, ativo FROM analistas')).rows;
       const colabs = await pool.query('SELECT nome, user_id FROM gam_colaboradores').then((r) => r.rows).catch(() => []);
       const users = (await pool.query('SELECT id::text AS id, name, email, role FROM users WHERE active = 1')).rows;
       resp.usuarios = pessoasParaGestor(analistas, users, colabs);
     }
     res.json(resp);
   } catch (e) { console.error('[qualidade] GET /gestores falhou:', e); res.status(500).json({ error: 'Erro ao ler os gestores.' }); }
+});
+/** Liga de uma vez cada analista sem login ao login que casa com o nome (só os casos sem dúvida; os outros ficam para escolher à mão). */
+router.post('/vinculos/automatico', async (req, res) => {
+  if (!req.user || req.user.role !== 'administrador') return res.status(403).json({ error: 'Só o administrador liga o analista a um login.' });
+  try {
+    await garantirSchema();
+    const analistas = (await pool.query('SELECT id, nome, user_id, ativo FROM analistas')).rows;
+    const colabs = await pool.query('SELECT nome, user_id FROM gam_colaboradores').then((r) => r.rows).catch(() => []);
+    const users = (await pool.query('SELECT id::text AS id, name, email, role FROM users WHERE active = 1')).rows;
+    const pessoas = pessoasParaGestor(analistas, users, colabs);
+    const ligados = [];
+    for (const p of pessoas.filter((x) => x.analista_id && x.id && !x.sem_login && !x.ja_ligado)) {
+      const up = await pool.query('UPDATE analistas SET user_id = $1 WHERE id::text = $2 AND user_id IS NULL RETURNING nome', [p.id, p.analista_id]);
+      if (up.rows.length) ligados.push(up.rows[0].nome);
+    }
+    res.json({ ok: true, ligados, sem_par: pessoas.filter((x) => x.sem_login).map((x) => x.name) });
+  } catch (e) { console.error('[qualidade] POST /vinculos/automatico falhou:', e); res.status(500).json({ error: 'Erro ao ligar os logins.' }); }
 });
 router.post('/gestores', async (req, res) => {
   if (!req.user || req.user.role !== 'administrador') return res.status(403).json({ error: 'Só o administrador cadastra gestores.' });
