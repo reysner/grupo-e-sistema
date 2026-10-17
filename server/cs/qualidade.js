@@ -243,7 +243,7 @@ function rotaAbertaGestorAnalista(metodo, caminho) {
   const c = String(caminho || '').split('?')[0].replace(/\/+$/, '') || '/';
   const p = c.split('/');   // '' + segmentos
   if (m === 'GET') return ['/opcoes', '/empresas', '/tempos', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/analista/ocorrencias', '/sucesso/ocorrencias'].includes(c) || (p.length === 3 && p[1] === 'anexo');
-  if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && p[4] === 'encerrar');
+  if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir', 'excluir'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && p[4] === 'encerrar');
   if (m === 'PUT') return p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && p[4] === 'tratativa';
   return false;
 }
@@ -1269,6 +1269,29 @@ router.post('/gestor/ocorrencias/:id/cancelar', async (req, res) => {
     avisarPush(async () => idsResp, { titulo: 'Ocorrência cancelada', texto: (reg.cliente_nome || 'Empresa') + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(v.valores.motivo, 100), url: '/cs?aba=analista', tag: 'canc-' + reg.id }, req.user.id);
     res.json({ registro: await registroCompleto(reg.id) });
   } catch (e) { console.error('[qualidade] POST cancelar falhou:', e); res.status(500).json({ error: 'Erro ao cancelar a ocorrência.' }); }
+});
+/** EXCLUIR (gestor final e administração): a ocorrência e as vinculadas somem dos dashboards, dos analistas e do risco, como se nunca tivessem existido.
+ *  Histórico, responsáveis, anexos e avisos de prazo saem junto (cascata); só o log de atividades guarda o que houve. Não tem volta. */
+router.post('/gestor/ocorrencias/:id/excluir', async (req, res) => {
+  try {
+    await garantirSchema();
+    if (!(req.user.role === 'administrador' || (await ehGestorFinal(req.user.id)))) return res.status(403).json({ error: 'Só o gestor final ou a administração excluem uma ocorrência.' });
+    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, assunto, cliente_nome, origem, pai_id');
+    if (!reg) return res.status(404).json({ error: 'Ocorrência não encontrada.' });
+    const v = validarMotivo(req.body);
+    if (!v.ok) return res.status(400).json({ error: v.erro });
+    const filhas = (await pool.query('SELECT assunto FROM cs_qualidade_registros WHERE pai_id = $1', [reg.id])).rows;
+    const del = await pool.query('DELETE FROM cs_qualidade_registros WHERE id = $1 RETURNING id', [reg.id]);   // as vinculadas saem junto (pai_id ON DELETE CASCADE)
+    if (!del.rowCount) return res.status(404).json({ error: 'Ocorrência não encontrada.' });
+    try {   // os avisos do sino que citavam a ocorrência
+      for (const assunto of [reg.assunto].concat(filhas.map((f) => f.assunto)).filter(Boolean)) {
+        await pool.query("DELETE FROM notificacoes WHERE tipo LIKE 'qualidade%' AND position($1 in COALESCE(mensagem, '') || ' ' || COALESCE(titulo, '')) > 0", ['"' + assunto + '"']);
+      }
+    } catch (e) { console.warn('[qualidade] avisos do sino não limpos:', e.message); }
+    require('./auditoria').logReq(req, 'excluir', 'cs-qualidade', 'Excluiu a ocorrência' + (filhas.length ? ' (e ' + filhas.length + ' vinculada(s))' : '') + ' — ' + [reg.cliente_nome, reg.assunto].filter(Boolean).join(' · ') + ' · motivo: ' + curtoTexto(v.valores.motivo, 300));
+    if (reg.pai_id) await tentarAvancarParaValidacao(reg.pai_id, req.user.name, null, req.user.id);   // a original deixa de esperar por esta vinculada
+    res.json({ ok: true, vinculadas: filhas.length });
+  } catch (e) { console.error('[qualidade] POST excluir falhou:', e); res.status(500).json({ error: 'Erro ao excluir a ocorrência.' }); }
 });
 router.post('/gestor/ocorrencias/:id/reabrir', async (req, res) => {
   try {

@@ -139,8 +139,9 @@ teste('lista branca do gestor/analista: registrar, ver as próprias, perfil, ges
   ['/resumo', '/recentes', '/tipos', '/ocorrencias', '/cliente/123', '/analista/7', '/vinculo/1'].forEach((c) => no('GET', c));
   ['/analista/ocorrencias', '/sucesso/ocorrencias'].forEach((c) => ok('GET', c));
   ['/analista/ocorrencias/u1/nota', '/analista/ocorrencias/u1/encerrar', '/gestor/ocorrencias/u1/validar', '/gestor/ocorrencias/u1/devolver', '/sucesso/ocorrencias/u1/encerrar'].forEach((c) => ok('POST', c));
+  ok('POST', '/gestor/ocorrencias/u1/excluir'); no('GET', '/gestor/ocorrencias/u1/excluir'); no('DELETE', '/gestor/ocorrencias/u1');
   no('POST', '/sucesso/ocorrencias/u1/abrir'); no('POST', '/analista/ocorrencias/u1/validar'); no('POST', '/gestor/ocorrencias/u1/encerrar'); no('GET', '/analista/ocorrencias/u1'); no('PUT', '/sucesso/ocorrencias/u1/encerrar'); no('DELETE', '/analista/ocorrencias/u1');
-  ok('POST', '/gestor/ocorrencias/u1/filha'); no('POST', '/gestor/ocorrencias/u1/excluir'); no('POST', '/analista/ocorrencias/u1/filha');
+  ok('POST', '/gestor/ocorrencias/u1/filha'); no('POST', '/analista/ocorrencias/u1/filha');
   ok('POST', '/gestor/ocorrencias/u1/cancelar'); ok('POST', '/gestor/ocorrencias/u1/reabrir'); no('POST', '/analista/ocorrencias/u1/cancelar'); no('DELETE', '/gestor/ocorrencias/u1/cancelar');
   no('POST', '/'); no('POST', '/gestores'); no('POST', '/tipos'); no('PATCH', '/abc'); no('DELETE', '/abc'); no('DELETE', '/gestores/1'); no('PUT', '/vinculo/1'); no('PUT', '/gestor/ocorrencias/x'); no('POST', '/gestor/ocorrencias/x/tratar');
 });

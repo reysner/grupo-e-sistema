@@ -257,7 +257,7 @@ const semLixo = (e, nome) => {
     const h = C.t.htmlAnalista({ analista: { id: '7', nome: 'Josiane' }, todos: false, registros: regs }, F({}));
     assert.ok(h.includes('Sua tratativa será validada pelo seu gestor') && h.includes('Sucesso do Cliente') && h.includes('analista: Josiane'));
     assert.ok(h.includes('>Tratar<') && h.includes('>Ver<') && !h.includes('id="a-analista"'), 'analista comum não escolhe analista');
-    const adm = C.t.htmlAnalista({ analista: null, todos: true, registros: regs, analistas: [{ id: '7', nome: 'Josiane' }] }, F({}));
+    const adm = C.t.htmlAnalista({ analista: null, todos: true, admin: true, registros: regs, analistas: [{ id: '7', nome: 'Josiane' }] }, F({}));
     assert.ok(adm.includes('id="a-analista"') && adm.includes('age em nome do analista') && adm.includes('<th>Analista</th>'));
     // administrador que escolheu um analista: a lista de analistas continua na tela (antes sumia)
     const admFiltrado = C.t.htmlAnalista({ analista: { id: '7', nome: 'Josiane' }, todos: false, admin: true, registros: regs, analistas: [{ id: '7', nome: 'Josiane' }, { id: '8', nome: 'Outra' }] }, F({ analista: '7' }));
@@ -502,6 +502,10 @@ const semLixo = (e, nome) => {
     assert.ok(C.t.htmlOcorrenciaSucesso(Object.assign({}, base, { etapa: 'devolutiva_cliente' }), true).includes('id="gt-cancelar-oc"'), 'o gestor final cancela pelo Sucesso do Cliente');
     assert.ok(!C.t.htmlOcorrenciaSucesso(Object.assign({}, base, { etapa: 'devolutiva_cliente' }), false).includes('id="gt-cancelar-oc"'), 'quem não é gestor final nem administrador não vê');
     assert.ok(C.t.htmlOcorrenciaSucesso(base, true).includes('id="gt-reabrir-oc"'));
+    // excluir de vez: só no Portal do Sucesso do Cliente (gestor final/administração), em qualquer etapa; o Portal do Gestor não oferece
+    ['registrada', 'com_analista', 'encerrada', 'cancelada'].forEach((et) => assert.ok(C.t.htmlOcorrenciaSucesso(Object.assign({}, base, { etapa: et }), true).includes('id="gt-excluir-oc"'), 'excluir em ' + et));
+    assert.ok(!C.t.htmlTratativaGestor(Object.assign({}, base, { etapa: 'com_analista' }), []).includes('gt-excluir-oc'), 'o Portal do Gestor não exclui');
+    assert.ok(!C.t.htmlOcorrenciaSucesso(base, false).includes('gt-excluir-oc'), 'quem não é gestor final nem administrador não vê o Excluir');
     const p = C.t.htmlGestor({ escopo: { todos: true, deptos: [] }, registros: [Object.assign({}, base, { etapa: 'cancelada', status: 'cancelado' })] }, { depto: '', analista: '', etapa: '', busca: '' });
     assert.ok(p.includes('Cancelada') && p.includes('value="cancelada"'), 'a lista do gestor mostra a etapa Cancelada e deixa filtrar por ela');
   });

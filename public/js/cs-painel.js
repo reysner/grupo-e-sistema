@@ -2564,14 +2564,15 @@
 
   // ── CANCELAR OU REABRIR UMA OCORRÊNCIA ──────────────────────────────────────────────────────
   /** Cancelar ou reabrir (gestor do departamento, gestor final e administração; o servidor confere). Sempre com motivo. */
-  function htmlAcoesOcorrencia(r) {
+  function htmlAcoesOcorrencia(r, podeExcluir) {
     var cancelavel = ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente'].indexOf(r.etapa) >= 0;
     var reabrivel = r.etapa === 'cancelada' || r.etapa === 'encerrada';
-    if (!cancelavel && !reabrivel) return '';
+    var exc = podeExcluir ? '<div class="ficha-sec">Excluir</div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0"><button type="button" class="gp-footer-btn qa-excluir" id="gt-excluir-oc" style="width:auto">Excluir esta ocorrência</button><span class="cinza" style="font-size:12px">Apaga de vez, com as vinculadas: some dos dashboards, dos analistas e do risco, como se nunca tivesse existido. Só o log de atividades guarda. Não dá para desfazer.</span></div>' : '';
+    if (!cancelavel && !reabrivel) return exc;
     return '<div class="ficha-sec">' + (cancelavel ? 'Cancelar' : 'Reabrir') + '</div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0">' +
       (cancelavel
         ? '<button type="button" class="gp-footer-btn qa-excluir" id="gt-cancelar-oc" style="width:auto">Cancelar esta ocorrência</button><span class="cinza" style="font-size:12px">Fica registrada como cancelada, com o motivo, e sai do risco. Dá para reabrir depois.</span>'
-        : '<button type="button" class="gp-footer-btn" id="gt-reabrir-oc" style="width:auto">Reabrir esta ocorrência</button><span class="cinza" style="font-size:12px">' + (r.etapa === 'encerrada' ? 'Volta para o analista tratar de novo (só o gestor final e a administração).' : 'Volta para a etapa em que estava.') + '</span>') + '</div>';
+        : '<button type="button" class="gp-footer-btn" id="gt-reabrir-oc" style="width:auto">Reabrir esta ocorrência</button><span class="cinza" style="font-size:12px">' + (r.etapa === 'encerrada' ? 'Volta para o analista tratar de novo (só o gestor final e a administração).' : 'Volta para a etapa em que estava.') + '</span>') + '</div>' + exc;
   }
   /** Janela pequena que pede o motivo; aoConfirmar devolve uma mensagem de erro (fica na janela) ou null (fecha). */
   function pedirMotivo(titulo, textoBotao, aoConfirmar) {
@@ -2595,9 +2596,10 @@
   /** Liga os botões Cancelar / Reabrir de uma janela de ocorrência; depois mexe, recarrega a tela de quem chamou. */
   function ligarAcoesOcorrencia(r, fecharJanela, recarregar) {
     var base = '/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id);
-    var liga = function (id, acao, titulo, botao) {
+    var liga = function (id, acao, titulo, botao, aviso) {
       var b = $(id); if (!b) return;
       b.addEventListener('click', function () {
+        if (aviso && !window.confirm(aviso)) return;
         pedirMotivo(titulo, botao, async function (motivo) {
           var x = await postarQ(base + '/' + acao, { motivo: motivo });
           if (!x.ok) return x.j.error || 'Não foi possível concluir.';
@@ -2608,6 +2610,7 @@
     };
     liga('gt-cancelar-oc', 'cancelar', 'Cancelar ocorrência', 'Cancelar a ocorrência');
     liga('gt-reabrir-oc', 'reabrir', 'Reabrir ocorrência', 'Reabrir a ocorrência');
+    liga('gt-excluir-oc', 'excluir', 'Excluir ocorrência', 'Excluir de vez', 'Excluir esta ocorrência (e as vinculadas) de vez? Ela some de todo o painel e não dá para desfazer; só o log de atividades guarda o registro.');
   }
   // ── TEMPO MÉDIO POR ETAPA (Portal do Gestor e Portal do Sucesso do Cliente) ───────────────────────
   /** "45 min", "7,5 h" ou "3,2 dias". */
@@ -2831,7 +2834,7 @@
     var at = $('s-atualizar'); if (at) at.addEventListener('click', function () { estado.s.dados = null; desenharSucesso(); });
     Array.prototype.forEach.call(alvo.querySelectorAll('[data-sabrir]'), function (b) { b.addEventListener('click', function () { abrirOcorrenciaSucesso(b.getAttribute('data-sabrir')); }); });
   }
-  function htmlOcorrenciaSucesso(r, final) { return htmlOcorrenciaSucessoBase(r, final) + ((final || perfilCs().admin) ? htmlAcoesOcorrencia(r) : ''); }
+  function htmlOcorrenciaSucesso(r, final) { return htmlOcorrenciaSucessoBase(r, final) + ((final || perfilCs().admin) ? htmlAcoesOcorrencia(r, true) : ''); }
   function htmlOcorrenciaSucessoBase(r, final) {
     var topo = '<div class="qa-modal-topo"><strong style="font-size:20px;color:#256050">' + esc(r.assunto || 'Ocorrência') + '</strong><button type="button" class="qa-x" id="so-fechar" aria-label="Fechar">✕</button></div>' +
       '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' + cartaoOcorrenciaQ(r, true) + (r.plano_acao ? htmlPlanoGestor(r) : '') + htmlRetornos(r);
