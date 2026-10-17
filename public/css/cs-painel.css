@@ -466,3 +466,6 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 
 /* Responsáveis (um ou vários) e ocorrências vinculadas (18/10/2026) */
 .qa-resp-lista{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:4px 16px;max-height:176px;overflow:auto;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);}
+
+/* O cabeçalho fica acima do conteúdo: o menu do usuário e o sino de avisos abrem por cima dos cartões (18/10/2026). */
+.gp-header{position:relative;z-index:60;}

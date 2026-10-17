@@ -236,6 +236,13 @@ teste('nome completo no cadastro de gestores: usa o da lista de analistas (por v
   assert.strictEqual(f('4', 'Escritorial CS'), 'Escritorial CS');
   assert.strictEqual(f('6', ''), '');
 });
+teste('menu do usuário e sino: o cabeçalho das páginas /cs, /financeiro e /legalizacao fica acima do conteúdo (senão o menu abre por baixo dos cartões)', () => {
+  const fs = require('fs'), path = require('path');
+  const css = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'css', 'cs-painel.css'), 'utf8');
+  assert.ok(css.includes('.gp-header{position:relative;z-index:60;}'), 'regra do cabeçalho acima do conteúdo');
+  const html = (n) => fs.readFileSync(path.join(__dirname, '..', '..', 'public', n), 'utf8');
+  ['cs-painel.html', 'financeiro.html', 'legalizacao-publica.html'].forEach((n) => assert.ok(/cs-painel\.css\?v=\d+/.test(html(n)), n + ' carrega o CSS com versão (para o navegador pegar a mudança)'));
+});
 teste('renomear analista: nenhum arquivo troca espaços por uma regex sem a barra invertida (isso apagava todos os "s" do nome: Maira Soares virava Maira Soare)', () => {
   const fs = require('fs'), path = require('path');
   const raiz = path.join(__dirname, '..', '..');
