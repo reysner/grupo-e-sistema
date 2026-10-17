@@ -2078,8 +2078,8 @@
   }
   // ── ACESSOS: abas Logs de atividades e Backup ───────────────────────────────────────────────
   var ABAS_ADM = [['acessos', 'Acessos'], ['logs', 'Logs de atividades'], ['backup', 'Backup']];
-  var ROT_MOD_LOG = { 'cs-alertas': 'Alertas de prazo', 'cs-qualidade': 'Qualidade', 'cs-acessos': 'Acessos', 'cs-analistas': 'Analistas', 'cs-backup': 'Backup', admin: 'Administração' };
-  var COR_ACAO_LOG = { alerta: '#b45309', cancelar: '#6b7280', reabrir: '#7c3aed', criar: '#166534', editar: '#2563eb', excluir: '#b91c1c', abrir: '#7c3aed', validar: '#0e7490', devolver: '#b45309', encerrar: '#166534', anexar: '#6b7280', backup: '#256050' };
+  var ROT_MOD_LOG = { 'cs-admin': 'Administração', 'cs-alertas': 'Alertas de prazo', 'cs-qualidade': 'Qualidade', 'cs-acessos': 'Acessos', 'cs-analistas': 'Analistas', 'cs-backup': 'Backup', admin: 'Administração' };
+  var COR_ACAO_LOG = { limpar: '#b91c1c', alerta: '#b45309', cancelar: '#6b7280', reabrir: '#7c3aed', criar: '#166534', editar: '#2563eb', excluir: '#b91c1c', abrir: '#7c3aed', validar: '#0e7490', devolver: '#b45309', encerrar: '#166534', anexar: '#6b7280', backup: '#256050' };
   function htmlAbasAdm(aba) {
     return '<div class="tabs" id="abas-adm">' + ABAS_ADM.map(function (a) { return '<button type="button" data-adm-aba="' + a[0] + '" class="' + (aba === a[0] ? 'active' : '') + '">' + a[1] + '</button>'; }).join('') + '</div>';
   }
@@ -2124,6 +2124,18 @@
       '<div class="qa-obs" style="margin:10px 0">⚠ As cópias automáticas ficam dentro do mesmo banco do sistema: servem para voltar atrás depois de um erro, mas não substituem uma cópia guardada fora. Baixe uma por semana e guarde no Drive.</div>' +
       (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Gerada em</th><th>Conteúdo</th><th class="c"></th></tr></thead><tbody>' + linhas + '</tbody></table></div>' + (lista.length > 15 ? '<div class="cinza" style="font-size:12px;margin-top:6px">Mostrando as 15 mais recentes de ' + lista.length + '.</div>' : '') : '') + '</div>';
   }
+  function htmlPreviaLimpeza(c) {
+    var rot = { ocorrencias: 'Ocorrências (com as vinculadas)', historico: 'Linhas de histórico', responsaveis: 'Devolutivas de responsáveis', anexos: 'Arquivos anexados', avisos_de_prazo: 'Avisos de prazo enviados', sino: 'Avisos do sino da Qualidade', logs: 'Registros dos Logs de atividades' };
+    var linhas = Object.keys(rot).map(function (k) { return '<tr><td>' + rot[k] + '</td><td class="c"><strong>' + (c && c[k] != null ? c[k] : 0) + '</strong></td></tr>'; }).join('');
+    return '<div class="table-wrap" style="margin:10px 0"><table><thead><tr><th>O que será apagado</th><th class="c">Quantidade</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' +
+      '<div class="qa-obs" style="margin:8px 0">⚠ Não dá para desfazer pela tela. Uma cópia do que sair fica guardada no banco, mas os arquivos anexados perdem o conteúdo (guarda só o nome). Baixe o backup acima antes, se houver dúvida.</div>' +
+      '<div class="qa-campo" style="max-width:340px"><label for="lt-conf">Para confirmar, digite <strong>LIMPAR</strong></label><input type="text" id="lt-conf" autocomplete="off" placeholder="LIMPAR"></div>' +
+      '<button type="button" class="login-btn" id="lt-apagar" disabled style="width:auto;margin:10px 0 0;padding:10px 22px;background:#b91c1c">Apagar tudo e começar do zero</button>';
+  }
+  function htmlLimpeza() {
+    return '<div class="card" style="margin-top:18px"><div class="card-title">Começar do zero (limpar os testes)</div><div class="card-sub">Apaga todas as ocorrências do módulo Qualidade (com histórico, devolutivas, anexos e avisos de prazo), os avisos do sino da Qualidade e os Logs de atividades. <strong>Não mexe</strong> em analistas, gestores, tipos de registro, acessos nem nos planos de ação lançados na ficha das empresas.</div>' +
+      '<button type="button" class="gp-footer-btn" id="lt-ver" style="width:auto;margin-top:10px">Ver o que será apagado</button><div id="lt-previa"></div></div>';
+  }
   function htmlBackup(info, auto) {
     var tot = info.totais || {};
     var linhasT = Object.keys(tot).map(function (k) { return '<tr><td>' + esc(k) + '</td><td class="c">' + tot[k] + '</td></tr>'; }).join('');
@@ -2138,7 +2150,7 @@
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">' +
         '<div class="card" style="margin:0"><div class="card-title">O que há hoje no backup de Qualidade e Acessos</div><div class="table-wrap"><table><thead><tr><th>Tabela</th><th class="c">Registros</th></tr></thead><tbody>' + (linhasT || '<tr><td colspan="2" class="vazio">Sem dados.</td></tr>') + '</tbody></table></div></div>' +
         '<div class="card" style="margin:0"><div class="card-title">Últimos backups baixados</div>' + (ult ? '<ul style="margin:8px 0 0 18px;line-height:1.8;font-size:13px">' + ult + '</ul>' : '<div class="vazio">Nenhum backup baixado ainda.</div>') + '</div>' +
-      '</div>';
+      '</div>' + htmlLimpeza();
   }
   /** Baixa um arquivo que exige login (o endereço sozinho não manda o token): busca, guarda em memória e dispara o download com o nome que o servidor sugeriu. */
   async function baixarArquivo(url, nomePadrao) {
@@ -2181,6 +2193,27 @@
     catch (e) { alvo.innerHTML = htmlAbasAdm('backup') + '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; ligarAbasAdm(alvo); return; }
     alvo.innerHTML = htmlAbasAdm('backup') + '<div id="adm-corpo">' + htmlBackup(ac.info, ac.auto) + '</div>';
     ligarAbasAdm(alvo);
+    var ver = $('lt-ver');
+    if (ver) ver.addEventListener('click', async function () {
+      var box = $('lt-previa'); ver.disabled = true; box.innerHTML = '<div class="vazio">Contando…</div>';
+      try {
+        var p = await api('/api/cs/painel/admin/limpar-teste/previa');
+        box.innerHTML = htmlPreviaLimpeza(p.contagens);
+        var conf = $('lt-conf'), apagar = $('lt-apagar');
+        conf.addEventListener('input', function () { apagar.disabled = conf.value.trim() !== 'LIMPAR'; });
+        apagar.addEventListener('click', async function () {
+          if (!window.confirm('Apagar de vez as ocorrências de teste e os logs? Isso não pode ser desfeito pela tela.')) return;
+          apagar.disabled = true;
+          var x = await postarQ('/api/cs/painel/admin/limpar-teste', { confirmacao: conf.value.trim() });
+          var st = $('bk-status');
+          if (!x.ok) { st.className = 'ac-status erro'; st.textContent = x.j.error || 'Não foi possível limpar.'; apagar.disabled = false; return; }
+          estado.qResumo = null; estado.g = null; estado.a = null; estado.s = null; estado.ac.info = null; estado.ac.logs = null;
+          await desenharBackup(alvo);
+          var s2 = $('bk-status'); if (s2) { s2.className = 'ac-status'; s2.textContent = 'Pronto: ' + x.j.apagado.ocorrencias + ' ocorrência(s) e ' + x.j.apagado.logs + ' registro(s) de log apagados. Está tudo zerado.'; }
+        });
+      } catch (e) { box.innerHTML = '<div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div>'; }
+      ver.disabled = false;
+    });
     Array.prototype.forEach.call(alvo.querySelectorAll('[data-bka]'), function (b) {
       b.addEventListener('click', async function () {
         var st = $('bk-status'); b.disabled = true; st.className = 'ac-status'; st.textContent = 'Preparando o arquivo…';

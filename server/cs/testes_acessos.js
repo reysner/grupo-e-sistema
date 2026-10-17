@@ -72,6 +72,37 @@ teste('barreira: administrador e quem não tem configuração passam; configurad
 });
 
 const aud = require('./auditoria');
+teste('começar do zero: só vale digitando LIMPAR; apaga só as ocorrências do módulo, o sino da Qualidade e os logs do /cs, depois de guardar uma cópia, e numa transação', async () => {
+  assert.strictEqual(aud.confirmacaoValida('LIMPAR'), true);
+  assert.strictEqual(aud.confirmacaoValida('  LIMPAR '), true);
+  assert.strictEqual(aud.confirmacaoValida('limpar'), false, 'tem de ser exatamente LIMPAR');
+  assert.strictEqual(aud.confirmacaoValida(''), false);
+  assert.strictEqual(aud.confirmacaoValida(undefined), false);
+  const sqls = [];
+  const cliente = { query: async (sql) => { sqls.push(String(sql)); return { rows: /to_regclass/.test(sql) ? [{ ok: true }] : /COUNT/.test(sql) ? [{ n: 3 }] : [] }; }, release() { sqls.push('RELEASE'); } };
+  const pool = { connect: async () => cliente, query: cliente.query };
+  const antes = await aud.executarLimpeza(pool, { name: 'Reysner' });
+  assert.deepStrictEqual(antes, { ocorrencias: 3, historico: 3, responsaveis: 3, anexos: 3, avisos_de_prazo: 3, sino: 3, logs: 3 });
+  assert.ok(sqls.indexOf('BEGIN') > 0 && sqls.slice(0, sqls.indexOf('BEGIN')).every((s) => /to_regclass/.test(s)), 'a conferência das tabelas vem antes da transação'); assert.ok(sqls.includes('COMMIT') && sqls[sqls.length - 1] === 'RELEASE', 'transação aberta, confirmada e liberada');
+  const iCopia = sqls.findIndex((s) => /INSERT INTO cs_limpezas/.test(s)), iApaga = sqls.findIndex((s) => /^DELETE/.test(s));
+  assert.ok(iCopia > 0 && iApaga > iCopia, 'a cópia de segurança é gravada antes de qualquer DELETE');
+  const apagados = sqls.filter((s) => /^DELETE/.test(s));
+  assert.strictEqual(apagados.length, 4, 'quatro apagamentos: anexos, ocorrências, sino da Qualidade e logs do /cs');
+  assert.ok(apagados.some((s) => /FROM cs_qualidade_registros WHERE origem IN \('modulo', 'filha'\)$/.test(s)), 'só as ocorrências do módulo (a ficha das empresas fica)');
+  assert.ok(apagados.some((s) => s.includes("FROM notificacoes WHERE tipo LIKE 'qualidade%'")) && apagados.some((s) => s.includes("FROM log_atividades WHERE modulo LIKE 'cs-%'")));
+  assert.ok(!apagados.some((s) => /analistas|cs_qualidade_gestores|cs_qualidade_tipos|cs_acessos|cs_painel_config|users|clientes/.test(s)), 'não toca em analistas, gestores, tipos, acessos, configurações nem clientes');
+  // falha no meio: desfaz tudo
+  const ruim = { query: async (sql) => { if (/^DELETE FROM log_atividades/.test(String(sql))) throw new Error('falhou'); return { rows: /to_regclass/.test(sql) ? [{ ok: true }] : /COUNT/.test(sql) ? [{ n: 1 }] : [] }; }, release() {} };
+  const registro = []; const p2 = { connect: async () => ({ query: async (s, a) => { registro.push(String(s)); return ruim.query(s, a); }, release() {} }), query: ruim.query };
+  await assert.rejects(() => aud.executarLimpeza(p2, { name: 'X' }), /falhou/);
+  assert.ok(registro.includes('ROLLBACK') && !registro.includes('COMMIT'), 'se algo falhar, nada é apagado');
+  // tabela que ainda não existe (ex.: avisos de prazo) não pode derrubar a limpeza
+  const poucas = []; const c3 = { query: async (sql, p) => { poucas.push(String(sql)); if (/to_regclass/.test(sql)) return { rows: [{ ok: p[0] !== 'cs_qualidade_alertas' }] }; if (/cs_qualidade_alertas/.test(sql)) throw new Error('relation does not exist'); return { rows: /COUNT/.test(sql) ? [{ n: 2 }] : [] }; }, release() {} };
+  const r3 = await aud.executarLimpeza({ connect: async () => c3, query: c3.query }, { name: 'Y' });
+  assert.strictEqual(r3.avisos_de_prazo, 0, 'sem a tabela, conta zero');
+  assert.ok(poucas.includes('COMMIT') && !poucas.some((s) => /FROM cs_qualidade_alertas/.test(s)), 'e nem chega a consultá-la');
+});
+
 teste('logs: cada ação que muda algo vira uma frase clara (e consulta nunca vira ação)', () => {
   const d = (m, u, b) => aud.descreverAcao(m, u, b);
   assert.strictEqual(d('GET', '/api/cs/painel/qualidade/ocorrencias/minhas'), null, 'leitura não é registrada');

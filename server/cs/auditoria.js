@@ -200,6 +200,71 @@ function carimbo() {
   return new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).split(' ').join('_').split(':').join('-');
 }
 
+// ── começar do zero: limpar os dados de teste ────────────────────────────────────────
+/**
+ * Apaga as ocorrências do módulo Qualidade (e o que depende delas: histórico, responsáveis, anexos, avisos de prazo), os avisos do sino da Qualidade
+ * e os Logs de atividades do painel. NÃO mexe em analistas, gestores, tipos de registro, acessos, configurações nem nos planos de ação da ficha das empresas.
+ * Antes de apagar, guarda uma cópia do que vai sair (tabela cs_limpezas) e tudo corre numa transação: ou apaga tudo, ou nada.
+ */
+const CONFIRMA_LIMPEZA = 'LIMPAR';
+const confirmacaoValida = (t) => String(t || '').trim() === CONFIRMA_LIMPEZA;
+const DO_MODULO = "origem IN ('modulo', 'filha')";
+const IDS_DO_MODULO = 'SELECT id FROM cs_qualidade_registros WHERE ' + DO_MODULO;
+const CONTAGENS_LIMPEZA = {   // chave: [tabela, consulta da contagem]
+  ocorrencias: ['cs_qualidade_registros', 'SELECT COUNT(*)::int AS n FROM cs_qualidade_registros WHERE ' + DO_MODULO],
+  historico: ['cs_qualidade_historico', 'SELECT COUNT(*)::int AS n FROM cs_qualidade_historico WHERE registro_id IN (' + IDS_DO_MODULO + ')'],
+  responsaveis: ['cs_qualidade_resp', 'SELECT COUNT(*)::int AS n FROM cs_qualidade_resp WHERE registro_id IN (' + IDS_DO_MODULO + ')'],
+  anexos: ['cs_qualidade_anexos', 'SELECT COUNT(*)::int AS n FROM cs_qualidade_anexos WHERE registro_id IN (' + IDS_DO_MODULO + ')'],
+  avisos_de_prazo: ['cs_qualidade_alertas', 'SELECT COUNT(*)::int AS n FROM cs_qualidade_alertas WHERE registro_id IN (' + IDS_DO_MODULO + ')'],
+  sino: ['notificacoes', "SELECT COUNT(*)::int AS n FROM notificacoes WHERE tipo LIKE 'qualidade%'"],
+  logs: ['log_atividades', "SELECT COUNT(*)::int AS n FROM log_atividades WHERE modulo LIKE 'cs-%'"],
+};
+/** Quais tabelas existem hoje (algumas só nascem no primeiro uso). */
+async function tabelasQueExistem(db) {
+  const nomes = ['cs_qualidade_registros', 'cs_qualidade_historico', 'cs_qualidade_resp', 'cs_qualidade_anexos', 'cs_qualidade_alertas', 'notificacoes', 'log_atividades'];
+  const out = {};
+  for (const n of nomes) out[n] = !!(((await db.query('SELECT to_regclass($1) IS NOT NULL AS ok', [n])).rows[0]) || {}).ok;
+  return out;
+}
+async function contarParaLimpar(db, existe) {
+  existe = existe || await tabelasQueExistem(db);
+  const out = {};
+  for (const k of Object.keys(CONTAGENS_LIMPEZA)) {
+    const [tabela, sql] = CONTAGENS_LIMPEZA[k];
+    out[k] = existe[tabela] ? (((await db.query(sql)).rows[0]) || { n: 0 }).n : 0;
+  }
+  return out;
+}
+async function executarLimpeza(pool, quem) {
+  const c = pool.connect ? await pool.connect() : pool;
+  try {
+    const existe = await tabelasQueExistem(c);   // antes de abrir a transação: consultar tabela que não existe a deixaria abortada
+    if (pool.connect) await c.query('BEGIN');
+    const antes = await contarParaLimpar(c, existe);
+    const copiar = async (tabela, sql) => (existe[tabela] ? (await c.query(sql)).rows : []);
+    const copia = {
+      ocorrencias: await copiar('cs_qualidade_registros', 'SELECT * FROM cs_qualidade_registros WHERE ' + DO_MODULO),
+      historico: await copiar('cs_qualidade_historico', 'SELECT * FROM cs_qualidade_historico WHERE registro_id IN (' + IDS_DO_MODULO + ')'),
+      responsaveis: await copiar('cs_qualidade_resp', 'SELECT * FROM cs_qualidade_resp WHERE registro_id IN (' + IDS_DO_MODULO + ')'),
+      anexos_so_nomes: await copiar('cs_qualidade_anexos', 'SELECT id, registro_id, nome, mime, tamanho, criado_por, criado_em FROM cs_qualidade_anexos WHERE registro_id IN (' + IDS_DO_MODULO + ')'),
+      avisos_de_prazo: await copiar('cs_qualidade_alertas', 'SELECT * FROM cs_qualidade_alertas WHERE registro_id IN (' + IDS_DO_MODULO + ')'),
+      sino: await copiar('notificacoes', "SELECT * FROM notificacoes WHERE tipo LIKE 'qualidade%'"),
+      logs: await copiar('log_atividades', "SELECT * FROM log_atividades WHERE modulo LIKE 'cs-%'"),
+    };
+    await c.query('CREATE TABLE IF NOT EXISTS cs_limpezas (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), feita_em TIMESTAMPTZ NOT NULL DEFAULT NOW(), feita_por TEXT, contagens JSONB NOT NULL, dados JSONB NOT NULL)');
+    await c.query('INSERT INTO cs_limpezas (feita_por, contagens, dados) VALUES ($1, $2::jsonb, $3::jsonb)', [(quem && quem.name) || null, JSON.stringify(antes), JSON.stringify(copia)]);
+    if (existe.cs_qualidade_anexos) await c.query('DELETE FROM cs_qualidade_anexos WHERE registro_id IN (' + IDS_DO_MODULO + ')');
+    if (existe.cs_qualidade_registros) await c.query('DELETE FROM cs_qualidade_registros WHERE ' + DO_MODULO);   // histórico, responsáveis e avisos de prazo saem junto (cascata)
+    if (existe.notificacoes) await c.query("DELETE FROM notificacoes WHERE tipo LIKE 'qualidade%'");
+    if (existe.log_atividades) await c.query("DELETE FROM log_atividades WHERE modulo LIKE 'cs-%'");
+    if (pool.connect) await c.query('COMMIT');
+    return antes;
+  } catch (e) {
+    if (pool.connect) await c.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally { if (c.release) c.release(); }
+}
+
 // ── rotas (administrador) ─────────────────────────────────────────────────────────
 const router = express.Router();
 router.use(requireAuth, (req, res, next) => {
@@ -217,6 +282,20 @@ router.get('/logs', async (req, res) => {
     const acoes = (await pool.query("SELECT DISTINCT acao FROM log_atividades WHERE modulo LIKE 'cs-%' ORDER BY acao")).rows.map((x) => x.acao);
     res.json({ logs: rows, limite: c.limite, modulos, usuarios, acoes });
   } catch (e) { console.error('[auditoria] GET /logs falhou:', e); res.status(500).json({ error: 'Erro ao ler os logs.' }); }
+});
+
+router.get('/limpar-teste/previa', async (req, res) => {
+  try { await garantirTabela(); res.json({ contagens: await contarParaLimpar(pool) }); }
+  catch (e) { console.error('[auditoria] GET /limpar-teste/previa falhou:', e); res.status(500).json({ error: 'Erro ao contar o que será apagado.' }); }
+});
+router.post('/limpar-teste', async (req, res) => {
+  if (!confirmacaoValida(req.body && req.body.confirmacao)) return res.status(400).json({ error: 'Para apagar, digite LIMPAR na confirmação.' });
+  try {
+    await garantirTabela();
+    const apagado = await executarLimpeza(pool, quemDe(req));
+    await logReq(req, 'limpar', 'cs-admin', 'Limpou os dados de teste do módulo Qualidade: ' + apagado.ocorrencias + ' ocorrência(s) e ' + apagado.logs + ' registro(s) de log (uma cópia ficou guardada no banco)');
+    res.json({ ok: true, apagado });
+  } catch (e) { console.error('[auditoria] POST /limpar-teste falhou:', e); res.status(500).json({ error: 'Erro ao limpar: nada foi apagado.' }); }
 });
 
 router.get('/backup/info', async (req, res) => {
@@ -243,4 +322,4 @@ router.get('/backup', async (req, res) => {
   } catch (e) { console.error('[auditoria] GET /backup falhou:', e); res.status(500).json({ error: 'Erro ao gerar o backup.' }); }
 });
 
-module.exports = { router, middleware, registrar, logReq, descreverAcao, montarConsulta, TABELAS_BACKUP, enriquecer };
+module.exports = { confirmacaoValida, executarLimpeza, contarParaLimpar, CONTAGENS_LIMPEZA, router, middleware, registrar, logReq, descreverAcao, montarConsulta, TABELAS_BACKUP, enriquecer };
