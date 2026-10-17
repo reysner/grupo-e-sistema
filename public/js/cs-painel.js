@@ -3322,7 +3322,7 @@
   // ── EXPORTAÇÃO (CSV e PDF) ───────────────────────────────────────────────────
   // Exporta TODAS as linhas do filtro atual da seção aberta (não só a página). Os dados já vieram do servidor com as permissões e os
   // valores ocultos aplicados; com "Ocultar valores" ligado, os valores em R$ saem como "oculto".
-  var SEC_EXPORTA = { visao: 1, analise: 1, anual: 1, atendimento: 1, risco: 1, churn: 1, categorias: 1 };
+  var SEC_EXPORTA = { visao: 1, analise: 1, anual: 1, atendimento: 1, risco: 1, churn: 1, categorias: 1, gestor: 1, analista: 1, sucesso: 1 };
   function moedaExp(v) { return valoresOcultos() ? 'oculto' : (v == null ? '' : Math.round(v * 100) / 100); }
   function fatExp(q) {
     if (valoresOcultos()) return 'oculto';
@@ -3344,6 +3344,7 @@
   var ROT_NIVEL = { AltoMedio: 'Alto e Médio', Alto: 'Só Alto', 'Médio': 'Só Médio', Baixo: 'Baixo', Suspenso: 'Suspensos (fora do risco)', todos: 'Todos' };
 
   function dadosExport(sec) {
+    if (sec === 'gestor' || sec === 'sucesso' || sec === 'analista') return dadosExportOcorrencias(sec);   // os portais não carregam os dados da carteira
     var d = estado.dados, t = d.totais, aviso = valoresOcultos() ? 'Valores em R$ ocultos.' : '';
     if (sec === 'visao') {
       var p = periodoAtual();
@@ -3435,6 +3436,38 @@
         alinhar: ['left', 'left', 'left', 'right', 'left', 'center', 'center'], fonte: 7 };
     }
     return null;
+  }
+  // ── EXPORTAÇÃO (planilha CSV e PDF) dos portais do Gestor, do Analista e do Sucesso do Cliente ─────────────────
+  function situacaoPrazoExp(r) {
+    var l = rotuloPrazo(r.prazo, r.etapa);
+    if (l) return l.txt;
+    if (['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente'].indexOf(r.etapa) < 0) return '—';
+    return r.prazo ? 'No prazo' : '—';
+  }
+  /** Uma linha por ocorrência, com o que é filtrado e lido nas tabelas dos portais. O analista indicado só entra onde o perfil pode ver. */
+  function linhaOcorrenciaExp(r, comIndicado) {
+    var l = [dataHora(r.criado_em), r.criado_por || '', r.cliente_nome || '', r.tipo || '', r.prioridade || '', (r.departamentos || []).map(rotuloDepto).join(', '), r.assunto || '',
+      nomesResp(r).join(', '), ETAPA_CURTA[r.etapa] || r.etapa || '', r.prazo ? data(r.prazo) : '', situacaoPrazoExp(r), r.pai ? r.pai.assunto : (r.origem === 'filha' ? 'vinculada' : ''), r.plano_acao || ''];
+    if (comIndicado) l.splice(8, 0, r.analista_origem_nome || '');
+    return l;
+  }
+  function dadosExportOcorrencias(sec) {
+    var o = sec === 'gestor' ? estado.g : sec === 'sucesso' ? estado.s : estado.a;
+    if (!o || !o.dados || !o.dados.registros) return null;
+    var f = o.f || {}, regs = (sec === 'gestor' ? filtrarGestor : filtrarPortal)(o.dados.registros, f);
+    var comIndicado = sec !== 'analista';
+    var cols = ['Registrada em', 'Registrada por', 'Empresa', 'Tipo', 'Prioridade', 'Departamento', 'Assunto', 'Responsáveis', 'Etapa', 'Prazo', 'Situação do prazo', 'Vinculada a', 'Plano de ação'];
+    var alinhar = ['left', 'left', 'left', 'left', 'center', 'left', 'left', 'left', 'center', 'center', 'center', 'left', 'left'];
+    if (comIndicado) { cols.splice(8, 0, 'Analista indicado'); alinhar.splice(8, 0, 'left'); }
+    var fl = [];
+    if (f.depto) fl.push('Departamento: ' + rotuloDepto(f.depto));
+    if (f.analista) { var an = (estado.qAnalistas || []).filter(function (a) { return String(a.id) === String(f.analista); })[0]; fl.push('Analista: ' + (an ? an.nome : f.analista)); }
+    if (f.etapa) fl.push('Etapa: ' + (f.etapa === 'vencidas' ? 'Vencidas' : ETAPA_CURTA[f.etapa] || f.etapa));
+    if (f.busca) fl.push('Busca: ' + f.busca);
+    var nome = { gestor: 'Portal do Gestor', sucesso: 'Portal do Sucesso do Cliente', analista: 'Portal do Analista' }[sec];
+    return { arquivo: 'cs-' + { gestor: 'portal-gestor', sucesso: 'portal-sucesso-do-cliente', analista: 'portal-analista' }[sec], titulo: 'Qualidade - ' + nome,
+      filtros: [regs.length + ' ocorrência(s)' + (fl.length ? ' · ' + fl.join(' · ') : ' · sem filtro')],
+      colunas: cols, linhas: regs.map(function (r) { return linhaOcorrenciaExp(r, comIndicado); }), alinhar: alinhar, fonte: 6 };
   }
   function exportar(formato) {
     var e = dadosExport(estado.secao);

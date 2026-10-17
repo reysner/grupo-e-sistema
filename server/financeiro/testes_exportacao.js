@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, secaoFicha: secaoFicha, listaOcorrenciasQ: listaOcorrenciasQ, tabelaAcessorias: tabelaAcessorias, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, cartaoOcorrenciaQ: cartaoOcorrenciaQ, tabelaOcorrenciasMod: tabelaOcorrenciasMod, filtrarPortal: filtrarPortal, htmlAnalista: htmlAnalista, htmlOcorrenciaAnalista: htmlOcorrenciaAnalista, htmlSucesso: htmlSucesso, htmlOcorrenciaSucesso: htmlOcorrenciaSucesso, htmlRetornos: htmlRetornos, alternarModuloAc: alternarModuloAc, filtrarAc: filtrarAc, iniciaisAc: iniciaisAc, htmlMatrizAc: htmlMatrizAc, htmlResumoAc: htmlResumoAc, htmlAcessos: htmlAcessos, secaoLiberada: secaoLiberada, secaoInicialCs: secaoInicialCs, resumoCalculoQ: resumoCalculoQ, listaAnalistasFiltro: listaAnalistasFiltro, casaAnalista: casaAnalista, opcoesDeptoAn: opcoesDeptoAn, opcoesRespOc: opcoesRespOc, avisoRespOc: avisoRespOc, opcoesAnalistasAg: opcoesAnalistasAg, nomesResp: nomesResp, htmlVinculos: htmlVinculos, checksResp: checksResp, htmlFilhaGestor: htmlFilhaGestor, htmlSobreMim: htmlSobreMim, marcaFilha: marcaFilha, dataHora: dataHora, htmlBackupAuto: htmlBackupAuto, htmlAbasAdm: htmlAbasAdm, htmlLogs: htmlLogs, htmlBackup: htmlBackup, htmlAcoesOcorrencia: htmlAcoesOcorrencia, rotuloPrazo: rotuloPrazo, celPrazo: celPrazo, fmtDuracao: fmtDuracao, htmlTempos: htmlTempos, htmlTemposBox: htmlTemposBox, botaoValoresVisivel: botaoValoresVisivel, perfilDe: perfilDe, filtrarGestor: filtrarGestor, contagemEtapasGestor: contagemEtapasGestor, htmlGestor: htmlGestor, htmlTratativaGestor: htmlTratativaGestor, htmlMinhasOcorrencias: htmlMinhasOcorrencias, htmlGestoresQ: htmlGestoresQ, opcoesTiposOc: opcoesTiposOc, formularioOcorrenciaQ: formularioOcorrenciaQ, comoPesaTratativa: comoPesaTratativa, abrirNovoMotivoChurn: abrirNovoMotivoChurn }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, secaoFicha: secaoFicha, listaOcorrenciasQ: listaOcorrenciasQ, tabelaAcessorias: tabelaAcessorias, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, cartaoOcorrenciaQ: cartaoOcorrenciaQ, tabelaOcorrenciasMod: tabelaOcorrenciasMod, filtrarPortal: filtrarPortal, htmlAnalista: htmlAnalista, htmlOcorrenciaAnalista: htmlOcorrenciaAnalista, htmlSucesso: htmlSucesso, htmlOcorrenciaSucesso: htmlOcorrenciaSucesso, htmlRetornos: htmlRetornos, alternarModuloAc: alternarModuloAc, filtrarAc: filtrarAc, iniciaisAc: iniciaisAc, htmlMatrizAc: htmlMatrizAc, htmlResumoAc: htmlResumoAc, htmlAcessos: htmlAcessos, secaoLiberada: secaoLiberada, secaoInicialCs: secaoInicialCs, resumoCalculoQ: resumoCalculoQ, listaAnalistasFiltro: listaAnalistasFiltro, casaAnalista: casaAnalista, opcoesDeptoAn: opcoesDeptoAn, opcoesRespOc: opcoesRespOc, avisoRespOc: avisoRespOc, opcoesAnalistasAg: opcoesAnalistasAg, nomesResp: nomesResp, htmlVinculos: htmlVinculos, checksResp: checksResp, htmlFilhaGestor: htmlFilhaGestor, htmlSobreMim: htmlSobreMim, marcaFilha: marcaFilha, dataHora: dataHora, htmlBackupAuto: htmlBackupAuto, htmlAbasAdm: htmlAbasAdm, htmlLogs: htmlLogs, htmlBackup: htmlBackup, htmlAcoesOcorrencia: htmlAcoesOcorrencia, rotuloPrazo: rotuloPrazo, celPrazo: celPrazo, fmtDuracao: fmtDuracao, htmlTempos: htmlTempos, htmlTemposBox: htmlTemposBox, linhaOcorrenciaExp: linhaOcorrenciaExp, situacaoPrazoExp: situacaoPrazoExp, botaoValoresVisivel: botaoValoresVisivel, perfilDe: perfilDe, filtrarGestor: filtrarGestor, contagemEtapasGestor: contagemEtapasGestor, htmlGestor: htmlGestor, htmlTratativaGestor: htmlTratativaGestor, htmlMinhasOcorrencias: htmlMinhasOcorrencias, htmlGestoresQ: htmlGestoresQ, opcoesTiposOc: opcoesTiposOc, formularioOcorrenciaQ: formularioOcorrenciaQ, comoPesaTratativa: comoPesaTratativa, abrirNovoMotivoChurn: abrirNovoMotivoChurn }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null, tratativas: 75 }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -527,6 +527,48 @@ const semLixo = (e, nome) => {
     const reg = { escopo: { todos: true, deptos: [] }, registros: [] };
     assert.ok(C.t.htmlGestor(reg, { depto: '', analista: '', etapa: '', busca: '' }).includes('id="tp-box"'), 'Portal do Gestor');
     assert.ok(C.t.htmlSucesso({ final: false, registros: [] }, { depto: '', analista: '', etapa: '', busca: '' }).includes('id="tp-box"'), 'Portal do Sucesso do Cliente');
+  });
+  await teste('cs: exportar (CSV e PDF) o que está filtrado nos portais do Gestor, do Analista e do Sucesso do Cliente — com data e hora, responsáveis, etapa e situação do prazo', () => {
+    const regs = [
+      { id: '1', etapa: 'com_analista', situacao: 'em_tratamento', tipo: 'Erro', prioridade: 'Alta', departamentos: ['Fiscal'], assunto: 'Guia errada', cliente_nome: 'ALFA LTDA', criado_em: '2026-10-17T20:54:00Z', criado_por: 'Reysner', prazo: '2099-12-31', plano_acao: 'Retificar a guia', analista_origem_nome: 'Ana Souza', responsaveis: [{ nome: 'Bruno' }, { nome: 'João' }], analista_id: '1', filhas: [], anexos: [], notas: [] },
+      { id: '2', etapa: 'encerrada', situacao: 'resolvido', tipo: 'Multa', prioridade: 'Baixa', departamentos: ['Pessoal'], assunto: 'Multa X', cliente_nome: 'BETA', criado_em: '2026-10-10T12:00:00Z', criado_por: 'Larissa', prazo: '2026-10-12', origem: 'filha', pai: { assunto: 'Original Y' }, responsaveis: [], analista_id: null, filhas: [], anexos: [], notas: [] },
+    ];
+    const antes = [C.t.estado.g, C.t.estado.s, C.t.estado.a];
+    try {
+      C.t.estado.g = { dados: { registros: regs }, f: { depto: '', analista: '', etapa: '', busca: '' } };
+      const g = C.t.dadosExport('gestor');
+      assert.strictEqual(g.arquivo, 'cs-portal-gestor');
+      assert.strictEqual(g.linhas.length, 2);
+      assert.ok(g.colunas.includes('Analista indicado') && g.colunas.includes('Situação do prazo') && g.colunas.includes('Registrada em'));
+      assert.strictEqual(g.colunas.length, g.linhas[0].length, 'cada linha tem uma célula por coluna');
+      assert.strictEqual(g.alinhar.length, g.colunas.length);
+      const l1 = JSON.parse(JSON.stringify(g.linhas[0]));
+      assert.strictEqual(l1[0], '17/10/2026 às 17:54');
+      assert.deepStrictEqual([l1[2], l1[8], l1[7], l1[9]], ['ALFA LTDA', 'Ana Souza', 'Bruno, João', 'Com o analista'], 'empresa, indicado, responsáveis e etapa');
+      assert.strictEqual(l1[11], 'No prazo');
+      const l2 = JSON.parse(JSON.stringify(g.linhas[1]));
+      assert.strictEqual(l2[9], 'Encerrada');
+      assert.strictEqual(l2[11], '—', 'encerrada não tem prazo correndo');
+      assert.strictEqual(l2[12], 'Original Y', 'a vinculada diz a qual ocorrência pertence');
+      // filtro vale para a exportação
+      C.t.estado.g.f.etapa = 'encerrada';
+      const gf = C.t.dadosExport('gestor');
+      assert.strictEqual(gf.linhas.length, 1);
+      assert.ok(gf.filtros[0].includes('1 ocorrência(s)') && gf.filtros[0].includes('Etapa: Encerrada'));
+      // Sucesso do Cliente e Analista
+      C.t.estado.s = { dados: { registros: regs }, f: { depto: 'Fiscal', analista: '', etapa: '', busca: '' } };
+      const s = C.t.dadosExport('sucesso');
+      assert.strictEqual(s.arquivo, 'cs-portal-sucesso-do-cliente');
+      assert.strictEqual(s.linhas.length, 1);
+      assert.ok(s.filtros[0].includes('Departamento: Fiscal'));
+      C.t.estado.a = { dados: { registros: regs }, f: { analista: '', etapa: '', busca: '' } };
+      const a = C.t.dadosExport('analista');
+      assert.ok(!a.colunas.includes('Analista indicado'), 'o analista não recebe o indicado no registro (sigilo)');
+      assert.strictEqual(a.colunas.length, a.linhas[0].length);
+      C.t.estado.a = null;
+      assert.strictEqual(C.t.dadosExport('analista'), null, 'sem carregar o portal, nada para exportar');
+    } finally { C.t.estado.g = antes[0]; C.t.estado.s = antes[1]; C.t.estado.a = antes[2]; }
+    assert.ok(C.t.situacaoPrazoExp({ prazo: '2000-01-01', etapa: 'com_analista' }).startsWith('vencida há'));
   });
   await teste('cs: perfil no /cs — administrador vê tudo; gestor só Qualidade e Portal do Gestor; analista só Qualidade e Portal do Analista; equipe de sempre não ganha os portais', () => {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.perfilDe({ role: 'administrador' }))), { completo: true, admin: true, gestor: true, analista: true });
