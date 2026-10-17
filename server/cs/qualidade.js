@@ -124,6 +124,23 @@ function validarOcorrencia(corpo, tiposPermitidos, hoje) {
 
 const rotuloDepto = (d) => (d === 'Sucesso' ? 'Sucesso do Cliente' : d);
 
+/** Departamentos de um analista (vários, ex.: Financeiro e Legalização): só os da lista, sem repetir, na ordem da lista. */
+function validarDepartamentosAnalista(corpo) {
+  const b = corpo || {};
+  if (!Array.isArray(b.departamentos)) return { ok: false, erro: 'Informe os departamentos como lista.' };
+  const set = new Set(b.departamentos.map((d) => String(d)));
+  return { ok: true, valores: { departamentos: DEPARTAMENTOS.filter((d) => set.has(d)) } };
+}
+
+/** Aviso (não bloqueia) quando o responsável escolhido não é do departamento da ocorrência. Vazio = tudo certo. */
+function avisoResponsavel(analista, departamento) {
+  if (!analista) return '';
+  const ds = Array.isArray(analista.departamentos) ? analista.departamentos : [];
+  if (!ds.length) return analista.nome + ' ainda não tem departamento cadastrado (Acessos > Analistas).';
+  if (departamento && !ds.includes(departamento)) return analista.nome + ' não é do departamento ' + rotuloDepto(departamento) + ' (atende ' + ds.map(rotuloDepto).join(', ') + ').';
+  return '';
+}
+
 /** Valida o cadastro de um gestor de departamento: pessoa, departamento da lista e papel (gestor ou diretor). */
 function validarGestor(corpo) {
   const b = corpo || {};
@@ -375,6 +392,7 @@ function garantirSchema() {
         if (!n) for (let i = 0; i < iniciais.length; i++) await pool.query('INSERT INTO cs_qualidade_tipos (nome, peso, ordem) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [iniciais[i][0], iniciais[i][1], i + 1]);
       })
       .then(() => pool.query('ALTER TABLE analistas ADD COLUMN IF NOT EXISTS user_id TEXT'))
+      .then(() => pool.query("ALTER TABLE analistas ADD COLUMN IF NOT EXISTS departamentos TEXT[] NOT NULL DEFAULT '{}'"))   // departamentos que o analista atende (18/10/2026)
       .then(() => require('./analistasNomes').aplicar(pool))   // ajuste único dos nomes completos (planilha de 15/10/2026)
       .then(() => require('./limpezaTeste').aplicar(pool))     // limpeza única do registro de teste da Josiane (16/10/2026)
       .catch((e) => { _schema = null; throw e; });
@@ -557,10 +575,22 @@ router.delete('/tipos/:id', soAdmin, async (req, res) => {
   } catch (e) { console.error('[qualidade] DELETE /tipos falhou:', e); res.status(500).json({ error: 'Erro ao excluir o tipo.' }); }
 });
 
+/** Departamentos que o analista atende (administrador). Servem para sugerir o responsável certo e avisar quando o escolhido não é do departamento. */
+router.put('/analistas/:id/departamentos', async (req, res) => {
+  if (!req.user || req.user.role !== 'administrador') return res.status(403).json({ error: 'Só o administrador define os departamentos do analista.' });
+  const v = validarDepartamentosAnalista(req.body);
+  if (!v.ok) return res.status(400).json({ error: v.erro });
+  try {
+    await garantirSchema();
+    const up = await pool.query('UPDATE analistas SET departamentos = $1 WHERE id::text = $2 RETURNING id, nome, departamentos', [v.valores.departamentos, String(req.params.id)]);
+    if (!up.rows.length) return res.status(404).json({ error: 'Analista não encontrado.' });
+    res.json({ analista: up.rows[0] });
+  } catch (e) { console.error('[qualidade] PUT /analistas/:id/departamentos falhou:', e); res.status(500).json({ error: 'Erro ao salvar os departamentos.' }); }
+});
 router.get('/analistas', async (req, res) => {
   try {
     await garantirSchema();
-    const { rows } = await pool.query('SELECT id, nome, ativo, user_id FROM analistas ORDER BY nome');
+    const { rows } = await pool.query('SELECT id, nome, ativo, user_id, departamentos FROM analistas ORDER BY nome');
     const so = req.query.ativo === 'true';
     res.json({ analistas: rows.filter((a) => !so || a.ativo) });
   } catch (e) { console.error('[qualidade] GET /analistas falhou:', e); res.status(500).json({ error: 'Erro ao ler os analistas.' }); }
@@ -1064,10 +1094,12 @@ router.post('/ocorrencias', async (req, res) => {
     const cli = await pool.query(`SELECT id::text AS id, nome_empresa, regexp_replace(cnpj, '\\D', '', 'g') AS cnpj FROM clientes WHERE id::text = $1 AND status = 'ativo'`, [x.cliente_id]);
     if (!cli.rows.length) return res.status(404).json({ error: 'Empresa não encontrada entre os clientes ativos.' });
     const c = cli.rows[0];
-    if (x.analista_id) {   // responsável sugerido: tem de estar na lista de analistas e ativo
-      const an = (await pool.query('SELECT nome, ativo FROM analistas WHERE id::text = $1', [x.analista_id])).rows[0];
+    let avisoResp = '';
+    if (x.analista_id) {   // responsável sugerido: tem de estar na lista de analistas e ativo; se não for do departamento, só avisa
+      const an = (await pool.query('SELECT nome, ativo, departamentos FROM analistas WHERE id::text = $1', [x.analista_id])).rows[0];
       if (!an) return res.status(404).json({ error: 'Responsável não encontrado na lista de analistas.' });
       if (!an.ativo) return res.status(400).json({ error: an.nome + ' está desativado na lista de analistas.' });
+      avisoResp = avisoResponsavel(an, x.departamento);
     }
     // encaminhamento: gestor(es) do departamento escolhido; sem gestor cadastrado, vai para o Sucesso do Cliente
     const gest = (await pool.query(
@@ -1082,7 +1114,7 @@ router.post('/ocorrencias', async (req, res) => {
     await notificarLancamento(rows[0], req.user.name, textoDest);
     avisarPush(async () => [].concat(await idsAdmins(), dest.fila === 'gestor' ? await idsGestoresDe([x.departamento]) : await idsSucesso()),
       { titulo: 'Nova ocorrência: ' + x.tipo + ' (' + (x.prioridade || '—') + ')', texto: (rows[0].cliente_nome || 'Empresa') + ' — ' + (x.assunto || '') + ' · ' + rotuloDepto(x.departamento), url: '/cs?aba=gestor', tag: String(rows[0].id) }, req.user.id);
-    res.status(201).json({ registro: comSituacao(rows)[0], destino: textoDest, fila: dest.fila });
+    res.status(201).json({ registro: comSituacao(rows)[0], destino: textoDest, fila: dest.fila, aviso_responsavel: avisoResp || null });
   } catch (e) { console.error('[qualidade] POST /ocorrencias falhou:', e); res.status(500).json({ error: 'Erro ao registrar a ocorrência.' }); }
 });
 
@@ -1354,4 +1386,4 @@ routerAnalista.post('/:id/nota', async (req, res) => {
   } catch (e) { console.error('[qualidade] POST /nota falhou:', e); res.status(500).json({ error: 'Erro ao salvar a nota.' }); }
 });
 
-module.exports = { nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };

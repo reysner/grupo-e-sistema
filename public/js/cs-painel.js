@@ -1546,7 +1546,8 @@
         '<div class="cinza" style="font-size:12px;margin:8px 0">Cada analista pode ter um <strong>login</strong> ligado (necessário para ser gestor(a) e para receber avisos). <button type="button" class="gp-footer-btn" id="qa-auto" style="width:auto;display:inline-block;padding:2px 8px">Ligar logins automaticamente</button> liga os que casam com o nome; os demais você escolhe na lista de cada analista.</div>' +
         '<div class="qa-modal-lista">' + j.analistas.map(function (a) {
           var selLogin = '<select data-vinc="' + esc(a.id) + '" aria-label="Login de ' + esc(a.nome) + '" style="display:block;margin-top:4px;max-width:100%;font-size:12px"><option value="">Sem login ligado</option>' + logins.map(function (u) { return '<option value="' + esc(u.id) + '"' + (String(a.user_id) === String(u.id) ? ' selected' : '') + '>' + esc(u.name) + ' · ' + esc(u.email) + '</option>'; }).join('') + '</select>';
-          return '<div class="qa-an-linha"><span class="' + (a.ativo ? '' : 'qa-an-inativo') + '">' + esc(a.nome) + selLogin + '</span><span class="qa-an-acoes">' +
+          var chipsDep = '<span style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px" title="Departamentos que ' + esc(a.nome) + ' atende">' + DEPS_OCORRENCIA.map(function (d) { return '<label class="qa-dep"><input type="checkbox" data-adep="' + esc(a.id) + '" value="' + esc(d[0]) + '"' + (depsAnalista(a).indexOf(d[0]) >= 0 ? ' checked' : '') + '> ' + esc(d[1]) + '</label>'; }).join('') + '</span>';
+          return '<div class="qa-an-linha"><span class="' + (a.ativo ? '' : 'qa-an-inativo') + '">' + esc(a.nome) + selLogin + chipsDep + '</span><span class="qa-an-acoes">' +
             '<button type="button" class="gp-footer-btn" data-ren="' + esc(a.id) + '" data-nome="' + esc(a.nome) + '" style="width:auto">Editar nome</button>' +
             '<button type="button" class="gp-footer-btn" data-tog="' + esc(a.id) + '" data-ativo="' + (a.ativo ? '1' : '0') + '" style="width:auto">' + (a.ativo ? 'Desativar' : 'Reativar') + '</button>' +
             '<button type="button" class="gp-footer-btn qa-excluir" data-del="' + esc(a.id) + '" data-nome="' + esc(a.nome) + '" style="width:auto" title="Tira o analista da lista de vez">Excluir</button></span></div>';
@@ -1563,6 +1564,13 @@
         sel.addEventListener('change', async function () {
           var r = await chamarApi('/api/cs/painel/qualidade/vinculo/' + encodeURIComponent(sel.getAttribute('data-vinc')), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: sel.value || null }) });
           if (!r.ok) { var x = await r.json().catch(function () { return {}; }); falha(x.error || 'Não foi possível ligar o login.'); } else { falha(''); estado.qResumo = null; }
+        });
+      });
+      Array.prototype.forEach.call(ov.querySelectorAll('[data-adep]'), function (ck) {   // departamentos do analista: salva ao marcar
+        ck.addEventListener('change', async function () {
+          var id = ck.getAttribute('data-adep'), marcados = Array.prototype.filter.call(ov.querySelectorAll('[data-adep="' + id + '"]'), function (c) { return c.checked; }).map(function (c) { return c.value; });
+          var r = await chamarApi('/api/cs/painel/qualidade/analistas/' + encodeURIComponent(id) + '/departamentos', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ departamentos: marcados }) });
+          if (!r.ok) { var x = await r.json().catch(function () { return {}; }); falha(x.error || 'Não foi possível salvar os departamentos.'); ck.checked = !ck.checked; } else falha('');
         });
       });
       $('qa-auto').addEventListener('click', async function () {
@@ -1797,8 +1805,25 @@
   }
 
   /** Opções do campo Tipo de ocorrência: os tipos ativos, como os administradores criaram e editaram (nome e peso ficam em "Gerenciar tipos"). */
-  /** Opções do campo Responsável: os analistas ativos, com o nome completo (a mesma lista de Acessos > Analistas). */
-  function opcoesRespOc(lista) { return '<option value="">A definir pelo gestor</option>' + (lista || []).map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.nome) + '</option>'; }).join(''); }
+  function depsAnalista(a) { return a && Array.isArray(a.departamentos) ? a.departamentos : []; }
+  /** Opções de analistas (nome completo): com departamento escolhido, os dele vêm primeiro em um grupo; os outros continuam disponíveis. */
+  function opcoesAnalistasAg(lista, dep, sel, vazio) {
+    var op = function (a) { return '<option value="' + esc(a.id) + '"' + (sel != null && sel !== '' && String(sel) === String(a.id) ? ' selected' : '') + '>' + esc(a.nome) + '</option>'; };
+    var base = '<option value="">' + esc(vazio) + '</option>', daqui = [], outros = [];
+    (lista || []).forEach(function (a) { (dep && depsAnalista(a).indexOf(dep) >= 0 ? daqui : outros).push(a); });
+    if (!daqui.length) return base + (lista || []).map(op).join('');
+    return base + '<optgroup label="' + esc('Do departamento ' + rotuloDepto(dep)) + '">' + daqui.map(op).join('') + '</optgroup><optgroup label="Outros analistas">' + outros.map(op).join('') + '</optgroup>';
+  }
+  /** Opções do campo Responsável da ocorrência (a mesma lista de Acessos > Analistas). */
+  function opcoesRespOc(lista, dep, sel) { return opcoesAnalistasAg(lista, dep, sel, 'A definir pelo gestor'); }
+  /** Aviso (não bloqueia) quando o responsável escolhido não é do departamento da ocorrência. */
+  function avisoRespOc(a, dep) {
+    if (!a) return '';
+    var ds = depsAnalista(a);
+    if (!ds.length) return a.nome + ' ainda não tem departamento cadastrado (Acessos > Analistas).';
+    if (dep && ds.indexOf(dep) < 0) return a.nome + ' não é do departamento ' + rotuloDepto(dep) + ' (atende ' + ds.map(rotuloDepto).join(', ') + ').';
+    return '';
+  }
   function opcoesTiposOc(lista) { return '<option value="">Selecione o tipo…</option>' + (lista || []).map(function (t) { return '<option>' + esc(t) + '</option>'; }).join(''); }
   /** Formulário "Registrar ocorrência" (o miolo da janela). */
   function formularioOcorrenciaQ(o, emTela) {
@@ -1810,7 +1835,7 @@
       '<div class="qa-oc-quem">Registrando como <strong>' + esc(usuarioLogadoNome() || 'você') + '</strong> em <strong>' + hojeIsoLocal().split('-').reverse().join('/') + '</strong>. Quem registra e a data ficam gravados na ocorrência.</div>' +
       '<div class="qa-oc-linha qa-oc-l1">' +
         '<div class="qa-campo"><label for="oc-assunto">Assunto da ocorrência</label><input type="text" id="oc-assunto" maxlength="100" placeholder="Qual o assunto da ocorrência?"></div>' +
-        '<div class="qa-campo"><label for="oc-resp">Responsável' + (ehAdminPainel() ? ' <a href="#" id="oc-editar-resp" class="qa-lnk">(editar lista)</a>' : '') + '</label><select id="oc-resp">' + opcoesRespOc(o.analistas) + '</select></div>' +
+        '<div class="qa-campo"><label for="oc-resp">Responsável' + (ehAdminPainel() ? ' <a href="#" id="oc-editar-resp" class="qa-lnk">(editar lista)</a>' : '') + '</label><select id="oc-resp">' + opcoesRespOc(o.analistas, '', '') + '</select><div class="qa-oc-dica" id="oc-resp-aviso" role="status" style="color:#b45309;min-height:15px"></div></div>' +
         '<div class="qa-campo"><label for="oc-anexo">Arquivo anexo</label><input type="file" id="oc-anexo" multiple><div class="cinza qa-oc-dica">Até ' + (o.max_anexos || 5) + ' arquivos de ' + Math.round((o.max_anexo || 10485760) / 1048576) + ' MB cada</div></div>' +
         '<div class="qa-campo"><label for="oc-prior">Prioridade</label><select id="oc-prior">' + pri + '</select></div>' +
         '<div class="qa-campo"><label for="oc-prazo">Prazo para execução <span class="req">*</span></label><input type="date" id="oc-prazo" min="' + hojeIsoLocal() + '"></div>' +
@@ -1853,14 +1878,26 @@
         if ((o.tipos || []).indexOf(atual) >= 0) s.value = atual;
       });
     });
+    var selDep = $('oc-dep'), selResp = $('oc-resp'), avisoResp = $('oc-resp-aviso');
+    var acharAn = function (id) { return (estado.qAnalistas || []).filter(function (a) { return String(a.id) === String(id); })[0]; };
+    var pintarResp = function () {   // regrupa a lista pelo departamento escolhido e mostra o aviso, sem bloquear nada
+      selResp.innerHTML = opcoesRespOc(estado.qAnalistas, selDep.value, selResp.value);
+      avisoResp.textContent = avisoRespOc(acharAn(selResp.value), selDep.value);
+    };
+    selDep.addEventListener('change', pintarResp);
+    selResp.addEventListener('change', function () {
+      var a = acharAn(selResp.value);
+      if (a && !selDep.value && depsAnalista(a).length === 1) selDep.value = depsAnalista(a)[0];   // escolheu o analista primeiro: o departamento dele já vem
+      pintarResp();
+    });
     var edResp = $('oc-editar-resp');   // administrador: gerencia a lista de analistas aqui mesmo; ao fechar, todo o painel já usa a lista nova
     if (edResp) edResp.addEventListener('click', function (ev) {
       ev.preventDefault();
       abrirGerenciarAnalistas(async function () {
         try { await carregarOpcoesQ(true); } catch (e) { return; }
-        var s = $('oc-resp'), atual = s.value;
-        s.innerHTML = opcoesRespOc(estado.qAnalistas);
-        if ((estado.qAnalistas || []).some(function (a) { return String(a.id) === String(atual); })) s.value = atual;
+        var atual = selResp.value;
+        if (!(estado.qAnalistas || []).some(function (a) { return String(a.id) === String(atual); })) selResp.value = '';
+        pintarResp();
       });
     });
     var campo = $('oc-emp'), lista = $('oc-emp-lista'), sel = $('oc-emp-sel'), det = $('oc-det'), erro = $('oc-erro');
@@ -1906,7 +1943,8 @@
       if (arqs.length > (o.max_anexos || 5)) { erro.textContent = 'Só é possível anexar até ' + (o.max_anexos || 5) + ' arquivos.'; return; }
       var grande = arqs.filter(function (f) { return f.size > (o.max_anexo || 10485760); })[0];
       if (grande) { erro.textContent = 'O arquivo "' + grande.name + '" passa de ' + Math.round((o.max_anexo || 10485760) / 1048576) + ' MB.'; return; }
-      if (!window.confirm('Deseja realmente registrar esta ocorrência para "' + emp.nome + '"?')) return;
+      var avResp = avisoRespOc(acharAn($('oc-resp').value), dep);
+      if (!window.confirm('Deseja realmente registrar esta ocorrência para "' + emp.nome + '"?' + (avResp ? '\n\nAtenção: ' + avResp : ''))) return;
       var ok = $('oc-ok'); ok.disabled = true; ok.textContent = 'Registrando…';
       var reabrir = function () { ok.disabled = false; ok.textContent = '✉ OK - Registrar'; };
       try {
@@ -1923,7 +1961,7 @@
           } catch (e) { falhas.push(arqs[i].name + ': sem conexão'); }
         }
         if (!raiz) fechar();   // em tela, quem redesenha é aoSalvar (formulário limpo de novo)
-        var destino = j.destino ? 'Ocorrência registrada. ' + j.destino : '';
+        var destino = j.destino ? 'Ocorrência registrada. ' + j.destino + (j.aviso_responsavel ? '\n\nAtenção: ' + j.aviso_responsavel : '') : '';
         if (falhas.length) window.alert((destino ? destino + '\n\n' : '') + 'Nem todos os anexos subiram:\n' + falhas.join('\n'));
         else if (destino) window.alert(destino);
         if (aoSalvar) aoSalvar();
@@ -2436,7 +2474,7 @@
   function htmlTratativaGestor(r, analistas) {
     var editavel = r.etapa === 'registrada' || r.etapa === 'tratativa_definida';
     var depAtual = r.tratativa_depto || (r.departamentos || [])[0] || '';
-    var optA = '<option value="">Escolha o analista…</option>' + (analistas || []).map(function (a) { return '<option value="' + esc(a.id) + '"' + (String(r.analista_id) === String(a.id) ? ' selected' : '') + '>' + esc(a.nome) + '</option>'; }).join('');
+    var optA = opcoesAnalistasAg(analistas, depAtual, r.analista_id, 'Escolha o analista…');
     var optD = DEPS_OCORRENCIA.map(function (d) { return '<option value="' + esc(d[0]) + '"' + (depAtual === d[0] ? ' selected' : '') + '>' + esc(d[1]) + '</option>'; }).join('');
     var topo = '<div class="qa-modal-topo"><strong style="font-size:20px;color:#256050">' + esc(r.assunto || 'Ocorrência') + '</strong><button type="button" class="qa-x" id="gt-fechar" aria-label="Fechar">✕</button></div>' +
       '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' + cartaoOcorrenciaQ(r, true);

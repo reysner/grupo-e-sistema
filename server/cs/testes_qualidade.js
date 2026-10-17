@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { TIPO_PLANO, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { TIPO_PLANO, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -252,6 +252,19 @@ teste('ocorrência: prazo para execução é obrigatório, não pode ser passado
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prazo: '2026-10-15' }), t, '2026-10-16').ok, false, 'ontem não');
 });
 
+teste('departamentos do analista: vários (ex.: Financeiro e Legalização), só os da lista e sem repetir; o aviso não bloqueia', () => {
+  assert.deepStrictEqual(validarDepartamentosAnalista({ departamentos: ['Legalização', 'Financeiro', 'Financeiro', 'Xpto'] }).valores.departamentos, ['Financeiro', 'Legalização']);
+  assert.deepStrictEqual(validarDepartamentosAnalista({ departamentos: [] }).valores.departamentos, [], 'pode ficar sem departamento');
+  assert.strictEqual(validarDepartamentosAnalista({ departamentos: 'Fiscal' }).ok, false);
+  assert.strictEqual(validarDepartamentosAnalista({}).ok, false);
+  const bruno = { nome: 'Bruno Cesar Xavier', departamentos: ['Financeiro', 'Legalização'] };
+  assert.strictEqual(avisoResponsavel(bruno, 'Legalização'), '');
+  assert.strictEqual(avisoResponsavel(bruno, 'Financeiro'), '');
+  assert.strictEqual(avisoResponsavel(bruno, 'Contábil'), 'Bruno Cesar Xavier não é do departamento Contábil (atende Financeiro, Legalização).');
+  assert.ok(avisoResponsavel({ nome: 'João', departamentos: [] }, 'Fiscal').includes('ainda não tem departamento'));
+  assert.ok(avisoResponsavel({ nome: 'Ana', departamentos: ['Sucesso'] }, 'Fiscal').includes('atende Sucesso do Cliente'));
+  assert.strictEqual(avisoResponsavel(null, 'Fiscal'), '', 'sem responsável não há o que avisar');
+});
 teste('ocorrência: responsável é opcional (vazio vira nulo) e vai junto quando informado', () => {
   const t = ['Erro'], base = { cliente_id: '1', assunto: 'Guia errada', tipo: 'Erro', prioridade: 'Alta', departamento: 'Fiscal', detalhe: 'Detalhe da ocorrência', prazo: '2026-12-01' };
   const v0 = validarOcorrencia(base, t, '2026-10-18');
