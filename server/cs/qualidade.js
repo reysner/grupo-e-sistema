@@ -661,9 +661,12 @@ function nomeCompletoDoLogin(user, analistas, colabs) {
   return comecam.length === 1 ? String(comecam[0].nome).trim() : nome;
 }
 /** Quem pode ser escolhido como gestor: a lista de analistas ativos (nome completo), cada um com o login vinculado (direto ou pelo nome); sem login não dá para ser gestor. Administradores sem analista correspondente entram também (diretor, gestor final). */
+// Logins compartilhados/de sistema que não são pessoas: nunca aparecem nas escolhas de gestor (nem como administrador).
+const LOGINS_OCULTOS = ['escritorial cs'];
+const ehLoginOculto = (nome) => LOGINS_OCULTOS.includes(semAcento(nome));
 function pessoasParaGestor(analistas, users, colabs) {
-  const ativos = (analistas || []).filter((a) => a.ativo !== false && a.ativo !== 0);
-  const logins = users || [];
+  const ativos = (analistas || []).filter((a) => a.ativo !== false && a.ativo !== 0 && !ehLoginOculto(a.nome));
+  const logins = (users || []).filter((x) => !ehLoginOculto(x.name));
   const usados = new Set();
   const lista = ativos.map((a) => {
     let u = a.user_id != null ? logins.find((x) => String(x.id) === String(a.user_id)) : null;

@@ -232,6 +232,8 @@ teste('quem pode ser gestor: só os analistas ativos (nome completo, com login d
   assert.strictEqual(por('Josiane Alves de Oliveira Cezario').id, '1', 'pelo nome do login');
   assert.strictEqual(por('Fulano Sem Login').sem_login, true);
   assert.strictEqual(por('Reysner').admin, true);
+  const oculto = pessoasParaGestor([{ nome: 'Escritorial CS', user_id: '3', ativo: true }], [{ id: '3', name: 'Escritorial CS', role: 'administrador' }, { id: '4', name: 'Reysner', role: 'administrador' }], []);
+  assert.deepStrictEqual(oculto.map((p) => p.name), ['Reysner'], 'o login compartilhado Escritorial CS fica oculto, mesmo sendo administrador ou analista');
   assert.ok(!l.some((p) => p.name === 'Teste' || p.name === 'Escritorial CS' || p.name === 'Antigo Desativado'), 'quem não é analista (nem administrador) sai da lista');
 });
 teste('etapas do fluxo na ordem combinada', () => {
