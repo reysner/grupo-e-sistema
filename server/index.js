@@ -67,7 +67,7 @@ app.use('/api/cs/categorias', require('./cs/categorias').router);  // Categorias
 app.use('/api/cs/painel/churn-motivos', require('./cs/churnMotivos').router);   // Churn por motivo e Fechamento do mês (antes de /api/cs/painel)
 app.use('/api/push', require('./push').router);   // avisos push do navegador (chave, cadastrar e descadastrar o aparelho; qualquer pessoa logada)
 app.use('/api/cs/painel/qualidade', require('./cs/qualidade').router);   // Qualidade: considerações por cliente e analista (antes de /api/cs/painel)
-app.use('/api/qualidade', require('./cs/qualidade').routerAnalista);       // Minhas tratativas: o analista logado vê e trata os próprios registros
+// (desligado em 17/10/2026) app.use('/api/qualidade', require('./cs/qualidade').routerAnalista);   // Minhas tratativas: substituído pelo Portal do Analista no /cs
 app.use('/api/cs/churn', require('./cs/churnSaidas').router);  // Churn por saídas (as três 'Transferida por…')
 app.use('/api/cs/risco', require('./cs/risco').router);        // Risco de perda: termômetros Financeiro, Atendimento e Operacional
 app.use('/api/cs/questor/anual', require('./cs/anualQuestor').router);   // Análise Anual: POST do job local (token de sincronização)
@@ -115,9 +115,8 @@ app.get('/minha-nota', (req, res) => {
 });
 
 // ── Minhas tratativas (Qualidade): o analista vê e trata as considerações registradas para ele (login próprio) ──
-app.get('/qualidade', (req, res) => {
-  res.sendFile(path.join(PUBLIC, 'qualidade.html'));
-});
+// Desligado em 17/10/2026: o portal antigo foi substituído pelo Portal do Analista, dentro do /cs (quem ainda tiver o endereço antigo é levado para lá).
+app.get('/qualidade', (req, res) => res.redirect(302, '/cs?aba=analista'));
 
 // ── Legalização pública — colaborador com acesso_legalizacao (login próprio),
 // pedido do Reysner 18/09/2026: acesso a Alvarás/Certificados + solicitar

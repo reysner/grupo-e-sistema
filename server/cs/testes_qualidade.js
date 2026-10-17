@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { TIPO_PLANO, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { TIPO_PLANO, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -137,6 +137,9 @@ teste('lista branca do gestor/analista: registrar, ver as próprias, perfil, ges
   ['/opcoes', '/empresas', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/anexo/abc'].forEach((c) => ok('GET', c));
   ok('GET', '/empresas?q=ab'); ok('POST', '/ocorrencias'); ok('POST', '/ocorrencias/uuid-1/anexo'); ok('POST', '/gestor/ocorrencias/uuid-1/abrir'); ok('PUT', '/gestor/ocorrencias/uuid-1/tratativa');
   ['/resumo', '/recentes', '/tipos', '/ocorrencias', '/cliente/123', '/analista/7', '/vinculo/1'].forEach((c) => no('GET', c));
+  ['/analista/ocorrencias', '/sucesso/ocorrencias'].forEach((c) => ok('GET', c));
+  ['/analista/ocorrencias/u1/nota', '/analista/ocorrencias/u1/encerrar', '/gestor/ocorrencias/u1/validar', '/gestor/ocorrencias/u1/devolver', '/sucesso/ocorrencias/u1/encerrar'].forEach((c) => ok('POST', c));
+  no('POST', '/sucesso/ocorrencias/u1/abrir'); no('POST', '/analista/ocorrencias/u1/validar'); no('POST', '/gestor/ocorrencias/u1/encerrar'); no('GET', '/analista/ocorrencias/u1'); no('PUT', '/sucesso/ocorrencias/u1/encerrar'); no('DELETE', '/analista/ocorrencias/u1');
   no('POST', '/'); no('POST', '/gestores'); no('POST', '/tipos'); no('PATCH', '/abc'); no('DELETE', '/abc'); no('DELETE', '/gestores/1'); no('PUT', '/vinculo/1'); no('PUT', '/gestor/ocorrencias/x'); no('POST', '/gestor/ocorrencias/x/tratar');
 });
 teste('escopo do Portal do Gestor: administração vê tudo; gestor vê os departamentos dele; gestor do Sucesso também vê o que ficou sem gestor', () => {
@@ -177,6 +180,35 @@ teste('gestores: o papel "final" (quem encerra no Sucesso do Cliente) é aceito'
 teste('users.active é inteiro (1/0): nenhuma consulta do módulo compara com true (isso daria erro no banco)', () => {
   const fonte = require('fs').readFileSync(require('path').join(__dirname, 'qualidade.js'), 'utf8');
   assert.ok(!/(^|[^a-z_])active = (true|false)/i.test(fonte), 'use active = 1');
+});
+teste('fluxo: cada passo só sai da etapa certa e leva à seguinte (e o status do risco acompanha)', () => {
+  const v = (acao, etapa) => transicao(acao, etapa);
+  assert.deepStrictEqual(v('abrir', 'tratativa_definida'), { ok: true, para: 'com_analista', status: 'em_tratamento' });
+  assert.deepStrictEqual(v('analista_encerrar', 'com_analista'), { ok: true, para: 'validacao_gestor', status: 'finalizada' });
+  assert.deepStrictEqual(v('gestor_devolver', 'validacao_gestor'), { ok: true, para: 'com_analista', status: 'em_tratamento' });
+  assert.deepStrictEqual(v('gestor_validar', 'validacao_gestor'), { ok: true, para: 'devolutiva_cliente', status: 'finalizada' });
+  assert.deepStrictEqual(v('final_encerrar', 'devolutiva_cliente'), { ok: true, para: 'encerrada', status: 'resolvido' });
+  // pular etapa não pode: o gestor final não encerra o que ainda não foi validado; o analista não encerra o que não foi aberto
+  assert.strictEqual(v('final_encerrar', 'validacao_gestor').ok, false);
+  assert.strictEqual(v('final_encerrar', 'com_analista').ok, false);
+  assert.strictEqual(v('analista_encerrar', 'tratativa_definida').ok, false);
+  assert.strictEqual(v('analista_encerrar', 'validacao_gestor').ok, false, 'depois de devolvido ao gestor o analista não encerra de novo');
+  assert.strictEqual(v('gestor_validar', 'com_analista').ok, false);
+  assert.strictEqual(v('gestor_validar', 'devolutiva_cliente').ok, false, 'não valida duas vezes');
+  assert.strictEqual(v('final_encerrar', 'encerrada').ok, false, 'não encerra duas vezes');
+  assert.strictEqual(v('inventada', 'registrada').ok, false);
+  assert.ok(v('final_encerrar', 'registrada').erro.includes('não foi validada'));
+  assert.deepStrictEqual(Object.keys(TRANSICOES), ['abrir', 'analista_encerrar', 'gestor_devolver', 'gestor_validar', 'final_encerrar']);
+});
+teste('nota e observação de quem encerra, valida ou devolve: nota obrigatória (5 a 600), observação opcional (até 1000)', () => {
+  assert.deepStrictEqual(validarEncerramento({ nota: ' Guia retificada e cliente avisado ' }), { ok: true, valores: { nota: 'Guia retificada e cliente avisado', obs: null } });
+  assert.strictEqual(validarEncerramento({ nota: 'Tudo ok', obs: '  conferi os dois meses ' }).valores.obs, 'conferi os dois meses');
+  assert.strictEqual(validarEncerramento({ nota: 'ok' }).ok, false);
+  assert.strictEqual(validarEncerramento({}).ok, false);
+  assert.strictEqual(validarEncerramento({ nota: 'a'.repeat(601) }).ok, false);
+  assert.strictEqual(validarEncerramento({ nota: 'a'.repeat(600) }).ok, true);
+  assert.strictEqual(validarEncerramento({ nota: 'Tudo ok', obs: 'a'.repeat(1001) }).ok, false);
+  assert.strictEqual(validarEncerramento({ nota: 'linha 1\r\nlinha 2' }).valores.nota, 'linha 1\nlinha 2');
 });
 teste('etapas do fluxo na ordem combinada', () => {
   assert.deepStrictEqual(ETAPAS, ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada']);

@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, secaoFicha: secaoFicha, listaOcorrenciasQ: listaOcorrenciasQ, tabelaAcessorias: tabelaAcessorias, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, cartaoOcorrenciaQ: cartaoOcorrenciaQ, tabelaOcorrenciasMod: tabelaOcorrenciasMod, botaoValoresVisivel: botaoValoresVisivel, perfilDe: perfilDe, filtrarGestor: filtrarGestor, contagemEtapasGestor: contagemEtapasGestor, htmlGestor: htmlGestor, htmlTratativaGestor: htmlTratativaGestor, htmlMinhasOcorrencias: htmlMinhasOcorrencias, htmlGestoresQ: htmlGestoresQ, opcoesTiposOc: opcoesTiposOc, formularioOcorrenciaQ: formularioOcorrenciaQ, comoPesaTratativa: comoPesaTratativa, abrirNovoMotivoChurn: abrirNovoMotivoChurn }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, secaoFicha: secaoFicha, listaOcorrenciasQ: listaOcorrenciasQ, tabelaAcessorias: tabelaAcessorias, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, cartaoOcorrenciaQ: cartaoOcorrenciaQ, tabelaOcorrenciasMod: tabelaOcorrenciasMod, filtrarPortal: filtrarPortal, htmlAnalista: htmlAnalista, htmlOcorrenciaAnalista: htmlOcorrenciaAnalista, htmlSucesso: htmlSucesso, htmlOcorrenciaSucesso: htmlOcorrenciaSucesso, htmlRetornos: htmlRetornos, botaoValoresVisivel: botaoValoresVisivel, perfilDe: perfilDe, filtrarGestor: filtrarGestor, contagemEtapasGestor: contagemEtapasGestor, htmlGestor: htmlGestor, htmlTratativaGestor: htmlTratativaGestor, htmlMinhasOcorrencias: htmlMinhasOcorrencias, htmlGestoresQ: htmlGestoresQ, opcoesTiposOc: opcoesTiposOc, formularioOcorrenciaQ: formularioOcorrenciaQ, comoPesaTratativa: comoPesaTratativa, abrirNovoMotivoChurn: abrirNovoMotivoChurn }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null, tratativas: 75 }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -249,6 +249,46 @@ const semLixo = (e, nome) => {
     ['gestor', 'analista', 'sucesso'].forEach((s) => assert.strictEqual(C.t.botaoValoresVisivel(true, s), false, s));
     assert.strictEqual(C.t.botaoValoresVisivel(false, 'visao'), false);
     assert.strictEqual(C.t.botaoValoresVisivel(undefined, 'visao'), false);
+  });
+  await teste('cs: Portal do Analista — dashboard só dele, tratar com nota e observação, encerrar envia ao gestor; administrador age em nome do analista', () => {
+    const r = (id, extra) => Object.assign({ id, etapa: 'com_analista', situacao: 'em_tratamento', tipo: 'Erro', prioridade: 'Alta', departamentos: ['Fiscal'], assunto: 'Guia errada ' + id, detalhe: 'Detalhe', cliente_nome: 'ALFA LTDA', criado_em: '2026-10-17T12:00:00Z', liberada_em: '2026-10-18T09:00:00Z', analista_id: '7', analista_nome: 'Josiane', prazo: '2026-10-25', plano_acao: 'Retificar a guia', tratativa_depto: 'Fiscal', tratativa_definida_por: 'Eduardo', anexos: [], notas: [] }, extra || {});
+    const regs = [r('a'), r('b', { etapa: 'validacao_gestor', analista_nota: 'Guia retificada', analista_obs: 'cliente avisado', analista_por: 'Josiane', analista_em: '2026-10-19T10:00:00Z' }), r('c', { etapa: 'encerrada' })];
+    const F = (f) => Object.assign({ depto: '', analista: '', etapa: '', busca: '' }, f);
+    const h = C.t.htmlAnalista({ analista: { id: '7', nome: 'Josiane' }, todos: false, registros: regs }, F({}));
+    assert.ok(h.includes('Sua tratativa será validada pelo seu gestor') && h.includes('Sucesso do Cliente') && h.includes('analista: Josiane'));
+    assert.ok(h.includes('>Tratar<') && h.includes('>Ver<') && !h.includes('id="a-analista"'), 'analista comum não escolhe analista');
+    const adm = C.t.htmlAnalista({ analista: null, todos: true, registros: regs, analistas: [{ id: '7', nome: 'Josiane' }] }, F({}));
+    assert.ok(adm.includes('id="a-analista"') && adm.includes('age em nome do analista') && adm.includes('<th>Analista</th>'));
+    const tratar = C.t.htmlOcorrenciaAnalista(regs[0], '');
+    assert.ok(tratar.includes('Plano de ação do gestor') && tratar.includes('Retificar a guia') && tratar.includes('Observação') && tratar.includes('id="ao-encerrar"') && tratar.includes('id="ao-anotar"') && tratar.includes('Nota (o que foi feito)'));
+    assert.ok(tratar.includes('vai para a validação do seu gestor'), 'avisa o caminho depois de encerrar');
+    assert.ok(C.t.htmlOcorrenciaAnalista(regs[0], 'Josiane').includes('agindo em nome de <strong>Josiane</strong>'));
+    const lida = C.t.htmlOcorrenciaAnalista(regs[1], '');
+    assert.ok(!lida.includes('id="ao-encerrar"') && lida.includes('Guia retificada') && lida.includes('cliente avisado') && lida.includes('Analista (Josiane)'), 'depois de encerrada só leitura, com a nota e a observação');
+  });
+  await teste('cs: Portal do Sucesso do Cliente — dashboard de todos, devolutiva primeiro; só o gestor final vê o botão de encerrar', () => {
+    const r = (id, etapa) => ({ id, etapa, situacao: 'aberto', tipo: 'Erro', prioridade: 'Alta', departamentos: ['Fiscal'], assunto: 'Guia ' + id, detalhe: 'Det', cliente_nome: 'ALFA LTDA', criado_em: '2026-10-17T12:00:00Z', criado_por: 'Larissa', analista_nome: 'Josiane', prazo: '2026-10-25', plano_acao: 'Plano', tratativa_depto: 'Fiscal', analista_nota: 'Feito', validacao_nota: 'Tudo ok', validacao_por: 'Eduardo', validacao_em: '2026-10-20T10:00:00Z', anexos: [], notas: [] });
+    const regs = [r('a', 'devolutiva_cliente'), r('b', 'com_analista'), r('c', 'encerrada')];
+    const F = { depto: '', analista: '', etapa: '', busca: '' };
+    const final = C.t.htmlSucesso({ final: true, registros: regs }, F), nao = C.t.htmlSucesso({ final: false, registros: regs }, F);
+    assert.ok(final.includes('Você é o <strong>gestor final</strong>') && final.includes('Devolutiva e encerrar'));
+    assert.ok(nao.includes('Só o <strong>gestor final</strong> encerra') && nao.includes('Ver devolutiva') && !nao.includes('Devolutiva e encerrar'));
+    assert.ok(final.includes('Todos os departamentos') && final.includes('id="s-depto"') && final.includes('as da devolutiva ao cliente vêm primeiro'));
+    assert.ok(C.t.htmlOcorrenciaSucesso(regs[0], true).includes('id="so-encerrar"') && C.t.htmlOcorrenciaSucesso(regs[0], true).includes('Tudo ok'), 'o gestor final vê a validação do gestor e encerra');
+    const semFinal = C.t.htmlOcorrenciaSucesso(regs[0], false);
+    assert.ok(!semFinal.includes('id="so-encerrar"') && semFinal.includes('só o gestor final encerra o processo'), 'quem não é gestor final não encerra');
+    assert.ok(!C.t.htmlOcorrenciaSucesso(regs[1], true).includes('id="so-encerrar"') && !C.t.htmlOcorrenciaSucesso(regs[2], true).includes('id="so-encerrar"'), 'só encerra o que está na devolutiva ao cliente');
+    assert.ok(C.t.htmlRetornos(regs[2]).includes('Gestor validou (Eduardo)'));
+    assert.strictEqual(C.t.filtrarPortal(regs, Object.assign({}, F, { etapa: 'devolutiva_cliente' })).length, 1);
+  });
+  await teste('cs: Portal do Gestor — validação do que o analista tratou: nota, validar (segue ao Sucesso do Cliente) ou devolver', () => {
+    const base = { id: 'v', etapa: 'validacao_gestor', situacao: 'finalizada', tipo: 'Erro', prioridade: 'Alta', departamentos: ['Fiscal'], assunto: 'Guia', detalhe: 'Det', cliente_nome: 'ALFA', criado_em: '2026-10-17T12:00:00Z', analista_id: '7', analista_nome: 'Josiane', prazo: '2026-10-25', plano_acao: 'Plano', tratativa_depto: 'Fiscal', analista_nota: 'Guia retificada', analista_obs: 'cliente avisado', analista_por: 'Josiane', analista_em: '2026-10-19T10:00:00Z', anexos: [], notas: [] };
+    const h = C.t.htmlTratativaGestor(base, []);
+    assert.ok(h.includes('Validar a tratativa') && h.includes('Nota da validação') && h.includes('id="gv-validar"') && h.includes('id="gv-devolver"'));
+    assert.ok(h.includes('Guia retificada') && h.includes('cliente avisado'), 'o gestor vê a nota e a observação do analista');
+    assert.ok(h.includes('Sucesso do Cliente') && !h.includes('id="gt-salvar"'));
+    const depois = C.t.htmlTratativaGestor(Object.assign({}, base, { etapa: 'devolutiva_cliente', validacao_nota: 'Tudo ok', validacao_por: 'Eduardo', validacao_em: '2026-10-20T10:00:00Z' }), []);
+    assert.ok(!depois.includes('id="gv-validar"') && depois.includes('Tudo ok') && depois.includes('Guia retificada'), 'depois de validada só leitura');
   });
   await teste('cs: perfil no /cs — administrador vê tudo; gestor só Qualidade e Portal do Gestor; analista só Qualidade e Portal do Analista; equipe de sempre não ganha os portais', () => {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.perfilDe({ role: 'administrador' }))), { completo: true, admin: true, gestor: true, analista: true });
