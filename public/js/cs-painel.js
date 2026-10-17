@@ -2550,12 +2550,6 @@
         'O analista informou que concluiu: abra o analista, confira o que foi feito e clique em "Dar como finalizado" para encerrar o processo (ou "Devolver ao analista").</div><div class="qa-aviso-acoes">' +
         quem.map(function (a) { return '<button type="button" class="gp-footer-btn" data-qan="' + esc(a.id) + '" style="width:auto">' + esc(a.nome) + ' (' + a.a_validar + ')</button>'; }).join('') + '</div></div>';
     }
-    var pesoBox = '';
-    if (ehAdminPainel()) {
-      var tiposQ = [];
-      try { tiposQ = ((await api('/api/cs/painel/qualidade/tipos')).tipos || []).filter(function (t) { return t.ativo; }); } catch (e) { tiposQ = []; }
-      pesoBox = comoPesaTratativa(tiposQ, estado.qPesoAberto);
-    }
     alvo.innerHTML =
       '<div class="qa-barra"><button type="button" class="login-btn" id="q-registrar" style="width:auto;margin:0;padding:10px 22px">＋ Registrar ocorrência</button>' +
         '<span class="qa-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</span></div>' +
@@ -2566,11 +2560,10 @@
         kpi('#b91c1c', 'Vencidos', tot.vencidos, 'prazo passou e ainda não foi resolvido') +
         kpi('#166534', 'Resolvidos', tot.resolvidos, 'considerações encerradas') +
       '</div>' +
-      aviso + recentesQ() + pesoBox;
+      aviso + recentesQ();
     var atualiza = function () { estado.qResumo = null; desenharQualidadeMod(); };
     var reg = $('q-registrar'); if (reg) reg.addEventListener('click', function () { abrirRegistrarOcorrencia(atualiza); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-qan]'), function (bt) { bt.addEventListener('click', function () { abrirFichaAnalistaQ(bt.getAttribute('data-qan')); }); });
-    var box = $('q-peso-box'); if (box) box.addEventListener('toggle', function () { estado.qPesoAberto = !!box.open; });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes .qt-inline[data-tid]'), function (inp) {
       inp.addEventListener('change', async function () {
         var resp = await chamarApi('/api/cs/painel/qualidade/tipos/' + encodeURIComponent(inp.getAttribute('data-tid')), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ peso: inp.value }) });
