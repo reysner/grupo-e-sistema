@@ -2314,8 +2314,9 @@
 
   /** Janela "Gerenciar gestores por departamento" (o miolo). j = resposta de /qualidade/gestores. */
   function htmlGestoresQ(j) {
-    var optU = '<option value="">Escolha a pessoa…</option>' + (j.usuarios || []).map(function (u) { return '<option value="' + esc(u.id) + '">' + esc(u.name) + '</option>'; }).join('');
+    var optU = '<option value="">Escolha a pessoa…</option>' + (j.usuarios || []).map(function (u) { return '<option value="' + esc(u.id) + '"' + (u.sem_login ? ' disabled' : '') + '>' + esc(u.name) + (u.sem_login ? ' (sem login vinculado)' : '') + '</option>'; }).join('');
     return '<div class="qa-modal-topo"><strong>Gerenciar gestores por departamento</strong><button type="button" class="qa-x" id="qg-fechar" aria-label="Fechar">✕</button></div>' +
+      '<div class="cinza" style="font-size:12px;margin-bottom:10px">As pessoas desta lista são os analistas, com o nome completo. Para incluir ou excluir alguém, use <button type="button" class="gp-footer-btn" id="qg-analistas" style="width:auto;display:inline-block;padding:2px 8px">Gerenciar analistas</button> (quem não tiver login vinculado aparece desabilitado). Administradores sem cadastro de analista também aparecem, para diretor ou gestor final.</div>' +
       '<div class="cinza" style="font-size:12px;margin-bottom:10px">A ocorrência vai para o gestor do departamento escolhido. Departamento sem gestor: vai para o Sucesso do Cliente. Pode haver mais de um gestor por departamento; o diretor fica acima do gestor (diretores costumam ser administradores e já enxergam tudo, por isso não recebem a fila). O gestor final é quem encerra o processo no portal do Sucesso do Cliente.</div>' +
       (j.departamentos || []).map(function (d) {
         var chips = d.gestores.length ? d.gestores.map(function (g) {
@@ -2334,6 +2335,7 @@
       try { j = await api('/api/cs/painel/qualidade/gestores'); } catch (e) { window.alert(e.message || 'Não foi possível ler os gestores.'); fechar(); return; }
       ov.innerHTML = '<div class="qa-modal qa-modal-gest" role="dialog" aria-label="Gerenciar gestores">' + htmlGestoresQ(j) + '</div>';
       $('qg-fechar').addEventListener('click', fechar);
+      $('qg-analistas').addEventListener('click', function () { abrirGerenciarAnalistas(desenhar); });
       var falha = function (m) { $('qg-erro').textContent = m; };
       Array.prototype.forEach.call(ov.querySelectorAll('[data-gadd]'), function (b) {
         b.addEventListener('click', async function () {

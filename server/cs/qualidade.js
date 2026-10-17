@@ -660,6 +660,24 @@ function nomeCompletoDoLogin(user, analistas, colabs) {
   const comecam = livres.filter((a) => semAcento(a.nome).startsWith(alvo + ' '));
   return comecam.length === 1 ? String(comecam[0].nome).trim() : nome;
 }
+/** Quem pode ser escolhido como gestor: a lista de analistas ativos (nome completo), cada um com o login vinculado (direto ou pelo nome); sem login não dá para ser gestor. Administradores sem analista correspondente entram também (diretor, gestor final). */
+function pessoasParaGestor(analistas, users, colabs) {
+  const ativos = (analistas || []).filter((a) => a.ativo !== false && a.ativo !== 0);
+  const logins = users || [];
+  const usados = new Set();
+  const lista = ativos.map((a) => {
+    let u = a.user_id != null ? logins.find((x) => String(x.id) === String(a.user_id)) : null;
+    if (!u) {
+      const alvo = semAcento(a.nome);
+      const par = logins.filter((x) => !usados.has(String(x.id)) && semAcento(nomeCompletoDoLogin(x, analistas, colabs)) === alvo);
+      if (par.length === 1) u = par[0];
+    }
+    if (u) usados.add(String(u.id));
+    return { id: u ? String(u.id) : '', name: String(a.nome).trim(), sem_login: !u };
+  });
+  logins.filter((x) => x.role === 'administrador' && !usados.has(String(x.id))).forEach((x) => lista.push({ id: String(x.id), name: nomeCompletoDoLogin(x, analistas, colabs), sem_login: false, admin: true }));
+  return lista.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+}
 async function nomesCompletos() {
   const analistas = (await pool.query('SELECT nome, user_id FROM analistas')).rows;
   const colabs = await pool.query('SELECT nome, user_id FROM gam_colaboradores').then((r) => r.rows).catch(() => []);
@@ -673,7 +691,12 @@ router.get('/gestores', async (req, res) => {
     const rows = brutas.map((g) => Object.assign(g, { name: completo({ id: g.uid, name: g.name }) })).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
     const departamentos = DEPARTAMENTOS.map((d) => ({ codigo: d, rotulo: rotuloDepto(d), gestores: rows.filter((g) => g.departamento === d).map((g) => ({ id: g.id, user_id: g.user_id, nome: g.name, email: g.email, papel: g.papel })) }));
     const resp = { departamentos };
-    if (req.user.role === 'administrador') resp.usuarios = (await pool.query('SELECT id::text AS id, name, email, role FROM users WHERE active = 1')).rows.map((u) => Object.assign(u, { name: completo(u) })).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    if (req.user.role === 'administrador') {
+      const analistas = (await pool.query('SELECT nome, user_id, ativo FROM analistas')).rows;
+      const colabs = await pool.query('SELECT nome, user_id FROM gam_colaboradores').then((r) => r.rows).catch(() => []);
+      const users = (await pool.query('SELECT id::text AS id, name, email, role FROM users WHERE active = 1')).rows;
+      resp.usuarios = pessoasParaGestor(analistas, users, colabs);
+    }
     res.json(resp);
   } catch (e) { console.error('[qualidade] GET /gestores falhou:', e); res.status(500).json({ error: 'Erro ao ler os gestores.' }); }
 });
@@ -1294,4 +1317,4 @@ routerAnalista.post('/:id/nota', async (req, res) => {
   } catch (e) { console.error('[qualidade] POST /nota falhou:', e); res.status(500).json({ error: 'Erro ao salvar a nota.' }); }
 });
 
-module.exports = { nomeCompletoDoLogin, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };

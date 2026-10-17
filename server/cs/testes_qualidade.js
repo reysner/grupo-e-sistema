@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { TIPO_PLANO, nomeCompletoDoLogin, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { TIPO_PLANO, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -221,6 +221,18 @@ teste('nome completo no cadastro de gestores: usa o da lista de analistas (por v
   assert.strictEqual(f('3', 'MAIRA'), 'Maira Souza', 'sem acento nem maiúsculas');
   assert.strictEqual(f('4', 'Escritorial CS'), 'Escritorial CS');
   assert.strictEqual(f('6', ''), '');
+});
+teste('quem pode ser gestor: só os analistas ativos (nome completo, com login direto ou pelo nome); sem login fica desabilitado; administrador sem analista entra para diretor/gestor final', () => {
+  const an = [{ nome: 'Josiane Alves de Oliveira Cezario', user_id: null, ativo: true }, { nome: 'Annaisa Alves de Oliveira', user_id: '7', ativo: true }, { nome: 'Fulano Sem Login', user_id: null, ativo: true }, { nome: 'Antigo Desativado', user_id: null, ativo: false }];
+  const us = [{ id: '1', name: 'Josiane', role: 'usuario' }, { id: '7', name: 'Anna', role: 'usuario' }, { id: '2', name: 'Teste', role: 'usuario' }, { id: '3', name: 'Escritorial CS', role: 'usuario' }, { id: '4', name: 'Reysner', role: 'administrador' }];
+  const l = pessoasParaGestor(an, us, []);
+  assert.deepStrictEqual(l.map((p) => p.name), ['Annaisa Alves de Oliveira', 'Fulano Sem Login', 'Josiane Alves de Oliveira Cezario', 'Reysner']);
+  const por = (n) => l.find((p) => p.name === n);
+  assert.strictEqual(por('Annaisa Alves de Oliveira').id, '7', 'vínculo direto');
+  assert.strictEqual(por('Josiane Alves de Oliveira Cezario').id, '1', 'pelo nome do login');
+  assert.strictEqual(por('Fulano Sem Login').sem_login, true);
+  assert.strictEqual(por('Reysner').admin, true);
+  assert.ok(!l.some((p) => p.name === 'Teste' || p.name === 'Escritorial CS' || p.name === 'Antigo Desativado'), 'quem não é analista (nem administrador) sai da lista');
 });
 teste('etapas do fluxo na ordem combinada', () => {
   assert.deepStrictEqual(ETAPAS, ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada']);
