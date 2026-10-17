@@ -411,7 +411,6 @@
       var t = TIPO_SAIDA[s.tipo];
       return '<tr><td style="white-space:normal">' + esc(s.nome) + '<div class="sub">' + esc(s.cnpj || '') + '</div></td><td class="c">' + data(s.data_entrada) + '</td><td class="c">' + data(s.data_saida) + '</td>' +
         '<td class="c"><span class="pill" style="color:' + t.cor + ';border-color:' + t.cor + '55;background:' + t.cor + '14">' + t.rot + '</span></td>' +
-        '<td class="c">' + (s.na_base ? 'Sim' : '<span class="cinza">entrou no período</span>') + '</td><td class="c"><span class="cinza">' + esc(ROT_ORIGEM[s.origem] || s.origem || '—') + '</span></td>' +
         '<td>' + selectMotivoChurn(s) + '</td>' +
         (decide ? '<td class="c" style="white-space:nowrap">' + (s.origem !== 'presumida' ? '' : '<button class="gp-footer-btn" style="width:auto;padding:4px 8px;display:inline-flex" data-decide="transferida" data-id="' + esc(s.id) + '" data-nome="' + esc(s.nome) + '" data-saida="' + esc(s.data_saida) + '" title="Confirma a transferência (conta como churn no mês da saída)">Confirmar transferência</button> <button class="gp-footer-btn" style="width:auto;padding:4px 8px;display:inline-flex" data-decide="baixa" data-id="' + esc(s.id) + '" data-nome="' + esc(s.nome) + '" data-saida="' + esc(s.data_saida) + '" title="É baixa: não conta como churn">É baixa</button>') + '</td>' : '') + '</tr>';
     }).join('');
@@ -426,7 +425,7 @@
       '<div class="nota">Período de <strong>' + data(p.ini) + '</strong> a <strong>' + data(p.fim) + '</strong>. Contam como churn as saídas cujo motivo no Acessórias começa com: <strong>' + d.churn.padroes.map(esc).join('</strong>, <strong>') + '</strong>. Baixas não contam. Quando o Acessórias não informa o motivo, a situação do CNPJ na Receita ajuda a separar baixa de transferência; o que não for possível é presumido como transferência (marcado "presumida"; o administrador pode trocar para baixa). Só CNPJ.</div>' +
       '<div class="card"><div class="card-title">Saídas do período</div><div class="card-sub">Clique na aba para ver cada tipo de saída.</div>' +
         '<div class="tabs" id="abas-churn">' + abas.map(function (a) { return '<button data-aba="' + a[0] + '" class="' + (estado.abaChurn === a[0] ? 'active' : '') + '">' + a[1] + ' (' + cont(a[0]) + ')</button>'; }).join('') + '</div>' +
-        (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Entrada</th><th class="c">Saída</th><th class="c">Tipo</th><th class="c">Na base do início</th><th class="c">Como foi classificada</th><th>Motivo do churn</th>' + (decide ? '<th class="c">Decisão</th>' : '') + '</tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhuma saída deste tipo no período.</div>') +
+        (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Entrada</th><th class="c">Saída</th><th class="c">Tipo</th><th>Motivo do churn</th>' + (decide ? '<th class="c">Decisão</th>' : '') + '</tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhuma saída deste tipo no período.</div>') +
       '</div>' +
       '<div class="gp-chart-card"><div class="gp-chart-title">Churn mês a mês — últimos 12 meses</div><div class="gp-chart-wrap"><canvas id="g-churn2"></canvas></div></div>';
     ligarSelectsMotivo('#sec-churn', function () { desenharChurn(); });
@@ -2284,10 +2283,10 @@
         kpi('#b91c1c', 'Vencidas', c.vencidas, 'prazo passou') +
       '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px">' +
+        '<span class="filter-label">Buscar</span><input class="gp-input" id="s-busca" placeholder="Empresa ou assunto" value="' + esc(f.busca || '') + '">' +
         '<span class="filter-label">Departamento</span><select class="gp-select" id="s-depto">' + optD + '</select>' +
         '<span class="filter-label">Analista</span><select class="gp-select" id="s-analista">' + optA + '</select>' +
         '<span class="filter-label">Etapa</span><select class="gp-select" id="s-etapa">' + optE + '</select>' +
-        '<span class="filter-label">Buscar</span><input class="gp-input" id="s-busca" placeholder="Empresa ou assunto" value="' + esc(f.busca || '') + '">' +
         '<button type="button" class="gp-footer-btn" id="s-atualizar" style="width:auto">↻ Atualizar</button></div>' +
         '<div class="card-sub">' + lista.length + ' ocorrência(s) · as da devolutiva ao cliente vêm primeiro</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Registrada em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Departamento</th><th>Assunto</th><th>Analista</th><th class="c">Prazo</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
@@ -2382,10 +2381,10 @@
         kpi('#b91c1c', 'Vencidas', c.vencidas, 'prazo passou') +
       '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px">' +
+        '<span class="filter-label">Buscar</span><input class="gp-input" id="g-busca" placeholder="Empresa ou assunto" value="' + esc(f.busca || '') + '">' +
         '<span class="filter-label">Departamento</span><select class="gp-select" id="g-depto">' + optD + '</select>' +
         '<span class="filter-label">Analista</span><select class="gp-select" id="g-analista">' + optA + '</select>' +
         '<span class="filter-label">Etapa</span><select class="gp-select" id="g-etapa">' + optE + '</select>' +
-        '<span class="filter-label">Buscar</span><input class="gp-input" id="g-busca" placeholder="Empresa ou assunto" value="' + esc(f.busca || '') + '">' +
         '<button type="button" class="gp-footer-btn" id="g-atualizar" style="width:auto">↻ Atualizar</button></div>' +
         '<div class="card-sub">' + lista.length + ' ocorrência(s)' + (esc_.todos ? ' · todos os departamentos' : ' · seus departamentos: ' + esc(deptos.map(rotuloDepto).join(', '))) + '</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Registrada em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Departamento</th><th>Assunto</th><th>Responsável</th><th class="c">Prazo</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
