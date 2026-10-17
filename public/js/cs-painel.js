@@ -1788,11 +1788,11 @@
   /** Opções do campo Tipo de ocorrência: os tipos ativos, como os administradores criaram e editaram (nome e peso ficam em "Gerenciar tipos"). */
   function opcoesTiposOc(lista) { return '<option value="">Selecione o tipo…</option>' + (lista || []).map(function (t) { return '<option>' + esc(t) + '</option>'; }).join(''); }
   /** Formulário "Registrar ocorrência" (o miolo da janela). */
-  function formularioOcorrenciaQ(o) {
+  function formularioOcorrenciaQ(o, emTela) {
     var tipos = opcoesTiposOc(o.tipos);
     var deps = '<option value="">Selecione o departamento…</option>' + DEPS_OCORRENCIA.map(function (d) { return '<option value="' + esc(d[0]) + '">' + esc(d[1]) + '</option>'; }).join('');
     var pri = (o.prioridades || ['Muito Alta', 'Alta', 'Média', 'Baixa']).map(function (p) { return '<option' + (p === 'Média' ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('');
-    return '<div class="qa-modal-topo"><strong style="font-size:22px;color:#256050">Registrar ocorrência</strong><button type="button" class="qa-x" id="oc-fechar" aria-label="Fechar">✕</button></div>' +
+    return '<div class="qa-modal-topo"><strong style="font-size:22px;color:#256050">Registrar ocorrência</strong>' + (emTela ? '' : '<button type="button" class="qa-x" id="oc-fechar" aria-label="Fechar">✕</button>') + '</div>' +
       '<div class="qa-oc-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</div>' +
       '<div class="qa-oc-quem">Registrando como <strong>' + esc(usuarioLogadoNome() || 'você') + '</strong> em <strong>' + hojeIsoLocal().split('-').reverse().join('/') + '</strong>. Quem registra e a data ficam gravados na ocorrência.</div>' +
       '<div class="qa-oc-linha qa-oc-l1">' +
@@ -1807,18 +1807,25 @@
         '<div class="qa-campo"><label for="oc-dep">Departamento</label><select id="oc-dep">' + deps + '</select></div>' +
       '</div>' +
       '<div class="qa-campo"><label for="oc-det">Descrição / Detalhes da ocorrência <span class="cinza" id="oc-cont">0/' + (o.max_detalhe || 2000) + '</span></label><textarea id="oc-det" rows="6" maxlength="' + (o.max_detalhe || 2000) + '" placeholder="Descrição / Detalhes da ocorrência"></textarea></div>' +
-      '<div class="qa-oc-linha qa-oc-bot"><button type="button" class="qa-btn-ok" id="oc-ok">✉ OK - Registrar</button><button type="button" class="qa-btn-cancel" id="oc-cancel">↩ Cancelar</button></div>' +
+      '<div class="qa-oc-linha qa-oc-bot"><button type="button" class="qa-btn-ok" id="oc-ok">✉ OK - Registrar</button><button type="button" class="qa-btn-cancel" id="oc-cancel">' + (emTela ? '↩ Limpar' : '↩ Cancelar') + '</button></div>' +
       '<div class="pop-erro" id="oc-erro" role="alert"></div>';
   }
 
   /** Janela "Registrar ocorrência": empresa com sugestão ao digitar, descrição até 2000, anexos; ao registrar vai para o módulo, os Sinais de atenção e o risco. */
-  async function abrirRegistrarOcorrencia(aoSalvar) {
+  async function abrirRegistrarOcorrencia(aoSalvar, raiz) {
     estado.qOpcoes = null;   // sempre a lista de tipos atual (outro administrador pode ter criado ou editado tipos)
     var o; try { o = await carregarOpcoesQ(); } catch (e) { window.alert(e.message || 'Não foi possível abrir o formulário.'); return; }
-    var ov = document.createElement('div'); ov.className = 'qa-overlay'; document.body.appendChild(ov);
-    var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
-    ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Registrar ocorrência">' + formularioOcorrenciaQ(o) + '</div>';
-    $('oc-fechar').addEventListener('click', fechar); $('oc-cancel').addEventListener('click', fechar);
+    var ov = null, fechar;
+    if (raiz) {   // direto na tela de Qualidade: sem janela; "Limpar" recomeça o formulário
+      raiz.innerHTML = formularioOcorrenciaQ(o, true);
+      fechar = function () { abrirRegistrarOcorrencia(aoSalvar, raiz); };
+    } else {
+      ov = document.createElement('div'); ov.className = 'qa-overlay'; document.body.appendChild(ov);
+      fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
+      ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Registrar ocorrência">' + formularioOcorrenciaQ(o) + '</div>';
+      $('oc-fechar').addEventListener('click', fechar);
+    }
+    $('oc-cancel').addEventListener('click', fechar);
     // administrador: edita a lista de tipos sem sair do formulário; ao fechar, o campo já mostra os tipos novos e os renomeados
     var edTipos = $('oc-editar-tipos');
     if (edTipos) edTipos.addEventListener('click', function (ev) {
@@ -1890,14 +1897,14 @@
             if (!ra.ok) { var ja = await ra.json().catch(function () { return {}; }); falhas.push(arqs[i].name + ': ' + (ja.error || 'falhou')); }
           } catch (e) { falhas.push(arqs[i].name + ': sem conexão'); }
         }
-        fechar();
+        if (!raiz) fechar();   // em tela, quem redesenha é aoSalvar (formulário limpo de novo)
         var destino = j.destino ? 'Ocorrência registrada. ' + j.destino : '';
         if (falhas.length) window.alert((destino ? destino + '\n\n' : '') + 'Nem todos os anexos subiram:\n' + falhas.join('\n'));
         else if (destino) window.alert(destino);
         if (aoSalvar) aoSalvar();
       } catch (e) { erro.textContent = 'Sem conexão com o servidor. Tente de novo.'; reabrir(); }
     });
-    if ($('oc-assunto').focus) $('oc-assunto').focus();
+    if (!raiz && $('oc-assunto').focus) $('oc-assunto').focus();
   }
 
   // ── ACESSOS: quem vê o quê no painel (só administrador) ─────────────────────────────────────────
@@ -2117,8 +2124,8 @@
     var alvo = $('sec-consideracoes'); if (!alvo) return;
     var lista = [];
     try { lista = (await api('/api/cs/painel/qualidade/ocorrencias/minhas')).registros || []; } catch (e) { lista = []; }
-    alvo.innerHTML = '<div class="qa-barra"><button type="button" class="login-btn" id="q-registrar" style="width:auto;margin:0;padding:10px 22px">＋ Registrar ocorrência</button><span class="qa-obs">⚠ ' + OBS_REGISTRO + '</span></div>' + htmlMinhasOcorrencias(lista);
-    var reg = $('q-registrar'); if (reg) reg.addEventListener('click', function () { abrirRegistrarOcorrencia(function () { desenharQualidadeModLimitado(); }); });
+    alvo.innerHTML = '<div class="card qa-modal-oc qa-oc-inline" id="q-form-inline"><div class="vazio">Carregando o formulário…</div></div>' + htmlMinhasOcorrencias(lista);
+    var fi = $('q-form-inline'); if (fi) abrirRegistrarOcorrencia(function () { desenharQualidadeModLimitado(); }, fi);
   }
 
   // ── PORTAL DO ANALISTA ────────────────────────────────────────────────────────────────
@@ -2551,8 +2558,7 @@
         quem.map(function (a) { return '<button type="button" class="gp-footer-btn" data-qan="' + esc(a.id) + '" style="width:auto">' + esc(a.nome) + ' (' + a.a_validar + ')</button>'; }).join('') + '</div></div>';
     }
     alvo.innerHTML =
-      '<div class="qa-barra"><button type="button" class="login-btn" id="q-registrar" style="width:auto;margin:0;padding:10px 22px">＋ Registrar ocorrência</button>' +
-        '<span class="qa-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</span></div>' +
+      '<div class="card qa-modal-oc qa-oc-inline" id="q-form-inline"><div class="vazio">Carregando o formulário…</div></div>' +
       '<div class="gp-kpi-row">' +
         kpi('#7c3aed', 'A validar', tot.a_validar, 'finalizadas pelo analista, aguardando você') +
         kpi('#b45309', 'Em aberto', tot.abertos, 'aguardando o analista começar') +
@@ -2562,7 +2568,7 @@
       '</div>' +
       aviso + recentesQ();
     var atualiza = function () { estado.qResumo = null; desenharQualidadeMod(); };
-    var reg = $('q-registrar'); if (reg) reg.addEventListener('click', function () { abrirRegistrarOcorrencia(atualiza); });
+    var fi = $('q-form-inline'); if (fi) abrirRegistrarOcorrencia(atualiza, fi);
     Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-qan]'), function (bt) { bt.addEventListener('click', function () { abrirFichaAnalistaQ(bt.getAttribute('data-qan')); }); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes .qt-inline[data-tid]'), function (inp) {
       inp.addEventListener('change', async function () {

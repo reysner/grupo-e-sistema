@@ -342,6 +342,13 @@ const semLixo = (e, nome) => {
       assert.strictEqual(C.t.secaoInicialCs(), 'categorias');
     } finally { C.t.estado.eu = antes; }
   });
+  await teste('cs: Registrar ocorrência direto na tela — sem botão de fechar e com "Limpar"; na janela continua com ✕ e "Cancelar"', () => {
+    const o = { tipos: ['Erro'], prioridades: ['Alta', 'Média'], max_anexos: 5, max_anexo: 10485760, max_detalhe: 2000 };
+    const tela = C.t.formularioOcorrenciaQ(o, true), janela = C.t.formularioOcorrenciaQ(o);
+    assert.ok(!tela.includes('id="oc-fechar"') && tela.includes('↩ Limpar') && !tela.includes('↩ Cancelar'));
+    assert.ok(janela.includes('id="oc-fechar"') && janela.includes('↩ Cancelar'));
+    for (const h of [tela, janela]) assert.ok(h.includes('id="oc-assunto"') && h.includes('id="oc-emp"') && h.includes('id="oc-tipo"') && h.includes('id="oc-dep"') && h.includes('id="oc-prazo"') && h.includes('id="oc-det"') && h.includes('id="oc-ok"') && h.includes('Usar só para fatos fora do padrão'));
+  });
   await teste('cs: perfil no /cs — administrador vê tudo; gestor só Qualidade e Portal do Gestor; analista só Qualidade e Portal do Analista; equipe de sempre não ganha os portais', () => {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.perfilDe({ role: 'administrador' }))), { completo: true, admin: true, gestor: true, analista: true });
     assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.perfilDe({ role: 'colaborador', acesso_gestor: true }))), { completo: false, admin: false, gestor: true, analista: false });
