@@ -188,6 +188,7 @@ function deveAvisar(user, reg, deptosGestor) {
 }
 
 /** Etapa do fluxo → status que o risco de churn lê (aplicado quando a etapa muda). */
+const JA_MUDOU = 'Esta ocorrência acabou de ser atualizada por outra pessoa. Atualize a tela e confira antes de continuar.';
 const ETAPA_STATUS = { registrada: 'aberto', tratativa_definida: 'aberto', com_analista: 'em_tratamento', validacao_gestor: 'finalizada', devolutiva_cliente: 'finalizada', encerrada: 'resolvido' };
 
 /** Cada passo do fluxo: de qual etapa sai e para qual vai. Quem pode dar o passo é conferido na rota. */
@@ -921,7 +922,8 @@ async function tentarAvancarParaValidacao(regId, por, analistaNome, atorId) {
   const pendentes = resp.filter((x) => !x.encerrado_em).map((x) => x.nome || x.analista_id);
   if (!p.pronto) return { avancou: false, pendentes, filhasPendentes: p.filhasPendentes };
   if (r.origem === 'filha') {   // ocorrência vinculada: quando todos os responsáveis encerram, ela está encerrada; a original passa a poder seguir
-    await pool.query("UPDATE cs_qualidade_registros SET etapa = 'encerrada', status = $1, resolvido_em = NOW(), resolvido_por = $2, encerrada_em = NOW(), encerrada_por = $2, atualizado_em = NOW() WHERE id = $3", [ETAPA_STATUS.encerrada, por || null, regId]);
+    const upEtapa1 = await pool.query("UPDATE cs_qualidade_registros SET etapa = 'encerrada', status = $1, resolvido_em = NOW(), resolvido_por = $2, encerrada_em = NOW(), encerrada_por = $2, atualizado_em = NOW() WHERE id = $3 AND etapa = 'com_analista'", [ETAPA_STATUS.encerrada, por || null, regId]);
+    if (!upEtapa1.rowCount) return { avancou: false, pendentes: [], filhasPendentes: 0 };   // outra chamada ao mesmo tempo já fez
     await registrar(regId, por || 'Sistema', 'nota', 'Todos os responsáveis encerraram: ocorrência vinculada encerrada.');
     if (r.pai_id) {
       await registrar(r.pai_id, por || 'Sistema', 'nota', 'Ocorrência vinculada encerrada: ' + (r.assunto || ''));
@@ -930,7 +932,8 @@ async function tentarAvancarParaValidacao(regId, por, analistaNome, atorId) {
     return { avancou: true, pendentes: [], filhasPendentes: 0 };
   }
   const t = transicao('analista_encerrar', r.etapa);
-  await pool.query('UPDATE cs_qualidade_registros SET etapa = $1, status = $2, resolvido_em = NOW(), resolvido_por = $3, atualizado_em = NOW() WHERE id = $4', [t.para, t.status, por || null, regId]);
+  const upEtapa2 = await pool.query("UPDATE cs_qualidade_registros SET etapa = $1, status = $2, resolvido_em = NOW(), resolvido_por = $3, atualizado_em = NOW() WHERE id = $4 AND etapa = 'com_analista'", [t.para, t.status, por || null, regId]);
+    if (!upEtapa2.rowCount) return { avancou: false, pendentes: [], filhasPendentes: 0 };   // outra chamada ao mesmo tempo já fez
   await registrar(regId, por || 'Sistema', 'nota', 'Todos os responsáveis encerraram' + (filhas.length ? ' e as ocorrências vinculadas estão encerradas' : '') + ': segue para a validação do gestor.');
   await notificarFinalizacao(r, analistaNome || 'Os analistas', 'Tratativa encerrada pelos responsáveis');
   avisarPush(() => idsDaFila(r), { titulo: 'Tratativa para validar', texto: (r.cliente_nome || 'Empresa') + ' — ' + (r.assunto || ''), url: '/cs?aba=gestor', tag: 'val-' + regId }, atorId);
@@ -1007,10 +1010,11 @@ router.put('/gestor/ocorrencias/:id/tratativa', async (req, res) => {
     const inativo = ans.find((a) => !a.ativo);
     if (inativo) return res.status(400).json({ error: inativo.nome + ' está desativado na lista de analistas.' });
     const nomes = x.analistas_ids.map((id) => (ans.find((a) => String(a.id) === String(id)) || {}).nome);
-    await pool.query(
+    const upEtapa3 = await pool.query(
       `UPDATE cs_qualidade_registros SET plano_acao = $1, analista_id = $2, tratativa_depto = $3, prazo = $4, gestor_obs = $5, etapa = 'tratativa_definida',
-         tratativa_definida_por = $6, tratativa_definida_em = NOW(), atualizado_em = NOW() WHERE id = $7`,
+         tratativa_definida_por = $6, tratativa_definida_em = NOW(), atualizado_em = NOW() WHERE id = $7 AND etapa IN ('registrada', 'tratativa_definida')`,
       [x.plano, x.analistas_ids.length ? String(x.analistas_ids[0]) : null, x.departamento, x.prazo, x.obs, req.user.name || null, reg.id]);
+    if (!upEtapa3.rowCount) return res.status(409).json({ error: JA_MUDOU });
     await pool.query('DELETE FROM cs_qualidade_resp WHERE registro_id = $1 AND analista_id <> ALL($2::text[])', [reg.id, x.analistas_ids]);
     for (const aid of x.analistas_ids) await pool.query('INSERT INTO cs_qualidade_resp (registro_id, analista_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [reg.id, String(aid)]);
     await registrar(reg.id, req.user.name, 'tratativa_definida', (nomes.length ? 'Responsáve' + (nomes.length > 1 ? 'is: ' : 'l: ') + nomes.join(', ') : 'Conduzida pelas ocorrências vinculadas') + ' · ' + x.departamento + ' · prazo ' + x.prazo);
@@ -1072,7 +1076,8 @@ router.post('/gestor/ocorrencias/:id/abrir', async (req, res) => {
     const nomesR = (await pool.query('SELECT nome FROM analistas WHERE id::text = ANY($1::text[]) ORDER BY nome', [idsR])).rows.map((r) => r.nome);
     const temResp = nomesR.length > 0;
     const an = { nome: nomesR.join(', ') || 'as ocorrências vinculadas' };
-    await pool.query(`UPDATE cs_qualidade_registros SET etapa = 'com_analista', status = ${"'" + ETAPA_STATUS.com_analista + "'"}, liberada_em = NOW(), liberada_por = $1, atualizado_em = NOW() WHERE id = $2`, [req.user.name || null, reg.id]);
+    const upEtapa4 = await pool.query(`UPDATE cs_qualidade_registros SET etapa = 'com_analista', status = ${"'" + ETAPA_STATUS.com_analista + "'"}, liberada_em = NOW(), liberada_por = $1, atualizado_em = NOW() WHERE id = $2 AND etapa = 'tratativa_definida'`, [req.user.name || null, reg.id]);
+    if (!upEtapa4.rowCount) return res.status(409).json({ error: JA_MUDOU });
     await registrar(reg.id, req.user.name, 'liberada', 'Aberta para ' + (an ? an.nome : 'o analista'));
     if (temResp) try {
       await pool.query(`INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ('qualidade_liberada', $1, $2, 'cs-qualidade')`,
@@ -1168,10 +1173,11 @@ router.post('/gestor/ocorrencias/:id/validar', async (req, res) => {
       if (!tf.ok) return res.status(409).json({ error: tf.erro });
       const vf = validarEncerramento(req.body);
       if (!vf.ok) return res.status(400).json({ error: vf.erro });
-      await pool.query(
+      const upEtapa5 = await pool.query(
         `UPDATE cs_qualidade_registros SET etapa = $1, status = $2, validacao_nota = $3, validacao_obs = $4, validacao_em = NOW(), validacao_por = $5,
-           validado_em = NOW(), validado_por = $5, encerrada_em = NOW(), encerrada_por = $5, resolvido_em = COALESCE(resolvido_em, NOW()), atualizado_em = NOW() WHERE id = $6`,
+           validado_em = NOW(), validado_por = $5, encerrada_em = NOW(), encerrada_por = $5, resolvido_em = COALESCE(resolvido_em, NOW()), atualizado_em = NOW() WHERE id = $6 AND etapa = 'validacao_gestor'`,
         [tf.para, tf.status, vf.valores.nota, vf.valores.obs, req.user.name || null, reg.id]);
+    if (!upEtapa5.rowCount) return res.status(409).json({ error: JA_MUDOU });
       await registrar(reg.id, req.user.name, 'gestor_validou', textoNota(vf.valores));
       if (reg.pai_id) {
         await registrar(reg.pai_id, req.user.name, 'nota', 'Ocorrência vinculada encerrada: ' + (reg.assunto || ''));
@@ -1183,10 +1189,11 @@ router.post('/gestor/ocorrencias/:id/validar', async (req, res) => {
     if (!t.ok) return res.status(409).json({ error: t.erro });
     const v = validarEncerramento(req.body);
     if (!v.ok) return res.status(400).json({ error: v.erro });
-    await pool.query(
+    const upEtapa6 = await pool.query(
       `UPDATE cs_qualidade_registros SET etapa = $1, status = $2, validacao_nota = $3, validacao_obs = $4, validacao_em = NOW(), validacao_por = $5,
-         validado_em = NOW(), validado_por = $5, atualizado_em = NOW() WHERE id = $6`,
+         validado_em = NOW(), validado_por = $5, atualizado_em = NOW() WHERE id = $6 AND etapa = 'validacao_gestor'`,
       [t.para, t.status, v.valores.nota, v.valores.obs, req.user.name || null, reg.id]);
+    if (!upEtapa6.rowCount) return res.status(409).json({ error: JA_MUDOU });
     await registrar(reg.id, req.user.name, 'gestor_validou', textoNota(v.valores));
     avisarPush(async () => [].concat(await idsSucesso(), await idsAdmins()), { titulo: 'Devolutiva ao cliente', texto: (reg.cliente_nome || 'Empresa') + ' — ' + (reg.assunto || ''), url: '/cs?aba=sucesso', tag: 'dcli-' + reg.id }, req.user.id);
     res.json({ registro: await registroCompleto(reg.id) });
@@ -1205,7 +1212,8 @@ router.post('/gestor/ocorrencias/:id/devolver', async (req, res) => {
     if (!t.ok) return res.status(409).json({ error: t.erro });
     const v = validarEncerramento(req.body);
     if (!v.ok) return res.status(400).json({ error: v.erro });
-    await pool.query("UPDATE cs_qualidade_registros SET etapa = $1, status = $2, resolvido_em = NULL, resolvido_por = NULL, atualizado_em = NOW() WHERE id = $3", [t.para, t.status, reg.id]);
+    const upEtapa7 = await pool.query("UPDATE cs_qualidade_registros SET etapa = $1, status = $2, resolvido_em = NULL, resolvido_por = NULL, atualizado_em = NOW() WHERE id = $3 AND etapa = 'validacao_gestor'", [t.para, t.status, reg.id]);
+    if (!upEtapa7.rowCount) return res.status(409).json({ error: JA_MUDOU });
     await pool.query('UPDATE cs_qualidade_resp SET encerrado_em = NULL WHERE registro_id = $1', [reg.id]);   // cada responsável ajusta e encerra de novo (a nota anterior continua no histórico)
     await registrar(reg.id, req.user.name, 'devolvida', textoNota(v.valores));
     avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Tratativa devolvida pelo gestor', texto: curtoTexto(v.valores.nota, 120), url: '/cs?aba=analista', tag: 'dev-' + reg.id + '-' + Date.now() }, req.user.id);
@@ -1238,10 +1246,11 @@ router.post('/sucesso/ocorrencias/:id/encerrar', async (req, res) => {
     if (!t.ok) return res.status(409).json({ error: t.erro });
     const v = validarEncerramento(req.body);
     if (!v.ok) return res.status(400).json({ error: v.erro });
-    await pool.query(
+    const upEtapa8 = await pool.query(
       `UPDATE cs_qualidade_registros SET etapa = $1, status = $2, final_nota = $3, final_obs = $4, encerrada_em = NOW(), encerrada_por = $5,
-         validado_em = COALESCE(validado_em, NOW()), resolvido_em = COALESCE(resolvido_em, NOW()), atualizado_em = NOW() WHERE id = $6`,
+         validado_em = COALESCE(validado_em, NOW()), resolvido_em = COALESCE(resolvido_em, NOW()), atualizado_em = NOW() WHERE id = $6 AND etapa = 'devolutiva_cliente'`,
       [t.para, t.status, v.valores.nota, v.valores.obs, req.user.name || null, reg.id]);
+    if (!upEtapa8.rowCount) return res.status(409).json({ error: JA_MUDOU });
     await registrar(reg.id, req.user.name, 'encerrada', textoNota(v.valores));
     avisarPush(async () => [reg.criado_por_id], { titulo: 'Ocorrência encerrada', texto: (reg.cliente_nome || 'Empresa') + ' — ' + (reg.assunto || ''), url: '/cs?aba=consideracoes', tag: 'enc-' + reg.id }, req.user.id);
     res.json({ registro: await registroCompleto(reg.id) });

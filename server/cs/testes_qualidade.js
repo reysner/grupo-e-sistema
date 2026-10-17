@@ -238,6 +238,22 @@ teste('renomear analista: nenhum arquivo troca espaços por uma regex sem a barr
   const limpa = (t) => String(t || '').split(/\s+/).join(' ').trim();
   assert.strictEqual(limpa('  Maira   Soares '), 'Maira Soares');
 });
+teste('mudança de etapa: todo UPDATE que muda a etapa (ou define a tratativa) só vale se a ocorrência ainda estiver na etapa de onde sai (duplo clique ou duas pessoas ao mesmo tempo)', () => {
+  const fonte = require('fs').readFileSync(require('path').join(__dirname, 'qualidade.js'), 'utf8');
+  const partidas = ["SET etapa = 'encerrada'", 'SET etapa = $1', 'SET plano_acao = $1', "SET etapa = 'com_analista'"];
+  let achadas = 0;
+  partidas.forEach((p) => {
+    let i = fonte.indexOf('UPDATE cs_qualidade_registros ' + p);
+    while (i >= 0) {
+      achadas++;
+      const w = fonte.indexOf('WHERE id = ', i);
+      assert.ok(w > 0 && fonte.slice(w, w + 80).includes('AND etapa'), 'UPDATE sem a trava de etapa perto de: ' + fonte.slice(i, i + 90).split(String.fromCharCode(10)).join(' '));
+      i = fonte.indexOf('UPDATE cs_qualidade_registros ' + p, i + 1);
+    }
+  });
+  assert.ok(achadas >= 7, 'esperava achar as mudanças de etapa (achei ' + achadas + ')');
+  assert.ok(fonte.includes('const JA_MUDOU'), 'a mensagem para quem chegou depois existe');
+});
 teste('quem pode ser gestor: só os analistas ativos (nome completo, com login direto ou pelo nome); sem login fica desabilitado; administrador sem analista entra para diretor/gestor final', () => {
   const an = [{ nome: 'Josiane Alves de Oliveira Cezario', user_id: null, ativo: true }, { nome: 'Annaisa Alves de Oliveira', user_id: '7', ativo: true }, { nome: 'Fulano Sem Login', user_id: null, ativo: true }, { nome: 'Antigo Desativado', user_id: null, ativo: false }];
   const us = [{ id: '1', name: 'Josiane', role: 'usuario' }, { id: '7', name: 'Anna', role: 'usuario' }, { id: '2', name: 'Teste', role: 'usuario' }, { id: '3', name: 'Escritorial CS', role: 'usuario' }, { id: '4', name: 'Reysner', role: 'administrador' }];
