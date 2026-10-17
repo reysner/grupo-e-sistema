@@ -2080,6 +2080,10 @@
     var op = function (v, rot, sel) { return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(rot) + '</option>'; };
     var optD = op('', 'Todos os departamentos', !f.depto) + DEPS_OCORRENCIA.map(function (x) { return op(x[0], x[1], f.depto === x[0]); }).join('');
     var optE = op('', 'Todas as etapas', !f.etapa) + ETAPAS_Q.map(function (e) { return op(e, ETAPA_CURTA[e], f.etapa === e); }).join('') + op('vencidas', 'Vencidas', f.etapa === 'vencidas');
+    var vistos = {}, analistas = [];
+    regs.forEach(function (r) { if (r.analista_id && !vistos[r.analista_id]) { vistos[r.analista_id] = 1; analistas.push({ id: r.analista_id, nome: r.analista_nome || '—' }); } });
+    analistas.sort(function (a, b) { return String(a.nome).localeCompare(String(b.nome), 'pt-BR'); });
+    var optA = op('', 'Todos os analistas', !f.analista) + analistas.map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
     var corpo = lista.map(function (r) {
       var fila = r.etapa === 'devolutiva_cliente';
       return '<tr' + (fila ? ' style="background:rgba(194,65,12,.07)"' : '') + '><td>' + data(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
@@ -2099,6 +2103,7 @@
       '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px">' +
         '<span class="filter-label">Departamento</span><select class="gp-select" id="s-depto">' + optD + '</select>' +
+        '<span class="filter-label">Analista</span><select class="gp-select" id="s-analista">' + optA + '</select>' +
         '<span class="filter-label">Etapa</span><select class="gp-select" id="s-etapa">' + optE + '</select>' +
         '<span class="filter-label">Buscar</span><input class="gp-input" id="s-busca" placeholder="Empresa ou assunto" value="' + esc(f.busca || '') + '">' +
         '<button type="button" class="gp-footer-btn" id="s-atualizar" style="width:auto">↻ Atualizar</button></div>' +
@@ -2118,7 +2123,7 @@
     var bs = $('badge-sucesso'); if (bs) bs.textContent = contagemEtapasGestor(s.dados.registros).devolutiva_cliente || '';
     alvo.innerHTML = htmlSucesso(s.dados, s.f);
     var liga = function (id, prop, evento) { var e = $(id); if (e) e.addEventListener(evento || 'change', function () { s.f[prop] = e.value; var pos = e.selectionStart; desenharSucesso(); if (prop === 'busca') { var n = $('s-busca'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { /* sem seleção */ } } } }); };
-    liga('s-depto', 'depto'); liga('s-etapa', 'etapa'); liga('s-busca', 'busca', 'input');
+    liga('s-depto', 'depto'); liga('s-analista', 'analista'); liga('s-etapa', 'etapa'); liga('s-busca', 'busca', 'input');
     var at = $('s-atualizar'); if (at) at.addEventListener('click', function () { estado.s.dados = null; desenharSucesso(); });
     Array.prototype.forEach.call(alvo.querySelectorAll('[data-sabrir]'), function (b) { b.addEventListener('click', function () { abrirOcorrenciaSucesso(b.getAttribute('data-sabrir')); }); });
   }

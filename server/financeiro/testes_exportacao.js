@@ -273,6 +273,7 @@ const semLixo = (e, nome) => {
     const final = C.t.htmlSucesso({ final: true, registros: regs }, F), nao = C.t.htmlSucesso({ final: false, registros: regs }, F);
     assert.ok(final.includes('Você é o <strong>gestor final</strong>') && final.includes('Devolutiva e encerrar'));
     assert.ok(nao.includes('Só o <strong>gestor final</strong> encerra') && nao.includes('Ver devolutiva') && !nao.includes('Devolutiva e encerrar'));
+    assert.ok(final.includes('id="s-analista"') && final.includes('Todos os analistas'), 'filtro por analista no Sucesso do Cliente');
     assert.ok(final.includes('Todos os departamentos') && final.includes('id="s-depto"') && final.includes('as da devolutiva ao cliente vêm primeiro'));
     assert.ok(C.t.htmlOcorrenciaSucesso(regs[0], true).includes('id="so-encerrar"') && C.t.htmlOcorrenciaSucesso(regs[0], true).includes('Tudo ok'), 'o gestor final vê a validação do gestor e encerra');
     const semFinal = C.t.htmlOcorrenciaSucesso(regs[0], false);

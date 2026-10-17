@@ -45,6 +45,7 @@ button,input,select{font-family:var(--font);}
 .gp-nav-item:hover{background:var(--surface2);color:var(--text);}
 .gp-nav-item.active{background:var(--surface2);color:var(--text);border-color:var(--border);}
 .gp-nav-icon{font-size:15px;flex-shrink:0;}
+.gp-nav-badge:empty{display:none;}
 .gp-nav-badge{margin-left:auto;min-width:20px;height:18px;border-radius:9px;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 5px;background:rgba(220,38,38,.14);color:var(--red);}
 .gp-badge-ok{background:rgba(16,185,129,.16);color:#0b8a5f;}
 .gp-sidebar-footer{padding:12px 10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px;}
