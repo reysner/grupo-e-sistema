@@ -2076,17 +2076,144 @@
       '<div class="ac-legenda"><span><span class="ac-sw on">✓</span>vê o módulo</span><span><span class="ac-sw off"></span>não vê</span><span>Indicadores da carteira dão acesso aos dados dos clientes; Portal do Gestor só mostra algo para quem está cadastrado(a) como gestor(a).</span></div>' +
       '<div id="ac-matriz">' + htmlMatrizAc(d, f) + '</div></div>';
   }
+  // ── ACESSOS: abas Logs de atividades e Backup ───────────────────────────────────────────────
+  var ABAS_ADM = [['acessos', 'Acessos'], ['logs', 'Logs de atividades'], ['backup', 'Backup']];
+  var ROT_MOD_LOG = { 'cs-qualidade': 'Qualidade', 'cs-acessos': 'Acessos', 'cs-analistas': 'Analistas', 'cs-backup': 'Backup', admin: 'Administração' };
+  var COR_ACAO_LOG = { criar: '#166534', editar: '#2563eb', excluir: '#b91c1c', abrir: '#7c3aed', validar: '#0e7490', devolver: '#b45309', encerrar: '#166534', anexar: '#6b7280', backup: '#256050' };
+  function htmlAbasAdm(aba) {
+    return '<div class="tabs" id="abas-adm">' + ABAS_ADM.map(function (a) { return '<button type="button" data-adm-aba="' + a[0] + '" class="' + (aba === a[0] ? 'active' : '') + '">' + a[1] + '</button>'; }).join('') + '</div>';
+  }
+  function pillAcaoLog(a) { var c = COR_ACAO_LOG[a] || '#6b7280'; return '<span class="pill" style="color:' + c + ';border-color:' + c + '55;background:' + c + '14">' + esc(a) + '</span>'; }
+  function htmlLogs(d, f) {
+    var op = function (v, rot, sel) { return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(rot) + '</option>'; };
+    var optM = op('cs', 'Painel /cs (Qualidade, Acessos…)', f.modulo === 'cs') + op('todos', 'Todos os módulos do sistema', f.modulo === 'todos') + (d.modulos || []).map(function (m) { return op(m.modulo, (ROT_MOD_LOG[m.modulo] || m.modulo) + ' (' + m.n + ')', f.modulo === m.modulo); }).join('');
+    var optU = op('todos', 'Todas as pessoas', f.user === 'todos') + (d.usuarios || []).map(function (u) { return op(u, u, f.user === u); }).join('');
+    var optA = op('todas', 'Todas as ações', f.acao === 'todas') + (d.acoes || []).map(function (a) { return op(a, a, f.acao === a); }).join('');
+    var logs = d.logs || [];
+    var linhas = logs.map(function (l) {
+      return '<tr><td style="white-space:nowrap">' + esc(dataHora(l.created_at)) + '</td><td>' + esc(l.user_name) + '</td><td>' + esc(ROT_MOD_LOG[l.modulo] || l.modulo) + '</td><td class="c">' + pillAcaoLog(l.acao) + '</td>' +
+        '<td style="white-space:normal;min-width:320px">' + esc(l.descricao || '—') + '</td><td class="cinza" style="white-space:nowrap">' + esc(l.ip || '—') + '</td></tr>';
+    }).join('');
+    return '<div class="card"><div class="card-title">Logs de atividades</div><div class="card-sub">Quem fez o quê e quando no painel: ocorrências, tratativas, acessos, analistas, gestores, tipos e backup. Só leitura: o registro é automático e não se apaga por aqui.</div>' +
+      '<div class="filter-group" style="margin:14px 0">' +
+        '<span class="filter-label">Buscar</span><input class="gp-input" id="lg-busca" placeholder="Texto ou pessoa" value="' + esc(f.busca || '') + '">' +
+        '<span class="filter-label">Módulo</span><select class="gp-select" id="lg-modulo">' + optM + '</select>' +
+        '<span class="filter-label">Pessoa</span><select class="gp-select" id="lg-user">' + optU + '</select>' +
+        '<span class="filter-label">Ação</span><select class="gp-select" id="lg-acao">' + optA + '</select>' +
+        '<span class="filter-label">De</span><input class="gp-input" type="date" id="lg-de" value="' + esc(f.de || '') + '">' +
+        '<span class="filter-label">Até</span><input class="gp-input" type="date" id="lg-ate" value="' + esc(f.ate || '') + '">' +
+        '<button type="button" class="gp-footer-btn" id="lg-atualizar" style="width:auto">↻ Atualizar</button></div>' +
+      '<div class="card-sub">' + logs.length + ' registro(s)' + (logs.length >= (d.limite || 300) ? ' (mostrando os ' + (d.limite || 300) + ' mais recentes: refine o filtro para ver outros)' : '') + '</div>' +
+      (logs.length ? '<div class="table-wrap"><table><thead><tr><th>Data e hora</th><th>Pessoa</th><th>Módulo</th><th class="c">Ação</th><th>O que foi feito</th><th>IP</th></tr></thead><tbody>' + linhas + '</tbody></table></div>'
+        : '<div class="vazio">Nenhuma atividade neste filtro ainda. Daqui para a frente cada ação nova aparece aqui.</div>') + '</div>';
+  }
+  /** Backup automático: o sistema já guarda uma cópia completa por dia (por volta das 3h, horário de Brasília), dentro do banco, e mantém as 30 mais recentes. */
+  function htmlBackupAuto(auto) {
+    var lista = auto || [];
+    var resumo = function (t) {
+      t = t || {};
+      var partes = [['clientes', 'clientes'], ['atendimentos', 'atendimentos'], ['cs_tickets', 'tickets']].filter(function (k) { return t[k[0]] != null; }).map(function (k) { return t[k[0]] + ' ' + k[1]; });
+      return partes.join(' · ') || '—';
+    };
+    var linhas = lista.slice(0, 15).map(function (b) {
+      return '<tr><td style="white-space:nowrap">' + esc(dataHora(b.gerado_em)) + '</td><td class="cinza">' + esc(resumo(b.totais)) + '</td><td class="c"><button type="button" class="gp-footer-btn" data-bka="' + esc(b.id) + '" style="width:auto">⬇ Baixar</button></td></tr>';
+    }).join('');
+    return '<div class="card" style="margin-bottom:18px"><div class="card-title">Backup automático <span class="pill" style="color:#166534;border-color:#16653455;background:#16653414">ligado</span></div>' +
+      '<div class="card-sub">Todos os dias, por volta das 3h (horário de Brasília), o sistema guarda uma cópia completa e mantém as <strong>30 mais recentes</strong>. A cópia diária já leva Qualidade, ocorrências, analistas, gestores e acessos. ' +
+      (lista.length ? 'Última cópia automática: <strong>' + esc(dataHora(lista[0].gerado_em)) + '</strong> · ' + lista.length + ' guardada(s).' : '<strong>Nenhuma cópia automática guardada ainda</strong>: a primeira sai na próxima madrugada.') + '</div>' +
+      '<div class="qa-obs" style="margin:10px 0">⚠ As cópias automáticas ficam dentro do mesmo banco do sistema: servem para voltar atrás depois de um erro, mas não substituem uma cópia guardada fora. Baixe uma por semana e guarde no Drive.</div>' +
+      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Gerada em</th><th>Conteúdo</th><th class="c"></th></tr></thead><tbody>' + linhas + '</tbody></table></div>' + (lista.length > 15 ? '<div class="cinza" style="font-size:12px;margin-top:6px">Mostrando as 15 mais recentes de ' + lista.length + '.</div>' : '') : '') + '</div>';
+  }
+  function htmlBackup(info, auto) {
+    var tot = info.totais || {};
+    var linhasT = Object.keys(tot).map(function (k) { return '<tr><td>' + esc(k) + '</td><td class="c">' + tot[k] + '</td></tr>'; }).join('');
+    var ult = (info.ultimos || []).map(function (u) { return '<li>' + esc(dataHora(u.created_at)) + ' · ' + esc(u.user_name) + ' <span class="cinza">— ' + esc(u.descricao || '') + '</span></li>'; }).join('');
+    return htmlBackupAuto(auto) + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:18px">' +
+      '<div class="card" style="margin:0"><div class="card-title">Backup manual de Qualidade e Acessos</div><div class="card-sub">Ocorrências, históricos, responsáveis, tipos, gestores, analistas, módulos por pessoa e logs. Os arquivos anexados entram só com nome e tamanho. Não leva chaves privadas nem os aparelhos de aviso.</div>' +
+        '<button type="button" class="login-btn" data-bk="qualidade" style="width:auto;margin:12px 0 0;padding:10px 22px">⬇ Baixar backup</button></div>' +
+      '<div class="card" style="margin:0"><div class="card-title">Backup manual completo do sistema</div><div class="card-sub">Todos os módulos (clientes, atendimentos, gamificação, Sucesso do Cliente, Qualidade e Acessos). É o mesmo backup da Administração do sistema.</div>' +
+        '<button type="button" class="login-btn" data-bk="completo" style="width:auto;margin:12px 0 0;padding:10px 22px">⬇ Baixar backup completo</button></div>' +
+      '</div><div class="ac-status" id="bk-status" role="status" aria-live="polite" style="margin-bottom:12px"></div>' +
+      '<div class="qa-obs" style="margin-bottom:16px">ℹ O servidor não guarda cópias: o arquivo vai para o seu computador. Guarde em um lugar seguro (por exemplo, o Drive) e repita com regularidade, de preferência toda semana. A restauração não é feita por esta tela.</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">' +
+        '<div class="card" style="margin:0"><div class="card-title">O que há hoje no backup de Qualidade e Acessos</div><div class="table-wrap"><table><thead><tr><th>Tabela</th><th class="c">Registros</th></tr></thead><tbody>' + (linhasT || '<tr><td colspan="2" class="vazio">Sem dados.</td></tr>') + '</tbody></table></div></div>' +
+        '<div class="card" style="margin:0"><div class="card-title">Últimos backups baixados</div>' + (ult ? '<ul style="margin:8px 0 0 18px;line-height:1.8;font-size:13px">' + ult + '</ul>' : '<div class="vazio">Nenhum backup baixado ainda.</div>') + '</div>' +
+      '</div>';
+  }
+  /** Baixa um arquivo que exige login (o endereço sozinho não manda o token): busca, guarda em memória e dispara o download com o nome que o servidor sugeriu. */
+  async function baixarArquivo(url, nomePadrao) {
+    var r = await chamarApi(url);
+    if (!r.ok) { var j = await r.json().catch(function () { return {}; }); throw new Error(j.error || 'Não foi possível baixar o arquivo.'); }
+    var blob = await r.blob(), cd = r.headers.get('Content-Disposition') || '', k = cd.indexOf('filename="');
+    var nome = k >= 0 ? cd.slice(k + 10, cd.indexOf('"', k + 10)) : nomePadrao;
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nome; document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); if (a.parentNode) a.parentNode.removeChild(a); }, 1500);
+    return nome;
+  }
+  function ligarAbasAdm(alvo) {
+    Array.prototype.forEach.call(alvo.querySelectorAll('[data-adm-aba]'), function (b) {
+      b.addEventListener('click', function () { estado.ac.aba = b.getAttribute('data-adm-aba'); desenharAcessos(); });
+    });
+  }
+  async function desenharLogs(alvo) {
+    var ac = estado.ac, fl = ac.fl;
+    var qs = ['modulo=' + encodeURIComponent(fl.modulo), 'user=' + encodeURIComponent(fl.user), 'acao=' + encodeURIComponent(fl.acao), 'busca=' + encodeURIComponent(fl.busca || ''), 'de=' + encodeURIComponent(fl.de || ''), 'ate=' + encodeURIComponent(fl.ate || '')].join('&');
+    if (!ac.logs) alvo.innerHTML = htmlAbasAdm('logs') + '<div class="vazio">Carregando…</div>';
+    try { ac.logs = await api('/api/cs/painel/admin/logs?' + qs); }
+    catch (e) { alvo.innerHTML = htmlAbasAdm('logs') + '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; ligarAbasAdm(alvo); return; }
+    alvo.innerHTML = htmlAbasAdm('logs') + '<div id="adm-corpo">' + htmlLogs(ac.logs, fl) + '</div>';
+    ligarAbasAdm(alvo);
+    var recarrega = function () { ac.logs = ac.logs; desenharLogs(alvo); };
+    [['lg-modulo', 'modulo'], ['lg-user', 'user'], ['lg-acao', 'acao'], ['lg-de', 'de'], ['lg-ate', 'ate']].forEach(function (c) {
+      var e = $(c[0]); if (e) e.addEventListener('change', function () { fl[c[1]] = e.value; recarrega(); });
+    });
+    var b = $('lg-busca');
+    if (b) {
+      b.addEventListener('input', function () { fl.busca = b.value; clearTimeout(ac.tmrBusca); ac.tmrBusca = setTimeout(function () { ac.focarBusca = true; recarrega(); }, 400); });
+      if (ac.focarBusca) { ac.focarBusca = false; b.focus(); try { b.setSelectionRange(b.value.length, b.value.length); } catch (e2) { /* sem seleção */ } }
+    }
+    var at = $('lg-atualizar'); if (at) at.addEventListener('click', recarrega);
+  }
+  async function desenharBackup(alvo) {
+    var ac = estado.ac;
+    if (!ac.info) alvo.innerHTML = htmlAbasAdm('backup') + '<div class="vazio">Carregando…</div>';
+    try { ac.info = await api('/api/cs/painel/admin/backup/info'); try { ac.auto = (await api('/api/data/backups-automaticos')).data || []; } catch (e0) { ac.auto = []; } }
+    catch (e) { alvo.innerHTML = htmlAbasAdm('backup') + '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; ligarAbasAdm(alvo); return; }
+    alvo.innerHTML = htmlAbasAdm('backup') + '<div id="adm-corpo">' + htmlBackup(ac.info, ac.auto) + '</div>';
+    ligarAbasAdm(alvo);
+    Array.prototype.forEach.call(alvo.querySelectorAll('[data-bka]'), function (b) {
+      b.addEventListener('click', async function () {
+        var st = $('bk-status'); b.disabled = true; st.className = 'ac-status'; st.textContent = 'Preparando o arquivo…';
+        try { var nome = await baixarArquivo('/api/data/backups-automaticos/' + encodeURIComponent(b.getAttribute('data-bka')) + '/download', 'backup-automatico.json'); st.textContent = 'Backup baixado: ' + nome + ' ✓'; b.disabled = false; }
+        catch (e) { b.disabled = false; st.className = 'ac-status erro'; st.textContent = e.message || 'Não foi possível baixar.'; }
+      });
+    });
+    Array.prototype.forEach.call(alvo.querySelectorAll('[data-bk]'), function (b) {
+      b.addEventListener('click', async function () {
+        var url = b.getAttribute('data-bk') === 'completo' ? '/api/data/backup' : '/api/cs/painel/admin/backup', st = $('bk-status');
+        b.disabled = true; st.className = 'ac-status'; st.textContent = 'Gerando o backup… pode levar alguns segundos.';
+        try {
+          var nome = await baixarArquivo(url, 'backup.json');
+          estado.ac.info = null; await desenharBackup(alvo);
+          var s2 = $('bk-status'); if (s2) s2.textContent = 'Backup baixado: ' + nome + ' ✓';
+        } catch (e) { b.disabled = false; st.className = 'ac-status erro'; st.textContent = e.message || 'Não foi possível gerar o backup.'; }
+      });
+    });
+  }
   async function desenharAcessos() {
     var alvo = $('sec-acessos'); if (!alvo) return;
-    if (!estado.ac) estado.ac = { dados: null, f: { busca: '', filtro: 'todos' } };
+    if (!estado.ac) estado.ac = { dados: null, f: { busca: '', filtro: 'todos' }, aba: 'acessos', fl: { modulo: 'cs', user: 'todos', acao: 'todas', busca: '', de: '', ate: '' }, logs: null, info: null };
     var ac = estado.ac;
+    if (ac.aba === 'logs') return desenharLogs(alvo);
+    if (ac.aba === 'backup') return desenharBackup(alvo);
     if (!ac.dados) {
-      alvo.innerHTML = '<div class="vazio">Carregando…</div>';
+      alvo.innerHTML = htmlAbasAdm('acessos') + '<div class="vazio">Carregando…</div>';
       try { ac.dados = await api('/api/cs/painel/acessos'); }
-      catch (e) { estado.ac = null; alvo.innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; return; }
+      catch (e) { ac.dados = null; alvo.innerHTML = htmlAbasAdm('acessos') + '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; ligarAbasAdm(alvo); return; }
     }
-    alvo.innerHTML = htmlAcessos(ac.dados, ac.f);
-    ligarAcessos(alvo);
+    alvo.innerHTML = htmlAbasAdm('acessos') + '<div id="adm-corpo">' + htmlAcessos(ac.dados, ac.f) + '</div>';
+    ligarAbasAdm(alvo);
+    ligarAcessos($('adm-corpo'));
   }
   function ligarAcessos(alvo) {
     var d = estado.ac.dados, f = estado.ac.f;

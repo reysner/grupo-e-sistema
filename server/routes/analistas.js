@@ -18,6 +18,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
+router.use(require('../cs/auditoria').middleware());   // anota nos Logs de atividades quem incluiu, renomeou, desativou ou excluiu analista
 
 let requireAuth, requireAdmin;
 try {

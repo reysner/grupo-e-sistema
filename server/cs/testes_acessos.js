@@ -71,5 +71,56 @@ teste('barreira: administrador e quem não tem configuração passam; configurad
   assert.deepStrictEqual(passou, ['sem-token', 'admin']);
 });
 
+const aud = require('./auditoria');
+teste('logs: cada ação que muda algo vira uma frase clara (e consulta nunca vira ação)', () => {
+  const d = (m, u, b) => aud.descreverAcao(m, u, b);
+  assert.strictEqual(d('GET', '/api/cs/painel/qualidade/ocorrencias/minhas'), null, 'leitura não é registrada');
+  assert.deepStrictEqual(d('POST', '/api/cs/painel/qualidade/ocorrencias', { assunto: 'Guia errada', tipo: 'Erro', departamento: 'Fiscal' }), { acao: 'criar', modulo: 'cs-qualidade', texto: 'Registrou uma ocorrência: Guia errada (Erro · Fiscal)' });
+  assert.strictEqual(d('PUT', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/tratativa', {}).registroId, 'abc');
+  assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/abrir').acao, 'abrir');
+  assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/filha', { assunto: 'Alinhar com o Bruno' }).texto, 'Abriu uma ocorrência vinculada: Alinhar com o Bruno');
+  assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/validar').acao, 'validar');
+  assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/devolver').acao, 'devolver');
+  assert.strictEqual(d('POST', '/api/cs/painel/qualidade/analista/ocorrencias/abc/encerrar').texto, 'Encerrou a sua parte da tratativa');
+  assert.strictEqual(d('POST', '/api/cs/painel/qualidade/analista/ocorrencias/abc/nota').acao, 'editar');
+  assert.strictEqual(d('POST', '/api/cs/painel/qualidade/sucesso/ocorrencias/abc/encerrar').texto, 'Encerrou o processo (gestor final)');
+  assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestores', { departamento: 'Fiscal', papel: 'gestor', user_id: '7' }).usuarioId, '7');
+  assert.strictEqual(d('DELETE', '/api/cs/painel/qualidade/gestores/5').acao, 'excluir');
+  assert.strictEqual(d('PUT', '/api/cs/painel/qualidade/analistas/9/departamentos', { departamentos: ['Fiscal', 'Pessoal'] }).texto, 'Definiu os departamentos do analista: Fiscal, Pessoal');
+  assert.strictEqual(d('PUT', '/api/cs/painel/qualidade/vinculo/9', { user_id: null }).texto, 'Desligou o login do analista');
+  assert.strictEqual(d('POST', '/api/cs/painel/qualidade/tipos', { nome: 'Retrabalho', peso: 10 }).texto, 'Incluiu o tipo de registro "Retrabalho" (peso 10)');
+  assert.strictEqual(d('PATCH', '/api/cs/painel/qualidade/tipos/3', { peso: 20 }).acao, 'editar');
+  assert.strictEqual(d('PATCH', '/api/cs/painel/qualidade/xyz', { status: 'resolvido' }).registroId, 'xyz');
+  assert.strictEqual(d('DELETE', '/api/cs/painel/qualidade/xyz').acao, 'excluir');
+  assert.strictEqual(d('PUT', '/api/cs/painel/acessos/12', { modulos: ['visao', 'churn'] }).texto, 'Definiu os módulos de acesso: visao, churn');
+  assert.strictEqual(d('PUT', '/api/cs/painel/acessos/12', { modulos: null }).texto, 'Voltou os módulos ao padrão do perfil');
+  assert.strictEqual(d('POST', '/api/analistas', { nome: 'Maira Soares' }).texto, 'Incluiu o analista "Maira Soares"');
+  assert.strictEqual(d('PATCH', '/api/analistas/4', { nome: 'Maira Soares', ativo: false }).texto, 'Alterou o analista (nome para "Maira Soares", desativou)');
+  assert.strictEqual(d('DELETE', '/api/analistas/4').analistaId, '4');
+  assert.strictEqual(d('POST', '/api/outra/coisa'), null, 'o que não é do painel não entra');
+});
+teste('logs: a consulta filtra por módulo (cs por padrão), pessoa, ação, texto e datas, com limite seguro', () => {
+  const c = (f) => aud.montarConsulta(f);
+  const padrao = c({});
+  assert.ok(padrao.sql.includes("modulo LIKE 'cs-%'") && padrao.sql.endsWith('ORDER BY created_at DESC LIMIT 300') && padrao.valores.length === 0);
+  assert.ok(!c({ modulo: 'todos' }).sql.includes('WHERE'), 'todos os módulos: sem filtro');
+  const q = c({ modulo: 'cs-acessos', user: 'Reysner', acao: 'editar', busca: 'Bruno', de: '2026-10-01', ate: '2026-10-18', limite: '50' });
+  assert.deepStrictEqual(q.valores, ['cs-acessos', 'Reysner', 'editar', '%Bruno%', '2026-10-01', '2026-10-18']);
+  assert.ok(q.sql.includes('modulo = $1') && q.sql.includes('user_name = $2') && q.sql.includes('acao = $3') && q.sql.includes('descricao ILIKE $4 OR user_name ILIKE $4') && q.sql.includes('>= $5::date') && q.sql.includes('<= $6::date') && q.sql.endsWith('LIMIT 50'));
+  assert.strictEqual(c({ limite: '999999' }).limite, 1000, 'limite máximo');
+  assert.strictEqual(c({ limite: '-5' }).limite, 300, 'limite inválido volta ao padrão');
+  assert.deepStrictEqual(c({ de: '01/10/2026; DROP TABLE x' }).valores, [], 'data em formato estranho é ignorada');
+  assert.ok(c({ user: 'todos', acao: 'todas' }).valores.length === 0, '"todos" e "todas" não filtram');
+});
+teste('backup: leva Qualidade, analistas, gestores, acessos e logs; fica de fora chave privada, aparelhos e bytes dos anexos', () => {
+  const nomes = aud.TABELAS_BACKUP.map((t) => t[0]).join(' | ');
+  ['analistas', 'cs_acessos', 'cs_qualidade_registros', 'cs_qualidade_resp', 'cs_qualidade_historico', 'cs_qualidade_tipos', 'cs_qualidade_gestores', 'cs_painel_config', 'log_atividades'].forEach((t) => assert.ok(nomes.includes(t), 'falta ' + t));
+  assert.ok(!nomes.includes('push_assinaturas'), 'aparelhos de aviso são dados pessoais: ficam de fora');
+  const anexos = aud.TABELAS_BACKUP.find((t) => t[0].startsWith('cs_qualidade_anexos'))[1];
+  assert.ok(!/\bdados\b/.test(anexos.replace('registro_id', '')) && anexos.includes('tamanho'), 'anexos só com nome e tamanho (sem os bytes)');
+  const cfg = aud.TABELAS_BACKUP.find((t) => t[0] === 'cs_painel_config')[1];
+  assert.ok(cfg.includes('vapid') && cfg.includes('secret') && cfg.includes('private'), 'chaves privadas ficam de fora');
+});
+
 console.log(`\n${ok} testes passaram.`);
 setTimeout(() => process.exit(0), 50);

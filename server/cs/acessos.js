@@ -140,6 +140,7 @@ function restringir(lerToken) {
 
 // ── rotas (administrador) ─────────────────────────────────────────────────────────────
 const router = express.Router();
+router.use(require('./auditoria').middleware());
 router.use(requireAuth, (req, res, next) => {
   if (!req.user || req.user.role !== 'administrador') return res.status(403).json({ error: 'Só o administrador define os acessos.' });
   next();

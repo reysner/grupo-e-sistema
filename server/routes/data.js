@@ -2659,6 +2659,7 @@ async function gerarBackupCompleto() {
     gamNotaFinalOverride, gamTicketsPontos, gamAbandonoIncidentes,
     gamVelocidadeRevisoes, gamAceiteRevisoes, gamFinalizarRevisoes,
     gamQualificacaoMapa, gamConfig,
+    analistasT, qRegistros, qResp, qHistorico, qTipos, qGestores, qAcessos,
   ] = await Promise.all([
     pool.query('SELECT * FROM atendimentos ORDER BY created_at').catch(()=>({rows:[]})),
     pool.query('SELECT * FROM gestao_clientes ORDER BY created_at').catch(()=>({rows:[]})),
@@ -2691,6 +2692,14 @@ async function gerarBackupCompleto() {
     pool.query('SELECT * FROM gam_finalizar_revisoes').catch(()=>({rows:[]})),
     pool.query('SELECT * FROM gam_qualificacao_mapa ORDER BY created_at').catch(()=>({rows:[]})),
     pool.query('SELECT * FROM gam_config').catch(()=>({rows:[]})),
+    // Qualidade / Portais / Acessos (18/10/2026): ocorrências, histórico, responsáveis, tipos, gestores, analistas e módulos por pessoa (sem os bytes dos anexos)
+    pool.query('SELECT * FROM analistas ORDER BY nome').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM cs_qualidade_registros ORDER BY criado_em').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM cs_qualidade_resp').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM cs_qualidade_historico ORDER BY em').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM cs_qualidade_tipos ORDER BY ordem').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM cs_qualidade_gestores').catch(()=>({rows:[]})),
+    pool.query('SELECT * FROM cs_acessos').catch(()=>({rows:[]})),
   ]);
 
   return {
@@ -2738,6 +2747,13 @@ async function gerarBackupCompleto() {
       gam_finalizar_revisoes: gamFinalizarRevisoes.rows,
       gam_qualificacao_mapa: gamQualificacaoMapa.rows,
       gam_config: gamConfig.rows,
+      analistas: analistasT.rows,
+      cs_qualidade_registros: qRegistros.rows,
+      cs_qualidade_resp: qResp.rows,
+      cs_qualidade_historico: qHistorico.rows,
+      cs_qualidade_tipos: qTipos.rows,
+      cs_qualidade_gestores: qGestores.rows,
+      cs_acessos: qAcessos.rows,
     }
   };
 }

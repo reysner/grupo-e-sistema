@@ -546,6 +546,7 @@ async function registrar(registroId, por, acao, txt) {
 
 // ── Equipe do painel ─────────────────────────────────────────────────────────────
 const router = express.Router();
+router.use(require('./auditoria').middleware());   // anota nos Logs de atividades toda ação que muda algo e deu certo
 function soQualidadeGeral(req, res, next) {
   if (podeEquipe(req.user)) return next();
   const u = req.user || {};
