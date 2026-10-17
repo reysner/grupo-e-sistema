@@ -1603,6 +1603,7 @@
   }
   // ── MÓDULO QUALIDADE: ocorrências, pesos e lista ──────────────────────────────────────
   var DEPS_OCORRENCIA = [['Comercial', 'Comercial'], ['Contábil', 'Contábil'], ['Financeiro', 'Financeiro'], ['Fiscal', 'Fiscal'], ['Legalização', 'Legalização'], ['Pessoal', 'Pessoal'], ['Sucesso', 'Sucesso do Cliente']];
+  var ROT_ETAPA_Q = { registrada: 'registrada, aguardando análise', tratativa_definida: 'tratativa definida', com_analista: 'com o analista', validacao_gestor: 'em validação do gestor', devolutiva_cliente: 'devolutiva ao cliente (Sucesso do Cliente)', encerrada: 'encerrada' };
   var COR_PRIORIDADE = { 'Muito Alta': '#b91c1c', Alta: '#c2410c', 'Média': '#1d4ed8', Baixa: '#6b7280' };
   function rotuloDepto(d) { return d === 'Sucesso' ? 'Sucesso do Cliente' : d; }
   function pillPrioridadeQ(p) {
@@ -1622,6 +1623,7 @@
       (r.assunto ? '<div class="qa-reg-txt"><strong>' + esc(r.assunto) + '</strong></div>' : '') +
       '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
       '<div class="qa-reg-rod">Registrada em ' + data(r.criado_em) + ' por ' + esc(r.criado_por || '—') + (r.prazo ? ' · prazo ' + data(r.prazo) : '') + (r.resolvido_em ? ' · resolvida em ' + data(r.resolvido_em) : '') + '</div>' +
+      '<div class="qa-reg-rod">' + (r.etapa ? 'Etapa: <strong>' + esc(ROT_ETAPA_Q[r.etapa] || r.etapa) + '</strong>' : '') + (r.fila ? (r.etapa ? ' · ' : '') + (r.fila === 'gestor' ? 'encaminhada ao gestor de ' + esc(rotuloDepto((r.departamentos || [])[0])) : 'encaminhada ao Sucesso do Cliente (departamento sem gestor)') : '') + '</div>' +
       anexosQ(r) + acoesOcorrenciaQ(r) + (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '</div>';
   }
   function podeAgirQ() { return !!(estado.dados && estado.dados.usuario && ['administrador', 'usuario'].indexOf(estado.dados.usuario.papel) >= 0); }
@@ -1630,6 +1632,7 @@
     var aberta = r.status === 'aberto' || r.status === 'em_tratamento' || r.status === 'finalizada';
     var b = (podeAgirQ() && aberta ? '<button type="button" class="gp-footer-btn" data-oc-res="' + esc(r.id) + '" style="width:auto">Resolver</button> <button type="button" class="gp-footer-btn" data-oc-can="' + esc(r.id) + '" style="width:auto">Cancelar</button> ' : '') +
       (ehAdminPainel() ? '<button type="button" class="gp-footer-btn qa-excluir" data-oc-del="' + esc(r.id) + '" style="width:auto" title="Apaga a ocorrência de vez (teste ou lançamento errado)">Excluir</button>' : '');
+    if (ehAdminPainel() && aberta) b = '<button type="button" class="gp-footer-btn" data-oc-prazo="' + esc(r.id) + '" style="width:auto" title="Muda o prazo para execução">Alterar prazo</button> ' + b;
     return b ? '<div class="qa-oc-acoes">' + b + '</div>' : '';
   }
   function ligarAcoesOcorrenciaQ(raiz, depois) {
@@ -1644,6 +1647,15 @@
         var t = window.prompt('O que foi feito para resolver esta ocorrência? (mínimo de 5 caracteres)');
         if (t === null) return;
         muda(b.getAttribute('data-oc-res'), { status: 'resolvido', tratativa: t }, 'Não foi possível resolver a ocorrência.');
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(raiz + ' [data-oc-prazo]'), function (b) {
+      b.addEventListener('click', function () {
+        var t = window.prompt('Novo prazo para execução (dd/mm/aaaa):');
+        if (t === null) return;
+        var p = String(t).trim().split('/');
+        if (p.length !== 3) { window.alert('Use o formato dd/mm/aaaa, por exemplo 25/10/2026.'); return; }
+        muda(b.getAttribute('data-oc-prazo'), { prazo: p[2] + '-' + ('0' + p[1]).slice(-2) + '-' + ('0' + p[0]).slice(-2) }, 'Não foi possível alterar o prazo.');
       });
     });
     Array.prototype.forEach.call(document.querySelectorAll(raiz + ' [data-oc-can]'), function (b) {
@@ -1719,6 +1731,7 @@
     var pri = (o.prioridades || ['Muito Alta', 'Alta', 'Média', 'Baixa']).map(function (p) { return '<option' + (p === 'Média' ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('');
     return '<div class="qa-modal-topo"><strong style="font-size:22px;color:#256050">Registrar ocorrência</strong><button type="button" class="qa-x" id="oc-fechar" aria-label="Fechar">✕</button></div>' +
       '<div class="qa-oc-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</div>' +
+      '<div class="qa-oc-quem">Registrando como <strong>' + esc(usuarioLogadoNome() || 'você') + '</strong> em <strong>' + hojeIsoLocal().split('-').reverse().join('/') + '</strong>. Quem registra e a data ficam gravados na ocorrência.</div>' +
       '<div class="qa-oc-linha qa-oc-l1">' +
         '<div class="qa-campo"><label for="oc-assunto">Assunto da ocorrência</label><input type="text" id="oc-assunto" maxlength="100" placeholder="Qual o assunto da ocorrência?"></div>' +
         '<div class="qa-campo"><label for="oc-anexo">Arquivo anexo</label><input type="file" id="oc-anexo" multiple><div class="cinza qa-oc-dica">Até ' + (o.max_anexos || 5) + ' arquivos de ' + Math.round((o.max_anexo || 10485760) / 1048576) + ' MB cada</div></div>' +
@@ -1815,11 +1828,59 @@
           } catch (e) { falhas.push(arqs[i].name + ': sem conexão'); }
         }
         fechar();
-        if (falhas.length) window.alert('A ocorrência foi registrada, mas nem todos os anexos subiram:\n' + falhas.join('\n'));
+        var destino = j.destino ? 'Ocorrência registrada. ' + j.destino : '';
+        if (falhas.length) window.alert((destino ? destino + '\n\n' : '') + 'Nem todos os anexos subiram:\n' + falhas.join('\n'));
+        else if (destino) window.alert(destino);
         if (aoSalvar) aoSalvar();
       } catch (e) { erro.textContent = 'Sem conexão com o servidor. Tente de novo.'; reabrir(); }
     });
     if ($('oc-assunto').focus) $('oc-assunto').focus();
+  }
+
+  /** Janela "Gerenciar gestores por departamento" (o miolo). j = resposta de /qualidade/gestores. */
+  function htmlGestoresQ(j) {
+    var optU = '<option value="">Escolha a pessoa…</option>' + (j.usuarios || []).map(function (u) { return '<option value="' + esc(u.id) + '">' + esc(u.name) + '</option>'; }).join('');
+    return '<div class="qa-modal-topo"><strong>Gerenciar gestores por departamento</strong><button type="button" class="qa-x" id="qg-fechar" aria-label="Fechar">✕</button></div>' +
+      '<div class="cinza" style="font-size:12px;margin-bottom:10px">A ocorrência vai para o gestor do departamento escolhido. Departamento sem gestor: vai para o Sucesso do Cliente. Pode haver mais de um gestor por departamento; o diretor fica acima do gestor (diretores costumam ser administradores e já enxergam tudo, por isso não recebem a fila).</div>' +
+      (j.departamentos || []).map(function (d) {
+        var chips = d.gestores.length ? d.gestores.map(function (g) {
+          return '<span class="qg-chip">' + esc(g.nome) + ' <small>' + (g.papel === 'diretor' ? 'diretor' : 'gestor') + '</small><button type="button" data-gdel="' + esc(g.id) + '" title="Retirar" aria-label="Retirar ' + esc(g.nome) + '">✕</button></span>';
+        }).join('') : '<span class="cinza">sem gestor: as ocorrências vão para o Sucesso do Cliente</span>';
+        return '<div class="qg-dep"><div class="qg-dep-nome">' + esc(d.rotulo) + '</div><div class="qg-chips">' + chips + '</div>' +
+          '<div class="qg-add"><select data-gsel="' + esc(d.codigo) + '">' + optU + '</select><select data-gpap="' + esc(d.codigo) + '"><option value="gestor">Gestor</option><option value="diretor">Diretor</option></select>' +
+          '<button type="button" class="gp-footer-btn" data-gadd="' + esc(d.codigo) + '" style="width:auto">+ Adicionar</button></div></div>';
+      }).join('') + '<div class="pop-erro" id="qg-erro" role="alert"></div>';
+  }
+  async function abrirGerenciarGestores(aoFechar) {
+    var ov = document.createElement('div'); ov.className = 'qa-overlay'; document.body.appendChild(ov);
+    var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); if (aoFechar) aoFechar(); };
+    var desenhar = async function () {
+      var j;
+      try { j = await api('/api/cs/painel/qualidade/gestores'); } catch (e) { window.alert(e.message || 'Não foi possível ler os gestores.'); fechar(); return; }
+      ov.innerHTML = '<div class="qa-modal qa-modal-gest" role="dialog" aria-label="Gerenciar gestores">' + htmlGestoresQ(j) + '</div>';
+      $('qg-fechar').addEventListener('click', fechar);
+      var falha = function (m) { $('qg-erro').textContent = m; };
+      Array.prototype.forEach.call(ov.querySelectorAll('[data-gadd]'), function (b) {
+        b.addEventListener('click', async function () {
+          var dep = b.getAttribute('data-gadd'), u = ov.querySelector('[data-gsel="' + dep + '"]').value, papel = ov.querySelector('[data-gpap="' + dep + '"]').value;
+          if (!u) { falha('Escolha a pessoa para ' + dep + '.'); return; }
+          var r = await chamarApi('/api/cs/painel/qualidade/gestores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: u, departamento: dep, papel: papel }) });
+          var x = await r.json().catch(function () { return {}; });
+          if (!r.ok) { falha(x.error || 'Não foi possível cadastrar.'); return; }
+          desenhar();
+        });
+      });
+      Array.prototype.forEach.call(ov.querySelectorAll('[data-gdel]'), function (b) {
+        b.addEventListener('click', async function () {
+          if (!window.confirm('Retirar esta pessoa da lista de gestores do departamento?')) return;
+          var r = await chamarApi('/api/cs/painel/qualidade/gestores/' + encodeURIComponent(b.getAttribute('data-gdel')), { method: 'DELETE' });
+          var x = await r.json().catch(function () { return {}; });
+          if (!r.ok) { falha(x.error || 'Não foi possível retirar.'); return; }
+          desenhar();
+        });
+      });
+    };
+    desenhar();
   }
 
   async function desenharQualidadeMod() {
@@ -1845,7 +1906,7 @@
     }
     alvo.innerHTML =
       '<div class="qa-barra"><button type="button" class="login-btn" id="q-registrar" style="width:auto;margin:0;padding:10px 22px">＋ Registrar ocorrência</button>' +
-        (ehAdminPainel() ? '<button type="button" class="gp-footer-btn" id="q-gerenciar" style="width:auto">Gerenciar analistas</button><button type="button" class="gp-footer-btn" id="q-tipos" style="width:auto">Gerenciar tipos de registro</button>' : '') + '<span class="qa-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</span></div>' +
+        (ehAdminPainel() ? '<button type="button" class="gp-footer-btn" id="q-gerenciar" style="width:auto">Gerenciar analistas</button><button type="button" class="gp-footer-btn" id="q-tipos" style="width:auto">Gerenciar tipos de registro</button><button type="button" class="gp-footer-btn" id="q-gestores" style="width:auto">Gerenciar gestores</button>' : '') + '<span class="qa-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</span></div>' +
       '<div class="gp-kpi-row">' +
         kpi('#7c3aed', 'A validar', tot.a_validar, 'finalizadas pelo analista, aguardando você') +
         kpi('#b45309', 'Em aberto', tot.abertos, 'aguardando o analista começar') +
@@ -1858,6 +1919,7 @@
     var reg = $('q-registrar'); if (reg) reg.addEventListener('click', function () { abrirRegistrarOcorrencia(atualiza); });
     var g = $('q-gerenciar'); if (g) g.addEventListener('click', function () { abrirGerenciarAnalistas(atualiza); });
     var gt = $('q-tipos'); if (gt) gt.addEventListener('click', function () { estado.qOpcoes = null; abrirGerenciarTipos(function () { desenharQualidadeMod(); }); });
+    var gg = $('q-gestores'); if (gg) gg.addEventListener('click', function () { abrirGerenciarGestores(null); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-qan]'), function (bt) { bt.addEventListener('click', function () { abrirFichaAnalistaQ(bt.getAttribute('data-qan')); }); });
     var box = $('q-peso-box'); if (box) box.addEventListener('toggle', function () { estado.qPesoAberto = !!box.open; });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes .qt-inline[data-tid]'), function (inp) {

@@ -111,7 +111,7 @@ const semLixo = (e, nome) => {
 
   // ── /cs ──
   const risco = (nivel, pontos, term, extra) => Object.assign({ nivel, pontos, alerta: false, suspenso: false, termometros: term, motivos: [] }, extra || {});
-  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, secaoFicha: secaoFicha, listaOcorrenciasQ: listaOcorrenciasQ, tabelaAcessorias: tabelaAcessorias, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, cartaoOcorrenciaQ: cartaoOcorrenciaQ, tabelaOcorrenciasMod: tabelaOcorrenciasMod, opcoesTiposOc: opcoesTiposOc, formularioOcorrenciaQ: formularioOcorrenciaQ, comoPesaTratativa: comoPesaTratativa, abrirNovoMotivoChurn: abrirNovoMotivoChurn }');
+  const C = carregar('cs-painel.js', '{ estado: estado, dadosExport: dadosExport, honSugerido: honSugerido, honAnalise: honAnalise, celSugerido: celSugerido, celAnalise: celAnalise, linhasAnual: linhasAnual, filtroAnual: filtroAnual, destaqueAnual: destaqueAnual, varPct: varPct, anosAnual: anosAnual, desenharAnual: desenharAnual, destaqueLinha: destaqueLinha, reajusteLinha: reajusteLinha, desenharAtendimento: desenharAtendimento, motivoDaSaida: motivoDaSaida, selectMotivoChurn: selectMotivoChurn, cartaoMotivosChurn: cartaoMotivosChurn, dicaEmails: dicaEmails, linhasAtend: linhasAtend, abrirFichaAnual: abrirFichaAnual, abrirFichaGrupo: abrirFichaGrupo, motivosRever: motivosRever, mapaHonAnual: mapaHonAnual, regimeMudou: regimeMudou, semDadoFat: semDadoFat, secaoFicha: secaoFicha, listaOcorrenciasQ: listaOcorrenciasQ, tabelaAcessorias: tabelaAcessorias, listaRegistrosQ: listaRegistrosQ, formularioQ: formularioQ, formularioQAntigo: formularioQAntigo, listaRegistrosQAntigo: listaRegistrosQAntigo, celTerm: celTerm, cartaoOcorrenciaQ: cartaoOcorrenciaQ, tabelaOcorrenciasMod: tabelaOcorrenciasMod, htmlGestoresQ: htmlGestoresQ, opcoesTiposOc: opcoesTiposOc, formularioOcorrenciaQ: formularioOcorrenciaQ, comoPesaTratativa: comoPesaTratativa, abrirNovoMotivoChurn: abrirNovoMotivoChurn }');
   C.t.estado.dados = {
     clientes: [
       { id: '1', nome: 'ALFA LTDA', cnpj: '11.222.333/0001-81', grupo: 'Grupo A', tipo_doc: 'CNPJ', categoria: 'Ouro', categoria_motivo: 'honorário R$ 800,00 (faixa R$ 500 a 999)', honorario: 800, regime: 'Lucro Presumido', questor: { faturamento: 120000.5, funcionarios: 3, aviso: null }, risco: risco('Alto', 70, { financeiro: 90, atendimento: 10, operacional: null, tratativas: 75 }, { motivos: ['Inadimplente: 3 títulos', 'Nota baixa'] }) },
@@ -218,6 +218,7 @@ const semLixo = (e, nome) => {
     assert.ok(f.includes('Até 5 arquivos de 10 MB cada'));
     assert.ok(f.includes('Prazo para execução') && f.includes('id="oc-prazo"') && f.includes('type="date"'), 'prazo para execução no formulário');
     assert.ok(f.includes('Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.'), 'observação de uso');
+    assert.ok(f.includes('Registrando como') && f.includes('Quem registra e a data ficam gravados na ocorrência.'), 'mostra quem registra e a data');
   });
   await teste('cs: lista de ocorrências do módulo — ações da liderança, excluir só do administrador, anexos e cartão da ficha', () => {
     const r = (id, status) => ({ id, status, situacao: status, tipo: 'Erro', prioridade: 'Alta', departamentos: ['Sucesso'], assunto: 'Guia errada', detalhe: 'Linha 1\nlinha 2', cliente_nome: 'ALFA LTDA', criado_em: '2026-10-17T12:00:00Z', criado_por: 'Larissa', anexos: [{ id: 'a1', nome: 'guia.pdf', tamanho: 2048 }], notas: [] });
@@ -234,6 +235,22 @@ const semLixo = (e, nome) => {
     assert.ok(c.includes('data-oc-res="x1"') && c.includes('data-oc-can="x1"') && c.includes('data-oc-del="x1"'), 'na ficha a liderança resolve, cancela e (administrador) exclui');
     assert.ok(!C.t.cartaoOcorrenciaQ(r('x2', 'resolvido')).includes('data-oc-res'), 'resolvida não tem mais Resolver');
     assert.ok(C.t.cartaoOcorrenciaQ(Object.assign(r('x3', 'aberto'), { prazo: '2026-10-25' })).includes('prazo 25/10/2026'), 'mostra o prazo');
+    assert.ok(C.t.cartaoOcorrenciaQ(r('x1', 'aberto')).includes('data-oc-prazo="x1"'), 'a administração altera o prazo');
+    const papel2 = C.t.estado.dados.usuario; C.t.estado.dados.usuario = { papel: 'usuario' };
+    assert.ok(!C.t.cartaoOcorrenciaQ(r('x1', 'aberto')).includes('data-oc-prazo'), 'usuário comum não altera o prazo');
+    C.t.estado.dados.usuario = papel2;
+    const g1 = C.t.cartaoOcorrenciaQ(Object.assign(r('x4', 'aberto'), { etapa: 'registrada', fila: 'gestor', departamentos: ['Fiscal'] }));
+    assert.ok(g1.includes('Etapa: <strong>registrada, aguardando análise</strong>') && g1.includes('encaminhada ao gestor de Fiscal'), 'etapa e encaminhamento');
+    assert.ok(C.t.cartaoOcorrenciaQ(Object.assign(r('x5', 'aberto'), { etapa: 'registrada', fila: 'sucesso', departamentos: ['Pessoal'] })).includes('encaminhada ao Sucesso do Cliente (departamento sem gestor)'));
+    assert.ok(C.t.cartaoOcorrenciaQ(r('x1', 'aberto')).includes('Registrada em') && C.t.cartaoOcorrenciaQ(r('x1', 'aberto')).includes('por Larissa'), 'quem registrou e quando');
+  });
+  await teste('cs: Gerenciar gestores — um bloco por departamento, vários gestores, papel e aviso de departamento sem gestor', () => {
+    const j = { departamentos: [{ codigo: 'Fiscal', rotulo: 'Fiscal', gestores: [{ id: 1, user_id: 'u1', nome: 'Eduardo', papel: 'gestor' }, { id: 2, user_id: 'u2', nome: 'Denisa', papel: 'diretor' }] }, { codigo: 'Sucesso', rotulo: 'Sucesso do Cliente', gestores: [] }], usuarios: [{ id: 'u1', name: 'Eduardo' }, { id: 'u3', name: 'Thais <T>' }] };
+    const h = C.t.htmlGestoresQ(j);
+    assert.ok(h.includes('Gerenciar gestores por departamento') && h.includes('>Fiscal<') && h.includes('>Sucesso do Cliente<'));
+    assert.ok(h.includes('Eduardo <small>gestor</small>') && h.includes('Denisa <small>diretor</small>') && h.includes('data-gdel="1"') && h.includes('data-gdel="2"'));
+    assert.ok(h.includes('sem gestor: as ocorrências vão para o Sucesso do Cliente'));
+    assert.ok(h.includes('data-gadd="Fiscal"') && h.includes('data-gadd="Sucesso"') && h.includes('<option value="u3">Thais &lt;T&gt;</option>'));
   });
   await teste('cs: análise traz o grupo consolidado e cada empresa; zero vira "sem faturamento"; CPF aparece', () => {
     const e = C.t.dadosExport('analise');

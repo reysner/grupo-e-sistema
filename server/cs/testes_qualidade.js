@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { TIPO_PLANO, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { TIPO_PLANO, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -97,6 +97,32 @@ teste('ocorrência: aceita o formulário completo; prioridades e departamentos s
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prioridade: 'Urgente' }), ['Erro']).ok, false);
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { departamento: 'Marte' }), ['Erro']).ok, false);
 });
+teste('gestores: pessoa, departamento da lista e papel (gestor ou diretor; gestor por padrão)', () => {
+  assert.deepStrictEqual(validarGestor({ user_id: 'u1', departamento: 'Fiscal' }), { ok: true, valores: { user_id: 'u1', departamento: 'Fiscal', papel: 'gestor' } });
+  assert.strictEqual(validarGestor({ user_id: 'u1', departamento: 'Fiscal', papel: 'diretor' }).valores.papel, 'diretor');
+  assert.strictEqual(validarGestor({ user_id: '', departamento: 'Fiscal' }).ok, false);
+  assert.strictEqual(validarGestor({ user_id: 'u1', departamento: 'Marte' }).ok, false);
+  assert.strictEqual(validarGestor({ user_id: 'u1', departamento: 'Sucesso', papel: 'chefe' }).ok, false);
+});
+teste('encaminhamento: vai ao gestor do departamento escolhido; sem gestor, ao Sucesso do Cliente; diretor não recebe a fila', () => {
+  const um = destinoDaOcorrencia('Fiscal', [{ papel: 'gestor', name: 'Eduardo' }, { papel: 'diretor', name: 'Diretor' }, { papel: 'gestor', name: 'Denisa' }]);
+  assert.deepStrictEqual(um, { fila: 'gestor', gestores: ['Eduardo', 'Denisa'] });
+  assert.deepStrictEqual(destinoDaOcorrencia('Pessoal', []), { fila: 'sucesso', gestores: [] });
+  assert.strictEqual(destinoDaOcorrencia('Pessoal', [{ papel: 'diretor', name: 'Só diretor' }]).fila, 'sucesso');
+  assert.strictEqual(textoDestino('Fiscal', um), 'Encaminhada ao gestor de Fiscal: Eduardo, Denisa.');
+  assert.strictEqual(textoDestino('Sucesso', { fila: 'sucesso', gestores: [] }), 'Sucesso do Cliente ainda não tem gestor cadastrado: encaminhada ao Sucesso do Cliente.');
+});
+teste('prazo da ocorrência: administrador ou gestor/diretor do departamento; ninguém mais', () => {
+  assert.strictEqual(podeAlterarPrazo({ role: 'administrador' }, ['Fiscal'], []), true);
+  assert.strictEqual(podeAlterarPrazo({ role: 'usuario' }, ['Fiscal'], ['Fiscal', 'Pessoal']), true);
+  assert.strictEqual(podeAlterarPrazo({ role: 'usuario' }, ['Fiscal'], ['Pessoal']), false);
+  assert.strictEqual(podeAlterarPrazo({ role: 'usuario' }, ['Fiscal'], []), false);
+  assert.strictEqual(podeAlterarPrazo(null, ['Fiscal'], ['Fiscal']), true, 'quem é gestor do departamento altera mesmo sem outro papel');
+});
+teste('etapas do fluxo na ordem combinada', () => {
+  assert.deepStrictEqual(ETAPAS, ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada']);
+});
+
 teste('ocorrência: prazo para execução é obrigatório, não pode ser passado nem passar de um ano', () => {
   const t = ['Erro'];
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prazo: '' }), t).ok, false);

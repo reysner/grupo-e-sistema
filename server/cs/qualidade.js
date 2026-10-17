@@ -29,6 +29,16 @@ const STATUS = ['aberto', 'em_tratamento', 'finalizada', 'resolvido', 'cancelado
 const ROTULO_STATUS = { aberto: 'Aberto', em_tratamento: 'Em tratamento', finalizada: 'Finalizada (aguardando validação)', resolvido: 'Resolvido', cancelado: 'Cancelado' };
 const MAX_DETALHE = 2000;   // "Descreva a tratativa" da ficha e "Descrição / Detalhes da ocorrência" (era 600; ampliado a pedido do Reysner, 17/10/2026)
 const PRIORIDADES = ['Muito Alta', 'Alta', 'Média', 'Baixa'];
+const PAPEIS_GESTOR = ['gestor', 'diretor'];
+/**
+ * Etapas do fluxo de uma ocorrência registrada no módulo (Portal do Gestor, 17/10/2026):
+ *   registrada → (o gestor do departamento analisa e cria a tratativa: plano de ação, responsável e departamento) → tratativa_definida
+ *   → (o gestor abre para o analista) com_analista → (o analista trata e deixa uma nota) validacao_gestor
+ *   → (o gestor valida, "tudo ok", com nota) devolutiva_cliente → (o Sucesso do Cliente dá a devolutiva ao cliente e encerra) encerrada.
+ * O risco de churn continua lendo o "status" (aberto, em tratamento, finalizada, resolvido): registrada e tratativa_definida = aberto,
+ * com_analista = em tratamento, validacao_gestor e devolutiva_cliente = finalizada, encerrada = resolvido (aplicado nas telas das etapas 2 e 3).
+ */
+const ETAPAS = ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada'];
 const MAX_ANEXO = 10 * 1024 * 1024;   // por arquivo (ficam no banco)
 const MAX_ANEXOS = 5;               // por ocorrência
 const MAX_TRATATIVA = 600;
@@ -107,6 +117,40 @@ function validarOcorrencia(corpo, tiposPermitidos, hoje) {
   if (prazo < h) return { ok: false, erro: 'O prazo não pode ser uma data que já passou.' };
   if (prazo > somarDias(h, 365)) return { ok: false, erro: 'O prazo passa de um ano: escolha uma data mais próxima.' };
   return { ok: true, valores: { cliente_id, assunto, tipo, prioridade, departamento, detalhe, prazo } };
+}
+
+const rotuloDepto = (d) => (d === 'Sucesso' ? 'Sucesso do Cliente' : d);
+
+/** Valida o cadastro de um gestor de departamento: pessoa, departamento da lista e papel (gestor ou diretor). */
+function validarGestor(corpo) {
+  const b = corpo || {};
+  const user_id = texto(b.user_id, 80);
+  if (!user_id) return { ok: false, erro: 'Escolha a pessoa.' };
+  const departamento = DEPARTAMENTOS.find((d) => d === b.departamento);
+  if (!departamento) return { ok: false, erro: 'Escolha o departamento.' };
+  const papel = b.papel === undefined ? 'gestor' : PAPEIS_GESTOR.find((p) => p === b.papel);
+  if (!papel) return { ok: false, erro: 'O papel é gestor ou diretor.' };
+  return { ok: true, valores: { user_id, departamento, papel } };
+}
+
+/**
+ * Para onde vai uma ocorrência: ao(s) GESTOR(es) do departamento escolhido; se o departamento ainda não tem gestor cadastrado, ao Sucesso do Cliente.
+ * Diretor não recebe a fila (diretores são administradores e já enxergam tudo). entrada: lista de { papel, name }.
+ */
+function destinoDaOcorrencia(departamento, gestores) {
+  const nomes = (gestores || []).filter((g) => g && g.papel === 'gestor').map((g) => g.name).filter(Boolean);
+  return nomes.length ? { fila: 'gestor', gestores: nomes } : { fila: 'sucesso', gestores: [] };
+}
+function textoDestino(departamento, dest) {
+  return dest.fila === 'gestor'
+    ? 'Encaminhada ao gestor de ' + rotuloDepto(departamento) + ': ' + dest.gestores.join(', ') + '.'
+    : rotuloDepto(departamento) + ' ainda não tem gestor cadastrado: encaminhada ao Sucesso do Cliente.';
+}
+/** Quem muda o prazo de uma ocorrência: a administração ou o gestor/diretor de um dos departamentos dela. */
+function podeAlterarPrazo(user, departamentos, deptosDoUsuario) {
+  if (user && user.role === 'administrador') return true;
+  const meus = deptosDoUsuario || [];
+  return (departamentos || []).some((d) => meus.includes(d));
 }
 
 /** Valida a mudança de um registro: status, prazo e/ou tratativa. */
@@ -202,6 +246,13 @@ function garantirSchema() {
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(), registro_id UUID NOT NULL REFERENCES cs_qualidade_registros(id) ON DELETE CASCADE,
         nome TEXT NOT NULL, mime TEXT, tamanho INT NOT NULL, dados BYTEA NOT NULL, criado_por TEXT, criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW())`))
       .then(() => pool.query('ALTER TABLE cs_qualidade_anexos ENABLE ROW LEVEL SECURITY'))
+      // fluxo do Portal do Gestor: etapa da ocorrência e para quem ela foi encaminhada ('gestor' do departamento, ou 'sucesso' se o departamento não tem gestor)
+      .then(() => pool.query("ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS etapa TEXT NOT NULL DEFAULT 'registrada'"))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS fila TEXT'))
+      .then(() => pool.query(`CREATE TABLE IF NOT EXISTS cs_qualidade_gestores (
+        id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, departamento TEXT NOT NULL, papel TEXT NOT NULL DEFAULT 'gestor',
+        criado_por TEXT, criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (user_id, departamento))`))
+      .then(() => pool.query('ALTER TABLE cs_qualidade_gestores ENABLE ROW LEVEL SECURITY'))
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ENABLE ROW LEVEL SECURITY'))
       .then(() => pool.query('CREATE INDEX IF NOT EXISTS cs_qualidade_cliente_idx ON cs_qualidade_registros (cliente_id)'))
       .then(() => pool.query('CREATE INDEX IF NOT EXISTS cs_qualidade_analista_idx ON cs_qualidade_registros (analista_id)'))
@@ -234,7 +285,7 @@ function soEquipe(req, res, next) {
 }
 
 const COLUNAS = `r.id, r.cliente_id, r.cnpj, r.cliente_nome, r.tipo, r.departamentos, r.detalhe, r.analista_id, a.nome AS analista_nome,
-       to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.status, r.origem, r.assunto, r.prioridade, r.criado_por, r.criado_em, r.resolvido_em, r.resolvido_por, r.tratativa, r.validado_em, r.validado_por`;
+       to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.status, r.origem, r.etapa, r.fila, r.assunto, r.prioridade, r.criado_por, r.criado_em, r.resolvido_em, r.resolvido_por, r.tratativa, r.validado_em, r.validado_por`;
 const DE = `FROM cs_qualidade_registros r LEFT JOIN analistas a ON a.id::text = r.analista_id`;
 const comSituacao = (rows) => rows.map((r) => ({ ...r, situacao: situacao(r.status, r.prazo), status_rotulo: ROTULO_STATUS[r.status] }));
 
@@ -264,7 +315,7 @@ async function anexarAnexos(lista) {
  * Aviso no sino a TODOS os administradores quando alguém lança uma consideração de Qualidade. O sino é compartilhado: qualquer administrador
  * que abrir o aviso chega ao módulo Qualidade do /cs, onde todos podem interagir (validar, devolver, cancelar, ajustar prazo).
  */
-async function notificarLancamento(reg, lancador) {
+async function notificarLancamento(reg, lancador, destino) {
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS notificacoes (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(), tipo TEXT NOT NULL, titulo TEXT NOT NULL, mensagem TEXT NOT NULL,
@@ -272,7 +323,7 @@ async function notificarLancamento(reg, lancador) {
     if (reg.origem === 'modulo') {   // ocorrência registrada no módulo
       await pool.query(
         `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ('qualidade_lancada', $1, $2, 'cs-qualidade')`,
-        ['Nova ocorrência registrada: ' + reg.tipo, (lancador || 'Alguém') + ' registrou uma ocorrência (' + reg.tipo + ', prioridade ' + (reg.prioridade || '—') + ') em "' + (reg.cliente_nome || 'cliente') + '": ' + (reg.assunto || '') + ' — ' + (reg.departamentos || []).join(', ') + ', prazo ' + String(reg.prazo || '').split('-').reverse().join('/') + '.']);
+        ['Nova ocorrência registrada: ' + reg.tipo, (lancador || 'Alguém') + ' registrou uma ocorrência (' + reg.tipo + ', prioridade ' + (reg.prioridade || '—') + ') em "' + (reg.cliente_nome || 'cliente') + '": ' + (reg.assunto || '') + ' — ' + (reg.departamentos || []).join(', ') + ', prazo ' + String(reg.prazo || '').split('-').reverse().join('/') + '.' + (destino ? ' ' + destino : '')]);
       return;
     }
     const prazo = String(reg.prazo || '').split('-').reverse().join('/');
@@ -487,6 +538,42 @@ router.get('/analista/:id', async (req, res) => {
   } catch (e) { console.error('[qualidade] GET /analista falhou:', e); res.status(500).json({ error: 'Erro ao ler os registros do analista.' }); }
 });
 
+/** Gestores por departamento (a equipe vê quem é; só o administrador cadastra). O administrador também recebe a lista de pessoas para escolher. */
+router.get('/gestores', async (req, res) => {
+  try {
+    await garantirSchema();
+    const { rows } = await pool.query(`SELECT g.id, g.user_id, g.departamento, g.papel, u.name, u.email FROM cs_qualidade_gestores g JOIN users u ON u.id::text = g.user_id WHERE u.active = true ORDER BY u.name`);
+    const departamentos = DEPARTAMENTOS.map((d) => ({ codigo: d, rotulo: rotuloDepto(d), gestores: rows.filter((g) => g.departamento === d).map((g) => ({ id: g.id, user_id: g.user_id, nome: g.name, email: g.email, papel: g.papel })) }));
+    const resp = { departamentos };
+    if (req.user.role === 'administrador') resp.usuarios = (await pool.query('SELECT id::text AS id, name, email, role FROM users WHERE active = true ORDER BY name')).rows;
+    res.json(resp);
+  } catch (e) { console.error('[qualidade] GET /gestores falhou:', e); res.status(500).json({ error: 'Erro ao ler os gestores.' }); }
+});
+router.post('/gestores', async (req, res) => {
+  if (!req.user || req.user.role !== 'administrador') return res.status(403).json({ error: 'Só o administrador cadastra gestores.' });
+  const v = validarGestor(req.body);
+  if (!v.ok) return res.status(400).json({ error: v.erro });
+  try {
+    await garantirSchema();
+    const u = (await pool.query('SELECT id::text AS id, name FROM users WHERE id::text = $1 AND active = true', [v.valores.user_id])).rows[0];
+    if (!u) return res.status(404).json({ error: 'Pessoa não encontrada entre os usuários ativos.' });
+    const ins = await pool.query(
+      `INSERT INTO cs_qualidade_gestores (user_id, departamento, papel, criado_por) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id, departamento) DO UPDATE SET papel = EXCLUDED.papel RETURNING id`,
+      [v.valores.user_id, v.valores.departamento, v.valores.papel, req.user.name || null]);
+    res.status(201).json({ ok: true, id: ins.rows[0].id });
+  } catch (e) { console.error('[qualidade] POST /gestores falhou:', e); res.status(500).json({ error: 'Erro ao cadastrar o gestor.' }); }
+});
+router.delete('/gestores/:id', async (req, res) => {
+  if (!req.user || req.user.role !== 'administrador') return res.status(403).json({ error: 'Só o administrador retira gestores.' });
+  try {
+    await garantirSchema();
+    const del = await pool.query('DELETE FROM cs_qualidade_gestores WHERE id = $1 RETURNING id', [parseInt(req.params.id, 10) || 0]);
+    if (!del.rows.length) return res.status(404).json({ error: 'Gestor não encontrado.' });
+    res.json({ ok: true });
+  } catch (e) { console.error('[qualidade] DELETE /gestores falhou:', e); res.status(500).json({ error: 'Erro ao retirar o gestor.' }); }
+});
+
 /** Sugestão de empresas ao digitar: as que COMEÇAM com o texto (nome ou CNPJ) vêm primeiro; se couberem mais, as que apenas contêm. */
 router.get('/empresas', async (req, res) => {
   try {
@@ -520,14 +607,18 @@ router.post('/ocorrencias', async (req, res) => {
     const cli = await pool.query(`SELECT id::text AS id, nome_empresa, regexp_replace(cnpj, '\\D', '', 'g') AS cnpj FROM clientes WHERE id::text = $1 AND status = 'ativo'`, [x.cliente_id]);
     if (!cli.rows.length) return res.status(404).json({ error: 'Empresa não encontrada entre os clientes ativos.' });
     const c = cli.rows[0];
+    // encaminhamento: gestor(es) do departamento escolhido; sem gestor cadastrado, vai para o Sucesso do Cliente
+    const gest = (await pool.query(
+      `SELECT g.papel, u.name FROM cs_qualidade_gestores g JOIN users u ON u.id::text = g.user_id WHERE g.departamento = $1 AND u.active = true ORDER BY u.name`, [x.departamento])).rows;
+    const dest = destinoDaOcorrencia(x.departamento, gest), textoDest = textoDestino(x.departamento, dest);
     const ins = await pool.query(
-      `INSERT INTO cs_qualidade_registros (cliente_id, cnpj, cliente_nome, tipo, departamentos, detalhe, assunto, prioridade, prazo, origem, criado_por, criado_por_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'modulo', $10, $11) RETURNING id`,
-      [c.id, soDigitos(c.cnpj), c.nome_empresa, x.tipo, [x.departamento], x.detalhe, x.assunto, x.prioridade, x.prazo, req.user.name || null, req.user.id || null]);
+      `INSERT INTO cs_qualidade_registros (cliente_id, cnpj, cliente_nome, tipo, departamentos, detalhe, assunto, prioridade, prazo, origem, fila, criado_por, criado_por_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'modulo', $10, $11, $12) RETURNING id`,
+      [c.id, soDigitos(c.cnpj), c.nome_empresa, x.tipo, [x.departamento], x.detalhe, x.assunto, x.prioridade, x.prazo, dest.fila, req.user.name || null, req.user.id || null]);
     await registrar(ins.rows[0].id, req.user.name, 'criado', x.tipo + ' · ' + x.prioridade + ' · ' + x.assunto);
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [ins.rows[0].id]);
-    await notificarLancamento(rows[0], req.user.name);
-    res.status(201).json({ registro: comSituacao(rows)[0] });
+    await notificarLancamento(rows[0], req.user.name, textoDest);
+    res.status(201).json({ registro: comSituacao(rows)[0], destino: textoDest, fila: dest.fila });
   } catch (e) { console.error('[qualidade] POST /ocorrencias falhou:', e); res.status(500).json({ error: 'Erro ao registrar a ocorrência.' }); }
 });
 
@@ -572,8 +663,13 @@ router.get('/ocorrencias', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   try {
     await garantirSchema();
-    const atual = (await pool.query('SELECT id, status, tratativa FROM cs_qualidade_registros WHERE id::text = $1', [String(req.params.id)])).rows[0];
+    const atual = (await pool.query('SELECT id, status, tratativa, origem, departamentos FROM cs_qualidade_registros WHERE id::text = $1', [String(req.params.id)])).rows[0];
     if (!atual) return res.status(404).json({ error: 'Registro não encontrado.' });
+    // o prazo de uma ocorrência do módulo é do gestor do departamento (ou da administração)
+    if (atual.origem === 'modulo' && req.body && req.body.prazo !== undefined && req.user.role !== 'administrador') {
+      const meus = (await pool.query('SELECT departamento FROM cs_qualidade_gestores WHERE user_id = $1', [String(req.user.id)])).rows.map((g) => g.departamento);
+      if (!podeAlterarPrazo(req.user, atual.departamentos, meus)) return res.status(403).json({ error: 'Só o gestor do departamento ou a administração altera o prazo.' });
+    }
     const v = validarMudanca(req.body, undefined, { jaTemTratativa: !!(atual.tratativa && atual.tratativa.length >= 5) });
     if (!v.ok) return res.status(400).json({ error: v.erro });
     const x = v.valores, sets = [], vals = [];
@@ -790,4 +886,4 @@ routerAnalista.post('/:id/nota', async (req, res) => {
   } catch (e) { console.error('[qualidade] POST /nota falhou:', e); res.status(500).json({ error: 'Erro ao salvar a nota.' }); }
 });
 
-module.exports = { router, routerAnalista, validarTipo, validarOcorrencia, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
