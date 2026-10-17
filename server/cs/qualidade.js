@@ -759,7 +759,8 @@ router.get('/recentes', async (req, res) => {
   } catch (e) { console.error('[qualidade] GET /recentes falhou:', e); res.status(500).json({ error: 'Erro ao ler os lançamentos recentes.' }); }
 });
 
-router.get('/analista/:id', async (req, res) => {
+router.get('/analista/:id', async (req, res, next) => {
+  if (req.params.id === 'ocorrencias') return next();   // é a rota do Portal do Analista (mais abaixo), não o id de um analista
   try {
     await garantirSchema();
     const a = await pool.query('SELECT id, nome, ativo, user_id FROM analistas WHERE id::text = $1', [String(req.params.id)]);
@@ -1519,7 +1520,11 @@ async function analistaDoLogin(user) {
   if (porId.rows.length) return porId.rows[0];
   const todos = await pool.query('SELECT id, nome, ativo FROM analistas WHERE user_id IS NULL');
   const alvo = semAcento(user.name);
-  return todos.rows.find((a) => semAcento(a.nome) === alvo) || null;
+  const exato = todos.rows.find((a) => semAcento(a.nome) === alvo);
+  if (exato) return exato;
+  // login só com o primeiro nome (ex.: "João" para "Joao Victor ..."): serve quando é um único analista ainda sem login que começa assim
+  const completo = nomeCompletoDoLogin({ id: user.id, name: user.name }, todos.rows.map((a) => ({ nome: a.nome, user_id: null })), []);
+  return todos.rows.find((a) => semAcento(a.nome) === semAcento(completo)) || null;
 }
 
 /** Quem é o analista (lista de Qualidade) e o colaborador da Gamificação (Zappy) deste login; administrador ou usuário podem pedir outro analista. */

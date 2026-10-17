@@ -236,6 +236,18 @@ teste('nome completo no cadastro de gestores: usa o da lista de analistas (por v
   assert.strictEqual(f('4', 'Escritorial CS'), 'Escritorial CS');
   assert.strictEqual(f('6', ''), '');
 });
+teste('rotas: GET /analista/ocorrencias (Portal do Analista) não é engolida por GET /analista/:id', () => {
+  const { router } = require('./qualidade');
+  const camadas = router.stack.filter((l) => l.route && l.route.methods.get && ['/analista/:id', '/analista/ocorrencias'].includes(l.route.path));
+  const iEsp = camadas.findIndex((l) => l.route.path === '/analista/ocorrencias'), iGen = camadas.findIndex((l) => l.route.path === '/analista/:id');
+  assert.ok(iEsp >= 0 && iGen >= 0, 'as duas rotas existem');
+  // quando a genérica vem primeiro, ela tem de passar a vez (next) para "ocorrencias"; a específica respondendo antes também resolve
+  if (iGen < iEsp) {
+    let passou = false, respondeu = false;
+    camadas[iGen].route.stack[0].handle({ params: { id: 'ocorrencias' } }, { status() { respondeu = true; return { json() { respondeu = true; } }; }, json() { respondeu = true; } }, () => { passou = true; });
+    assert.ok(passou && !respondeu, 'a rota genérica passa a vez quando o id é "ocorrencias"');
+  }
+});
 teste('menu do usuário e sino: o cabeçalho das páginas /cs, /financeiro e /legalizacao fica acima do conteúdo (senão o menu abre por baixo dos cartões)', () => {
   const fs = require('fs'), path = require('path');
   const css = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'css', 'cs-painel.css'), 'utf8');
