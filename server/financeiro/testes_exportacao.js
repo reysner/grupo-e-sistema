@@ -259,6 +259,9 @@ const semLixo = (e, nome) => {
     assert.ok(h.includes('>Tratar<') && h.includes('>Ver<') && !h.includes('id="a-analista"'), 'analista comum não escolhe analista');
     const adm = C.t.htmlAnalista({ analista: null, todos: true, registros: regs, analistas: [{ id: '7', nome: 'Josiane' }] }, F({}));
     assert.ok(adm.includes('id="a-analista"') && adm.includes('age em nome do analista') && adm.includes('<th>Analista</th>'));
+    // administrador que escolheu um analista: a lista de analistas continua na tela (antes sumia)
+    const admFiltrado = C.t.htmlAnalista({ analista: { id: '7', nome: 'Josiane' }, todos: false, admin: true, registros: regs, analistas: [{ id: '7', nome: 'Josiane' }, { id: '8', nome: 'Outra' }] }, F({ analista: '7' }));
+    assert.ok(admFiltrado.includes('id="a-analista"') && admFiltrado.includes('<option value="7" selected>Josiane</option>') && admFiltrado.includes('visão do analista: Josiane'), 'o filtro de analista não some depois de escolher');
     const tratar = C.t.htmlOcorrenciaAnalista(regs[0], '');
     assert.ok(tratar.includes('Plano de ação do gestor') && tratar.includes('Retificar a guia') && tratar.includes('Observação') && tratar.includes('id="ao-encerrar"') && tratar.includes('id="ao-anotar"') && tratar.includes('Nota (o que foi feito)'));
     assert.ok(tratar.includes('vai para a validação do seu gestor'), 'avisa o caminho depois de encerrar');

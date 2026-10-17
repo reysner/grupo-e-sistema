@@ -1126,7 +1126,7 @@ router.get('/analista/ocorrencias', async (req, res) => {
     const lider = PAPEIS.includes(req.user.role), meuId = analista ? String(analista.id) : null;
     const mascarar = (lista) => lista.map((r) => mascararParaAnalista(r, meuId, lider));
     res.json({
-      analista: analista ? { id: analista.id, nome: analista.nome } : null, todos: !analista,
+      analista: analista ? { id: analista.id, nome: analista.nome } : null, todos: !analista, admin: adm,
       registros: mascarar(await completar(rows)),
       sobre_mim: (await completar(sobre)).map((r) => Object.assign({}, r, { filhas: [] })),   // o indicado acompanha a etapa; as ocorrências vinculadas ficam com o gestor
     });
