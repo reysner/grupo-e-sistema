@@ -421,19 +421,55 @@
     return '<select class="gp-select q-motivo" data-id="' + esc(s.id) + '" style="max-width:260px"><option value="">Sem motivo</option>' + opt + '</select>';
   }
   /** Guarda o motivo no servidor e reflete na tela sem recarregar o painel inteiro. */
-  async function salvarMotivoChurn(id, motivo, aoTerminar) {
-    var r = await chamarApi('/api/cs/painel/churn-motivos/definir', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cliente_id: id, motivo: motivo || null }) });
+  async function salvarMotivoChurn(id, motivo, aoTerminar, opcoes) {
+    var o = opcoes || {};   // o.novo: motivo digitado em "Outro" (entra na lista e é salvo); o.aoErro(msg): mostra o erro na janela em vez de alert
+    var r = await chamarApi('/api/cs/painel/churn-motivos/definir', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o.novo ? { cliente_id: id, novo_motivo: o.novo } : { cliente_id: id, motivo: motivo || null }) });
     var j = await r.json().catch(function () { return {}; });
-    if (!r.ok) { window.alert(j.error || 'Não foi possível salvar o motivo.'); if (aoTerminar) aoTerminar(false); return; }
+    if (!r.ok) { if (o.aoErro) o.aoErro(j.error || 'Não foi possível salvar o motivo.'); else window.alert(j.error || 'Não foi possível salvar o motivo.'); if (aoTerminar) aoTerminar(false); return; }
+    if (o.novo) await carregarMotivosChurn(true);   // o motivo novo já aparece na lista de todas as saídas
     var aplica = function (p) { ((p && p.saidas) || []).forEach(function (s) { if (String(s.id) === String(id)) s.motivo_churn = j.motivo; }); };
     var per = (estado.dados && estado.dados.churn && estado.dados.churn.periodos) || {};
     Object.keys(per).forEach(function (k) { aplica(per[k]); });
     aplica(estado.churnLivre);
     if (aoTerminar) aoTerminar(true);
   }
+  /** Janela do "Outro": escreve qual é o motivo; ao incluir, ele entra na lista existente e já fica salvo na saída. */
+  function abrirNovoMotivoChurn(id, aoSalvar, aoCancelar) {
+    var ov = document.createElement('div'); ov.className = 'qa-overlay'; document.body.appendChild(ov);
+    var salvo = false;
+    var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); if (!salvo && aoCancelar) aoCancelar(); };
+    ov.innerHTML = '<div class="qa-modal" role="dialog" aria-label="Novo motivo de churn"><div class="qa-modal-topo"><strong>Qual é o motivo do churn?</strong><button type="button" class="qa-x" id="nm-fechar" aria-label="Fechar">✕</button></div>' +
+      '<div class="qa-modal-novo"><input id="nm-nome" type="text" maxlength="120" placeholder="Ex.: Churn por mudança de contador para a matriz"><button type="button" class="gp-footer-btn" id="nm-add" style="width:auto">Incluir e salvar</button></div>' +
+      '<div class="cinza" style="font-size:12px;margin:6px 2px">O motivo entra na lista de motivos de churn (a mesma da Gestão de Clientes) e já fica salvo nesta saída.</div><div class="pop-erro" id="nm-erro" role="alert"></div></div>';
+    $('nm-fechar').addEventListener('click', fechar);
+    var campo = $('nm-nome'), botao = $('nm-add');
+    var incluir = function () {
+      var erro = $('nm-erro'); erro.textContent = '';
+      var nome = String(campo.value || '').replace(/\s+/g, ' ').trim();
+      if (nome.length < 3) { erro.textContent = 'Escreva qual é o motivo do churn (mínimo de 3 letras).'; return; }
+      if (normTxt(nome) === 'outro') { erro.textContent = 'Escreva qual é o motivo em vez de "Outro".'; return; }
+      botao.disabled = true;
+      salvarMotivoChurn(id, null, function (ok) {
+        if (!ok) { botao.disabled = false; return; }
+        salvo = true; fechar(); if (aoSalvar) aoSalvar();
+      }, { novo: nome, aoErro: function (m) { erro.textContent = m; } });
+    };
+    botao.addEventListener('click', incluir);
+    campo.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); incluir(); } else if (ev.key === 'Escape') fechar(); });
+    if (campo.focus) campo.focus();
+  }
   function ligarSelectsMotivo(raiz, depois) {
     Array.prototype.forEach.call(document.querySelectorAll(raiz + ' .q-motivo'), function (sel) {
-      sel.addEventListener('change', function () { salvarMotivoChurn(sel.getAttribute('data-id'), sel.value, function (ok) { if (ok && depois) depois(); }); });
+      sel.setAttribute('data-antes', sel.value);
+      sel.addEventListener('change', function () {
+        var id = sel.getAttribute('data-id');
+        if (normTxt(sel.value) === 'outro') {   // "Outro": pede o motivo; cancelar volta para o que estava
+          abrirNovoMotivoChurn(id, function () { if (depois) depois(); }, function () { sel.value = sel.getAttribute('data-antes') || ''; });
+          return;
+        }
+        sel.setAttribute('data-antes', sel.value);
+        salvarMotivoChurn(id, sel.value, function (ok) { if (ok && depois) depois(); });
+      });
     });
   }
   /** Cartão "Churn por motivo": quantas das saídas que contam têm cada motivo. */

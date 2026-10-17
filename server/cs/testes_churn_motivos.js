@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_churn_motivos.js  (motivo efetivo e fechamento do mês; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { montarFechamento, motivoEfetivo, ultimoDia, mesAnterior } = require('./churnMotivos');
+const { validarNovoMotivo, montarFechamento, motivoEfetivo, ultimoDia, mesAnterior } = require('./churnMotivos');
 const { PADROES_PADRAO } = require('./churnSaidas');
 
 let ok = 0;
@@ -18,6 +18,17 @@ teste('motivo efetivo: o do painel vale; senão o da Gestão de Clientes, se for
   assert.strictEqual(motivoEfetivo({ motivo_churn: null, motivo_saida: 'Baixa de empresa' }, MOTIVOS), null);
   assert.strictEqual(motivoEfetivo({}, MOTIVOS), null);
 });
+teste('"Outro": o motivo novo precisa de 3 a 120 letras, espaços sobrando saem e "Outro" sozinho não vale', () => {
+  assert.deepStrictEqual(validarNovoMotivo('  Churn por   mudança de contador  '), { ok: true, nome: 'Churn por mudança de contador' });
+  assert.strictEqual(validarNovoMotivo('ab').ok, false);
+  assert.strictEqual(validarNovoMotivo('').ok, false);
+  assert.strictEqual(validarNovoMotivo(null).ok, false);
+  assert.strictEqual(validarNovoMotivo('x'.repeat(121)).ok, false);
+  assert.strictEqual(validarNovoMotivo('x'.repeat(120)).ok, true);
+  assert.strictEqual(validarNovoMotivo(' OUTRO ').ok, false);
+  assert.strictEqual(validarNovoMotivo('Outro motivo qualquer').ok, true);
+});
+
 teste('datas do mês', () => {
   assert.strictEqual(ultimoDia('2026-09'), '2026-09-30');
   assert.strictEqual(ultimoDia('2026-02'), '2026-02-28');

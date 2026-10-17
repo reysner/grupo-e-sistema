@@ -96,6 +96,15 @@ router.get('/motivos', async (req, res) => {
   catch (e) { console.error('[churn-motivos] GET /motivos falhou:', e); res.status(500).json({ error: 'Erro ao ler os motivos.' }); }
 });
 
+/** Valida o texto de um motivo novo, digitado quando se escolhe "Outro". */
+function validarNovoMotivo(txt) {
+  const nome = String(txt == null ? '' : txt).replace(/\s+/g, ' ').trim();
+  if (nome.length < 3) return { ok: false, erro: 'Escreva qual é o motivo do churn (mínimo de 3 letras).' };
+  if (nome.length > 120) return { ok: false, erro: 'O motivo passa de 120 caracteres.' };
+  if (norm(nome) === 'outro') return { ok: false, erro: 'Escreva qual é o motivo em vez de "Outro".' };
+  return { ok: true, nome };
+}
+
 router.put('/definir', async (req, res) => {
   if (!PAPEIS.includes(req.user.role)) return res.status(403).json({ error: 'Só administrador ou usuário classifica o motivo do churn.' });
   const b = req.body || {};
@@ -103,8 +112,23 @@ router.put('/definir', async (req, res) => {
   if (!id) return res.status(400).json({ error: 'Informe o cliente.' });
   try {
     await churn.garantirColuna();
-    let motivo = null;
-    if (b.motivo !== null && b.motivo !== undefined && String(b.motivo).trim() !== '') {
+    let motivo = null, novo = false;
+    if (b.novo_motivo !== null && b.novo_motivo !== undefined && String(b.novo_motivo).trim() !== '') {
+      // "Outro": o motivo digitado entra na lista existente (a mesma da Gestão de Clientes) e já fica salvo nesta saída.
+      const v = validarNovoMotivo(b.novo_motivo);
+      if (!v.ok) return res.status(400).json({ error: v.erro });
+      const existe = await pool.query(`SELECT 1 FROM clientes WHERE id::text = $1 AND status = 'encerrado'`, [id]);
+      if (!existe.rows.length) return res.status(404).json({ error: 'Cliente encerrado não encontrado.' });
+      const todos = (await pool.query('SELECT id, nome, ativo FROM motivos_churn')).rows;
+      const ja = todos.find((m) => norm(m.nome) === norm(v.nome));
+      if (ja) {
+        if (!ja.ativo) await pool.query('UPDATE motivos_churn SET ativo = TRUE WHERE id = $1', [ja.id]);
+        motivo = ja.nome;
+      } else {
+        const ins = await pool.query('INSERT INTO motivos_churn (nome) VALUES ($1) ON CONFLICT (nome) DO UPDATE SET ativo = TRUE RETURNING nome', [v.nome]);
+        motivo = ins.rows[0].nome; novo = true;
+      }
+    } else if (b.motivo !== null && b.motivo !== undefined && String(b.motivo).trim() !== '') {
       const lista = await motivosAtivos();
       const achado = lista.find((m) => norm(m.nome) === norm(b.motivo));
       if (!achado) return res.status(400).json({ error: 'Motivo fora da lista. Inclua-o em Gerenciar motivos.' });
@@ -114,7 +138,7 @@ router.put('/definir', async (req, res) => {
       `UPDATE clientes SET motivo_churn = $1, motivo_churn_por = $2, motivo_churn_em = NOW() WHERE id::text = $3 AND status = 'encerrado' RETURNING id`,
       [motivo, req.user.name || null, id]);
     if (!up.rows.length) return res.status(404).json({ error: 'Cliente encerrado não encontrado.' });
-    res.json({ ok: true, motivo });
+    res.json({ ok: true, motivo, novo });
   } catch (e) { console.error('[churn-motivos] PUT /definir falhou:', e); res.status(500).json({ error: 'Erro ao salvar o motivo.' }); }
 });
 
@@ -132,4 +156,4 @@ router.get('/fechamento', async (req, res) => {
   } catch (e) { console.error('[churn-motivos] GET /fechamento falhou:', e); res.status(500).json({ error: 'Erro ao montar o fechamento do mês.' }); }
 });
 
-module.exports = { router, montarFechamento, motivoEfetivo, ultimoDia, mesAnterior };
+module.exports = { router, validarNovoMotivo, montarFechamento, motivoEfetivo, ultimoDia, mesAnterior };
