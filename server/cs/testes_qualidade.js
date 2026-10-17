@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { TIPO_PLANO, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { TIPO_PLANO, nomeCompletoDoLogin, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -209,6 +209,18 @@ teste('nota e observação de quem encerra, valida ou devolve: nota obrigatória
   assert.strictEqual(validarEncerramento({ nota: 'a'.repeat(600) }).ok, true);
   assert.strictEqual(validarEncerramento({ nota: 'Tudo ok', obs: 'a'.repeat(1001) }).ok, false);
   assert.strictEqual(validarEncerramento({ nota: 'linha 1\r\nlinha 2' }).valores.nota, 'linha 1\nlinha 2');
+});
+teste('nome completo no cadastro de gestores: usa o da lista de analistas (por vínculo, nome igual ou único que começa igual); sem par, fica o do login', () => {
+  const an = [{ nome: 'Josiane Aparecida da Silva', user_id: null }, { nome: 'Eduardo de Queiroz Cançado Junior', user_id: '9' }, { nome: 'Eduardo Alves Souza', user_id: null }, { nome: 'Eduardo Pereira Lima', user_id: null }, { nome: 'Ivone Cardoso Rodrigues', user_id: null }, { nome: 'Ivone Cardoso Rodrigues', user_id: null }, { nome: 'Maira Souza', user_id: null }];
+  const col = [{ nome: 'Guilherme de Barros Amaro', user_id: '5' }];
+  const f = (id, name) => nomeCompletoDoLogin({ id, name }, an, col);
+  assert.strictEqual(f('1', 'Josiane'), 'Josiane Aparecida da Silva', 'único que começa igual');
+  assert.strictEqual(f('9', 'Eduardo'), 'Eduardo de Queiroz Cançado Junior', 'vínculo pelo login vence');
+  assert.strictEqual(f('2', 'Eduardo'), 'Eduardo', 'dois Eduardos sem vínculo: não chuta');
+  assert.strictEqual(f('5', 'Guilherme'), 'Guilherme de Barros Amaro', 'colaborador da Gamificação ligado ao login');
+  assert.strictEqual(f('3', 'MAIRA'), 'Maira Souza', 'sem acento nem maiúsculas');
+  assert.strictEqual(f('4', 'Escritorial CS'), 'Escritorial CS');
+  assert.strictEqual(f('6', ''), '');
 });
 teste('etapas do fluxo na ordem combinada', () => {
   assert.deepStrictEqual(ETAPAS, ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada']);
