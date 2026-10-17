@@ -147,7 +147,7 @@ function termometroTratativas(e) {
   if (vencidas) partes.push(`${vencidas} com prazo vencido`);
   if (aValidar) partes.push(`${aValidar} aguardando validação`);
   // o resumo nos Sinais de atenção é curto; o detalhe de cada ocorrência fica na seção Qualidade da ficha
-  return { pontos: limitar(p), detalhe: [`${plural(qs.length, 'consideração de qualidade registrada', 'considerações de qualidade registradas')} nos últimos 90 dias (${partes.join(', ')})`] };
+  return { pontos: limitar(p), detalhe: [`${plural(qs.length, 'ocorrência de qualidade registrada', 'ocorrências de qualidade registradas')} nos últimos 90 dias (${partes.join(', ')})`] };
 }
 
 /** Junta os termômetros. pesos/cortes opcionais (config do admin). */

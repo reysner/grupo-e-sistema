@@ -86,7 +86,8 @@ teste('mais de um responsável: aceita lista ou um só, tira repetidos e vazios,
   assert.strictEqual(idsResponsaveis({ analistas_ids: Array.from({ length: 30 }, (_, i) => String(i + 1)) }).length, 20);
 });
 
-const oc = { cliente_id: '123', assunto: 'Guia enviada com valor errado', tipo: 'Erro', prioridade: 'Média', departamento: 'Fiscal', detalhe: 'O cliente pagou a diferença e pediu retificação.' };
+const PRAZO_OC = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);   // daqui a uma semana
+const oc = { cliente_id: '123', assunto: 'Guia enviada com valor errado', tipo: 'Erro', prioridade: 'Média', departamento: 'Fiscal', prazo: PRAZO_OC, detalhe: 'O cliente pagou a diferença e pediu retificação.' };
 teste('ocorrência: aceita o formulário completo; prioridades e departamentos são os combinados', () => {
   const v = validarOcorrencia(oc, ['Erro', 'Multa']);
   assert.strictEqual(v.ok, true);
@@ -96,6 +97,17 @@ teste('ocorrência: aceita o formulário completo; prioridades e departamentos s
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prioridade: 'Urgente' }), ['Erro']).ok, false);
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { departamento: 'Marte' }), ['Erro']).ok, false);
 });
+teste('ocorrência: prazo para execução é obrigatório, não pode ser passado nem passar de um ano', () => {
+  const t = ['Erro'];
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prazo: '' }), t).ok, false);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prazo: '17/10/2026' }), t).ok, false);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prazo: '2020-01-01' }), t).ok, false);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prazo: '2999-01-01' }), t).ok, false);
+  assert.strictEqual(validarOcorrencia(oc, t).valores.prazo, PRAZO_OC);
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prazo: '2026-10-16' }), t, '2026-10-16').ok, true, 'hoje vale');
+  assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { prazo: '2026-10-15' }), t, '2026-10-16').ok, false, 'ontem não');
+});
+
 teste('ocorrência: empresa, assunto (3 a 100), tipo da lista e descrição (5 a 2000, mantém as quebras de linha)', () => {
   const t = ['Erro'];
   assert.strictEqual(validarOcorrencia(Object.assign({}, oc, { cliente_id: '' }), t).ok, false);

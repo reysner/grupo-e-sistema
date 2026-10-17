@@ -70,8 +70,8 @@ teste('tratativas: pesa pelo tipo (dobro), vencida x1,5, a validar x0,5, resolvi
   assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 2, peso: 0 }]).pontos, 0);                  // peso 0 = só registra, não pesa
   // resolvida entra na soma enquanto houver outra pendente
   assert.strictEqual(t([{ tipo: 'Multa', status: 'aberto', dias: 1 }, { tipo: 'Erro', status: 'resolvido', dias: 1 }]).pontos, 58);   // 50 + 30 x 0,25 = 57,5
-  assert.strictEqual(t([{ tipo: 'Atraso', status: 'aberto', dias: 2, vencida: true }]).detalhe[0], '1 consideração de qualidade registrada nos últimos 90 dias (1 em aberto, 1 com prazo vencido)');
-  assert.strictEqual(t([{ tipo: 'Atraso', status: 'aberto', dias: 2 }, { tipo: 'Erro', status: 'finalizada', dias: 2 }, { tipo: 'Multa', status: 'resolvido', dias: 2 }]).detalhe[0], '3 considerações de qualidade registradas nos últimos 90 dias (1 em aberto, 1 aguardando validação)');
+  assert.strictEqual(t([{ tipo: 'Atraso', status: 'aberto', dias: 2, vencida: true }]).detalhe[0], '1 ocorrência de qualidade registrada nos últimos 90 dias (1 em aberto, 1 com prazo vencido)');
+  assert.strictEqual(t([{ tipo: 'Atraso', status: 'aberto', dias: 2 }, { tipo: 'Erro', status: 'finalizada', dias: 2 }, { tipo: 'Multa', status: 'resolvido', dias: 2 }]).detalhe[0], '3 ocorrências de qualidade registradas nos últimos 90 dias (1 em aberto, 1 aguardando validação)');
 });
 
 teste('tratativas: sem pendência fica sem dado (fora da média) e não deixa o risco parcial', () => {
@@ -91,7 +91,7 @@ teste('tratativas: com pendência entra na média, aparece nos motivos e um term
   assert.strictEqual(r.pontos, 19);          // 75/4
   assert.strictEqual(r.alerta, true);
   assert.strictEqual(r.nivel, 'Médio');
-  assert.ok(r.motivos[0].includes('consideração de qualidade registrada nos últimos 90 dias'));
+  assert.ok(r.motivos[0].includes('ocorrência de qualidade registrada nos últimos 90 dias'));
 });
 
 teste('atendimento: abandono de atendimento não conta mais (decisão de 16/10/2026)', () => {

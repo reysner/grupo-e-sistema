@@ -336,11 +336,15 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 .qa-modal.qa-modal-oc{max-width:min(1360px,97vw);max-height:90vh;padding:28px;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.25);}
 .qa-modal-oc textarea{min-height:200px;}
 .qa-oc-linha{display:grid;gap:14px;margin-bottom:6px;}
-.qa-oc-l1{grid-template-columns:minmax(0,2fr) minmax(0,1.3fr) minmax(0,.7fr);}
+.qa-oc-l1{grid-template-columns:minmax(0,2fr) minmax(0,1.2fr) minmax(0,.7fr) minmax(0,.8fr);}
+.qa-oc-obs{font-size:12.5px;color:#92400e;background:#fffbeb;border:1px solid #f59e0b55;border-radius:8px;padding:7px 12px;margin:0 0 12px;}
+.qa-obs{flex:1;min-width:280px;font-size:12.5px;color:#92400e;background:#fffbeb;border:1px solid #f59e0b55;border-radius:8px;padding:7px 12px;}
+.qa-oc-acoes{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;}
 .qa-oc-l2{grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr);}
 @media (max-width:760px){.qa-oc-l1,.qa-oc-l2{grid-template-columns:1fr;}}
 .qa-modal-oc .qa-campo{min-width:0;position:relative;}
 .qa-modal-oc .qa-campo label{font-size:13px;color:var(--text);}
+.qa-modal-oc .qa-campo input[type=date]{width:100%;}
 .qa-modal-oc .qa-campo input[type=text]{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:13px;}
 .qa-modal-oc input[type=file]{width:100%;font-size:12px;}
 .qa-oc-dica{font-size:11px;margin-top:2px;}

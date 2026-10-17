@@ -216,6 +216,8 @@ const semLixo = (e, nome) => {
     const op = C.t.opcoesTiposOc(['Erro', 'Tipo <novo>']);
     assert.ok(op.startsWith('<option value="">Selecione o tipo…</option><option>Erro</option>') && op.includes('Tipo &lt;novo&gt;'), 'a lista vem dos tipos cadastrados, com texto escapado');
     assert.ok(f.includes('Até 5 arquivos de 10 MB cada'));
+    assert.ok(f.includes('Prazo para execução') && f.includes('id="oc-prazo"') && f.includes('type="date"'), 'prazo para execução no formulário');
+    assert.ok(f.includes('Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.'), 'observação de uso');
   });
   await teste('cs: lista de ocorrências do módulo — ações da liderança, excluir só do administrador, anexos e cartão da ficha', () => {
     const r = (id, status) => ({ id, status, situacao: status, tipo: 'Erro', prioridade: 'Alta', departamentos: ['Sucesso'], assunto: 'Guia errada', detalhe: 'Linha 1\nlinha 2', cliente_nome: 'ALFA LTDA', criado_em: '2026-10-17T12:00:00Z', criado_por: 'Larissa', anexos: [{ id: 'a1', nome: 'guia.pdf', tamanho: 2048 }], notas: [] });
@@ -229,6 +231,9 @@ const semLixo = (e, nome) => {
     assert.ok(C.t.tabelaOcorrenciasMod([]).includes('Nenhuma ocorrência registrada ainda'));
     const c = C.t.cartaoOcorrenciaQ(r('x1', 'aberto'));
     assert.ok(c.includes('<strong>Erro</strong>') && c.includes('Alta') && c.includes('Guia errada') && c.includes('Linha 1\nlinha 2') && c.includes('guia.pdf') && c.includes('Sucesso do Cliente'));
+    assert.ok(c.includes('data-oc-res="x1"') && c.includes('data-oc-can="x1"') && c.includes('data-oc-del="x1"'), 'na ficha a liderança resolve, cancela e (administrador) exclui');
+    assert.ok(!C.t.cartaoOcorrenciaQ(r('x2', 'resolvido')).includes('data-oc-res'), 'resolvida não tem mais Resolver');
+    assert.ok(C.t.cartaoOcorrenciaQ(Object.assign(r('x3', 'aberto'), { prazo: '2026-10-25' })).includes('prazo 25/10/2026'), 'mostra o prazo');
   });
   await teste('cs: análise traz o grupo consolidado e cada empresa; zero vira "sem faturamento"; CPF aparece', () => {
     const e = C.t.dadosExport('analise');

@@ -82,9 +82,9 @@ function idsResponsaveis(corpo) {
 
 /**
  * Valida uma OCORRÊNCIA lançada no módulo Qualidade (empresa, assunto, tipo, prioridade, departamento, descrição).
- * Não tem analista nem prazo: a ocorrência fica aberta até a liderança resolver ou cancelar.
+ * Tem prazo para execução (obrigatório), mas ainda não tem responsável: quem trata é definido pelo gestor (Portal do Gestor, próxima etapa).
  */
-function validarOcorrencia(corpo, tiposPermitidos) {
+function validarOcorrencia(corpo, tiposPermitidos, hoje) {
   const b = corpo || {};
   const cliente_id = texto(b.cliente_id, 80);
   if (!cliente_id) return { ok: false, erro: 'Escolha a empresa na lista que aparece enquanto você digita.' };
@@ -101,7 +101,12 @@ function validarOcorrencia(corpo, tiposPermitidos) {
   const detalhe = String(b.detalhe == null ? '' : b.detalhe).replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
   if (detalhe.length < 5) return { ok: false, erro: 'Descreva a ocorrência (mínimo de 5 caracteres).' };
   if (detalhe.length > MAX_DETALHE) return { ok: false, erro: 'A descrição passa de ' + MAX_DETALHE + ' caracteres.' };
-  return { ok: true, valores: { cliente_id, assunto, tipo, prioridade, departamento, detalhe } };
+  const h = hoje || hojeBrasilia();
+  const prazo = texto(b.prazo, 10);
+  if (!ISO.test(prazo) || isNaN(Date.parse(prazo + 'T12:00:00Z'))) return { ok: false, erro: 'Informe o prazo para execução.' };
+  if (prazo < h) return { ok: false, erro: 'O prazo não pode ser uma data que já passou.' };
+  if (prazo > somarDias(h, 365)) return { ok: false, erro: 'O prazo passa de um ano: escolha uma data mais próxima.' };
+  return { ok: true, valores: { cliente_id, assunto, tipo, prioridade, departamento, detalhe, prazo } };
 }
 
 /** Valida a mudança de um registro: status, prazo e/ou tratativa. */
@@ -267,7 +272,7 @@ async function notificarLancamento(reg, lancador) {
     if (reg.origem === 'modulo') {   // ocorrência registrada no módulo
       await pool.query(
         `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ('qualidade_lancada', $1, $2, 'cs-qualidade')`,
-        ['Nova ocorrência registrada: ' + reg.tipo, (lancador || 'Alguém') + ' registrou uma ocorrência (' + reg.tipo + ', prioridade ' + (reg.prioridade || '—') + ') em "' + (reg.cliente_nome || 'cliente') + '": ' + (reg.assunto || '') + ' — ' + (reg.departamentos || []).join(', ') + '.']);
+        ['Nova ocorrência registrada: ' + reg.tipo, (lancador || 'Alguém') + ' registrou uma ocorrência (' + reg.tipo + ', prioridade ' + (reg.prioridade || '—') + ') em "' + (reg.cliente_nome || 'cliente') + '": ' + (reg.assunto || '') + ' — ' + (reg.departamentos || []).join(', ') + ', prazo ' + String(reg.prazo || '').split('-').reverse().join('/') + '.']);
       return;
     }
     const prazo = String(reg.prazo || '').split('-').reverse().join('/');
@@ -516,9 +521,9 @@ router.post('/ocorrencias', async (req, res) => {
     if (!cli.rows.length) return res.status(404).json({ error: 'Empresa não encontrada entre os clientes ativos.' });
     const c = cli.rows[0];
     const ins = await pool.query(
-      `INSERT INTO cs_qualidade_registros (cliente_id, cnpj, cliente_nome, tipo, departamentos, detalhe, assunto, prioridade, origem, criado_por, criado_por_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'modulo', $9, $10) RETURNING id`,
-      [c.id, soDigitos(c.cnpj), c.nome_empresa, x.tipo, [x.departamento], x.detalhe, x.assunto, x.prioridade, req.user.name || null, req.user.id || null]);
+      `INSERT INTO cs_qualidade_registros (cliente_id, cnpj, cliente_nome, tipo, departamentos, detalhe, assunto, prioridade, prazo, origem, criado_por, criado_por_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'modulo', $10, $11) RETURNING id`,
+      [c.id, soDigitos(c.cnpj), c.nome_empresa, x.tipo, [x.departamento], x.detalhe, x.assunto, x.prioridade, x.prazo, req.user.name || null, req.user.id || null]);
     await registrar(ins.rows[0].id, req.user.name, 'criado', x.tipo + ' · ' + x.prioridade + ' · ' + x.assunto);
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [ins.rows[0].id]);
     await notificarLancamento(rows[0], req.user.name);

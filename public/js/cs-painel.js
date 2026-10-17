@@ -18,7 +18,7 @@
   };
   var TITULOS = {
     analise: ['Análise Inteligente', 'Regime tributário, faturamento, honorários e funcionários de cada cliente; grupos de empresas e matriz com filiais somados, com a lupa para ver cada empresa, para uma análise completa.'],
-    consideracoes: ['Qualidade', 'Considerações registradas por analista (multa, erro, reclamação, atraso, falha): data do lançamento, prazo e status. O analista trata pela página Minhas tratativas.'],
+    consideracoes: ['Qualidade', 'Ocorrências registradas (reclamação, insatisfação, multa, caso grave...) com prazo e status. Elas aparecem nos Sinais de atenção, na seção Qualidade da empresa e pesam no risco de churn.'],
     atendimento: ['Atendimento', 'Atendimentos do Zappy e e-mails dos últimos 180 dias de cada cliente ativo. Clique na empresa para ver cada atendimento e os e-mails por destinatário.'],
     anual: ['Análise Anual', 'Faturamento ano a ano de cada cliente ativo no Acessórias, para avaliar se o honorário precisa de ajuste. Clique na empresa para ver a evolução.'],
     visao: ['Visão Geral', 'Clientes ativos, saídas por transferência e risco de perda — só CNPJ. Material da reunião semanal das lideranças.'],
@@ -1442,7 +1442,8 @@
       var o = await carregarOpcoesQ();
       var lista = await api('/api/cs/painel/qualidade/cliente/' + encodeURIComponent(c.id));
       alvo.innerHTML = formularioQ(o) + '<div class="qa-lista">' + listaRegistrosQ(lista.registros) + '</div>';
-      var oc = $('qa-ocorrencias'); if (oc) oc.innerHTML = listaOcorrenciasQ(lista.registros);
+      var oc = $('qa-ocorrencias');
+      if (oc) { oc.innerHTML = listaOcorrenciasQ(lista.registros); ligarAcoesOcorrenciaQ('#qa-ocorrencias', function () { estado.qResumo = null; montarConsideracoes(c); }); }
       var cont = $('qa-cont'), det = $('qa-detalhe');
       det.addEventListener('input', function () { cont.textContent = det.value.length + '/' + o.max_detalhe; });
       var todos = $('qa-dep-todos');
@@ -1620,8 +1621,46 @@
     return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao || r.status) + ' <strong>' + esc(r.tipo) + '</strong> ' + pillPrioridadeQ(r.prioridade) + ' <span class="cinza">· ' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</span></div>' +
       (r.assunto ? '<div class="qa-reg-txt"><strong>' + esc(r.assunto) + '</strong></div>' : '') +
       '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
-      '<div class="qa-reg-rod">Registrada em ' + data(r.criado_em) + ' por ' + esc(r.criado_por || '—') + (r.resolvido_em ? ' · resolvida em ' + data(r.resolvido_em) : '') + '</div>' +
-      anexosQ(r) + (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '</div>';
+      '<div class="qa-reg-rod">Registrada em ' + data(r.criado_em) + ' por ' + esc(r.criado_por || '—') + (r.prazo ? ' · prazo ' + data(r.prazo) : '') + (r.resolvido_em ? ' · resolvida em ' + data(r.resolvido_em) : '') + '</div>' +
+      anexosQ(r) + acoesOcorrenciaQ(r) + (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '</div>';
+  }
+  function podeAgirQ() { return !!(estado.dados && estado.dados.usuario && ['administrador', 'usuario'].indexOf(estado.dados.usuario.papel) >= 0); }
+  /** Ações da liderança em uma ocorrência (na seção Qualidade da ficha): resolver e cancelar; excluir só o administrador. */
+  function acoesOcorrenciaQ(r) {
+    var aberta = r.status === 'aberto' || r.status === 'em_tratamento' || r.status === 'finalizada';
+    var b = (podeAgirQ() && aberta ? '<button type="button" class="gp-footer-btn" data-oc-res="' + esc(r.id) + '" style="width:auto">Resolver</button> <button type="button" class="gp-footer-btn" data-oc-can="' + esc(r.id) + '" style="width:auto">Cancelar</button> ' : '') +
+      (ehAdminPainel() ? '<button type="button" class="gp-footer-btn qa-excluir" data-oc-del="' + esc(r.id) + '" style="width:auto" title="Apaga a ocorrência de vez (teste ou lançamento errado)">Excluir</button>' : '');
+    return b ? '<div class="qa-oc-acoes">' + b + '</div>' : '';
+  }
+  function ligarAcoesOcorrenciaQ(raiz, depois) {
+    var muda = async function (id, corpo, msg) {
+      var resp = await chamarApi('/api/cs/painel/qualidade/' + encodeURIComponent(id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+      var j = await resp.json().catch(function () { return {}; });
+      if (!resp.ok) { window.alert(j.error || msg); return; }
+      if (depois) depois();
+    };
+    Array.prototype.forEach.call(document.querySelectorAll(raiz + ' [data-oc-res]'), function (b) {
+      b.addEventListener('click', function () {
+        var t = window.prompt('O que foi feito para resolver esta ocorrência? (mínimo de 5 caracteres)');
+        if (t === null) return;
+        muda(b.getAttribute('data-oc-res'), { status: 'resolvido', tratativa: t }, 'Não foi possível resolver a ocorrência.');
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(raiz + ' [data-oc-can]'), function (b) {
+      b.addEventListener('click', function () {
+        if (!window.confirm('Cancelar esta ocorrência? Ela deixa de aparecer e de pesar no risco (fica no histórico).')) return;
+        muda(b.getAttribute('data-oc-can'), { status: 'cancelado' }, 'Não foi possível cancelar a ocorrência.');
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(raiz + ' [data-oc-del]'), function (b) {
+      b.addEventListener('click', async function () {
+        if (!window.confirm('Excluir esta ocorrência de vez? Isso não pode ser desfeito. (Para só tirar do risco e manter o histórico, use Cancelar.)')) return;
+        var resp = await chamarApi('/api/cs/painel/qualidade/' + encodeURIComponent(b.getAttribute('data-oc-del')), { method: 'DELETE' });
+        var j = await resp.json().catch(function () { return {}; });
+        if (!resp.ok) { window.alert(j.error || 'Não foi possível excluir.'); return; }
+        if (depois) depois();
+      });
+    });
   }
   async function baixarAnexoQ(id, nome) {
     try {
@@ -1652,7 +1691,7 @@
       '</div></details>';
   }
 
-  /** Tabela "Ocorrências registradas": a lista do módulo, com as ações da liderança (resolver, cancelar; excluir só o administrador). */
+  /** (Fora do módulo Qualidade desde 17/10/2026: a lista vai para o Portal do Gestor, que reaproveita esta tabela.) Tabela "Ocorrências registradas": a lista do módulo, com as ações da liderança (resolver, cancelar; excluir só o administrador). */
   function tabelaOcorrenciasMod(oc) {
     var adm = ehAdminPainel();
     var corpo = (oc || []).map(function (r) {
@@ -1679,10 +1718,12 @@
     var deps = '<option value="">Selecione o departamento…</option>' + DEPS_OCORRENCIA.map(function (d) { return '<option value="' + esc(d[0]) + '">' + esc(d[1]) + '</option>'; }).join('');
     var pri = (o.prioridades || ['Muito Alta', 'Alta', 'Média', 'Baixa']).map(function (p) { return '<option' + (p === 'Média' ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('');
     return '<div class="qa-modal-topo"><strong style="font-size:22px;color:#256050">Registrar ocorrência</strong><button type="button" class="qa-x" id="oc-fechar" aria-label="Fechar">✕</button></div>' +
+      '<div class="qa-oc-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</div>' +
       '<div class="qa-oc-linha qa-oc-l1">' +
         '<div class="qa-campo"><label for="oc-assunto">Assunto da ocorrência</label><input type="text" id="oc-assunto" maxlength="100" placeholder="Qual o assunto da ocorrência?"></div>' +
         '<div class="qa-campo"><label for="oc-anexo">Arquivo anexo</label><input type="file" id="oc-anexo" multiple><div class="cinza qa-oc-dica">Até ' + (o.max_anexos || 5) + ' arquivos de ' + Math.round((o.max_anexo || 10485760) / 1048576) + ' MB cada</div></div>' +
         '<div class="qa-campo"><label for="oc-prior">Prioridade</label><select id="oc-prior">' + pri + '</select></div>' +
+        '<div class="qa-campo"><label for="oc-prazo">Prazo para execução <span class="req">*</span></label><input type="date" id="oc-prazo" min="' + hojeIsoLocal() + '"></div>' +
       '</div>' +
       '<div class="qa-oc-linha qa-oc-l2">' +
         '<div class="qa-campo"><label for="oc-emp">Empresa</label><input type="text" id="oc-emp" autocomplete="off" placeholder="Digite o início do nome ou o CNPJ"><div class="qa-oc-sel" id="oc-emp-sel" hidden></div><div class="qa-oc-lista" id="oc-emp-lista" hidden></div></div>' +
@@ -1751,6 +1792,9 @@
       if (!tipo) { erro.textContent = 'Escolha o tipo de ocorrência.'; return; }
       if (!dep) { erro.textContent = 'Qual o departamento?'; return; }
       if (texto.length < 5) { erro.textContent = 'Descreva a ocorrência (mínimo de 5 caracteres).'; return; }
+      var prazo = $('oc-prazo').value;
+      if (!prazo) { erro.textContent = 'Informe o prazo para execução.'; return; }
+      if (prazo < hojeIsoLocal()) { erro.textContent = 'O prazo não pode ser uma data que já passou.'; return; }
       if (arqs.length > (o.max_anexos || 5)) { erro.textContent = 'Só é possível anexar até ' + (o.max_anexos || 5) + ' arquivos.'; return; }
       var grande = arqs.filter(function (f) { return f.size > (o.max_anexo || 10485760); })[0];
       if (grande) { erro.textContent = 'O arquivo "' + grande.name + '" passa de ' + Math.round((o.max_anexo || 10485760) / 1048576) + ' MB.'; return; }
@@ -1759,7 +1803,7 @@
       var reabrir = function () { ok.disabled = false; ok.textContent = '✉ OK - Registrar'; };
       try {
         var r = await chamarApi('/api/cs/painel/qualidade/ocorrencias', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cliente_id: emp.id, assunto: assunto, tipo: tipo, prioridade: $('oc-prior').value, departamento: dep, detalhe: det.value }) });
+          body: JSON.stringify({ cliente_id: emp.id, assunto: assunto, tipo: tipo, prioridade: $('oc-prior').value, departamento: dep, prazo: prazo, detalhe: det.value }) });
         var j = await r.json().catch(function () { return {}; });
         if (!r.ok) { erro.textContent = j.error || 'Não foi possível registrar a ocorrência.'; reabrir(); return; }
         var falhas = [];
@@ -1799,11 +1843,9 @@
       try { tiposQ = ((await api('/api/cs/painel/qualidade/tipos')).tipos || []).filter(function (t) { return t.ativo; }); } catch (e) { tiposQ = []; }
       pesoBox = comoPesaTratativa(tiposQ, estado.qPesoAberto);
     }
-    var oc = [];
-    try { oc = (await api('/api/cs/painel/qualidade/ocorrencias')).registros || []; } catch (e) { oc = []; }
     alvo.innerHTML =
       '<div class="qa-barra"><button type="button" class="login-btn" id="q-registrar" style="width:auto;margin:0;padding:10px 22px">＋ Registrar ocorrência</button>' +
-        (ehAdminPainel() ? '<button type="button" class="gp-footer-btn" id="q-gerenciar" style="width:auto">Gerenciar analistas</button><button type="button" class="gp-footer-btn" id="q-tipos" style="width:auto">Gerenciar tipos de registro</button>' : '') + '</div>' +
+        (ehAdminPainel() ? '<button type="button" class="gp-footer-btn" id="q-gerenciar" style="width:auto">Gerenciar analistas</button><button type="button" class="gp-footer-btn" id="q-tipos" style="width:auto">Gerenciar tipos de registro</button>' : '') + '<span class="qa-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</span></div>' +
       '<div class="gp-kpi-row">' +
         kpi('#7c3aed', 'A validar', tot.a_validar, 'finalizadas pelo analista, aguardando você') +
         kpi('#b45309', 'Em aberto', tot.abertos, 'aguardando o analista começar') +
@@ -1811,7 +1853,7 @@
         kpi('#b91c1c', 'Vencidos', tot.vencidos, 'prazo passou e ainda não foi resolvido') +
         kpi('#166534', 'Resolvidos', tot.resolvidos, 'considerações encerradas') +
       '</div>' +
-      aviso + recentesQ() + pesoBox + tabelaOcorrenciasMod(oc);
+      aviso + recentesQ() + pesoBox;
     var atualiza = function () { estado.qResumo = null; desenharQualidadeMod(); };
     var reg = $('q-registrar'); if (reg) reg.addEventListener('click', function () { abrirRegistrarOcorrencia(atualiza); });
     var g = $('q-gerenciar'); if (g) g.addEventListener('click', function () { abrirGerenciarAnalistas(atualiza); });
@@ -1832,34 +1874,6 @@
       var j = await resp.json().catch(function () { return {}; });
       if (!resp.ok) { window.alert(j.error || 'Não foi possível incluir o tipo.'); return; }
       estado.qOpcoes = null; estado.qPesoAberto = true; desenharQualidadeMod();
-    });
-    var muda = async function (id, corpo, msg) {
-      var resp = await chamarApi('/api/cs/painel/qualidade/' + encodeURIComponent(id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
-      var j = await resp.json().catch(function () { return {}; });
-      if (!resp.ok) { window.alert(j.error || msg); return; }
-      atualiza();
-    };
-    Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-oc-res]'), function (b) {
-      b.addEventListener('click', function () {
-        var t = window.prompt('O que foi feito para resolver esta ocorrência? (mínimo de 5 caracteres)');
-        if (t === null) return;
-        muda(b.getAttribute('data-oc-res'), { status: 'resolvido', tratativa: t }, 'Não foi possível resolver a ocorrência.');
-      });
-    });
-    Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-oc-can]'), function (b) {
-      b.addEventListener('click', function () {
-        if (!window.confirm('Cancelar esta ocorrência? Ela deixa de aparecer e de pesar no risco (fica no histórico).')) return;
-        muda(b.getAttribute('data-oc-can'), { status: 'cancelado' }, 'Não foi possível cancelar a ocorrência.');
-      });
-    });
-    Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-oc-del]'), function (b) {
-      b.addEventListener('click', async function () {
-        if (!window.confirm('Excluir esta ocorrência de vez? Isso não pode ser desfeito. (Para só tirar do risco e manter o histórico, use Cancelar.)')) return;
-        var resp = await chamarApi('/api/cs/painel/qualidade/' + encodeURIComponent(b.getAttribute('data-oc-del')), { method: 'DELETE' });
-        var j = await resp.json().catch(function () { return {}; });
-        if (!resp.ok) { window.alert(j.error || 'Não foi possível excluir.'); return; }
-        atualiza();
-      });
     });
   }
 
