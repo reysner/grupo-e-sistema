@@ -1699,6 +1699,14 @@
   var ROT_ETAPA_Q = { registrada: 'registrada, aguardando análise', tratativa_definida: 'tratativa definida', com_analista: 'com o analista', validacao_gestor: 'em validação do gestor', devolutiva_cliente: 'devolutiva ao cliente (Sucesso do Cliente)', encerrada: 'encerrada', cancelada: 'cancelada' };
   var COR_PRIORIDADE = { 'Muito Alta': '#b91c1c', Alta: '#c2410c', 'Média': '#1d4ed8', Baixa: '#6b7280' };
   function rotuloDepto(d) { return d === 'Sucesso' ? 'Sucesso do Cliente' : d; }
+  /** "Gestor(a) Pessoal", "Gestor(a) Fiscal"… (o Sucesso do Cliente fica "Gestor(a) Sucesso do Cliente"). */
+  function rotuloGestor(d) { return 'Gestor(a) ' + rotuloDepto(d); }
+  /** Coluna do responsável: o analista; antes de existir um, quem está com a ocorrência é o(a) gestor(a) do departamento. */
+  function responsavelAtualQ(r) {
+    if (r.analista_nome) return esc(r.analista_nome);
+    if (['registrada', 'tratativa_definida'].indexOf(r.etapa) >= 0 && (r.departamentos || [])[0]) return esc(rotuloGestor(r.departamentos[0]));
+    return '<span class="cinza">—</span>';
+  }
   function pillPrioridadeQ(p) {
     if (!p) return '<span class="cinza">—</span>';
     var c = COR_PRIORIDADE[p] || '#6b7280';
@@ -1716,7 +1724,7 @@
       (r.assunto ? '<div class="qa-reg-txt"><strong>' + esc(r.assunto) + '</strong></div>' : '') +
       '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
       '<div class="qa-reg-rod">Registrada em ' + dataHora(r.criado_em) + ' por ' + esc(r.criado_por || '—') + (r.prazo ? ' · prazo ' + data(r.prazo) : '') + (r.resolvido_em ? ' · resolvida em ' + dataHora(r.resolvido_em) : '') + '</div>' +
-      '<div class="qa-reg-rod">' + (r.etapa ? 'Etapa: <strong>' + esc(ROT_ETAPA_Q[r.etapa] || r.etapa) + '</strong>' : '') + (r.fila ? (r.etapa ? ' · ' : '') + (r.fila === 'gestor' ? 'encaminhada ao gestor de ' + esc(rotuloDepto((r.departamentos || [])[0])) : 'encaminhada ao gestor de ' + esc(rotuloDepto((r.departamentos || [])[0])) + ' (sem gestor cadastrado: o Sucesso do Cliente faz esta etapa)') : '') + '</div>' +
+      '<div class="qa-reg-rod">' + (r.etapa ? 'Etapa: <strong>' + esc(ROT_ETAPA_Q[r.etapa] || r.etapa) + '</strong>' : '') + (r.fila ? (r.etapa ? ' · ' : '') + (r.fila === 'gestor' ? 'encaminhada a ' + esc(rotuloGestor((r.departamentos || [])[0])) : 'encaminhada a ' + esc(rotuloGestor((r.departamentos || [])[0])) + ' (sem gestor cadastrado: o Sucesso do Cliente faz esta etapa)') : '') + '</div>' +
       anexosQ(r) + (semAcoes ? '' : acoesOcorrenciaQ(r)) + (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '</div>';
   }
   function podeAgirQ() { return !!(estado.dados && estado.dados.usuario && ['administrador', 'usuario'].indexOf(estado.dados.usuario.papel) >= 0); }
@@ -2368,7 +2376,7 @@
   var ETAPAS_Q = ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada', 'cancelada'];
   function pillEtapaQ(e) { var c = COR_ETAPA[e] || '#6b7280'; return '<span class="pill" style="color:' + c + ';border-color:' + c + '55;background:' + c + '14">' + esc(ETAPA_CURTA[e] || e || '—') + '</span>'; }
   var OBS_REGISTRO = 'Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.';
-  function destinoCurto(r) { return r.fila === 'gestor' ? 'Gestor de ' + rotuloDepto((r.departamentos || [])[0]) : r.fila === 'sucesso' ? ((r.departamentos || [])[0] && (r.departamentos || [])[0] !== 'Sucesso' ? 'Gestor de ' + rotuloDepto((r.departamentos || [])[0]) + ' (sem gestor cadastrado: Sucesso do Cliente faz esta etapa)' : 'Sucesso do Cliente') : '—'; }
+  function destinoCurto(r) { var d = (r.departamentos || [])[0]; return r.fila === 'gestor' ? rotuloGestor(d) : r.fila === 'sucesso' ? (d && d !== 'Sucesso' ? rotuloGestor(d) + ' (sem gestor cadastrado: Sucesso do Cliente faz esta etapa)' : 'Sucesso do Cliente') : '—'; }
   function htmlMinhasOcorrencias(lista) {
     var corpo = (lista || []).map(function (r) {
       return '<tr><td>' + dataHora(r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td>' +
@@ -2555,12 +2563,12 @@
       if (prazo < hojeIsoLocal()) { erro.textContent = 'O prazo não pode ser uma data que já passou.'; return; }
       var nomes = sel.map(function (c) { return c.getAttribute('data-nome'); }).join(', ');
       if (!window.confirm('Abrir esta ocorrência vinculada para ' + nomes + '?')) return;
+      var depto = $('gf-depto').value;
       var b = $('gf-ok'); b.disabled = true;
       var x = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(pai.id) + '/filha', { assunto: assunto, plano: plano.value, analistas_ids: sel.map(function (c) { return c.getAttribute('data-chip'); }), departamento: $('gf-depto').value, prazo: prazo, obs: $('gf-obs').value, mostrar_pai: $('gf-mostrar').checked, ocultar_empresa: ocultarEmpresa });
       if (!x.ok) { erro.textContent = x.j.error || 'Não foi possível abrir a ocorrência vinculada.'; b.disabled = false; return; }
-      fechar(); if (aoCriar) aoCriar();
+      fechar(); if (aoCriar) aoCriar({ assunto: assunto, nomes: nomes, depto: depto, prazo: prazo });
       estado.g.dados = null; desenharGestor();
-      window.alert('Ocorrência vinculada aberta para ' + nomes + '.');
     });
   }
   /** O analista indicado no registro acompanha a ocorrência (só leitura): a etapa em que está; quem trata é definido pelo gestor. */
@@ -2880,7 +2888,7 @@
       return '<tr' + (fila ? ' style="background:rgba(194,65,12,.07)"' : '') + '><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
         '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
         '<td style="white-space:normal;min-width:230px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 120)) + '</div></td>' +
-        '<td>' + esc(r.analista_nome || '—') + '</td><td class="c">' + celPrazo(r) + '</td><td class="c">' + pillEtapaQ(r.etapa) + '</td>' +
+        '<td>' + responsavelAtualQ(r) + '</td><td class="c">' + celPrazo(r) + '</td><td class="c">' + pillEtapaQ(r.etapa) + '</td>' +
         '<td class="c" style="white-space:nowrap"><button type="button" class="gp-footer-btn" data-sabrir="' + esc(r.id) + '" style="width:auto">' + (fila ? (d.final ? 'Devolutiva e encerrar' : 'Ver devolutiva') : 'Ver') + '</button></td></tr>';
     }).join('');
     return '<div class="qa-obs" style="margin-bottom:14px">ℹ Aqui o Sucesso do Cliente recebe a devolutiva do gestor, faz as formalizações com o cliente e <strong>encerra o caso</strong>. ' + (d.final ? 'Você é o <strong>gestor final</strong>: só você encerra o processo.' : 'Só o <strong>gestor final</strong> encerra o processo (para um diretor não encerrar achando que está encerrando só no departamento dele).') + '</div>' +
@@ -2982,7 +2990,7 @@
       return '<tr><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
         '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
         '<td style="white-space:normal;min-width:240px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 140)) + '</div>' + anexosQ(r) + '</td>' +
-        '<td>' + (r.analista_nome ? esc(r.analista_nome) : '<span class="cinza">—</span>') + '</td><td class="c">' + celPrazo(r) + '</td>' +
+        '<td>' + responsavelAtualQ(r) + '</td><td class="c">' + celPrazo(r) + '</td>' +
         '<td class="c">' + pillEtapaQ(r.etapa) + (r.situacao === 'vencido' ? '<div><span class="pill" style="color:#b91c1c;border-color:#b91c1c55;background:#b91c1c14">vencida</span></div>' : '') + '</td>' +
         '<td class="c" style="white-space:nowrap"><button type="button" class="gp-footer-btn" data-gabrir="' + esc(r.id) + '" style="width:auto">' + acao + '</button></td></tr>';
     }).join('');
@@ -3026,7 +3034,7 @@
     var editavel = r.etapa === 'registrada' || r.etapa === 'tratativa_definida';
     var depAtual = r.tratativa_depto || (r.departamentos || [])[0] || '';
     var podeFilha = r.origem !== 'filha' && ['registrada', 'tratativa_definida', 'com_analista'].indexOf(r.etapa) >= 0;
-    var btnFilha = '<button type="button" class="gp-footer-btn" id="gt-filha" style="width:auto">＋ Abrir ocorrência vinculada <span class="cinza">(uma para cada situação)</span></button>';
+    var btnFilha = '<button type="button" class="gp-footer-btn" id="gt-filha" style="width:auto">＋ Abrir ocorrência vinculada <span class="cinza">(uma para cada situação)</span></button><div id="gt-filhas-novas" style="margin-top:6px"></div>';
     var marcados = (r.responsaveis || []).map(function (x) { return String(x.analista_id); });
     if (!marcados.length && r.analista_origem_id) marcados = [String(r.analista_origem_id)];   // sugestão: o analista indicado no registro (o gestor troca ou acrescenta)
     var optA = opcoesAnalistasAg(analistas, depAtual, r.analista_id, 'Escolha o analista…');
@@ -3068,7 +3076,10 @@
     var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Ocorrência">' + htmlTratativaGestor(r, estado.qAnalistas || []) + '</div>';
     $('gt-fechar').addEventListener('click', fechar); $('gt-cancel').addEventListener('click', fechar);
-    if ($('gt-filha')) $('gt-filha').addEventListener('click', function () { abrirFilhaGestor(r, fechar); });
+    if ($('gt-filha')) $('gt-filha').addEventListener('click', function () { abrirFilhaGestor(r, function (n) {   // a janela da original continua aberta: dá para salvar/abrir a original e abrir outras vinculadas
+      var c = $('gt-filhas-novas');
+      if (c) c.insertAdjacentHTML('beforeend', '<div class="qa-obs" style="margin:4px 0">✔ Vinculada aberta: <strong>' + esc(n.assunto) + '</strong> para ' + esc(n.nomes) + ' · ' + esc(rotuloDepto(n.depto)) + ' · prazo ' + data(n.prazo) + '. Continue por aqui: salve esta tratativa ou abra outra vinculada.</div>');
+    }); });
     ligarAcoesOcorrencia(r, fechar, function () { estado.g.dados = null; desenharGestor(); });
     if ($('gv-validar')) {   // validação do que o analista tratou
       ligarContador('gv');
