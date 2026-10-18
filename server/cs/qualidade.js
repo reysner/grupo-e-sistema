@@ -252,7 +252,7 @@ function rotaAbertaGestorAnalista(metodo, caminho) {
   const m = String(metodo || '').toUpperCase();
   const c = String(caminho || '').split('?')[0].replace(/\/+$/, '') || '/';
   const p = c.split('/');   // '' + segmentos
-  if (m === 'GET') return ['/opcoes', '/empresas', '/tempos', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/analista/ocorrencias', '/sucesso/ocorrencias'].includes(c) || (p.length === 3 && p[1] === 'anexo');
+  if (m === 'GET') return ['/opcoes', '/empresas', '/tempos', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/analista/ocorrencias', '/sucesso/ocorrencias', '/pendencias'].includes(c) || (p.length === 3 && p[1] === 'anexo');
   if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir', 'excluir', 'mensagem', 'resposta-final'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && ['encerrar', 'apontar', 'responder'].includes(p[4]));
   if (m === 'PUT') return p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && p[4] === 'tratativa';
   return false;
@@ -901,6 +901,22 @@ router.delete('/gestores/:id', async (req, res) => {
  * Avisos para o navegador (notificação + som) de ocorrências NOVAS desde o ponto informado em ?desde= (o "agora" devolvido na chamada anterior).
  * A primeira chamada, sem desde, só devolve o ponto de partida. Não vai além das últimas 24 horas.
  */
+/** Contagens leves para o selo do menu: Portal do Sucesso do Cliente (devolutiva + observações do gestor(a) aguardando resposta) e Portal do Gestor (aguardando análise + respostas do Sucesso). null = a pessoa não tem o portal. */
+router.get('/pendencias', async (req, res) => {
+  try {
+    await garantirSchema();
+    const { rows } = await pool.query(`SELECT r.etapa, r.fila, r.departamentos,
+        (SELECT h.acao FROM cs_qualidade_historico h WHERE h.registro_id = r.id AND h.acao IN ('dialogo_gestor', 'dialogo_final') ORDER BY h.em DESC LIMIT 1) AS ultimo
+       FROM cs_qualidade_registros r WHERE r.origem = 'modulo' AND r.status <> 'cancelado' AND r.etapa NOT IN ('encerrada', 'cancelada')`);
+    const verSucesso = await podeVerSucesso(req);
+    const esc = await escopoDaRequisicao(req);
+    const verGestor = esc.todos || esc.deptos.length > 0;
+    res.json({
+      sucesso: verSucesso ? rows.filter((r) => r.etapa === 'devolutiva_cliente' || r.ultimo === 'dialogo_gestor').length : null,
+      gestor: verGestor ? rows.filter((r) => ocorrenciaNoEscopo(esc, r) && (r.etapa === 'registrada' || r.ultimo === 'dialogo_final')).length : null,
+    });
+  } catch (e) { console.error('[qualidade] GET /pendencias falhou:', e); res.status(500).json({ error: 'Erro ao ler as pendências.' }); }
+});
 router.get('/avisos', async (req, res) => {
   try {
     await garantirSchema();
@@ -916,6 +932,18 @@ router.get('/avisos', async (req, res) => {
       id: r.id, em: r.criado_em, titulo: 'Nova ocorrência: ' + r.tipo + ' (' + (r.prioridade || '—') + ')',
       texto: (r.cliente_nome || 'Empresa') + ' — ' + (r.assunto || '') + ' · ' + rotuloDepto((r.departamentos || [])[0]),
     }));
+    // falas novas da conversa gestor(a) ↔ Sucesso do Cliente: o Sucesso (e administração) recebe as do gestor(a); o gestor(a) do departamento (e administração), as do Sucesso
+    try {
+      const falas = (await pool.query(`SELECT h.registro_id, h.em, h.por, h.acao, h.texto, r.cliente_nome, r.assunto, r.departamentos, r.ocultar_empresa
+          FROM cs_qualidade_historico h JOIN cs_qualidade_registros r ON r.id = h.registro_id
+         WHERE h.acao IN ('dialogo_gestor', 'dialogo_final') AND h.em > $1 AND r.status <> 'cancelado' ORDER BY h.em`, [desde])).rows;
+      const final = await ehGestorFinal(req.user.id), adm = req.user.role === 'administrador';
+      falas.filter((f) => f.por !== req.user.name).forEach((f) => {
+        const doGestor = f.acao === 'dialogo_gestor';
+        const pode = adm || (doGestor ? (final || meus.includes('Sucesso')) : (f.departamentos || []).some((d) => meus.includes(d)));
+        if (pode) itens.push({ id: 'd-' + f.registro_id + '-' + new Date(f.em).getTime(), em: f.em, titulo: doGestor ? 'Observação do gestor(a) para o Sucesso do Cliente' : 'Resposta do Gestor(a) CS', texto: (f.por || '') + ' — ' + (f.ocultar_empresa ? 'Empresa não informada' : (f.cliente_nome || 'Empresa')) + ' — ' + (f.assunto || '') + ': ' + curtoTexto(f.texto, 120) });
+      });
+    } catch (e) { /* sem as falas, segue com os avisos de ocorrência nova */ }
     res.json({ agora, itens });
   } catch (e) { console.error('[qualidade] GET /avisos falhou:', e); res.status(500).json({ error: 'Erro ao ler os avisos.' }); }
 });

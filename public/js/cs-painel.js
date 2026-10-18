@@ -142,14 +142,25 @@
     var rt = ls(K_REFRESH), tk = ls(K_TOKEN);
     if (!silencioso && rt && tk) fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ refreshToken: rt }) }).catch(function () {});
     ls(K_TOKEN, null); ls(K_REFRESH, null); ls(K_USER, null);
-    clearTimeout(avisoTimer); avisosDesde = null;
+    clearTimeout(avisoTimer); clearTimeout(pendTimer); avisosDesde = null;
     limparEstadoDaSessao();
     mostrarLogin(silencioso ? 'Sua sessão expirou. Entre de novo.' : '');
   }
 
   // ── carga ────────────────────────────────────────────────────────────────────
   // Avisos de ocorrência nova (notificação do navegador + som): consulta a cada minuto, só com os avisos ligados neste navegador.
-  var avisoTimer = null, avisosDesde = null;
+  var avisoTimer = null, avisosDesde = null, pendTimer = null;
+  /** Selo do menu em dia sem precisar recarregar: a cada minuto pergunta as contagens do Portal do Sucesso do Cliente e do Portal do Gestor (rota leve). */
+  async function sondarPendencias() {
+    clearTimeout(pendTimer);
+    try {
+      var j = await api('/api/cs/painel/qualidade/pendencias');
+      var bs = $('badge-sucesso'), bg = $('badge-gestor');
+      if (bs && j.sucesso != null) bs.textContent = j.sucesso || '';
+      if (bg && j.gestor != null) bg.textContent = j.gestor || '';
+    } catch (e) { /* o selo nunca derruba a página */ }
+    pendTimer = setTimeout(sondarPendencias, 60 * 1000);
+  }
   async function sondarAvisos() {
     clearTimeout(avisoTimer);
     try {
@@ -167,6 +178,7 @@
   function iniciarAvisosCs() {
     if (estado.avisosIniciados || !window.Avisos) return;
     estado.avisosIniciados = true;
+    clearTimeout(pendTimer); pendTimer = setTimeout(sondarPendencias, 60 * 1000);
     window.Avisos.montarControle($('avisos-ctl'), {
       token: function () { return ls(K_TOKEN) || ''; },
       // clique no aviso: abre a aba certa sem recarregar a página
@@ -2898,7 +2910,7 @@
       var fila = r.etapa === 'devolutiva_cliente';
       return '<tr' + (fila ? ' style="background:rgba(194,65,12,.07)"' : '') + '><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
         '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
-        '<td style="white-space:normal;min-width:230px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + (nf ? botaoFilhasQ(r, nf) : '') + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 120)) + '</div></td>' +
+        '<td style="white-space:normal;min-width:230px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + pillConversaQ(r, 'gestor', 'Observação nova do gestor(a)') + (nf ? botaoFilhasQ(r, nf) : '') + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 120)) + '</div></td>' +
         '<td>' + responsavelAtualQ(r) + '</td><td class="c">' + celPrazo(r) + '</td><td class="c">' + pillEtapaQ(r.etapa) + '</td>' +
         '<td class="c" style="white-space:nowrap"><button type="button" class="gp-footer-btn" data-sabrir="' + esc(r.id) + '" style="width:auto">' + (fila ? (d.final ? 'Devolutiva e encerrar' : 'Ver devolutiva') : 'Ver') + '</button></td></tr>';
     };
@@ -2928,7 +2940,7 @@
     }
     if (!estado.qAnalistas) { try { await carregarOpcoesQ(); } catch (e) { /* segue com os analistas das ocorrências */ } }
     s.dados.analistas = estado.qAnalistas || [];
-    var bs = $('badge-sucesso'); if (bs) bs.textContent = contagemEtapasGestor(s.dados.registros).devolutiva_cliente || '';
+    var bs = $('badge-sucesso'); if (bs) bs.textContent = badgeSucessoQ(s.dados.registros) || '';
     alvo.innerHTML = htmlSucesso(s.dados, s.f);
     ligarSetasFilhasQ(alvo);
     ligarTempos();
@@ -3029,6 +3041,14 @@
     return c;
   }
   // ── VINCULADAS SOB A MATRIZ (Portal do Gestor e Portal do Sucesso do Cliente) ──────────────────────
+  /** A última fala da conversa gestor(a) ↔ Sucesso do Cliente foi deste lado ('gestor' ou 'final') e a ocorrência segue aberta: está aguardando a resposta do outro lado. */
+  function aguardaRespostaQ(r, lado) {
+    if (r.origem === 'filha' || ['encerrada', 'cancelada'].indexOf(r.etapa) >= 0) return false;
+    var d = r.dialogo || []; return d.length > 0 && d[d.length - 1].lado === lado;
+  }
+  function badgeSucessoQ(regs) { return (regs || []).filter(function (r) { return r.etapa === 'devolutiva_cliente' || aguardaRespostaQ(r, 'gestor'); }).length; }
+  function badgeGestorQ(regs) { return (regs || []).filter(function (r) { return (r.origem !== 'filha' && r.etapa === 'registrada') || aguardaRespostaQ(r, 'final'); }).length; }
+  function pillConversaQ(r, lado, texto) { return aguardaRespostaQ(r, lado) ? ' <span class="pill" style="color:#c2410c;border-color:#c2410c55;background:#c2410c14;font-size:10px">' + esc(texto) + '</span>' : ''; }
   /** Botão-setinha da matriz: abre e fecha as vinculadas que estão logo abaixo. */
   function botaoFilhasQ(r, n) {
     var ab = estado.fhAbertos && estado.fhAbertos[r.id];
@@ -3069,7 +3089,7 @@
       var acao = r.origem !== 'filha' && (r.etapa === 'registrada' || r.etapa === 'tratativa_definida') ? 'Analisar' : 'Ver';
       return '<tr><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
         '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
-        '<td style="white-space:normal;min-width:240px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + (nf ? botaoFilhasQ(r, nf) : '') + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 140)) + '</div>' + anexosQ(r) + '</td>' +
+        '<td style="white-space:normal;min-width:240px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + pillConversaQ(r, 'final', 'Resposta do Gestor(a) CS') + (nf ? botaoFilhasQ(r, nf) : '') + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 140)) + '</div>' + anexosQ(r) + '</td>' +
         '<td>' + responsavelAtualQ(r) + '</td><td class="c">' + celPrazo(r) + '</td>' +
         '<td class="c">' + pillEtapaQ(r.etapa) + (r.situacao === 'vencido' ? '<div><span class="pill" style="color:#b91c1c;border-color:#b91c1c55;background:#b91c1c14">vencida</span></div>' : '') + '</td>' +
         '<td class="c" style="white-space:nowrap"><button type="button" class="gp-footer-btn" data-gabrir="' + esc(r.id) + '" style="width:auto">' + acao + '</button></td></tr>';
@@ -3100,7 +3120,7 @@
     }
     if (!estado.qAnalistas) { try { await carregarOpcoesQ(); } catch (e) { /* segue com os analistas das ocorrências */ } }
     g.dados.analistas = estado.qAnalistas || [];
-    var bg = $('badge-gestor'); if (bg) bg.textContent = contagemEtapasGestor(g.dados.registros).registrada || '';
+    var bg = $('badge-gestor'); if (bg) bg.textContent = badgeGestorQ(g.dados.registros) || '';
     alvo.innerHTML = htmlGestor(g.dados, g.f);
     ligarSetasFilhasQ(alvo);
     ligarTempos();
@@ -3165,7 +3185,7 @@
     var fs = r.filhas || [];
     if (r.origem === 'filha' || r.etapa !== 'com_analista' || !fs.length || nomesResp(r).length) return '';
     var enc = fs.filter(function (f) { return f.etapa === 'encerrada'; }).length;
-    return '<div class="qa-obs" style="margin:8px 0">ℹ Esta ocorrência é a comunicação direta com o <strong>Gestor final do Sucesso do Cliente</strong>. Converse com os analistas pelas vinculadas (' + enc + ' de ' + fs.length + ' encerrada' + (fs.length === 1 ? '' : 's') + ') e responda aqui: <strong>Observação</strong> leva ao Gestor final sem finalizar; <strong>Finalizar</strong> envia a nota final.</div>';
+    return '<div class="qa-obs" style="margin:8px 0">ℹ Esta ocorrência é a comunicação direta com o <strong>Gestor CS</strong> (Sucesso do Cliente). Converse com os analistas pelas vinculadas (' + enc + ' de ' + fs.length + ' encerrada' + (fs.length === 1 ? '' : 's') + ') e responda aqui: <strong>Observação</strong> leva ao Gestor CS sem finalizar; <strong>Finalizar</strong> envia a nota final.</div>';
   }
   function htmlTratativaGestorBase(r, analistas) {
     var editavel = r.etapa === 'registrada' || r.etapa === 'tratativa_definida';
