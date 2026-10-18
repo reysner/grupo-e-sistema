@@ -2677,6 +2677,21 @@
     var n = parseInt(p, 10); if (!n) return true;
     var t = new Date(r.criado_em).getTime(); return !isNaN(t) && t >= (agora || Date.now()) - n * 86400000;
   }
+  /** Dias até o prazo (negativo = vencido); null sem prazo. hoje = "AAAA-MM-DD" (só os testes informam). */
+  function diasAtePrazoQ(prazo, hoje) {
+    if (!prazo) return null;
+    var a = String(hoje || hojeIsoLocal()).split('-'), b = String(prazo).slice(0, 10).split('-');
+    if (a.length < 3 || b.length < 3) return null;
+    var d = Math.round((Date.UTC(+b[0], +b[1] - 1, +b[2]) - Date.UTC(+a[0], +a[1] - 1, +a[2])) / 86400000);
+    return isNaN(d) ? null : d;
+  }
+  /** Etapas só do Portal do Analista: "novas" = abertas para ele nos últimos 3 dias; "a vencer" = em tratamento com o prazo em até 3 dias (hoje incluso). */
+  function casaEtapaAnalistaQ(r, etapa, f) {
+    if (r.etapa !== 'com_analista') return false;
+    if (etapa === 'novas') { var t = new Date(r.liberada_em || r.criado_em).getTime(); return !isNaN(t) && t >= ((f && f.agora) || Date.now()) - 3 * 86400000; }
+    var d = diasAtePrazoQ(r.prazo, f && f.hoje); return d !== null && d >= 0 && d <= 3;
+  }
+  var ETAPA_ANALISTA_Q = { novas: 'Novas (abertas nos últimos 3 dias)', a_vencer: 'A vencer (prazo em até 3 dias)', vencidas: 'Vencidas' };
   function filtrosAtivosQ(f) { return !!(f && (f.busca || f.depto || f.analista || f.etapa || f.periodo || f.tipo || f.prioridade || f.por)); }
   /** Barra de filtros dos portais. Na linha principal: Buscar, Etapa e Registrada em. Em "Mais filtros": Departamento, Analista, Tipo, Prioridade e (Sucesso/Gestor) Registrada por.
    *  p = prefixo dos ids (s, g ou a). o = { optD, optA (HTML das opções; null = o portal não tem o filtro), optE, comPor }. */
@@ -2725,7 +2740,8 @@
       if (f.por && r.criado_por !== f.por) return false;
       if (f.depto && (r.departamentos || []).indexOf(f.depto) < 0) return false;
       if (f.analista && !casaAnalista(r, f.analista)) return false;
-      if (f.etapa === 'vencidas') { if (r.situacao !== 'vencido') return false; } else if (f.etapa && r.etapa !== f.etapa) return false;
+      if (f.etapa === 'novas' || f.etapa === 'a_vencer') { if (!casaEtapaAnalistaQ(r, f.etapa, f)) return false; }
+      else if (f.etapa === 'vencidas') { if (r.situacao !== 'vencido') return false; } else if (f.etapa && r.etapa !== f.etapa) return false;
       if (b && String(r.cliente_nome || '').toLowerCase().indexOf(b) < 0 && String(r.assunto || '').toLowerCase().indexOf(b) < 0) return false;
       return true;
     });
@@ -2733,7 +2749,7 @@
   function htmlAnalista(d, f) {
     var regs = d.registros || [], lista = filtrarPortal(regs, f), c = contagemEtapasGestor(regs);
     var op = function (v, rot, sel) { return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(rot) + '</option>'; };
-    var optE = op('', 'Todas as etapas', !f.etapa) + ['com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada'].map(function (e) { return op(e, ETAPA_CURTA[e], f.etapa === e); }).join('') + op('vencidas', 'Vencidas', f.etapa === 'vencidas');
+    var optE = op('', 'Todas', !f.etapa) + ['novas', 'a_vencer', 'vencidas'].map(function (e) { return op(e, ETAPA_ANALISTA_Q[e], f.etapa === e); }).join('');   // só no Portal do Analista
     var optAn = op('', 'Todos os analistas', !f.analista) + (d.analistas || []).map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
     var corpo = lista.map(function (r) {
       var jaEnc = (r.responsaveis || []).some(function (x) { return d.analista && String(x.analista_id) === String(d.analista.id) && x.encerrado_em; });
@@ -3555,7 +3571,7 @@
     var fl = [];
     if (f.depto) fl.push('Departamento: ' + rotuloDepto(f.depto));
     if (f.analista) { var an = (estado.qAnalistas || []).filter(function (a) { return String(a.id) === String(f.analista); })[0]; fl.push('Analista: ' + (an ? an.nome : f.analista)); }
-    if (f.etapa) fl.push('Etapa: ' + (f.etapa === 'vencidas' ? 'Vencidas' : ETAPA_CURTA[f.etapa] || f.etapa));
+    if (f.etapa) fl.push('Etapa: ' + (ETAPA_ANALISTA_Q[f.etapa] || ETAPA_CURTA[f.etapa] || f.etapa));
     if (f.busca) fl.push('Busca: ' + f.busca);
     if (f.periodo) fl.push('Registrada em: ' + (f.periodo === 'livre' ? ((f.de ? 'de ' + data(f.de) : '') + (f.ate ? ' até ' + data(f.ate) : '')).trim() || 'datas livres' : 'últimos ' + f.periodo + ' dias'));
     if (f.tipo) fl.push('Tipo: ' + f.tipo);
