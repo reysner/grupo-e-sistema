@@ -253,7 +253,7 @@ function rotaAbertaGestorAnalista(metodo, caminho) {
   const c = String(caminho || '').split('?')[0].replace(/\/+$/, '') || '/';
   const p = c.split('/');   // '' + segmentos
   if (m === 'GET') return ['/opcoes', '/empresas', '/tempos', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/analista/ocorrencias', '/sucesso/ocorrencias'].includes(c) || (p.length === 3 && p[1] === 'anexo');
-  if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir', 'excluir', 'mensagem'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && ['encerrar', 'apontar'].includes(p[4]));
+  if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir', 'excluir', 'mensagem', 'resposta-final'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && ['encerrar', 'apontar'].includes(p[4]));
   if (m === 'PUT') return p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && p[4] === 'tratativa';
   return false;
 }
@@ -312,6 +312,7 @@ function validarFilha(corpo, hoje) {
 function mascararParaAnalista(reg, analistaId, ehLideranca) {
   if (ehLideranca) return reg;
   const r = Object.assign({}, reg);
+  r.resposta_final_gestor = null;   // a nota do gestor para o Gestor final não vai para o analista
   const mostra = !!r.mostrar_pai;
   const efetivo = r.analista_apontado_id != null ? r.analista_apontado_id : r.analista_origem_id;   // o analista apontado hoje (corrigido ou do registro)
   if (!mostra && String(efetivo || '') !== String(analistaId || '')) { r.analista_origem_id = null; r.analista_origem_nome = null; r.analista_apontado_id = null; r.analista_apontado_nome = null; }
@@ -469,6 +470,7 @@ function garantirSchema() {
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS mostrar_pai BOOLEAN NOT NULL DEFAULT false'))   // filha: o gestor escolheu mostrar a origem (e o analista do registro) a quem vai tratar
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS ocultar_empresa BOOLEAN NOT NULL DEFAULT false'))   // filha: o gestor escolheu não mostrar a empresa a quem vai tratar
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS analista_apontado_id TEXT'))   // o gestor final corrigiu o analista apontado (null = vale o do registro; vazio = ninguém)
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS resposta_final_gestor TEXT'))   // nota do gestor(a) para o Gestor final (rascunho da resposta final)
       .then(() => pool.query(`CREATE TABLE IF NOT EXISTS cs_qualidade_resp (
         registro_id UUID NOT NULL REFERENCES cs_qualidade_registros(id) ON DELETE CASCADE, analista_id TEXT NOT NULL,
         nota TEXT, obs TEXT, encerrado_em TIMESTAMPTZ, encerrado_por TEXT, PRIMARY KEY (registro_id, analista_id))`))
@@ -486,7 +488,7 @@ function soEquipe(req, res, next) {
   next();
 }
 
-const COLUNAS = `r.id, r.cliente_id, r.cnpj, r.cliente_nome, r.tipo, r.departamentos, r.detalhe, r.analista_id, a.nome AS analista_nome, r.analista_origem_id, ao.nome AS analista_origem_nome, r.analista_apontado_id, ap.nome AS analista_apontado_nome, r.pai_id, r.mostrar_pai, r.ocultar_empresa,
+const COLUNAS = `r.id, r.cliente_id, r.cnpj, r.cliente_nome, r.tipo, r.departamentos, r.detalhe, r.analista_id, a.nome AS analista_nome, r.analista_origem_id, ao.nome AS analista_origem_nome, r.analista_apontado_id, ap.nome AS analista_apontado_nome, r.resposta_final_gestor, r.pai_id, r.mostrar_pai, r.ocultar_empresa,
        to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.status, r.origem, r.etapa, r.fila, r.plano_acao, r.tratativa_depto, r.gestor_obs, r.tratativa_definida_por, r.tratativa_definida_em, r.liberada_em, r.liberada_por, r.analista_nota, r.analista_obs, r.analista_em, r.analista_por, r.validacao_nota, r.validacao_obs, r.validacao_em, r.validacao_por, r.final_nota, r.final_obs, r.encerrada_em, r.encerrada_por, r.assunto, r.prioridade, r.criado_por, r.criado_em, r.resolvido_em, r.resolvido_por, r.tratativa, r.validado_em, r.validado_por`;
 const DE = `FROM cs_qualidade_registros r LEFT JOIN analistas a ON a.id::text = r.analista_id LEFT JOIN analistas ao ON ao.id::text = r.analista_origem_id LEFT JOIN analistas ap ON ap.id::text = r.analista_apontado_id`;
 /** A quem o registro e o dashboard da Qualidade apontam: na ocorrência do módulo, o apontado corrigido pelo gestor final ou, sem correção, o do registro; vinculadas não contam; os registros antigos (ficha) seguem o analista deles. */
@@ -1307,6 +1309,22 @@ router.post('/gestor/ocorrencias/:id/mensagem', async (req, res) => {
     avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Mensagem do gestor', texto: (req.user.name || 'O gestor') + ' — ' + empresa + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(t, 120), url: '/cs?aba=analista', tag: 'msg-' + reg.id + '-' + Date.now() }, req.user.id);
     res.json({ registro: await registroCompleto(reg.id) });
   } catch (e) { console.error('[qualidade] POST mensagem falhou:', e); res.status(500).json({ error: 'Erro ao enviar a mensagem.' }); }
+});
+/** Nota do gestor(a) para o Gestor final do Sucesso do Cliente, na matriz: pode ser deixada e refeita a qualquer momento enquanto a ocorrência não foi encerrada nem cancelada. Vazia, apaga. */
+router.post('/gestor/ocorrencias/:id/resposta-final', async (req, res) => {
+  try {
+    await garantirSchema();
+    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, origem, departamentos, fila, assunto, cliente_nome, ocultar_empresa');
+    if (!reg) return res.status(404).json({ error: 'Ocorrência não encontrada.' });
+    if (reg.origem !== 'modulo') return res.status(400).json({ error: 'A resposta final é da ocorrência original (a matriz).' });
+    if (!(await podeCancelarOuReabrir(req, reg))) return res.status(403).json({ error: 'Só o gestor do departamento, o gestor final ou a administração deixam a resposta final.' });
+    if (['encerrada', 'cancelada'].includes(reg.etapa)) return res.status(409).json({ error: 'Esta ocorrência já foi encerrada ou cancelada.' });
+    const t = String((req.body && req.body.texto) == null ? '' : req.body.texto).replace(/\r\n/g, '\n').trim();
+    if (t.length > MAX_NOTA) return res.status(400).json({ error: 'A nota passa de ' + MAX_NOTA + ' caracteres.' });
+    await pool.query('UPDATE cs_qualidade_registros SET resposta_final_gestor = $1, atualizado_em = NOW() WHERE id = $2', [t || null, reg.id]);
+    if (t) avisarPush(() => idsSucesso(), { titulo: 'Nota do gestor para o Gestor final', texto: (req.user.name || 'O gestor') + ' — ' + (reg.ocultar_empresa ? 'Empresa não informada' : (reg.cliente_nome || 'Empresa')) + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(t, 120), url: '/cs?aba=sucesso', tag: 'rf-' + reg.id + '-' + Date.now() }, req.user.id);
+    res.json({ ok: true });
+  } catch (e) { console.error('[qualidade] POST resposta-final falhou:', e); res.status(500).json({ error: 'Erro ao salvar a nota.' }); }
 });
 router.post('/gestor/ocorrencias/:id/cancelar', async (req, res) => {
   try {

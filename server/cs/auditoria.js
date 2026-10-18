@@ -85,7 +85,7 @@ function descreverAcao(metodo, url, corpo) {
   if (m === 'POST' && r[0] === 'ocorrencias' && r[2] === 'anexo') return { acao: 'anexar', modulo: M, texto: 'Anexou um arquivo à ocorrência', registroId: id(1) };
   if (m === 'PUT' && r[0] === 'gestor' && r[1] === 'ocorrencias' && r[3] === 'tratativa') return { acao: 'editar', modulo: M, texto: 'Definiu a tratativa (plano, responsáveis e prazo)', registroId: id(2) };
   if (m === 'POST' && r[0] === 'gestor' && r[1] === 'ocorrencias') {
-    const ac = { abrir: ['abrir', 'Abriu a ocorrência para os analistas'], validar: ['validar', 'Validou a tratativa'], devolver: ['devolver', 'Devolveu ao analista para ajustar'], filha: ['criar', 'Abriu uma ocorrência vinculada: ' + curto(b.assunto, 100)], cancelar: ['cancelar', 'Cancelou a ocorrência: ' + curto(b.motivo, 120)], mensagem: ['editar', 'Deixou uma mensagem para quem está tratando: ' + curto(b.texto, 120)], reabrir: ['reabrir', 'Reabriu a ocorrência: ' + curto(b.motivo, 120)] }[r[3]];
+    const ac = { abrir: ['abrir', 'Abriu a ocorrência para os analistas'], validar: ['validar', 'Validou a tratativa'], devolver: ['devolver', 'Devolveu ao analista para ajustar'], filha: ['criar', 'Abriu uma ocorrência vinculada: ' + curto(b.assunto, 100)], cancelar: ['cancelar', 'Cancelou a ocorrência: ' + curto(b.motivo, 120)], mensagem: ['editar', 'Deixou uma mensagem para quem está tratando: ' + curto(b.texto, 120)], 'resposta-final': ['editar', 'Deixou a nota para o Gestor final (resposta final)'], reabrir: ['reabrir', 'Reabriu a ocorrência: ' + curto(b.motivo, 120)] }[r[3]];
     return ac ? { acao: ac[0], modulo: M, texto: ac[1], registroId: id(2) } : null;
   }
   if (m === 'POST' && r[0] === 'analista' && r[1] === 'ocorrencias') {

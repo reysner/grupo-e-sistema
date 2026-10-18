@@ -703,6 +703,16 @@ const semLixo = (e, nome) => {
     assert.ok(C.t.htmlVinculos(m).includes('Polyanna: Liguei para o cliente'), 'o andamento da vinculada aparece na matriz');
     assert.ok(C.t.htmlOcorrenciaSucesso(m, true).includes('Liguei para o cliente'), 'e o gestor final do Sucesso do Cliente vê no Portal dele');
   });
+  await teste('cs: resposta final ao Sucesso do Cliente — nota do gestor(a) na matriz, sempre aberta, e vista pelo Gestor final', () => {
+    const m = { id: 'm', origem: 'modulo', etapa: 'com_analista', assunto: 'A', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', plano_acao: 'Conduzida pelas ocorrências vinculadas', resposta_final_gestor: 'Cliente já foi avisado por telefone', responsaveis: [], filhas: [{ id: 'f', assunto: 'B', etapa: 'com_analista', departamentos: ['Pessoal'], prazo: '2026-10-20', analista_nome: 'P' }] };
+    const g = C.t.htmlTratativaGestor(m, []);
+    assert.ok(g.includes('Resposta final ao Sucesso do Cliente') && g.includes('id="gt-rf-salvar"') && g.includes('Cliente já foi avisado por telefone'), 'a matriz em andamento tem a nota para o Gestor final, já preenchida');
+    const nova = C.t.htmlTratativaGestor(Object.assign({}, m, { etapa: 'registrada', resposta_final_gestor: null, filhas: [] }), []);
+    assert.ok(nova.includes('Resposta final ao Sucesso do Cliente') && nova.includes('Criar a tratativa') && nova.includes('plano de ação para o analista'), 'também antes de criar a tratativa');
+    assert.ok(!C.t.htmlTratativaGestor(Object.assign({}, m, { origem: 'filha', pai_id: 'm' }), []).includes('gt-rf-salvar') && !C.t.htmlTratativaGestor(Object.assign({}, m, { etapa: 'encerrada' }), []).includes('gt-rf-salvar'), 'só na matriz e só enquanto aberta');
+    assert.ok(C.t.htmlOcorrenciaSucesso(m, true).includes('Nota do Gestor(a) para você') && C.t.htmlOcorrenciaSucesso(m, true).includes('Cliente já foi avisado por telefone'), 'o Gestor final vê a nota no Portal do Sucesso do Cliente');
+    assert.ok(!C.t.htmlOcorrenciaSucesso(Object.assign({}, m, { resposta_final_gestor: null }), true).includes('Nota do Gestor(a) para você'));
+  });
   await teste('cs: tratativa da matriz — o analista apontado vem fixo (sem ✕); o corrigido pelo gestor final é o fixo', () => {
     const an = [{ id: '9', nome: 'Polyanna' }, { id: '4', nome: 'João' }];
     const m = { id: 'm', origem: 'modulo', etapa: 'registrada', assunto: 'Atraso', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', analista_origem_id: '9', analista_origem_nome: 'Polyanna', responsaveis: [], filhas: [] };

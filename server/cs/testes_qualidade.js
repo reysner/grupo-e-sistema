@@ -143,6 +143,7 @@ teste('lista branca do gestor/analista: registrar, ver as próprias, perfil, ges
   ['/analista/ocorrencias', '/sucesso/ocorrencias'].forEach((c) => ok('GET', c));
   ['/analista/ocorrencias/u1/nota', '/analista/ocorrencias/u1/encerrar', '/gestor/ocorrencias/u1/validar', '/gestor/ocorrencias/u1/devolver', '/sucesso/ocorrencias/u1/encerrar'].forEach((c) => ok('POST', c));
   ok('POST', '/gestor/ocorrencias/u1/excluir'); no('GET', '/gestor/ocorrencias/u1/excluir'); no('DELETE', '/gestor/ocorrencias/u1');
+  ok('POST', '/gestor/ocorrencias/u1/resposta-final'); no('GET', '/gestor/ocorrencias/u1/resposta-final');
   ok('POST', '/gestor/ocorrencias/u1/mensagem'); no('PUT', '/gestor/ocorrencias/u1/mensagem');
   ok('POST', '/sucesso/ocorrencias/u1/apontar'); no('GET', '/sucesso/ocorrencias/u1/apontar'); no('PUT', '/sucesso/ocorrencias/u1/apontar');
   no('POST', '/sucesso/ocorrencias/u1/abrir'); no('POST', '/analista/ocorrencias/u1/validar'); no('POST', '/gestor/ocorrencias/u1/encerrar'); no('GET', '/analista/ocorrencias/u1'); no('PUT', '/sucesso/ocorrencias/u1/encerrar'); no('DELETE', '/analista/ocorrencias/u1');
@@ -394,6 +395,11 @@ teste('analista apontado fica fixo como responsável da matriz; sem responsávei
   assert.strictEqual(analistaFixoPresente('9', []), true, 'sem responsáveis: a matriz é conduzida só pelas vinculadas');
   assert.strictEqual(analistaFixoPresente(null, ['4']), true, 'sem apontado, qualquer responsável');
   assert.strictEqual(analistaFixoPresente('', ['4']), true, 'a correção deixou ninguém apontado');
+});
+teste('resposta final: a nota do gestor para o Gestor final não vai para o analista', () => {
+  const reg = { id: 'o', origem: 'modulo', resposta_final_gestor: 'Nota ao Gestor final', analista_origem_id: '9' };
+  assert.strictEqual(mascararParaAnalista(reg, '9', false).resposta_final_gestor, null, 'o analista não recebe');
+  assert.strictEqual(mascararParaAnalista(reg, '9', true).resposta_final_gestor, 'Nota ao Gestor final', 'a liderança vê');
 });
 teste('analista apontado: o corrigido pelo gestor final vale; o apontado no registro (reclamado) deixa de ver; a liderança vê tudo', () => {
   const reg = { id: 'o1', origem: 'modulo', analista_origem_id: '9', analista_origem_nome: 'Polyanna', analista_apontado_id: '4', analista_apontado_nome: 'João', mostrar_pai: false };

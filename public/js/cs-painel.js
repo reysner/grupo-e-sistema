@@ -2956,7 +2956,7 @@
   function htmlOcorrenciaSucesso(r, final) { return htmlOcorrenciaSucessoBase(r, final) + ((final || perfilCs().admin) ? htmlAcoesOcorrencia(r, true) : ''); }
   function htmlOcorrenciaSucessoBase(r, final) {
     var topo = '<div class="qa-modal-topo"><strong style="font-size:20px;color:#256050">' + esc(r.assunto || 'Ocorrência') + '</strong><button type="button" class="qa-x" id="so-fechar" aria-label="Fechar">✕</button></div>' +
-      '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' + cartaoOcorrenciaQ(r, true) + (r.plano_acao ? htmlPlanoGestor(r) : '') + htmlRetornos(r) + htmlVinculos(r) + htmlApontadoQ(r, final);
+      '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' + cartaoOcorrenciaQ(r, true) + (r.plano_acao ? htmlPlanoGestor(r) : '') + htmlRetornos(r) + htmlVinculos(r) + (r.resposta_final_gestor ? '<div class="ficha-sec">Nota do Gestor(a) para você</div><div class="qa-reg"><div class="qa-reg-txt">' + esc(r.resposta_final_gestor) + '</div></div>' : '') + htmlApontadoQ(r, final);
     if (r.etapa !== 'devolutiva_cliente') return topo + '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="so-cancel">Fechar</button></div>';
     if (!final) return topo + '<div class="qa-obs" style="margin:10px 0">ℹ Esta ocorrência está na devolutiva ao cliente. Faça as formalizações com o cliente; <strong>só o gestor final encerra o processo</strong>.</div><div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="so-cancel">Fechar</button></div>';
     return topo + '<div class="ficha-sec">Devolutiva ao cliente e encerramento</div>' + formNotaObs('so', 'Nota (o que foi devolvido ao cliente)') +
@@ -3098,6 +3098,13 @@
   }
   /** Janela da ocorrência no Portal do Gestor: detalhes e a tratativa (editável até abrir para o analista). */
   function htmlTratativaGestor(r, analistas) { return htmlTratativaGestorBase(r, analistas) + htmlAcoesOcorrencia(r); }
+  /** Matriz: o gestor(a) deixa a qualquer momento a nota/observação para o Gestor final do Sucesso do Cliente (a resposta final). Fica salva; ao encerrar, a caixa da resposta final já vem com ela. */
+  function htmlRespostaFinalQ(r) {
+    if (r.origem !== 'modulo' || ['registrada', 'tratativa_definida', 'com_analista'].indexOf(r.etapa) < 0) return '';
+    var t = r.resposta_final_gestor || '';
+    return '<div class="ficha-sec">Resposta final ao Sucesso do Cliente</div><div class="qa-campo"><label for="gt-rf">Sua nota ou observação para o Gestor final <span class="cinza" id="gt-rf-cont">' + t.length + '/2000</span></label><textarea id="gt-rf" rows="4" maxlength="2000" placeholder="Pode deixar aqui a qualquer momento. Ao encerrar, esta nota segue com a ocorrência para o Gestor final do Sucesso do Cliente.">' + esc(t) + '</textarea>' +
+      '<div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button type="button" class="gp-footer-btn" id="gt-rf-salvar" style="width:auto">Salvar nota</button><span class="cinza" id="gt-rf-ok" style="font-size:12px"></span></div></div>';
+  }
   /** Gestor(a): mensagem para quem está tratando (fica no histórico e avisa os responsáveis). */
   function htmlMensagemGestorQ(r) {
     if (r.etapa !== 'com_analista') return '';
@@ -3136,10 +3143,10 @@
       return topo + htmlRetornos(r) + '<div class="ficha-sec">Tratativa</div><div class="qa-reg"><div class="qa-reg-txt">' + esc(r.plano_acao || '—') + '</div>' +
         '<div class="qa-reg-rod">Responsáve' + (nomesResp(r).length > 1 ? 'is' : 'l') + ': <strong>' + esc(nomesResp(r).join(', ') || (((r.filhas || []).length) ? 'conduzida pelas ocorrências vinculadas' : '—')) + '</strong> · departamento ' + esc(rotuloDepto(r.tratativa_depto || '')) + ' · prazo ' + data(r.prazo) + (r.tratativa_definida_por ? ' · definida por ' + esc(r.tratativa_definida_por) : '') + (r.liberada_em ? ' · aberta ao analista em ' + dataHora(r.liberada_em) : '') + '</div>' +
         (r.gestor_obs ? '<div class="qa-reg-trat"><strong>Observação:</strong> ' + esc(r.gestor_obs) + '</div>' : '') + '</div>' +
-        avisoRespostaFinalQ(r) + (podeFilha ? '<div style="margin:8px 0">' + btnFilha + '</div>' : '') + htmlMensagemGestorQ(r) +
+        avisoRespostaFinalQ(r) + htmlRespostaFinalQ(r) + (podeFilha ? '<div style="margin:8px 0">' + btnFilha + '</div>' : '') + htmlMensagemGestorQ(r) +
         '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="gt-cancel">Fechar</button></div>';
     }
-    return topo + '<div class="ficha-sec">Criar a tratativa</div>' +
+    return topo + htmlRespostaFinalQ(r) + '<div class="ficha-sec">Criar a tratativa <span class="cinza" style="font-weight:400">(plano de ação para o analista)</span></div>' +
       '<div class="qa-campo"><label for="gt-plano">Plano de ação <span class="req">*</span> <span class="cinza" id="gt-cont">0/1500</span></label><textarea id="gt-plano" rows="5" maxlength="1500" placeholder="O que será feito para resolver e evitar que se repita">' + esc(r.plano_acao || '') + '</textarea></div>' +
       '<div class="qa-campo"><label>Responsável <span class="req">*</span> <span class="cinza">(o analista apontado no registro fica fixo · digite @ no plano de ação para acrescentar alguém · se a falha não for dele, abra ocorrências vinculadas e deixe esta só para o registro final)</span></label><div class="qg-chips" id="gt-resp">' + htmlChipsResp((analistas || []).filter(function (a) { return marcados.indexOf(String(a.id)) >= 0; }), fixoId) + '</div></div>' +
       '<div class="qa-oc-linha qa-g-grid">' +
@@ -3158,6 +3165,17 @@
     var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Ocorrência">' + htmlTratativaGestor(r, estado.qAnalistas || []) + '</div>';
     $('gt-fechar').addEventListener('click', fechar); $('gt-cancel').addEventListener('click', fechar);
+    if ($('gt-rf-salvar')) {   // nota para o Gestor final (a janela não recarrega: o que já foi digitado no resto fica)
+      var rf = $('gt-rf');
+      rf.addEventListener('input', function () { $('gt-rf-cont').textContent = rf.value.length + '/2000'; });
+      $('gt-rf-salvar').addEventListener('click', async function () {
+        var okl = $('gt-rf-ok'); okl.textContent = '';
+        var x = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id) + '/resposta-final', { texto: rf.value });
+        if (!x.ok) { okl.textContent = x.j.error || 'Não foi possível salvar a nota.'; return; }
+        r.resposta_final_gestor = rf.value.trim() || null;
+        okl.textContent = rf.value.trim() ? '✔ Salva. O Gestor final já vê esta nota.' : '✔ Nota apagada.';
+      });
+    }
     if ($('gt-msg-enviar')) $('gt-msg-enviar').addEventListener('click', async function () {
       var t = $('gt-msg').value.trim(), er = $('gt-msg-erro'); er.textContent = '';
       if (t.length < 3) { er.textContent = 'Escreva a mensagem (mínimo de 3 caracteres).'; return; }
@@ -3179,6 +3197,7 @@
     ligarAcoesOcorrencia(r, fechar, function () { estado.g.dados = null; desenharGestor(); });
     if ($('gv-validar')) {   // validação do que o analista tratou
       ligarContador('gv');
+      var gvn = $('gv-nota'); if (gvn && !gvn.value && r.resposta_final_gestor) { gvn.value = r.resposta_final_gestor; $('gv-cont').textContent = gvn.value.length + '/2000'; }   // a resposta final já vem com a nota que o gestor deixou
       var verro = $('gv-erro'), base = '/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id);
       var decidir = async function (acao, confirmacao) {
         verro.textContent = ''; var nota = $('gv-nota').value.trim();
