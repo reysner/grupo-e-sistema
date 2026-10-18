@@ -512,17 +512,18 @@ async function anexarNotas(lista) {
 async function anexarVinculos(lista) {
   if (!lista.length) return lista;
   const ids = lista.map((r) => r.id);
-  let resp = [], filhas = [], pais = [], respF = [];
+  let resp = [], filhas = [], pais = [], respF = [], notasF = [];
   try {
     resp = (await pool.query(`SELECT x.registro_id, x.analista_id, a.nome, x.nota, x.obs, x.encerrado_em, x.encerrado_por FROM cs_qualidade_resp x LEFT JOIN analistas a ON a.id::text = x.analista_id WHERE x.registro_id = ANY($1::uuid[]) ORDER BY a.nome`, [ids])).rows;
     filhas = (await pool.query(`SELECT f.id, f.pai_id, f.assunto, f.etapa, f.departamentos, to_char(f.prazo, 'YYYY-MM-DD') AS prazo, a.nome AS analista_nome, f.validacao_nota FROM cs_qualidade_registros f LEFT JOIN analistas a ON a.id::text = f.analista_id WHERE f.pai_id = ANY($1::uuid[]) AND f.status <> 'cancelado' ORDER BY f.criado_em`, [ids])).rows;
     if (filhas.length) respF = (await pool.query(`SELECT x.registro_id, a.nome, x.nota, x.obs, x.encerrado_em FROM cs_qualidade_resp x LEFT JOIN analistas a ON a.id::text = x.analista_id WHERE x.registro_id = ANY($1::uuid[]) AND x.nota IS NOT NULL ORDER BY a.nome`, [filhas.map((f) => f.id)])).rows;
+    if (filhas.length) notasF = (await pool.query("SELECT registro_id, em, por, texto FROM cs_qualidade_historico WHERE registro_id = ANY($1::uuid[]) AND acao = 'nota' ORDER BY em", [filhas.map((f) => f.id)])).rows;   // o andamento da vinculada (anotações do analista e mensagens do gestor)
     const paiIds = lista.map((r) => r.pai_id).filter(Boolean);
     if (paiIds.length) pais = (await pool.query('SELECT id, assunto, cliente_nome FROM cs_qualidade_registros WHERE id = ANY($1::uuid[])', [paiIds])).rows;
   } catch (e) { /* sem as tabelas novas ainda: segue sem os vínculos */ }
   const porResp = {}, porFilha = {};
   resp.forEach((x) => { (porResp[String(x.registro_id)] = porResp[String(x.registro_id)] || []).push({ analista_id: String(x.analista_id), nome: x.nome, nota: x.nota, obs: x.obs, encerrado_em: x.encerrado_em, encerrado_por: x.encerrado_por }); });
-  filhas.forEach((f) => { (porFilha[String(f.pai_id)] = porFilha[String(f.pai_id)] || []).push({ id: f.id, assunto: f.assunto, etapa: f.etapa, departamentos: f.departamentos, prazo: f.prazo, analista_nome: f.analista_nome, validacao_nota: f.validacao_nota || null, respostas: respF.filter((x) => String(x.registro_id) === String(f.id)).map((x) => ({ nome: x.nome, nota: x.nota, obs: x.obs })) }); });
+  filhas.forEach((f) => { (porFilha[String(f.pai_id)] = porFilha[String(f.pai_id)] || []).push({ id: f.id, assunto: f.assunto, etapa: f.etapa, departamentos: f.departamentos, prazo: f.prazo, analista_nome: f.analista_nome, validacao_nota: f.validacao_nota || null, respostas: respF.filter((x) => String(x.registro_id) === String(f.id)).map((x) => ({ nome: x.nome, nota: x.nota, obs: x.obs })), anotacoes: notasF.filter((x) => String(x.registro_id) === String(f.id)).map((x) => ({ em: x.em, por: x.por, texto: x.texto })) }); });
   const depois = ['validacao_gestor', 'devolutiva_cliente', 'encerrada'];
   return lista.map((r) => {
     let rs = porResp[String(r.id)] || [];
@@ -1152,14 +1153,11 @@ router.get('/analista/ocorrencias', async (req, res) => {
     const { rows } = await pool.query(
       `SELECT ${COLUNAS} ${DE} WHERE r.origem IN ('modulo', 'filha') AND r.status <> 'cancelado' AND r.etapa NOT IN ('registrada', 'tratativa_definida')${analista ? ' AND (r.analista_id = $1 OR EXISTS (SELECT 1 FROM cs_qualidade_resp x WHERE x.registro_id = r.id AND x.analista_id = $1))' : ''}
         ORDER BY (r.etapa = 'encerrada') ASC, r.prazo ASC NULLS LAST LIMIT 300`, vals);
-    // ocorrências registradas sobre este analista (o analista indicado no registro): ele acompanha, mesmo que o gestor ponha outros para tratar
-    const sobre = analista ? (await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.origem = 'modulo' AND r.status <> 'cancelado' AND (${APONTADO_SQL}) = $1 ORDER BY r.criado_em DESC LIMIT 200`, vals)).rows : [];
     const lider = PAPEIS.includes(req.user.role), meuId = analista ? String(analista.id) : null;
     const mascarar = (lista) => lista.map((r) => mascararParaAnalista(r, meuId, lider));
     res.json({
       analista: analista ? { id: analista.id, nome: analista.nome } : null, todos: !analista, admin: adm,
       registros: mascarar(await completar(rows)),
-      sobre_mim: (await completar(sobre)).map((r) => Object.assign({}, r, { filhas: [] })),   // o indicado acompanha a etapa; as ocorrências vinculadas ficam com o gestor
     });
   } catch (e) { console.error('[qualidade] GET /analista/ocorrencias falhou:', e); res.status(500).json({ error: 'Erro ao ler as ocorrências do analista.' }); }
 });

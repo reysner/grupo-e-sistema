@@ -1735,7 +1735,7 @@
   function cartaoOcorrenciaQ(r, semAcoes) {
     return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao || r.status) + ' <strong>' + esc(r.tipo) + '</strong> ' + pillPrioridadeQ(r.prioridade) + ' <span class="cinza">· ' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</span></div>' +
       (r.assunto ? '<div class="qa-reg-txt"><strong>' + esc(r.assunto) + '</strong></div>' : '') +
-      '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
+      (r.detalhe && r.detalhe === r.plano_acao ? '' : '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>') +
       '<div class="qa-reg-rod">Registrada em ' + dataHora(r.criado_em) + ' por ' + esc(r.criado_por || '—') + (r.prazo ? ' · prazo ' + data(r.prazo) : '') + (r.resolvido_em ? ' · resolvida em ' + dataHora(r.resolvido_em) : '') + '</div>' +
       '<div class="qa-reg-rod">' + (r.etapa ? 'Etapa: <strong>' + esc(ROT_ETAPA_Q[r.etapa] || r.etapa) + '</strong>' : '') + (r.fila ? (r.etapa ? ' · ' : '') + (r.fila === 'gestor' ? 'encaminhada a ' + esc(rotuloGestor((r.departamentos || [])[0])) : 'encaminhada a ' + esc(rotuloGestor((r.departamentos || [])[0])) + ' (sem gestor cadastrado: o Sucesso do Cliente faz esta etapa)') : '') + '</div>' +
       anexosQ(r) + (semAcoes ? '' : acoesOcorrenciaQ(r)) + (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '</div>';
@@ -2461,7 +2461,8 @@
       return '<div class="qa-reg" style="margin-bottom:6px"><div class="qa-reg-topo"><strong>' + esc(f.assunto || '—') + '</strong> ' + pillEtapaQ(f.etapa) + '</div>' +
         '<div class="qa-reg-rod">' + esc((f.departamentos || []).map(rotuloDepto).join(', ')) + ' · ' + esc(f.analista_nome || '—') + ' · prazo ' + data(f.prazo) + '</div>' +
         (f.respostas || []).map(function (x) { return '<div class="qa-reg-trat"><strong>' + esc(x.nome || 'Analista') + ':</strong> ' + esc(x.nota) + (x.obs ? '<div class="cinza" style="margin-top:3px"><em>Observação:</em> ' + esc(x.obs) + '</div>' : '') + '</div>'; }).join('') +
-        (f.validacao_nota ? '<div class="qa-reg-trat"><strong>Validação do gestor:</strong> ' + esc(f.validacao_nota) + '</div>' : '') + '</div>';
+        (f.validacao_nota ? '<div class="qa-reg-trat"><strong>Validação do gestor:</strong> ' + esc(f.validacao_nota) + '</div>' : '') +
+        (f.anotacoes || []).map(function (a) { return '<div class="cinza" style="font-size:12px;margin-top:3px">' + dataHora(a.em) + ' · ' + esc(a.por || '—') + ': ' + esc(a.texto) + '</div>'; }).join('') + '</div>';
     }).join('');
     return h;
   }
@@ -2587,18 +2588,6 @@
       fechar(); if (aoCriar) aoCriar({ assunto: assunto, nomes: nomes, depto: depto, prazo: prazo, original: x.j.original });
       estado.g.dados = null; desenharGestor();
     });
-  }
-  /** O analista indicado no registro acompanha a ocorrência (só leitura): a etapa em que está; quem trata é definido pelo gestor. */
-  function htmlSobreMim(d) {
-    var lista = (d && d.sobre_mim) || [];
-    if (!lista.length) return '';
-    return '<div class="card"><div class="card-title">Ocorrências sobre mim</div><div class="card-sub">Registradas com você como o analista indicado. Você acompanha a etapa; quem trata é definido pelo gestor do departamento.</div>' +
-      '<div class="table-wrap"><table><thead><tr><th>Registrada em</th><th>Empresa</th><th>Tipo</th><th>Assunto</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' +
-      lista.map(function (r) {
-        return '<tr><td>' + dataHora(r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td>' +
-          '<td style="white-space:normal;min-width:220px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '</td><td class="c">' + pillEtapaQ(r.etapa) + '</td>' +
-          '<td class="c"><button type="button" class="gp-footer-btn" data-aabrir="' + esc(r.id) + '" style="width:auto">Ver</button></td></tr>';
-      }).join('') + '</tbody></table></div></div>';
   }
 
   // ── CANCELAR OU REABRIR UMA OCORRÊNCIA ──────────────────────────────────────────────────────
@@ -2811,7 +2800,7 @@
       '<div class="card">' + htmlFiltrosPortalQ('a', f, regs, { optA: d.admin ? optAn : null, optE: optE, comPor: false, enxuto: true }) +
         '<div class="card-sub">' + lista.length + ' ocorrência(s)' + (d.todos ? ' · você é administrador: vê as de todos e age em nome do analista' : (d.analista ? (d.admin ? ' · visão do analista: ' : ' · analista: ') + esc(d.analista.nome) : '')) + '</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Aberta em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Assunto e plano</th>' + (d.todos ? '<th>Analista</th>' : '') + '<th class="c">Prazo</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
-          : '<div class="vazio">Nenhuma ocorrência aberta para ' + (d.todos ? 'este filtro' : 'você') + ' por enquanto.</div>') + '</div>' + htmlSobreMim(d);
+          : '<div class="vazio">Nenhuma ocorrência aberta para ' + (d.todos ? 'este filtro' : 'você') + ' por enquanto.</div>') + '</div>';
   }
   async function desenharAnalista() {
     var alvo = $('sec-analista'); if (!alvo) return;
@@ -2857,7 +2846,6 @@
   }
   function abrirOcorrenciaAnalista(id) {
     var d = estado.a && estado.a.dados, r = ((d && d.registros) || []).filter(function (x) { return String(x.id) === String(id); })[0], soLeitura = false;
-    if (!r) { r = ((d && d.sobre_mim) || []).filter(function (x) { return String(x.id) === String(id); })[0]; soLeitura = true; }
     if (!r) return;
     var lider = perfilCs().admin, meuId = d.analista ? d.analista.id : null;
     var pend = (r.responsaveis || []).filter(function (x) { return !x.encerrado_em; });
@@ -2968,7 +2956,7 @@
   function htmlOcorrenciaSucesso(r, final) { return htmlOcorrenciaSucessoBase(r, final) + ((final || perfilCs().admin) ? htmlAcoesOcorrencia(r, true) : ''); }
   function htmlOcorrenciaSucessoBase(r, final) {
     var topo = '<div class="qa-modal-topo"><strong style="font-size:20px;color:#256050">' + esc(r.assunto || 'Ocorrência') + '</strong><button type="button" class="qa-x" id="so-fechar" aria-label="Fechar">✕</button></div>' +
-      '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' + cartaoOcorrenciaQ(r, true) + (r.plano_acao ? htmlPlanoGestor(r) : '') + htmlRetornos(r) + htmlApontadoQ(r, final);
+      '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' + cartaoOcorrenciaQ(r, true) + (r.plano_acao ? htmlPlanoGestor(r) : '') + htmlRetornos(r) + htmlVinculos(r) + htmlApontadoQ(r, final);
     if (r.etapa !== 'devolutiva_cliente') return topo + '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="so-cancel">Fechar</button></div>';
     if (!final) return topo + '<div class="qa-obs" style="margin:10px 0">ℹ Esta ocorrência está na devolutiva ao cliente. Faça as formalizações com o cliente; <strong>só o gestor final encerra o processo</strong>.</div><div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="so-cancel">Fechar</button></div>';
     return topo + '<div class="ficha-sec">Devolutiva ao cliente e encerramento</div>' + formNotaObs('so', 'Nota (o que foi devolvido ao cliente)') +
