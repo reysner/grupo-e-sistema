@@ -15,7 +15,7 @@
   <title>Painel do Sucesso do Cliente | Grupo-E</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/cs-painel.css?v=44">
+  <link rel="stylesheet" href="/css/cs-painel.css?v=46">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
@@ -71,12 +71,17 @@
   </aside>
 
   <main class="gp-main">
-    <div class="gp-header">
-      <div>
+    <div class="gp-header gp-hdr2">
+      <div class="gp-hd-titulo">
         <div class="gp-header-title" id="titulo">Visão Geral</div>
         <div class="gp-header-sub" id="subtitulo"></div>
       </div>
-      <div class="gp-header-right">
+      <div class="gp-header-right gp-hd-conta">
+        <span id="avisos-ctl"></span>
+        <div id="menu-usuario"></div>
+      </div>
+      <div class="gp-toolbar">
+        <div class="gp-toolbar-esq">
         <div class="filter-group" id="filtro-periodo" style="display:none">
           <span class="filter-label">Período</span>
           <select class="gp-select" id="sel-periodo">
@@ -93,12 +98,13 @@
         </div>
         <div class="gp-live"><div class="gp-live-dot"></div> Ao vivo</div>
         <div class="gp-update" id="atualizado"></div>
+        </div>
+        <div class="gp-toolbar-dir">
         <button class="gp-footer-btn" style="width:auto;padding:4px 10px;display:none" id="btn-valores" title="Esconde todos os valores em R$ da tela (para apresentações)">👁 Ocultar valores</button>
         <button class="gp-footer-btn" style="width:auto;padding:4px 10px" id="btn-csv" title="Baixa a lista da seção aberta (com o filtro atual) em CSV, para Excel">⬇ CSV</button>
         <button class="gp-footer-btn" style="width:auto;padding:4px 10px" id="btn-pdf" title="Baixa a lista da seção aberta (com o filtro atual) em PDF">⬇ PDF</button>
         <button class="gp-footer-btn" style="width:auto;padding:4px 10px" id="btn-atualizar" title="Recarrega os dados do painel">↻ Atualizar</button>
-        <span id="avisos-ctl"></span>
-        <div id="menu-usuario"></div>
+        </div>
       </div>
     </div>
 
@@ -137,6 +143,6 @@
 <script src="/js/exportar.js?v=1"></script>
 <script src="/js/menu-usuario.js?v=2"></script>
 <script src="/js/avisos.js?v=2"></script>
-<script src="/js/cs-painel.js?v=125"></script>
+<script src="/js/cs-painel.js?v=126"></script>
 </body>
 </html>

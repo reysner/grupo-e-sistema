@@ -469,3 +469,14 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 
 /* O cabeçalho fica acima do conteúdo: o menu do usuário e o sino de avisos abrem por cima dos cartões (18/10/2026). */
 .gp-header{position:relative;z-index:60;}
+
+/* Cabeçalho do /cs em duas faixas (18/10/2026): em cima o título e a descrição completos, com avisos e usuário à direita; embaixo a faixa de ferramentas
+   (período, ao vivo, atualizado, ocultar valores, CSV, PDF, atualizar). Antes tudo ficava na mesma linha e a descrição saía cortada. */
+.gp-hdr2{flex-wrap:wrap;align-items:center;gap:0 16px;padding:12px 28px 0;min-height:0;}
+.gp-header.gp-hdr2>.gp-hd-titulo{flex:1 1 360px;min-width:0;padding-bottom:10px;}
+.gp-hdr2 .gp-header-sub{display:block;-webkit-line-clamp:unset;overflow:visible;max-width:none;}
+.gp-header.gp-hdr2>.gp-hd-conta{flex:0 0 auto;flex-wrap:nowrap;align-self:flex-start;gap:10px;padding-bottom:10px;}
+.gp-toolbar{flex:1 1 100%;display:flex;align-items:center;justify-content:space-between;gap:12px 20px;flex-wrap:wrap;border-top:1px solid var(--border);padding:6px 0;}
+.gp-toolbar-esq,.gp-toolbar-dir{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.gp-toolbar-esq{gap:14px;}
+@media (max-width:700px){.gp-hdr2{padding:12px 14px 0;}.gp-hdr2>.gp-hd-conta{align-self:auto;}}
