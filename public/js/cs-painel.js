@@ -2947,7 +2947,8 @@
     var opcoes = op('__escolha', 'Escolha o analista correto…', true) + (corrigido ? op('__volta', 'Voltar ao apontado no registro' + (r.analista_origem_nome ? ' (' + r.analista_origem_nome + ')' : ''), false) : '') +
       (nenhum ? '' : op('__nenhum', 'Ninguém (não conta para nenhum analista)', false)) +
       (estado.qAnalistas || []).filter(function (a) { return String(a.id) !== String(atualId); }).map(function (a) { return op(a.id, a.nome, false); }).join('');
-    return '<div class="ficha-sec">Analista apontado (registro e dashboard)</div>' +
+    var aviso = nenhum || !atualNome || atualNome === 'ninguém' ? '<div class="qa-obs" style="margin:6px 0">⚠ Nenhum analista está apontado nesta ocorrência: escolha o analista antes de encerrar, para o registro e o dashboard.</div>' : '';
+    return '<div class="ficha-sec">Analista apontado (registro e dashboard)</div>' + aviso +
       '<div class="qa-reg-rod" style="margin-bottom:6px">O registro e o dashboard apontam para: <strong>' + esc(atualNome) + '</strong>' + (corrigido && r.analista_origem_nome ? ' · apontado no registro: ' + esc(r.analista_origem_nome) : '') + '. Se a falha não foi dele, escolha o analista correto.</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select class="gp-select" id="so-apontado">' + opcoes + '</select><button type="button" class="gp-footer-btn" id="so-apontar" style="width:auto">Corrigir analista apontado</button></div>' +
       (r.apontamentos || []).map(function (h) { return '<div class="cinza" style="font-size:12px;margin-top:4px">' + dataHora(h.em) + ' · ' + esc(h.texto) + '</div>'; }).join('') +
@@ -2993,6 +2994,8 @@
     $('so-encerrar').addEventListener('click', async function () {
       erro.textContent = ''; var nota = $('so-nota').value.trim();
       if (nota.length < 5) { erro.textContent = 'Deixe a nota da devolutiva (mínimo de 5 caracteres).'; return; }
+      var semApontado = r.origem === 'modulo' && (r.analista_apontado_id === '' || (r.analista_apontado_id == null && !r.analista_origem_id));
+      if (semApontado && !window.confirm('Nenhum analista está apontado nesta ocorrência: ela não vai contar para nenhum analista no dashboard.\n\nEncerrar mesmo assim? (Cancele e escolha o analista em "Analista apontado".)')) return;
       if (!window.confirm('Finalizar o processo desta ocorrência de vez? Isso encerra o caso para todos os departamentos.')) return;
       var b = $('so-encerrar'); b.disabled = true;
       var x = await postarQ('/api/cs/painel/qualidade/sucesso/ocorrencias/' + encodeURIComponent(r.id) + '/encerrar', { nota: nota, obs: $('so-obs').value });
@@ -3060,7 +3063,7 @@
     var optA = op('', 'Todos os analistas', !f.analista) + listaAnalistasFiltro(d, regs, f.depto).map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
     var optE = op('', 'Todas as etapas', !f.etapa) + ETAPAS_Q.map(function (e) { return op(e, ETAPA_CURTA[e], f.etapa === e); }).join('') + op('vencidas', 'Vencidas', f.etapa === 'vencidas');
     var linha = function (r, filho, nf) {
-      var acao = r.origem !== 'filha' && r.etapa === 'registrada' ? 'Analisar' : r.etapa === 'tratativa_definida' ? 'Editar / abrir para o analista' : 'Ver';
+      var acao = r.origem !== 'filha' && (r.etapa === 'registrada' || r.etapa === 'tratativa_definida') ? 'Analisar' : 'Ver';
       return '<tr><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
         '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
         '<td style="white-space:normal;min-width:240px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + (nf ? botaoFilhasQ(r, nf) : '') + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 140)) + '</div>' + anexosQ(r) + '</td>' +
@@ -3138,7 +3141,7 @@
   }
   /** Gestor(a): mensagem para quem está tratando (fica no histórico e avisa os responsáveis). */
   function htmlMensagemGestorQ(r) {
-    if (r.etapa !== 'com_analista' || (r.origem !== 'filha' && !nomesResp(r).length)) return '';   // a matriz só das vinculadas não tem analista: a conversa com os analistas é nas vinculadas
+    if (r.etapa !== 'com_analista' || r.origem !== 'filha') return '';   // a matriz só das vinculadas não tem analista: a conversa com os analistas é nas vinculadas
     return '<div class="qa-campo" style="margin-top:8px"><label for="gt-msg">Mensagem para quem está tratando <span class="cinza">(fica no histórico e avisa o(s) responsável(is))</span></label><div style="display:flex;gap:8px"><input type="text" id="gt-msg" maxlength="1000" style="flex:1" placeholder="Ex.: pode priorizar? o cliente cobrou de novo"><button type="button" class="gp-footer-btn" id="gt-msg-enviar" style="width:auto">Enviar</button></div><div class="pop-erro" id="gt-msg-erro" role="alert"></div></div>';
   }
   /** Matriz conduzida só pelas vinculadas: continua aberta para a resposta final do gestor(a), que vai ao Gestor final do Sucesso do Cliente. */
@@ -3163,9 +3166,8 @@
       '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' +
       (r.analista_origem_nome ? '<div class="qa-obs" style="margin:8px 0">Analista indicado no registro: <strong>' + esc(r.analista_origem_nome) + '</strong>. <span class="cinza">Isso fica só com você: as ocorrências vinculadas não apontam essa pessoa, a não ser que você escolha.</span></div>' : '') +
       cartaoOcorrenciaQ(r, true) + htmlVinculos(r);
-    var legado = editavel && r.etapa === 'tratativa_definida' && ((r.responsaveis || []).some(function (x) { return x.analista_id; }) || !!r.analista_nome);   // matriz antiga, com analista já definido
-    if (r.origem !== 'filha' && !legado && (editavel || (r.etapa === 'validacao_gestor' && soVinc))) {   // a matriz é só comunicação com o Gestor final: resposta final + vinculadas
-      return topo + htmlRetornos(r) + htmlRespostaFinalQ(r) + (podeFilha ? '<div style="margin:8px 0">' + btnFilha + '</div>' : '') +
+    if (editavel || (r.origem !== 'filha' && soVinc && ['validacao_gestor', 'com_analista'].indexOf(r.etapa) >= 0)) {   // a matriz é só comunicação com o Gestor final: resposta final + vinculadas
+      return topo + htmlRetornos(r) + avisoRespostaFinalQ(r) + htmlRespostaFinalQ(r) + (podeFilha ? '<div style="margin:8px 0">' + btnFilha + '</div>' : '') +
         '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="gt-cancel">Fechar</button></div>';
     }
     if (!editavel && r.etapa === 'validacao_gestor') {
@@ -3182,18 +3184,7 @@
         avisoRespostaFinalQ(r) + htmlRespostaFinalQ(r) + (podeFilha ? '<div style="margin:8px 0">' + btnFilha + '</div>' : '') + htmlMensagemGestorQ(r) +
         '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="gt-cancel">Fechar</button></div>';
     }
-    return topo + htmlRespostaFinalQ(r) + '<div class="ficha-sec">Criar a tratativa <span class="cinza" style="font-weight:400">(plano de ação para o analista)</span></div>' +
-      '<div class="qa-campo"><label for="gt-plano">Plano de ação <span class="req">*</span> <span class="cinza" id="gt-cont">0/1500</span></label><textarea id="gt-plano" rows="5" maxlength="1500" placeholder="O que será feito para resolver e evitar que se repita">' + esc(r.plano_acao || '') + '</textarea></div>' +
-      '<div class="qa-campo"><label>Responsável <span class="req">*</span> <span class="cinza">(o analista apontado no registro fica fixo · digite @ no plano de ação para acrescentar alguém · se a falha não for dele, abra ocorrências vinculadas e deixe esta só para o registro final)</span></label><div class="qg-chips" id="gt-resp">' + htmlChipsResp((analistas || []).filter(function (a) { return marcados.indexOf(String(a.id)) >= 0; }), fixoId) + '</div></div>' +
-      '<div class="qa-oc-linha qa-g-grid">' +
-        '<div class="qa-campo"><label for="gt-depto">Departamento que trata <span class="req">*</span></label><select id="gt-depto">' + optD + '</select></div>' +
-        '<div class="qa-campo"><label for="gt-prazo">Prazo para execução (SLA) <span class="req">*</span></label><input type="date" id="gt-prazo" min="' + hojeIsoLocal() + '" value="' + esc(r.prazo || '') + '"></div>' +
-      '</div>' +
-      '<div class="qa-campo"><label for="gt-obs">Observação <span class="cinza" id="gt-obs-cont">' + String(r.gestor_obs || '').length + '/1500</span></label><textarea id="gt-obs" rows="4" maxlength="1500" placeholder="Opcional: orientação ao analista. Digite @ para chamar um analista.">' + esc(r.gestor_obs || '') + '</textarea></div>' +
-      (podeFilha ? '<div style="margin:6px 0">' + btnFilha + '</div>' : '') +
-      '<div class="cinza" style="font-size:12px;margin:6px 0">Salvar guarda a tratativa e você ainda pode editar. <strong>Salvar e abrir para o analista</strong> libera para ele tratar; depois disso não se edita mais por aqui.</div>' +
-      '<div class="qa-oc-linha qa-g-botoes"><button type="button" class="qa-btn-cancel" id="gt-cancel" style="background:#64748b">Fechar</button><button type="button" class="qa-btn-ok" id="gt-salvar" style="background:#2563eb">Salvar tratativa</button><button type="button" class="qa-btn-ok" id="gt-abrir">Salvar e abrir para o analista</button></div>' +
-      '<div class="pop-erro" id="gt-erro" role="alert"></div>';
+    return topo + htmlRespostaFinalQ(r) + '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="gt-cancel">Fechar</button></div>';
   }
   function abrirOcorrenciaGestor(id) {
     var r = ((estado.g && estado.g.dados && estado.g.dados.registros) || []).filter(function (x) { return String(x.id) === String(id); })[0]; if (!r) return;
@@ -3253,42 +3244,6 @@
       $('gv-devolver').addEventListener('click', function () { decidir('devolver', 'Devolver ao analista para ajustar?'); });
       return;
     }
-    if (!$('gt-salvar')) return;
-    var plano = $('gt-plano'), erro = $('gt-erro');
-    plano.addEventListener('input', function () { $('gt-cont').textContent = plano.value.length + '/1500'; });
-    $('gt-cont').textContent = plano.value.length + '/1500';
-    ligarChipsResp($('gt-resp'));
-    ligarMencoes(plano, function () { return analistasPorDepto($('gt-depto').value); }, function (a) { adicionarChipResp($('gt-resp'), a); });
-    var obsG = $('gt-obs');
-    obsG.addEventListener('input', function () { $('gt-obs-cont').textContent = obsG.value.length + '/1500'; });
-    ligarMencoes(obsG, function () { return analistasPorDepto($('gt-depto').value); }, function (a) { adicionarChipResp($('gt-resp'), a); });   // @ também na observação
-    var salvar = async function (abrir) {
-      erro.textContent = '';
-      var sel = chipsDe($('gt-resp'));
-      var corpo = { plano: plano.value, analistas_ids: sel.map(function (c) { return c.getAttribute('data-chip'); }), departamento: $('gt-depto').value, prazo: $('gt-prazo').value, obs: $('gt-obs').value };
-      if (plano.value.trim().length < 5) { erro.textContent = 'Descreva o plano de ação (mínimo de 5 caracteres).'; return; }
-      if (!corpo.analistas_ids.length && !(r.filhas || []).length) { erro.textContent = 'Escolha ao menos um responsável (analista) ou abra ocorrências vinculadas para os analistas.'; return; }
-      if (!corpo.prazo) { erro.textContent = 'Informe o prazo para execução.'; return; }
-      if (corpo.prazo < hojeIsoLocal()) { erro.textContent = 'O prazo não pode ser uma data que já passou.'; return; }
-      if (abrir) {
-        var nome = sel.map(function (c) { return c.getAttribute('data-nome'); }).join(', ');
-        if (!window.confirm(nome ? 'Abrir esta ocorrência para ' + nome + '? Depois disso você não edita mais a tratativa por aqui.' : 'Abrir esta ocorrência conduzida pelas ocorrências vinculadas? Ela segue para a sua validação quando todas estiverem encerradas.')) return;
-      }
-      var b1 = $('gt-salvar'), b2 = $('gt-abrir'); b1.disabled = true; b2.disabled = true;
-      try {
-        var resp = await chamarApi('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id) + '/tratativa', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
-        var j = await resp.json().catch(function () { return {}; });
-        if (!resp.ok) { erro.textContent = j.error || 'Não foi possível salvar a tratativa.'; b1.disabled = false; b2.disabled = false; return; }
-        if (abrir) {
-          var ra = await chamarApi('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id) + '/abrir', { method: 'POST' });
-          var ja = await ra.json().catch(function () { return {}; });
-          if (!ra.ok) { erro.textContent = 'A tratativa foi salva, mas não abriu para o analista: ' + (ja.error || 'tente de novo.'); b1.disabled = false; b2.disabled = false; estado.g.dados = null; return; }
-        }
-        fechar(); estado.g.dados = null; desenharGestor();
-      } catch (e) { erro.textContent = 'Sem conexão com o servidor. Tente de novo.'; b1.disabled = false; b2.disabled = false; }
-    };
-    $('gt-salvar').addEventListener('click', function () { salvar(false); });
-    $('gt-abrir').addEventListener('click', function () { salvar(true); });
   }
 
   /** Janela "Gerenciar gestores por departamento" (o miolo). j = resposta de /qualidade/gestores. */

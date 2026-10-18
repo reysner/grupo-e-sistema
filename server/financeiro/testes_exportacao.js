@@ -404,7 +404,7 @@ const semLixo = (e, nome) => {
     try { assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.analistasPorDepto('Fiscal').map((x) => x.nome))), ['João Victor', 'Ana Souza', 'Bruno Cesar Xavier'], 'no @, os do departamento vêm primeiro'); } finally { C.t.estado.qAnalistas = ant; }
     assert.ok(h.includes('id="gt-filha"') && h.includes('Abrir ocorrência vinculada') && !h.includes('id="gt-analista"'));
     const dois = C.t.htmlTratativaGestor(Object.assign({}, base, { etapa: 'tratativa_definida', responsaveis: [{ analista_id: '1', nome: 'Bruno Cesar Xavier' }, { analista_id: '2', nome: 'João Victor' }] }), an);
-    assert.ok(dois.includes('data-chip="1" data-nome="Bruno Cesar Xavier"') && dois.includes('data-chip="2" data-nome="João Victor"') && dois.includes('data-chip="3" data-nome="Ana Souza" data-fixo="1"'), 'os responsáveis já definidos aparecem como etiquetas, e o apontado no registro entra fixo');
+    assert.ok(!dois.includes('id="gt-resp"') && !dois.includes('id="gt-plano"') && !dois.includes('id="gt-salvar"') && dois.includes('Resposta final ao Sucesso do Cliente'), 'não existe mais o formulário de tratativa na matriz (a conversa com os analistas é nas vinculadas)');
     const aberta = C.t.htmlTratativaGestor(Object.assign({}, base, { etapa: 'com_analista', plano_acao: 'Plano', tratativa_depto: 'Fiscal', responsaveis: [{ analista_id: '1', nome: 'Bruno Cesar Xavier' }, { analista_id: '2', nome: 'João Victor' }], filhas: [{ id: 'f', assunto: 'Alinhar com o Bruno', etapa: 'com_analista', departamentos: ['Financeiro'], analista_nome: 'Bruno Cesar Xavier', prazo: '2026-10-28' }] }), an);
     assert.ok(aberta.includes('Responsáveis: <strong>Bruno Cesar Xavier, João Victor</strong>') && aberta.includes('Ocorrências vinculadas') && aberta.includes('Alinhar com o Bruno') && aberta.includes('id="gt-filha"'), 'aberta: mostra os responsáveis, as filhas e ainda deixa vincular outra');
     const filha = C.t.htmlTratativaGestor(Object.assign({}, base, { id: 'f', origem: 'filha', etapa: 'validacao_gestor', analista_origem_nome: null, pai: null, plano_acao: 'P', tratativa_depto: 'Financeiro', responsaveis: [{ analista_id: '1', nome: 'Bruno Cesar Xavier', nota: 'Feito', encerrado_em: '2026-10-20T10:00:00Z' }] }), an);
@@ -421,7 +421,6 @@ const semLixo = (e, nome) => {
     assert.ok(f.includes('Digite @ para chamar um analista') && f.includes('<option value="Fiscal" selected>Fiscal</option>') && !f.includes('id="gf-mostrar" checked'), 'por padrão não mostra a origem');
     assert.ok(f.includes('Mostrar a origem e o analista do registro') && f.includes('fica só com você'));
     assert.ok(f.includes('id="gf-obs"') && f.includes('maxlength="1500"') && f.includes('0/1500') && f.includes('Digite @ para chamar um analista'), 'observação da vinculada: textarea larga, até 1500, com @');
-    assert.ok(dois.includes('id="gt-obs"') && dois.includes('maxlength="1500"') && dois.includes('/1500</span></label><textarea id="gt-obs"'), 'observação da tratativa: até 1500, com contador');
     assert.ok(f.includes('data-vazio="1"') && f.includes('digite @ no plano de ação'), 'a ocorrência vinculada começa sem ninguém e chama com @');
     assert.ok(C.t.htmlChipsResp([{ id: '5', nome: 'Kelen Garcia da Silva' }]).includes('data-chip="5"') && C.t.htmlChipsResp([{ id: '5', nome: 'Kelen' }]).includes('data-chip-x="5"'), 'cada etiqueta tem o ✕ para retirar');
     assert.ok(C.t.htmlChipsResp([]).includes('Ninguém ainda'));
@@ -444,7 +443,7 @@ const semLixo = (e, nome) => {
     const f = C.t.htmlOcorrenciaAnalista({ id: 'f', origem: 'filha', etapa: 'com_analista', situacao: 'em_tratamento', tipo: 'Erro', prioridade: 'Alta', departamentos: ['Financeiro'], assunto: 'Alinhar', detalhe: 'Plano', cliente_nome: 'ALFA', criado_em: '2026-10-17T12:00:00Z', prazo: '2026-10-25', plano_acao: 'Plano', tratativa_depto: 'Financeiro', responsaveis: [{ analista_id: '1', nome: 'Bruno', encerrado_em: null }], filhas: [], anexos: [], notas: [] }, '', '1', false);
     assert.ok(f.includes('esta ocorrência vinculada é concluída') && f.includes('libera a original') === false && f.includes('ajuda a liberar a original') && !f.includes('Sucesso do Cliente fazer a devolutiva'), 'a filha não vai para o Sucesso do Cliente');
     const so = C.t.htmlTratativaGestor({ id: 'p', etapa: 'com_analista', situacao: 'em_tratamento', tipo: 'Erro', prioridade: 'Alta', departamentos: ['Fiscal'], assunto: 'Guia', detalhe: 'Det', cliente_nome: 'ALFA', criado_em: '2026-10-17T12:00:00Z', prazo: '2026-10-25', plano_acao: 'Plano', tratativa_depto: 'Fiscal', responsaveis: [], filhas: [{ id: 'f', assunto: 'Alinhar', etapa: 'com_analista', departamentos: ['Financeiro'], analista_nome: 'Bruno', prazo: '2026-10-28' }], anexos: [], notas: [] }, []);
-    assert.ok(so.includes('conduzida pelas ocorrências vinculadas'), 'sem responsável próprio: aparece que é conduzida pelas filhas');
+    assert.ok(so.includes('Converse com os analistas pelas vinculadas') && !so.includes('Tratativa</div>'), 'sem responsável próprio: a matriz é só comunicação e a conversa com os analistas é nas vinculadas');
   });
   await teste('cs: filtro Analista dos portais usa a lista oficial (nome completo) e, com departamento, mostra os dele; acha o analista como um dos responsáveis', () => {
     const an = [{ id: '1', nome: 'Bruno Cesar Xavier', departamentos: ['Financeiro', 'Legalização'], ativo: true }, { id: '2', nome: 'João Victor', departamentos: ['Fiscal'], ativo: true }, { id: '3', nome: 'Ana Souza', departamentos: [], ativo: true }, { id: '4', nome: 'Antigo', departamentos: ['Fiscal'], ativo: false }];
@@ -686,6 +685,7 @@ const semLixo = (e, nome) => {
     const m = { id: 'm', origem: 'modulo', etapa: 'com_analista', assunto: 'Atraso', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', plano_acao: 'Conduzida pelas ocorrências vinculadas', responsaveis: [], filhas: [{ id: 'f', assunto: 'A', etapa: 'encerrada', departamentos: ['Pessoal'], prazo: '2026-10-20', analista_nome: 'P', respostas: [{ nome: 'P', nota: 'Resolvido com o cliente' }] }] };
     assert.ok(!C.t.htmlTratativaGestor(m, []).includes('id="gt-msg-enviar"'), 'a matriz só das vinculadas não tem analista: a conversa com os analistas é nas vinculadas');
     assert.ok(C.t.htmlTratativaGestor(Object.assign({}, m, { origem: 'filha', pai_id: 'm', filhas: [], responsaveis: [{ analista_id: '1', nome: 'Ana' }] }), []).includes('id="gt-msg-enviar"'), 'o gestor deixa mensagem ao analista na vinculada');
+    assert.ok(!C.t.htmlTratativaGestor(Object.assign({}, m, { filhas: [], responsaveis: [{ analista_id: '1', nome: 'Ana' }] }), []).includes('id="gt-msg-enviar"'), 'na matriz não há mensagem ao analista');
     assert.ok(!C.t.htmlTratativaGestor(Object.assign({}, m, { etapa: 'encerrada' }), []).includes('gt-msg-enviar'), 'depois de encerrada não há mensagem');
     const v = C.t.htmlTratativaGestor(Object.assign({}, m, { etapa: 'validacao_gestor', filhas: [{ id: 'f1', assunto: 'A', etapa: 'encerrada', departamentos: ['Pessoal'], prazo: '2026-10-20', analista_nome: 'P', respostas: [{ nome: 'P', nota: 'Resolvido com o cliente' }] }] }), []);
     assert.ok(v.includes('Resposta final ao Sucesso do Cliente') && v.includes('value="obs" checked') && v.includes('value="fin"') && !/value="fin" disabled/.test(v) && v.includes('Resolvido com o cliente') && !v.includes('id="gv-validar"'), 'matriz só das vinculadas, já respondida: resposta final com Observação ou Finalizar, com o apanhado embaixo');
@@ -721,17 +721,14 @@ const semLixo = (e, nome) => {
     assert.ok(!C.t.htmlOcorrenciaSucesso(Object.assign({}, base, { dialogo: [] }), false).includes('Conversa com o Gestor(a)'), 'sem conversa e sem ser o gestor final, nada aparece');
     assert.ok(!C.t.htmlOcorrenciaSucesso(Object.assign({}, base, { dialogo: [{ em: '2026-10-18T12:00:00Z', lado: 'gestor', texto: 'x' }] }), false).includes('so-resp-enviar'), 'só o gestor final responde');
   });
-  await teste('cs: matriz antiga com analista — o analista apontado vem fixo (sem ✕); o corrigido pelo gestor final é o fixo', () => {
-    const an = [{ id: '9', nome: 'Polyanna' }, { id: '4', nome: 'João' }];
-    const m = { id: 'm', origem: 'modulo', etapa: 'tratativa_definida', assunto: 'Atraso', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', analista_origem_id: '9', analista_origem_nome: 'Polyanna', responsaveis: [{ analista_id: '9', nome: 'Polyanna' }], filhas: [] };
-    const t1 = C.t.htmlTratativaGestor(m, an);
-    assert.ok(t1.includes('data-chip="9"') && t1.includes('data-fixo="1"') && !t1.includes('data-chip-x="9"') && t1.includes('(fixo)'), 'Polyanna aparece fixa, sem ✕');
-    const t2 = C.t.htmlTratativaGestor(Object.assign({}, m, { analista_apontado_id: '4', analista_apontado_nome: 'João', responsaveis: [{ analista_id: '4', nome: 'João' }] }), an);
-    assert.ok(t2.includes('data-chip="4"') && !t2.includes('data-chip-x="4"') && t2.includes('data-chip="9"') === false, 'o corrigido pelo gestor final é o fixo');
-    const t4 = C.t.htmlTratativaGestor(Object.assign({}, m, { responsaveis: [{ analista_id: '4', nome: 'João' }], analista_nome: 'João' }), an);
-    assert.ok(t4.includes('data-chip="9"') && t4.includes('data-fixo="1"') && t4.includes('data-chip-x="4"'), 'o apontado entra mesmo que o responsável salvo seja outro; o acrescentado pode sair');
-  });
   await teste('cs: matriz e vínculos — Em andamento, resposta dos vínculos na matriz e analista apontado corrigido pelo gestor final', () => {
+    {   // aviso quando ninguém está apontado
+      const e0 = C.t.estado, s0 = e0.qAnalistas; e0.qAnalistas = [{ id: '9', nome: 'Polyanna' }];
+      const sem = { id: 'm', origem: 'modulo', etapa: 'devolutiva_cliente', assunto: 'A', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', analista_origem_id: null, analista_apontado_id: null, apontamentos: [], responsaveis: [], filhas: [] };
+      assert.ok(C.t.htmlOcorrenciaSucesso(sem, true).includes('Nenhum analista está apontado nesta ocorrência'), 'avisa o Gestor final quando ninguém está apontado');
+      assert.ok(!C.t.htmlOcorrenciaSucesso(Object.assign({}, sem, { analista_origem_id: '9', analista_origem_nome: 'Polyanna' }), true).includes('Nenhum analista está apontado'), 'com analista apontado, sem o aviso');
+      if (s0 === undefined) delete e0.qAnalistas; else e0.qAnalistas = s0;
+    }
     const e = C.t.estado, salvo = e.qAnalistas; e.qAnalistas = [{ id: '9', nome: 'Polyanna' }, { id: '4', nome: 'João' }];
     const base = { id: 'm', origem: 'modulo', etapa: 'com_analista', assunto: 'Atraso', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', analista_origem_id: '9', analista_origem_nome: 'Polyanna', analista_apontado_id: null, analista_apontado_nome: null, apontamentos: [], responsaveis: [], filhas: [] };
     const gf = C.t.htmlOcorrenciaSucesso(base, true);
@@ -770,14 +767,10 @@ const semLixo = (e, nome) => {
     const h = C.t.htmlGestor({ escopo: { todos: false, deptos: ['Fiscal', 'Pessoal'] }, registros: regs }, F({}));
     assert.ok(h.includes('Trâmite') && h.includes('Sucesso do Cliente') && h.includes('Aguardando análise') && h.includes('Em validação'));
     assert.ok(h.includes('seus departamentos: Fiscal, Pessoal') && h.includes('<option value="7">Josiane</option>') && h.includes('<option value="9">Bruno</option>') && h.includes('value="vencidas"'));
-    assert.ok(h.includes('>Analisar<') && h.includes('Editar / abrir para o analista') && h.includes('>Ver<'));
+    assert.ok(h.includes('>Analisar<') && !h.includes('Editar / abrir para o analista') && h.includes('>Ver<'));
     assert.ok(C.t.htmlGestor({ escopo: { todos: true, deptos: [] }, registros: [] }, F({})).includes('todos os departamentos'));
     const nova = C.t.htmlTratativaGestor(r('a'), [{ id: '7', nome: 'Josiane' }, { id: '9', nome: 'Bruno' }]);
     assert.ok(nova.includes('Resposta final ao Sucesso do Cliente') && nova.includes('id="gt-filha"') && !nova.includes('id="gt-salvar"') && !nova.includes('id="gt-plano"'), 'a matriz nova: resposta final + abrir vinculadas, sem formulário de tratativa');
-    const edit = C.t.htmlTratativaGestor(r('c', { etapa: 'tratativa_definida', tratativa_depto: 'Contábil', responsaveis: [{ analista_id: '7', nome: 'Josiane' }] }), [{ id: '7', nome: 'Josiane' }, { id: '9', nome: 'Bruno' }]);
-    assert.ok(edit.includes('Criar a tratativa') && edit.includes('Plano de ação') && edit.includes('Responsável') && edit.includes('Prazo para execução (SLA)') && edit.includes('id="gt-abrir"') && edit.includes('id="gt-salvar"'), 'a matriz antiga, com analista já definido, mantém o formulário');
-    assert.ok(edit.includes('<option value="Contábil" selected>Contábil</option>') && edit.includes('value="2026-10-25"'), 'departamento e prazo vêm preenchidos');
-    assert.ok(!edit.includes('data-oc-res'), 'sem os botões de resolver/cancelar dentro da janela do gestor');
     const lida = C.t.htmlTratativaGestor(r('b', { etapa: 'com_analista', plano_acao: 'Plano X', tratativa_depto: 'Pessoal', gestor_obs: 'Obs Y', tratativa_definida_por: 'Eduardo', liberada_em: '2026-10-18T10:00:00Z' }), []);
     assert.ok(lida.includes('Plano X') && lida.includes('Obs Y') && lida.includes('definida por Eduardo') && lida.includes('aberta ao analista em 18/10/2026') && !lida.includes('id="gt-salvar"'), 'depois de aberta só leitura');
   });

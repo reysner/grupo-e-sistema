@@ -1344,7 +1344,7 @@ router.post('/gestor/ocorrencias/:id/resposta-final', async (req, res) => {
     const abertas = (await pool.query("SELECT COUNT(*)::int AS n FROM cs_qualidade_registros WHERE pai_id = $1 AND status <> 'cancelado' AND etapa <> 'encerrada'", [reg.id])).rows[0].n;
     if (abertas) return res.status(409).json({ error: 'Ainda há ' + abertas + ' ocorrência(s) vinculada(s) em aberto. Finalize quando todas estiverem encerradas; até lá, use Observação.' });
     const pend = (await pool.query('SELECT COUNT(*)::int AS n FROM cs_qualidade_resp WHERE registro_id = $1 AND encerrado_em IS NULL', [reg.id])).rows[0].n;
-    if (pend && reg.etapa !== 'validacao_gestor') return res.status(409).json({ error: 'Ainda há analista(s) tratando esta ocorrência. Finalize quando encerrarem; até lá, use Observação.' });
+    if (pend && reg.etapa === 'com_analista') return res.status(409).json({ error: 'Ainda há analista(s) tratando esta ocorrência. Finalize quando encerrarem; até lá, use Observação.' });
     const up = await pool.query(`UPDATE cs_qualidade_registros SET etapa = 'devolutiva_cliente', status = $1, validacao_nota = $2, validacao_obs = NULL, validacao_em = NOW(), validacao_por = $3, validado_em = NOW(), validado_por = $3,
         liberada_em = COALESCE(liberada_em, NOW()), liberada_por = COALESCE(liberada_por, $3), tratativa_definida_por = COALESCE(tratativa_definida_por, $3), tratativa_definida_em = COALESCE(tratativa_definida_em, NOW()),
         tratativa_depto = COALESCE(tratativa_depto, $4), plano_acao = COALESCE(NULLIF(plano_acao, ''), 'Resposta final do gestor'), atualizado_em = NOW()
