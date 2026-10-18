@@ -626,7 +626,8 @@ const semLixo = (e, nome) => {
   const aberta = C.t.htmlFiltrosPortalQ('s', F({ maisAberto: true, tipo: 'Erro' }), regs, { optD: '', optA: '', optE: '', comPor: true });
   assert.ok(aberta.includes('▴ Menos filtros') && !/id="s-mais-box"[^>]*display:none/.test(aberta) && !aberta.includes('data-limpar-filtro'), 'aberta: mostra os campos e sem etiquetas');
   assert.ok(barra.includes('<option value="Multa">Multa</option>') && barra.includes('<option value="Erro" selected>Erro</option>') && barra.includes('<option value="Beto">Beto</option>'), 'tipos e quem registrou vêm das próprias ocorrências');
-  const semPor = C.t.htmlFiltrosPortalQ('a', F({}), regs, { optA: null, optE: '', comPor: false });
+  const semPor = C.t.htmlFiltrosPortalQ('a', F({ tipo: 'Erro' }), regs, { optA: null, optE: '', comPor: false, enxuto: true });
+  assert.ok(semPor.includes('id="a-busca"') && semPor.includes('id="a-etapa"') && semPor.includes('id="a-periodo"') && !semPor.includes('id="a-tipo"') && !semPor.includes('id="a-prio"') && !semPor.includes('id="a-mais"'), 'Portal do Analista: só busca, etapa e tempo');
   assert.ok(!semPor.includes('id="a-por"') && !semPor.includes('id="a-de"') && !semPor.includes('id="a-limpar"') && !semPor.includes('id="a-depto"') && !semPor.includes('id="a-analista"'), 'o Analista não filtra por quem registrou, nem por departamento; sem filtro ativo não há Limpar');
   assert.ok(C.t.htmlAnalista({ analista: { id: '7', nome: 'J' }, todos: false, registros: regs }, F({})).includes('id="a-periodo"'), 'Portal do Analista tem o período');
   assert.ok(C.t.htmlSucesso({ registros: regs, analistas: [], final: true }, F({})).includes('id="s-periodo"'), 'Portal do Sucesso do Cliente tem o período');

@@ -2688,6 +2688,10 @@
       '<span class="filter-label">Etapa</span><select class="gp-select" id="' + p + '-etapa">' + (o.optE || '') + '</select>' +
       '<span class="filter-label">Registrada em</span><select class="gp-select" id="' + p + '-periodo">' + PERIODOS_Q.map(function (x) { return op(x[0], x[1], (f.periodo || '') === x[0]); }).join('') + '</select>';
     if (f.periodo === 'livre') principal += '<input class="gp-input" type="date" id="' + p + '-de" value="' + esc(f.de || '') + '" aria-label="De"><span class="filter-label">a</span><input class="gp-input" type="date" id="' + p + '-ate" value="' + esc(f.ate || '') + '" aria-label="Até">';
+    if (o.enxuto) {   // Portal do Analista: só busca, etapa e tempo (e, para o administrador, o seletor de analista)
+      var anS = o.optA != null ? '<span class="filter-label">Analista</span><select class="gp-select" id="' + p + '-analista">' + o.optA + '</select>' : '';
+      return '<div class="filter-group" style="margin-bottom:14px">' + anS + principal + (filtrosAtivosQ({ busca: f.busca, etapa: f.etapa, periodo: f.periodo, analista: f.analista }) ? '<button type="button" class="gp-footer-btn" id="' + p + '-limpar" style="width:auto">Limpar filtros</button>' : '') + '<button type="button" class="gp-footer-btn" id="' + p + '-atualizar" style="width:auto">↻ Atualizar</button></div>';
+    }
     var mais = '', ativos = [];   // ativos: [chave, texto da etiqueta] dos filtros de "Mais filtros" que estão ligados
     if (o.optD != null) { mais += '<span class="filter-label">Departamento</span><select class="gp-select" id="' + p + '-depto">' + o.optD + '</select>'; if (f.depto) ativos.push(['depto', 'Departamento: ' + rotuloDepto(f.depto)]); }
     if (o.optA != null) { mais += '<span class="filter-label">Analista</span><select class="gp-select" id="' + p + '-analista">' + o.optA + '</select>'; if (f.analista) { var an = ((estado.qAnalistas || []).filter(function (a) { return String(a.id) === String(f.analista); })[0]); ativos.push(['analista', 'Analista: ' + (an ? an.nome : f.analista)]); } }
@@ -2748,7 +2752,7 @@
         kpi('#166534', 'Encerradas', c.encerrada, 'processo finalizado') +
         kpi('#b91c1c', 'Vencidas', c.vencidas, 'prazo passou') +
       '</div>' +
-      '<div class="card">' + htmlFiltrosPortalQ('a', f, regs, { optA: d.admin ? optAn : null, optE: optE, comPor: false }) +
+      '<div class="card">' + htmlFiltrosPortalQ('a', f, regs, { optA: d.admin ? optAn : null, optE: optE, comPor: false, enxuto: true }) +
         '<div class="card-sub">' + lista.length + ' ocorrência(s)' + (d.todos ? ' · você é administrador: vê as de todos e age em nome do analista' : (d.analista ? (d.admin ? ' · visão do analista: ' : ' · analista: ') + esc(d.analista.nome) : '')) + '</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Aberta em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Assunto e plano</th>' + (d.todos ? '<th>Analista</th>' : '') + '<th class="c">Prazo</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
           : '<div class="vazio">Nenhuma ocorrência aberta para ' + (d.todos ? 'este filtro' : 'você') + ' por enquanto.</div>') + '</div>' + htmlSobreMim(d);
