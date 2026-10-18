@@ -45,6 +45,8 @@ const ETAPAS = ['registrada', 'tratativa_definida', 'com_analista', 'validacao_g
 const MAX_ANEXO = 10 * 1024 * 1024;   // por arquivo (ficam no banco)
 const MAX_ANEXOS = 5;               // por ocorrência
 const MAX_TRATATIVA = 600;
+const MAX_NOTA = 2000;      // nota e observação de quem encerra, valida ou devolve (eram 600 e 1000; 2000 em 18/10/2026)
+const MAX_ANOTACAO = 1000;  // anotação do analista no meio do caminho (era 600)
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const PAPEIS = ['administrador', 'usuario'];
 
@@ -212,14 +214,14 @@ function transicao(acao, etapa) {
   if (!t.de.includes(etapa)) return { ok: false, erro: t.erro };
   return { ok: true, para: t.para, status: ETAPA_STATUS[t.para] };
 }
-/** Nota (obrigatória, 5 a 600) e observação (opcional, até 1000) de quem encerra, valida ou devolve. */
+/** Nota (obrigatória, 5 a 2000) e observação (opcional, até 2000) de quem encerra, valida ou devolve. */
 function validarEncerramento(corpo) {
   const b = corpo || {};
   const nota = String(b.nota == null ? '' : b.nota).replace(/\r\n/g, '\n').trim();
   if (nota.length < 5) return { ok: false, erro: 'Deixe a nota (mínimo de 5 caracteres).' };
-  if (nota.length > MAX_TRATATIVA) return { ok: false, erro: 'A nota passa de ' + MAX_TRATATIVA + ' caracteres.' };
+  if (nota.length > MAX_NOTA) return { ok: false, erro: 'A nota passa de ' + MAX_NOTA + ' caracteres.' };
   const obs = String(b.obs == null ? '' : b.obs).replace(/\r\n/g, '\n').trim();
-  if (obs.length > 1000) return { ok: false, erro: 'A observação passa de 1000 caracteres.' };
+  if (obs.length > MAX_NOTA) return { ok: false, erro: 'A observação passa de ' + MAX_NOTA + ' caracteres.' };
   return { ok: true, valores: { nota, obs: obs || null } };
 }
 const textoNota = (v) => v.nota + (v.obs ? ' — Observação: ' + v.obs : '');
@@ -1159,9 +1161,9 @@ router.post('/analista/ocorrencias/:id/nota', async (req, res) => {
     const ag = await autorizaAgir(req.user, reg);
     if (!ag.ok) return res.status(ag.status).json({ error: ag.erro });
     if (reg.etapa !== 'com_analista') return res.status(409).json({ error: 'Só dá para anotar enquanto a ocorrência está com o analista.' });
-    const t = texto(req.body && req.body.texto, MAX_TRATATIVA + 1);
+    const t = texto(req.body && req.body.texto, MAX_ANOTACAO + 1);
     if (t.length < 3) return res.status(400).json({ error: 'Escreva a nota (mínimo de 3 caracteres).' });
-    if (t.length > MAX_TRATATIVA) return res.status(400).json({ error: 'A nota passa de ' + MAX_TRATATIVA + ' caracteres.' });
+    if (t.length > MAX_ANOTACAO) return res.status(400).json({ error: 'A anotação passa de ' + MAX_ANOTACAO + ' caracteres.' });
     await registrar(reg.id, ag.por, 'nota', t);
     avisarAnotacao(req, reg, ag, t);   // sem esperar: o aviso nunca atrasa nem derruba a anotação
     res.json({ registro: registroParaQuemAgiu(req.user, ag, await registroCompleto(reg.id)) });

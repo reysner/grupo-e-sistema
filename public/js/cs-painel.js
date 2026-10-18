@@ -120,17 +120,30 @@
       if (['administrador', 'usuario'].indexOf(j.user.role) < 0 && !j.user.acesso_cs && !j.user.acesso_gestor && !j.user.acesso_qualidade) { mostrarLogin('Este painel é da equipe do Sucesso do Cliente. Peça acesso à administração.'); return; }
       ls(K_TOKEN, j.token); ls(K_REFRESH, j.refreshToken); ls(K_USER, JSON.stringify(j.user));
       $('inp-senha').value = '';
+      limparEstadoDaSessao();   // nada da pessoa que usou esta aba antes
       iniciar();
     } catch (e) { mostrarLogin('Sem conexão com o servidor. Tente de novo.'); }
     finally { btn.disabled = false; btn.textContent = 'Entrar'; }
   }
 
+  /** Esquece tudo o que era da pessoa anterior (dados, filtros, telas e janelas): quem entrar em seguida na mesma aba não vê nada dela. */
+  function limparEstadoDaSessao() {
+    ['g', 's', 'a', 'eu', 'ac', 'qAnalistas', 'qResumo', 'qOpcoes', 'ficha', 'honorario', 'anual', 'atend', 'motivosChurn', 'fichaGrupoAberta', 'entidadesAnalise', 'tpAberto', 'tpF',
+      'filtroQ', 'filtroAtend', 'filtroAnual', 'qPesoAberto', 'fechamento', 'mesFechamento', 'avisosIniciados', 'qRecentes'].forEach(function (k) { delete estado[k]; });
+    estado.dados = null; estado.churnLivre = null;
+    try {
+      Array.prototype.forEach.call(document.querySelectorAll('.gp-section'), function (s) { s.innerHTML = ''; });
+      Array.prototype.forEach.call(document.querySelectorAll('.qa-overlay'), function (o) { if (o.parentNode) o.parentNode.removeChild(o); });
+      Array.prototype.forEach.call(document.querySelectorAll('[id^="badge-"]'), function (b) { b.textContent = ''; });
+      var barra = document.querySelector('.gp-sidebar'); if (barra) barra.classList.add('gp-aguarda-perfil');   // o menu só volta quando o perfil de quem entrou chegar
+    } catch (e) { /* sem tela (testes) */ }
+  }
   function sair(silencioso) {
     var rt = ls(K_REFRESH), tk = ls(K_TOKEN);
     if (!silencioso && rt && tk) fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ refreshToken: rt }) }).catch(function () {});
     ls(K_TOKEN, null); ls(K_REFRESH, null); ls(K_USER, null);
     clearTimeout(avisoTimer); avisosDesde = null;
-    estado.dados = null;
+    limparEstadoDaSessao();
     mostrarLogin(silencioso ? 'Sua sessão expirou. Entre de novo.' : '');
   }
 
@@ -2396,10 +2409,10 @@
 
   // ── PORTAL DO ANALISTA ────────────────────────────────────────────────────────────────
   function formNotaObs(p, rotuloNota) {
-    return '<div class="qa-campo"><label for="' + p + '-nota">' + rotuloNota + ' <span class="req">*</span> <span class="cinza" id="' + p + '-cont">0/600</span></label><textarea id="' + p + '-nota" rows="3" maxlength="600"></textarea></div>' +
-      '<div class="qa-campo"><label for="' + p + '-obs">Observação</label><textarea id="' + p + '-obs" rows="2" maxlength="1000" placeholder="Opcional"></textarea></div>';
+    return '<div class="qa-campo"><label for="' + p + '-nota">' + rotuloNota + ' <span class="req">*</span> <span class="cinza" id="' + p + '-cont">0/2000</span></label><textarea id="' + p + '-nota" rows="5" maxlength="2000"></textarea></div>' +
+      '<div class="qa-campo"><label for="' + p + '-obs">Observação</label><textarea id="' + p + '-obs" rows="3" maxlength="2000" placeholder="Opcional"></textarea></div>';
   }
-  function ligarContador(p) { var t = $(p + '-nota'), c = $(p + '-cont'); if (t && c) t.addEventListener('input', function () { c.textContent = t.value.length + '/600'; }); }
+  function ligarContador(p) { var t = $(p + '-nota'), c = $(p + '-cont'); if (t && c) t.addEventListener('input', function () { c.textContent = t.value.length + '/2000'; }); }
   async function postarQ(url, corpo) {
     var r = await chamarApi(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo || {}) });
     var j = await r.json().catch(function () { return {}; });
@@ -2832,7 +2845,7 @@
     return topo + htmlRetornos(r) +
       (emNomeDe ? '<div class="qa-obs" style="margin:10px 0">Você está agindo em nome de <strong>' + esc(emNomeDe) + '</strong>: o que registrar aparece com o seu nome e o dele.</div>' : '') +
       '<div class="ficha-sec">Sua tratativa</div>' +
-      '<div class="qa-campo"><label for="ao-nota-rapida">Anotação no meio do caminho <span class="cinza">(opcional; fica no histórico)</span></label><div style="display:flex;gap:8px"><input type="text" id="ao-nota-rapida" maxlength="600" style="flex:1" placeholder="Ex.: liguei para o cliente, aguardando retorno"><button type="button" class="gp-footer-btn" id="ao-anotar" style="width:auto">Anotar</button></div></div>' +
+      '<div class="qa-campo"><label for="ao-nota-rapida">Anotação no meio do caminho <span class="cinza">(opcional; fica no histórico)</span></label><div style="display:flex;gap:8px"><input type="text" id="ao-nota-rapida" maxlength="1000" style="flex:1" placeholder="Ex.: liguei para o cliente, aguardando retorno"><button type="button" class="gp-footer-btn" id="ao-anotar" style="width:auto">Anotar</button></div></div>' +
       '<div class="ficha-sec">Encerrar a tratativa</div>' + quem + formNotaObs('ao', 'Nota (o que foi feito)') +
       (r.origem === 'filha' ? '<div class="qa-obs" style="margin:6px 0">ℹ Ao clicar em <strong>Encerrada</strong>, esta ocorrência vinculada é concluída' + (rs.length > 1 ? ' quando todos os responsáveis tiverem encerrado' : '') + ' e ajuda a liberar a original para a validação do gestor.</div>' : '<div class="qa-obs" style="margin:6px 0">ℹ Ao clicar em <strong>Encerrada</strong>, a ocorrência vai para a validação do seu gestor' + (rs.length > 1 ? ' quando todos os responsáveis tiverem encerrado' : '') + '; depois, para o Sucesso do Cliente fazer a devolutiva ao cliente.</div>') +
       '<div class="qa-oc-linha qa-oc-bot"><button type="button" class="qa-btn-cancel" id="ao-cancel" style="background:#64748b">Fechar</button><button type="button" class="qa-btn-ok" id="ao-encerrar">Encerrada: enviar para validação</button></div>' +

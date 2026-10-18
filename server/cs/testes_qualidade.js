@@ -217,14 +217,15 @@ teste('fluxo: cada passo só sai da etapa certa e leva à seguinte (e o status d
   assert.deepStrictEqual(v('filha_validar', 'validacao_gestor'), { ok: true, para: 'encerrada', status: 'resolvido' }, 'a filha validada já está encerrada');
   assert.strictEqual(v('filha_validar', 'com_analista').ok, false);
 });
-teste('nota e observação de quem encerra, valida ou devolve: nota obrigatória (5 a 600), observação opcional (até 1000)', () => {
+teste('nota e observação de quem encerra, valida ou devolve: nota obrigatória (5 a 2000), observação opcional (até 2000)', () => {
   assert.deepStrictEqual(validarEncerramento({ nota: ' Guia retificada e cliente avisado ' }), { ok: true, valores: { nota: 'Guia retificada e cliente avisado', obs: null } });
   assert.strictEqual(validarEncerramento({ nota: 'Tudo ok', obs: '  conferi os dois meses ' }).valores.obs, 'conferi os dois meses');
   assert.strictEqual(validarEncerramento({ nota: 'ok' }).ok, false);
   assert.strictEqual(validarEncerramento({}).ok, false);
-  assert.strictEqual(validarEncerramento({ nota: 'a'.repeat(601) }).ok, false);
-  assert.strictEqual(validarEncerramento({ nota: 'a'.repeat(600) }).ok, true);
-  assert.strictEqual(validarEncerramento({ nota: 'Tudo ok', obs: 'a'.repeat(1001) }).ok, false);
+  assert.strictEqual(validarEncerramento({ nota: 'a'.repeat(2001) }).ok, false);
+  assert.strictEqual(validarEncerramento({ nota: 'a'.repeat(2000) }).ok, true, 'cabe um texto longo (o do João tinha ~1000)');
+  assert.strictEqual(validarEncerramento({ nota: 'Tudo ok', obs: 'a'.repeat(2001) }).ok, false);
+  assert.strictEqual(validarEncerramento({ nota: 'Tudo ok', obs: 'a'.repeat(2000) }).ok, true);
   assert.strictEqual(validarEncerramento({ nota: 'linha 1\r\nlinha 2' }).valores.nota, 'linha 1\nlinha 2');
 });
 teste('nome completo no cadastro de gestores: usa o da lista de analistas (por vínculo, nome igual ou único que começa igual); sem par, fica o do login', () => {
