@@ -1149,7 +1149,7 @@ router.post('/analista/ocorrencias/:id/nota', async (req, res) => {
     if (t.length < 3) return res.status(400).json({ error: 'Escreva a nota (mínimo de 3 caracteres).' });
     if (t.length > MAX_TRATATIVA) return res.status(400).json({ error: 'A nota passa de ' + MAX_TRATATIVA + ' caracteres.' });
     await registrar(reg.id, ag.por, 'nota', t);
-    res.json({ registro: await registroCompleto(reg.id) });
+    res.json({ registro: registroParaQuemAgiu(req.user, ag, await registroCompleto(reg.id)) });
   } catch (e) { console.error('[qualidade] POST analista nota falhou:', e); res.status(500).json({ error: 'Erro ao guardar a nota.' }); }
 });
 
@@ -1178,7 +1178,7 @@ router.post('/analista/ocorrencias/:id/encerrar', async (req, res) => {
     await pool.query('UPDATE cs_qualidade_registros SET analista_nota = $1, analista_obs = $2, analista_em = NOW(), analista_por = $3, tratativa = $1, atualizado_em = NOW() WHERE id = $4', [v.valores.nota, v.valores.obs, ag.por, reg.id]);
     await registrar(reg.id, ag.por, 'analista_encerrou', textoNota(v.valores));
     const seguiu = await tentarAvancarParaValidacao(reg.id, ag.por, ag.analistaNome, req.user.id);
-    res.json({ registro: await registroCompleto(reg.id), avancou: seguiu.avancou, pendentes: seguiu.pendentes, filhas_pendentes: seguiu.filhasPendentes });
+    res.json({ registro: registroParaQuemAgiu(req.user, ag, await registroCompleto(reg.id)), avancou: seguiu.avancou, pendentes: seguiu.pendentes, filhas_pendentes: seguiu.filhasPendentes });
   } catch (e) { console.error('[qualidade] POST analista encerrar falhou:', e); res.status(500).json({ error: 'Erro ao encerrar a tratativa.' }); }
 });
 
@@ -1661,6 +1661,8 @@ routerAnalista.get('/minhas', async (req, res) => {
  * Quem pode agir num registro pelo portal: o próprio analista (login ligado a ele) ou administrador/usuário "em nome de" (modo Ver como).
  * Devolve { ok, analistaNome, por } ou { ok:false, status, erro }.
  */
+/** O registro que volta para quem agiu: a liderança vê tudo; o analista recebe com a máscara do sigilo (empresa oculta, reclamado, origem da vinculada). */
+function registroParaQuemAgiu(user, ag, registro) { return PAPEIS.includes(user.role) ? registro : mascararParaAnalista(registro, ag.analistaId, false); }
 async function autorizaAgir(user, reg, analistaPedido) {
   const ids = await idsRespDe(reg.id, reg.analista_id);
   if (PAPEIS.includes(user.role)) {

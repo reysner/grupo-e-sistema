@@ -2857,7 +2857,11 @@
       if (t.length < 3) { erro.textContent = 'Escreva a anotação (mínimo de 3 caracteres).'; return; }
       var x = await postarQ(url + '/nota', { texto: t });
       if (!x.ok) { erro.textContent = x.j.error || 'Não foi possível anotar.'; return; }
-      estado.a.dados = null; fechar(); desenharAnalista();
+      // a janela se atualiza na hora: a anotação entra no histórico e o campo é limpo (a lista por trás também recarrega)
+      var regs = (estado.a.dados && estado.a.dados.registros) || [], pos = -1;
+      regs.forEach(function (q, i) { if (String(q.id) === String(r.id)) pos = i; });
+      if (pos >= 0 && x.j.registro) { regs[pos] = x.j.registro; fechar(); abrirOcorrenciaAnalista(r.id); } else fechar();
+      estado.a.dados = null; desenharAnalista();
     });
     $('ao-encerrar').addEventListener('click', async function () {
       erro.textContent = '';
