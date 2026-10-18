@@ -1422,7 +1422,7 @@
   function notasHtml(r) {
     var n = r.notas || []; if (!n.length) return '';
     return '<div class="qa-reg-trat">' + n.map(function (x) {
-      return '<div><strong>' + esc(ROT_ACAO_Q[x.acao] || x.acao) + '</strong> · ' + dataHora(x.em) + (x.por ? ' · ' + esc(x.por) : '') + (x.texto ? ': ' + esc(x.texto) : '') + '</div>';
+      return '<div><strong>' + esc(ROT_ACAO_Q[x.acao] || x.acao) + '</strong> · ' + dataHora(x.em) + (x.por ? ' · ' + esc(x.por) : '') + (x.texto && ['analista_encerrou', 'gestor_validou'].indexOf(x.acao) < 0 ? ': ' + esc(x.texto) : '') + '</div>';   // a nota de quem encerra/valida aparece uma vez só, em Devolutivas
     }).join('') + '</div>';
   }
   function pillStatusQ(sit) {
@@ -1750,7 +1750,7 @@
       (r.detalhe && r.detalhe === r.plano_acao ? '' : '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>') +
       '<div class="qa-reg-rod">Registrada em ' + dataHora(r.criado_em) + ' por ' + esc(r.criado_por || '—') + (r.prazo ? ' · prazo ' + data(r.prazo) : '') + (r.resolvido_em ? ' · resolvida em ' + dataHora(r.resolvido_em) : '') + '</div>' +
       '<div class="qa-reg-rod">' + (r.etapa ? 'Etapa: <strong>' + esc(ROT_ETAPA_Q[r.etapa] || r.etapa) + '</strong>' : '') + (r.fila ? (r.etapa ? ' · ' : '') + (r.fila === 'gestor' ? 'encaminhada a ' + esc(rotuloGestor((r.departamentos || [])[0])) : 'encaminhada a ' + esc(rotuloGestor((r.departamentos || [])[0])) + ' (sem gestor cadastrado: o Sucesso do Cliente faz esta etapa)') : '') + '</div>' +
-      anexosQ(r) + (semAcoes ? '' : acoesOcorrenciaQ(r)) + (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '</div>';
+      anexosQ(r) + (semAcoes ? '' : acoesOcorrenciaQ(r)) + (r.tratativa && r.tratativa !== r.analista_nota ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '</div>';
   }
   function podeAgirQ() { return !!(estado.dados && estado.dados.usuario && ['administrador', 'usuario'].indexOf(estado.dados.usuario.papel) >= 0); }
   /** Ações da liderança em uma ocorrência (na seção Qualidade da ficha): resolver e cancelar; excluir só o administrador. */
@@ -2466,7 +2466,7 @@
   }
   function marcaFilha(r) { return r && r.origem === 'filha' ? ' <span class="pill" style="color:#7c3aed;border-color:#7c3aed55;background:#7c3aed14;font-size:10px">vinculada</span>' + (r.ocultar_empresa && r.cliente_nome ? ' <span class="pill" style="color:#6b7280;border-color:#6b728055;background:#6b728014;font-size:10px" title="Quem trata não vê a empresa">empresa oculta ao analista</span>' : '') : ''; }
   /** De qual ocorrência a filha veio (só aparece se o gestor quis mostrar) e as ocorrências vinculadas da original. */
-  function htmlVinculos(r) {
+  function htmlVinculos(r, comReabrir) {
     var h = '';
     if (r.pai) h += '<div class="qa-obs" style="margin:8px 0">↳ Ocorrência vinculada a: <strong>' + esc(r.pai.assunto || '—') + '</strong></div>';
     if ((r.filhas || []).length) h += '<div class="ficha-sec">Ocorrências vinculadas</div>' + r.filhas.map(function (f) {
@@ -2474,7 +2474,8 @@
         '<div class="qa-reg-rod">' + esc((f.departamentos || []).map(rotuloDepto).join(', ')) + ' · ' + esc(f.analista_nome || '—') + ' · prazo ' + data(f.prazo) + '</div>' +
         (f.respostas || []).map(function (x) { return '<div class="qa-reg-trat"><strong>' + esc(x.nome || 'Analista') + ':</strong> ' + esc(x.nota) + (x.obs ? '<div class="cinza" style="margin-top:3px"><em>Observação:</em> ' + esc(x.obs) + '</div>' : '') + '</div>'; }).join('') +
         (f.validacao_nota ? '<div class="qa-reg-trat"><strong>Validação do gestor:</strong> ' + esc(f.validacao_nota) + '</div>' : '') +
-        (f.anotacoes || []).map(function (a) { return '<div class="cinza" style="font-size:12px;margin-top:3px">' + dataHora(a.em) + ' · ' + esc(a.por || '—') + ': ' + esc(a.texto) + '</div>'; }).join('') + '</div>';
+        (f.anotacoes || []).map(function (a) { return '<div class="cinza" style="font-size:12px;margin-top:3px">' + dataHora(a.em) + ' · ' + esc(a.por || '—') + ': ' + esc(a.texto) + '</div>'; }).join('') +
+        (comReabrir && f.etapa === 'encerrada' && ['devolutiva_cliente', 'encerrada', 'cancelada'].indexOf(r.etapa) < 0 ? '<button type="button" class="gp-footer-btn" data-reabrir-filha="' + esc(f.id) + '" style="width:auto;margin-top:6px" title="Use se não concordar com o parecer final do analista">Reabrir este vínculo</button>' : '') + '</div>';
     }).join('');
     return h;
   }
@@ -2612,7 +2613,7 @@
     return '<div class="ficha-sec">' + (cancelavel ? 'Cancelar' : 'Reabrir') + '</div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0">' +
       (cancelavel
         ? '<button type="button" class="gp-footer-btn qa-excluir" id="gt-cancelar-oc" style="width:auto">Cancelar esta ocorrência</button><span class="cinza" style="font-size:12px">Fica registrada como cancelada, com o motivo, e sai do risco. Dá para reabrir depois.</span>'
-        : '<button type="button" class="gp-footer-btn" id="gt-reabrir-oc" style="width:auto">Reabrir esta ocorrência</button><span class="cinza" style="font-size:12px">' + (r.etapa === 'encerrada' ? 'Volta para o analista tratar de novo (só o gestor final e a administração).' : 'Volta para a etapa em que estava.') + '</span>') + '</div>' + exc;
+        : '<button type="button" class="gp-footer-btn" id="gt-reabrir-oc" style="width:auto">Reabrir esta ocorrência</button><span class="cinza" style="font-size:12px">' + (r.etapa === 'encerrada' ? (r.origem === 'filha' ? 'O analista trata de novo: use se não concordar com o parecer final dele (o gestor(a), o gestor final e a administração).' : 'Volta para o analista tratar de novo (só o gestor final e a administração).') : 'Volta para a etapa em que estava.') + '</span>') + '</div>' + exc;
   }
   /** Janela pequena que pede o motivo; aoConfirmar devolve uma mensagem de erro (fica na janela) ou null (fecha). */
   function pedirMotivo(titulo, textoBotao, aoConfirmar) {
@@ -3209,7 +3210,7 @@
     var topo = '<div class="qa-modal-topo"><strong style="font-size:20px;color:#256050">' + esc(r.assunto || 'Ocorrência') + '</strong><button type="button" class="qa-x" id="gt-fechar" aria-label="Fechar">✕</button></div>' +
       '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' +
       (r.analista_origem_nome ? '<div class="qa-obs" style="margin:8px 0">Analista indicado no registro: <strong>' + esc(r.analista_origem_nome) + '</strong>. <span class="cinza">Isso fica só com você: as ocorrências vinculadas não apontam essa pessoa, a não ser que você escolha.</span></div>' : '') +
-      cartaoOcorrenciaQ(r, true) + htmlVinculos(r);
+      cartaoOcorrenciaQ(r, true) + htmlVinculos(r, true);
     if (editavel || (r.origem !== 'filha' && soVinc && ['validacao_gestor', 'com_analista'].indexOf(r.etapa) >= 0)) {   // a matriz é só comunicação com o Gestor final: resposta final + vinculadas
       return topo + htmlRetornos(r) + avisoRespostaFinalQ(r) + htmlObsAnalistaQ(r) + htmlRespostaFinalQ(r) + (podeFilha ? '<div style="margin:8px 0">' + btnFilha + '</div>' : '') +
         '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="gt-cancel">Fechar</button></div>';
@@ -3292,6 +3293,16 @@
         fechar(); abrirOcorrenciaGestor(r.id);   // a janela volta com a observação já no histórico
       });
     }
+    Array.prototype.forEach.call(ov.querySelectorAll('[data-reabrir-filha]'), function (bt) {   // reabrir um vínculo encerrado (não concordo com o parecer do analista)
+      bt.addEventListener('click', function () {
+        pedirMotivo('Reabrir o vínculo', 'Reabrir o vínculo', async function (motivo) {
+          var xr = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(bt.getAttribute('data-reabrir-filha')) + '/reabrir', { motivo: motivo });
+          if (!xr.ok) return xr.j.error || 'Não foi possível reabrir o vínculo.';
+          estado.g.dados = null; fechar(); desenharGestor().then(function () { abrirOcorrenciaGestor(r.id); });
+          return null;
+        });
+      });
+    });
     if ($('gt-filha')) $('gt-filha').addEventListener('click', function () { abrirFilhaGestor(r, function (n) {   // a janela da original continua aberta: dá para salvar/abrir a original e abrir outras vinculadas
       if (n.original && n.original.etapa !== r.etapa) {   // a primeira vinculada pôs a original em andamento: recarrega a janela com os dados novos
         var regs0 = (estado.g && estado.g.dados && estado.g.dados.registros) || [];

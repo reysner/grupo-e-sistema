@@ -738,6 +738,18 @@ const semLixo = (e, nome) => {
     const ge = C.t.htmlGestor({ registros: [m('d', { dialogo: [dg, df] })], escopo: { todos: true }, analistas: [] }, { depto: '', analista: '', etapa: '', busca: '' });
     assert.ok(ge.includes('Resposta do Gestor(a) CS') && !so.includes('Resposta do Gestor(a) CS'), 'etiqueta na linha do Portal do Gestor quando o Sucesso respondeu');
   });
+  await teste('cs: reabrir vínculo encerrado na matriz e nota de encerramento sem repetir', () => {
+    const mat = { id: 'm', origem: 'modulo', etapa: 'validacao_gestor', assunto: 'A', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', responsaveis: [], dialogo: [], filhas: [{ id: 'f1', assunto: 'V1', etapa: 'encerrada', departamentos: ['Pessoal'], prazo: '2026-10-20', analista_nome: 'João', respostas: [{ nome: 'João', nota: 'Resolvido' }] }, { id: 'f2', assunto: 'V2', etapa: 'com_analista', departamentos: ['Pessoal'], prazo: '2026-10-20', analista_nome: 'Ana', respostas: [] }] };
+    const v = C.t.htmlVinculos(mat, true);
+    assert.ok(v.includes('data-reabrir-filha="f1"') && !v.includes('data-reabrir-filha="f2"'), 'só o vínculo encerrado tem Reabrir');
+    assert.ok(!C.t.htmlVinculos(mat).includes('data-reabrir-filha'), 'só na janela do gestor');
+    assert.ok(!C.t.htmlVinculos(Object.assign({}, mat, { etapa: 'devolutiva_cliente' }), true).includes('data-reabrir-filha'), 'com o Sucesso do Cliente não reabre');
+    assert.ok(C.t.htmlAcoesOcorrencia({ id: 'f', origem: 'filha', etapa: 'encerrada' }).includes('não concordar com o parecer final'), 'a janela do vínculo encerrado explica o Reabrir');
+    const enc = { id: 'f', origem: 'filha', etapa: 'encerrada', tipo: 'Atraso', prioridade: 'Média', departamentos: ['Fiscal'], assunto: 'V', detalhe: 'D', cliente_nome: 'X', criado_em: '2026-10-18T13:17:00Z', prazo: '2026-10-20', tratativa: 'Parecer final do analista', analista_nota: 'Parecer final do analista', analista_por: 'João', analista_em: '2026-10-18T13:28:00Z', plano_acao: 'Plano', responsaveis: [{ analista_id: '1', nome: 'João', nota: 'Parecer final do analista', encerrado_em: '2026-10-18T13:28:00Z' }], filhas: [], anexos: [], notas: [{ em: '2026-10-18T13:28:00Z', por: 'João', acao: 'analista_encerrou', texto: 'Parecer final do analista' }, { em: '2026-10-18T13:28:00Z', por: 'Sistema', acao: 'nota', texto: 'Todos os responsáveis encerraram' }] };
+    const h = C.t.htmlTratativaGestor(enc, []);
+    assert.strictEqual((h.match(/Parecer final do analista/g) || []).length, 1, 'a nota de encerramento aparece uma vez só (em Devolutivas)');
+    assert.ok(h.includes('Analista encerrou a tratativa') && h.includes('Todos os responsáveis encerraram') && h.includes('id="gt-reabrir-oc"'), 'o histórico guarda o fato e o gestor pode reabrir');
+  });
   await teste('cs: resposta final ao Sucesso do Cliente — Observação ou Finalizar, conversa com o Gestor final no Portal dele', () => {
     const base = { id: 'm', origem: 'modulo', etapa: 'com_analista', assunto: 'A', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', plano_acao: 'Conduzida pelas ocorrências vinculadas', responsaveis: [], dialogo: [], filhas: [{ id: 'f', assunto: 'B', etapa: 'com_analista', departamentos: ['Pessoal'], prazo: '2026-10-20', analista_nome: 'P' }] };
     const emAndamento = C.t.htmlTratativaGestor(base, []);

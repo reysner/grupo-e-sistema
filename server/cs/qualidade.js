@@ -239,6 +239,14 @@ function validarMotivo(corpo) {
   return { ok: true, valores: { motivo } };
 }
 /** Ao reabrir uma cancelada, volta para a etapa em que estava (se não souber, para o começo). */
+/** Quem reabre uma ocorrência ENCERRADA: o gestor final e a administração; e o gestor(a) do departamento quando é um vínculo (não concorda com o parecer do analista). */
+function podeReabrirEncerrada(origem, adminOuFinal, gestorDoDepto) { return !!adminOuFinal || (origem === 'filha' && !!gestorDoDepto); }
+/** Etapa da matriz quando se reabre um vínculo: segue em tratamento; na resposta final (validação do gestor) volta para "Em andamento"; com o Sucesso do Cliente ou encerrada, não. */
+function matrizAceitaVinculoReaberto(etapaPai) {
+  if (['registrada', 'tratativa_definida', 'com_analista'].includes(etapaPai)) return { ok: true, voltaParaAndamento: false };
+  if (etapaPai === 'validacao_gestor') return { ok: true, voltaParaAndamento: true };
+  return { ok: false, voltaParaAndamento: false };
+}
 function destinoDaReabertura(etapaAntes) {
   const para = ETAPAS.includes(etapaAntes) && etapaAntes !== 'encerrada' ? etapaAntes : 'registrada';
   return { para, status: ETAPA_STATUS[para] };
@@ -1474,7 +1482,8 @@ router.post('/gestor/ocorrencias/:id/reabrir', async (req, res) => {
     if (!reg) return res.status(404).json({ error: 'Ocorrência não encontrada.' });
     const reabreEncerrada = reg.etapa === 'encerrada';
     if (reabreEncerrada) {
-      if (!(req.user.role === 'administrador' || (await ehGestorFinal(req.user.id)))) return res.status(403).json({ error: 'Só o gestor final ou a administração reabrem uma ocorrência encerrada.' });
+      const adminOuFinal = req.user.role === 'administrador' || (await ehGestorFinal(req.user.id));
+      if (!podeReabrirEncerrada(reg.origem, adminOuFinal, !adminOuFinal && reg.origem === 'filha' && (await podeCancelarOuReabrir(req, reg)))) return res.status(403).json({ error: 'Só o gestor do departamento (nos vínculos), o gestor final ou a administração reabrem uma ocorrência encerrada.' });
     } else if (!(await podeCancelarOuReabrir(req, reg))) return res.status(403).json({ error: 'Só o gestor do departamento, o gestor final ou a administração reabrem uma ocorrência.' });
     let alvo;
     if (reabreEncerrada) { const t = transicao('reabrir_encerrada', reg.etapa); if (!t.ok) return res.status(409).json({ error: t.erro }); alvo = { para: t.para, status: t.status }; }
@@ -1482,15 +1491,22 @@ router.post('/gestor/ocorrencias/:id/reabrir', async (req, res) => {
     else return res.status(409).json({ error: 'Só dá para reabrir uma ocorrência encerrada ou cancelada.' });
     const v = validarMotivo(req.body);
     if (!v.ok) return res.status(400).json({ error: v.erro });
-    if (reg.origem === 'filha' && reg.pai_id) {   // a vinculada só volta enquanto a original ainda está em tratamento
+    let matrizVolta = false;
+    if (reg.origem === 'filha' && reg.pai_id) {   // a vinculada só volta enquanto a original ainda não foi para o Sucesso do Cliente
       const pai = (await pool.query('SELECT etapa FROM cs_qualidade_registros WHERE id = $1', [reg.pai_id])).rows[0];
-      if (!pai || !['registrada', 'tratativa_definida', 'com_analista'].includes(pai.etapa)) return res.status(409).json({ error: 'A ocorrência original já passou da fase de tratamento (ou foi cancelada): reabra a original primeiro.' });
+      const ap = pai ? matrizAceitaVinculoReaberto(pai.etapa) : { ok: false };
+      if (!ap.ok) return res.status(409).json({ error: 'A ocorrência original já está com o Sucesso do Cliente (ou foi encerrada/cancelada): não dá mais para reabrir o vínculo por aqui.' });
+      matrizVolta = ap.voltaParaAndamento;
     }
     const limpar = reabreEncerrada ? ', resolvido_em = NULL, resolvido_por = NULL, encerrada_em = NULL, encerrada_por = NULL, final_nota = NULL, final_obs = NULL, validacao_nota = NULL, validacao_obs = NULL, validacao_em = NULL, validacao_por = NULL' : '';
     const up = await pool.query('UPDATE cs_qualidade_registros SET etapa = $1, status = $2, etapa_antes = NULL' + limpar + ', atualizado_em = NOW() WHERE id = $3 AND etapa = $4', [alvo.para, alvo.status, reg.id, reg.etapa]);
     if (!up.rowCount) return res.status(409).json({ error: JA_MUDOU });
     if (reabreEncerrada) await pool.query('UPDATE cs_qualidade_resp SET encerrado_em = NULL WHERE registro_id = $1', [reg.id]);   // cada responsável trata e encerra de novo
     await registrar(reg.id, req.user.name, 'reaberta', v.valores.motivo);
+    if (matrizVolta) {   // a matriz estava na resposta final do gestor(a): com um vínculo aberto de novo, volta para Em andamento
+      const upPai = await pool.query("UPDATE cs_qualidade_registros SET etapa = 'com_analista', status = 'em_tratamento', atualizado_em = NOW() WHERE id = $1 AND etapa = 'validacao_gestor'", [reg.pai_id]);
+      if (upPai.rowCount) await registrar(reg.pai_id, req.user.name, 'nota', 'Vínculo reaberto: ' + (reg.assunto || '') + ' — ' + curtoTexto(v.valores.motivo, 200));
+    }
     if (alvo.para === 'com_analista') avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Ocorrência reaberta', texto: (reg.ocultar_empresa ? 'Empresa não informada' : (reg.cliente_nome || 'Empresa')) + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(v.valores.motivo, 100), url: '/cs?aba=analista', tag: 'reab-' + reg.id + '-' + Date.now() }, req.user.id);
     refrescarRisco();
     res.json({ registro: await registroCompleto(reg.id) });
@@ -1947,4 +1963,4 @@ async function rodarAlertasPrazo() {
   });
 }
 
-module.exports = { rodarAlertasPrazo, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, analistaFixoPresente, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { podeReabrirEncerrada, matrizAceitaVinculoReaberto, rodarAlertasPrazo, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, analistaFixoPresente, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };

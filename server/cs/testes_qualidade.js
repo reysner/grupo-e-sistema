@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { analistaFixoPresente, TIPO_PLANO, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { podeReabrirEncerrada, matrizAceitaVinculoReaberto, analistaFixoPresente, TIPO_PLANO, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -396,6 +396,16 @@ teste('analista apontado fica fixo como responsável da matriz; sem responsávei
   assert.strictEqual(analistaFixoPresente('9', []), true, 'sem responsáveis: a matriz é conduzida só pelas vinculadas');
   assert.strictEqual(analistaFixoPresente(null, ['4']), true, 'sem apontado, qualquer responsável');
   assert.strictEqual(analistaFixoPresente('', ['4']), true, 'a correção deixou ninguém apontado');
+});
+teste('reabrir vínculo encerrado: o gestor(a) pode (não concorda com o parecer); a matriz volta para Em andamento se já estava na resposta final', () => {
+  assert.strictEqual(podeReabrirEncerrada('filha', false, true), true, 'gestor(a) do departamento reabre um vínculo encerrado');
+  assert.strictEqual(podeReabrirEncerrada('modulo', false, true), false, 'a matriz encerrada continua só do gestor final/administração');
+  assert.strictEqual(podeReabrirEncerrada('modulo', true, false), true);
+  assert.strictEqual(podeReabrirEncerrada('filha', false, false), false, 'quem não é gestor do departamento não reabre');
+  assert.deepStrictEqual(matrizAceitaVinculoReaberto('com_analista'), { ok: true, voltaParaAndamento: false });
+  assert.deepStrictEqual(matrizAceitaVinculoReaberto('validacao_gestor'), { ok: true, voltaParaAndamento: true }, 'na resposta final do gestor(a): volta para Em andamento');
+  assert.strictEqual(matrizAceitaVinculoReaberto('devolutiva_cliente').ok, false, 'com o Sucesso do Cliente não dá mais');
+  assert.strictEqual(matrizAceitaVinculoReaberto('encerrada').ok, false);
 });
 teste('resposta final: a conversa do gestor com o Gestor final não vai para o analista', () => {
   const reg = { id: 'o', origem: 'modulo', dialogo: [{ lado: 'gestor', texto: 'Precisa de apoio' }], analista_origem_id: '9' };
