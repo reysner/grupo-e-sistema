@@ -143,6 +143,7 @@ teste('lista branca do gestor/analista: registrar, ver as próprias, perfil, ges
   ['/analista/ocorrencias', '/sucesso/ocorrencias'].forEach((c) => ok('GET', c));
   ['/analista/ocorrencias/u1/nota', '/analista/ocorrencias/u1/encerrar', '/gestor/ocorrencias/u1/validar', '/gestor/ocorrencias/u1/devolver', '/sucesso/ocorrencias/u1/encerrar'].forEach((c) => ok('POST', c));
   ok('POST', '/gestor/ocorrencias/u1/excluir'); no('GET', '/gestor/ocorrencias/u1/excluir'); no('DELETE', '/gestor/ocorrencias/u1');
+  ok('POST', '/sucesso/ocorrencias/u1/apontar'); no('GET', '/sucesso/ocorrencias/u1/apontar'); no('PUT', '/sucesso/ocorrencias/u1/apontar');
   no('POST', '/sucesso/ocorrencias/u1/abrir'); no('POST', '/analista/ocorrencias/u1/validar'); no('POST', '/gestor/ocorrencias/u1/encerrar'); no('GET', '/analista/ocorrencias/u1'); no('PUT', '/sucesso/ocorrencias/u1/encerrar'); no('DELETE', '/analista/ocorrencias/u1');
   ok('POST', '/gestor/ocorrencias/u1/filha'); no('POST', '/analista/ocorrencias/u1/filha');
   ok('POST', '/gestor/ocorrencias/u1/cancelar'); ok('POST', '/gestor/ocorrencias/u1/reabrir'); no('POST', '/analista/ocorrencias/u1/cancelar'); no('DELETE', '/gestor/ocorrencias/u1/cancelar');
@@ -385,6 +386,17 @@ teste('sigilo: o gestor pode tirar a empresa da vinculada; o analista não a vê
   assert.strictEqual(mascararParaAnalista(filha, '3', true).cliente_nome, 'ALFA LTDA', 'a liderança vê');
   assert.strictEqual(mascararParaAnalista(Object.assign({}, filha, { ocultar_empresa: false }), '3', false).cliente_nome, 'ALFA LTDA', 'sem a marca, a empresa aparece');
   assert.strictEqual(filha.cliente_nome, 'ALFA LTDA', 'não altera o original');
+});
+teste('analista apontado: o corrigido pelo gestor final vale; o apontado no registro (reclamado) deixa de ver; a liderança vê tudo', () => {
+  const reg = { id: 'o1', origem: 'modulo', analista_origem_id: '9', analista_origem_nome: 'Polyanna', analista_apontado_id: '4', analista_apontado_nome: 'João', mostrar_pai: false };
+  const vistoPor = (id, lider) => mascararParaAnalista(reg, id, lider);
+  assert.deepStrictEqual([vistoPor('4', false).analista_apontado_nome, vistoPor('4', false).analista_origem_nome], ['João', 'Polyanna'], 'o apontado de hoje vê o que é sobre ele');
+  const reclamadoOriginal = vistoPor('9', false);
+  assert.deepStrictEqual([reclamadoOriginal.analista_apontado_nome, reclamadoOriginal.analista_origem_nome], [null, null], 'quem foi apontado no registro mas foi corrigido não vê mais');
+  assert.deepStrictEqual([vistoPor('3', false).analista_apontado_id, vistoPor('3', false).analista_origem_id], [null, null], 'outro analista não vê');
+  assert.strictEqual(vistoPor('3', true).analista_apontado_nome, 'João', 'liderança vê');
+  const semCorrecao = { id: 'o2', origem: 'modulo', analista_origem_id: '9', analista_origem_nome: 'Polyanna', analista_apontado_id: null, analista_apontado_nome: null, mostrar_pai: false };
+  assert.strictEqual(mascararParaAnalista(semCorrecao, '9', false).analista_origem_nome, 'Polyanna', 'sem correção, o apontado no registro continua vendo');
 });
 teste('original só vai à validação quando todos os responsáveis encerraram e as filhas estão encerradas', () => {
   const r = (id, ok) => ({ analista_id: id, encerrado_em: ok ? '2026-10-18' : null });

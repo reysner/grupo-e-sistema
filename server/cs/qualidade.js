@@ -248,7 +248,7 @@ function rotaAbertaGestorAnalista(metodo, caminho) {
   const c = String(caminho || '').split('?')[0].replace(/\/+$/, '') || '/';
   const p = c.split('/');   // '' + segmentos
   if (m === 'GET') return ['/opcoes', '/empresas', '/tempos', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/analista/ocorrencias', '/sucesso/ocorrencias'].includes(c) || (p.length === 3 && p[1] === 'anexo');
-  if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir', 'excluir'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && p[4] === 'encerrar');
+  if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir', 'excluir'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && ['encerrar', 'apontar'].includes(p[4]));
   if (m === 'PUT') return p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && p[4] === 'tratativa';
   return false;
 }
@@ -308,7 +308,8 @@ function mascararParaAnalista(reg, analistaId, ehLideranca) {
   if (ehLideranca) return reg;
   const r = Object.assign({}, reg);
   const mostra = !!r.mostrar_pai;
-  if (!mostra && String(r.analista_origem_id || '') !== String(analistaId || '')) { r.analista_origem_id = null; r.analista_origem_nome = null; }
+  const efetivo = r.analista_apontado_id != null ? r.analista_apontado_id : r.analista_origem_id;   // o analista apontado hoje (corrigido ou do registro)
+  if (!mostra && String(efetivo || '') !== String(analistaId || '')) { r.analista_origem_id = null; r.analista_origem_nome = null; r.analista_apontado_id = null; r.analista_apontado_nome = null; }
   if (r.origem === 'filha' && !mostra) { r.pai_id = null; r.pai = null; }
   if (r.ocultar_empresa) {   // o gestor escolheu não mostrar qual empresa reclamou a quem vai tratar
     r.cliente_nome = null; r.cnpj = null; r.cliente_id = null;
@@ -462,6 +463,7 @@ function garantirSchema() {
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS etapa_antes TEXT'))   // etapa em que estava ao ser cancelada (para reabrir no mesmo ponto)
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS mostrar_pai BOOLEAN NOT NULL DEFAULT false'))   // filha: o gestor escolheu mostrar a origem (e o analista do registro) a quem vai tratar
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS ocultar_empresa BOOLEAN NOT NULL DEFAULT false'))   // filha: o gestor escolheu não mostrar a empresa a quem vai tratar
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS analista_apontado_id TEXT'))   // o gestor final corrigiu o analista apontado (null = vale o do registro; vazio = ninguém)
       .then(() => pool.query(`CREATE TABLE IF NOT EXISTS cs_qualidade_resp (
         registro_id UUID NOT NULL REFERENCES cs_qualidade_registros(id) ON DELETE CASCADE, analista_id TEXT NOT NULL,
         nota TEXT, obs TEXT, encerrado_em TIMESTAMPTZ, encerrado_por TEXT, PRIMARY KEY (registro_id, analista_id))`))
@@ -479,9 +481,11 @@ function soEquipe(req, res, next) {
   next();
 }
 
-const COLUNAS = `r.id, r.cliente_id, r.cnpj, r.cliente_nome, r.tipo, r.departamentos, r.detalhe, r.analista_id, a.nome AS analista_nome, r.analista_origem_id, ao.nome AS analista_origem_nome, r.pai_id, r.mostrar_pai, r.ocultar_empresa,
+const COLUNAS = `r.id, r.cliente_id, r.cnpj, r.cliente_nome, r.tipo, r.departamentos, r.detalhe, r.analista_id, a.nome AS analista_nome, r.analista_origem_id, ao.nome AS analista_origem_nome, r.analista_apontado_id, ap.nome AS analista_apontado_nome, r.pai_id, r.mostrar_pai, r.ocultar_empresa,
        to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.status, r.origem, r.etapa, r.fila, r.plano_acao, r.tratativa_depto, r.gestor_obs, r.tratativa_definida_por, r.tratativa_definida_em, r.liberada_em, r.liberada_por, r.analista_nota, r.analista_obs, r.analista_em, r.analista_por, r.validacao_nota, r.validacao_obs, r.validacao_em, r.validacao_por, r.final_nota, r.final_obs, r.encerrada_em, r.encerrada_por, r.assunto, r.prioridade, r.criado_por, r.criado_em, r.resolvido_em, r.resolvido_por, r.tratativa, r.validado_em, r.validado_por`;
-const DE = `FROM cs_qualidade_registros r LEFT JOIN analistas a ON a.id::text = r.analista_id LEFT JOIN analistas ao ON ao.id::text = r.analista_origem_id`;
+const DE = `FROM cs_qualidade_registros r LEFT JOIN analistas a ON a.id::text = r.analista_id LEFT JOIN analistas ao ON ao.id::text = r.analista_origem_id LEFT JOIN analistas ap ON ap.id::text = r.analista_apontado_id`;
+/** A quem o registro e o dashboard da Qualidade apontam: na ocorrência do módulo, o apontado corrigido pelo gestor final ou, sem correção, o do registro; vinculadas não contam; os registros antigos (ficha) seguem o analista deles. */
+const APONTADO_SQL = "CASE WHEN r.origem = 'modulo' THEN COALESCE(r.analista_apontado_id, r.analista_origem_id) WHEN r.origem = 'filha' THEN NULL ELSE r.analista_id END";
 const comSituacao = (rows) => rows.map((r) => ({ ...r, situacao: situacao(r.status, r.prazo), status_rotulo: ROTULO_STATUS[r.status] }));
 
 /** Anexa a cada registro a linha do tempo de notas e eventos (nota, iniciada, finalizada, devolvida, validada). */
@@ -503,16 +507,17 @@ async function anexarNotas(lista) {
 async function anexarVinculos(lista) {
   if (!lista.length) return lista;
   const ids = lista.map((r) => r.id);
-  let resp = [], filhas = [], pais = [];
+  let resp = [], filhas = [], pais = [], respF = [];
   try {
     resp = (await pool.query(`SELECT x.registro_id, x.analista_id, a.nome, x.nota, x.obs, x.encerrado_em, x.encerrado_por FROM cs_qualidade_resp x LEFT JOIN analistas a ON a.id::text = x.analista_id WHERE x.registro_id = ANY($1::uuid[]) ORDER BY a.nome`, [ids])).rows;
-    filhas = (await pool.query(`SELECT f.id, f.pai_id, f.assunto, f.etapa, f.departamentos, to_char(f.prazo, 'YYYY-MM-DD') AS prazo, a.nome AS analista_nome FROM cs_qualidade_registros f LEFT JOIN analistas a ON a.id::text = f.analista_id WHERE f.pai_id = ANY($1::uuid[]) AND f.status <> 'cancelado' ORDER BY f.criado_em`, [ids])).rows;
+    filhas = (await pool.query(`SELECT f.id, f.pai_id, f.assunto, f.etapa, f.departamentos, to_char(f.prazo, 'YYYY-MM-DD') AS prazo, a.nome AS analista_nome, f.validacao_nota FROM cs_qualidade_registros f LEFT JOIN analistas a ON a.id::text = f.analista_id WHERE f.pai_id = ANY($1::uuid[]) AND f.status <> 'cancelado' ORDER BY f.criado_em`, [ids])).rows;
+    if (filhas.length) respF = (await pool.query(`SELECT x.registro_id, a.nome, x.nota, x.obs, x.encerrado_em FROM cs_qualidade_resp x LEFT JOIN analistas a ON a.id::text = x.analista_id WHERE x.registro_id = ANY($1::uuid[]) AND x.nota IS NOT NULL ORDER BY a.nome`, [filhas.map((f) => f.id)])).rows;
     const paiIds = lista.map((r) => r.pai_id).filter(Boolean);
     if (paiIds.length) pais = (await pool.query('SELECT id, assunto, cliente_nome FROM cs_qualidade_registros WHERE id = ANY($1::uuid[])', [paiIds])).rows;
   } catch (e) { /* sem as tabelas novas ainda: segue sem os vínculos */ }
   const porResp = {}, porFilha = {};
   resp.forEach((x) => { (porResp[String(x.registro_id)] = porResp[String(x.registro_id)] || []).push({ analista_id: String(x.analista_id), nome: x.nome, nota: x.nota, obs: x.obs, encerrado_em: x.encerrado_em, encerrado_por: x.encerrado_por }); });
-  filhas.forEach((f) => { (porFilha[String(f.pai_id)] = porFilha[String(f.pai_id)] || []).push({ id: f.id, assunto: f.assunto, etapa: f.etapa, departamentos: f.departamentos, prazo: f.prazo, analista_nome: f.analista_nome }); });
+  filhas.forEach((f) => { (porFilha[String(f.pai_id)] = porFilha[String(f.pai_id)] || []).push({ id: f.id, assunto: f.assunto, etapa: f.etapa, departamentos: f.departamentos, prazo: f.prazo, analista_nome: f.analista_nome, validacao_nota: f.validacao_nota || null, respostas: respF.filter((x) => String(x.registro_id) === String(f.id)).map((x) => ({ nome: x.nome, nota: x.nota, obs: x.obs })) }); });
   const depois = ['validacao_gestor', 'devolutiva_cliente', 'encerrada'];
   return lista.map((r) => {
     let rs = porResp[String(r.id)] || [];
@@ -752,9 +757,9 @@ router.get('/resumo', async (req, res) => {
               COUNT(r.id) FILTER (WHERE r.status <> 'cancelado')::int AS total,
               to_char(MAX(r.criado_em) AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS ultimo_lancamento,
               to_char(MIN(r.prazo) FILTER (WHERE r.status IN ('aberto', 'em_tratamento')), 'YYYY-MM-DD') AS proximo_prazo
-         FROM analistas a LEFT JOIN cs_qualidade_registros r ON r.analista_id = a.id::text
+         FROM analistas a LEFT JOIN cs_qualidade_registros r ON (${APONTADO_SQL}) = a.id::text
         GROUP BY a.id, a.nome, a.ativo, a.user_id ORDER BY a.nome`, [hoje]);
-    const orfaos = await pool.query(`SELECT COUNT(*)::int AS n FROM cs_qualidade_registros r WHERE NOT EXISTS (SELECT 1 FROM analistas a WHERE a.id::text = r.analista_id)`);
+    const orfaos = await pool.query(`SELECT COUNT(*)::int AS n FROM cs_qualidade_registros r WHERE r.origem <> 'filha' AND NOT EXISTS (SELECT 1 FROM analistas a WHERE a.id::text = (${APONTADO_SQL}))`);
     res.json({ hoje, analistas: rows, sem_analista: orfaos.rows[0].n });
   } catch (e) { console.error('[qualidade] GET /resumo falhou:', e); res.status(500).json({ error: 'Erro ao montar o módulo Qualidade.' }); }
 });
@@ -765,7 +770,7 @@ router.get('/analista/:id', async (req, res, next) => {
     await garantirSchema();
     const a = await pool.query('SELECT id, nome, ativo, user_id FROM analistas WHERE id::text = $1', [String(req.params.id)]);
     if (!a.rows.length) return res.status(404).json({ error: 'Analista não encontrado.' });
-    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.analista_id = $1 ORDER BY r.criado_em DESC LIMIT 300`, [String(req.params.id)]);
+    const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE (${APONTADO_SQL}) = $1 ORDER BY r.criado_em DESC LIMIT 300`, [String(req.params.id)]);
     res.json({ analista: a.rows[0], registros: await anexarNotas(comSituacao(rows)) });
   } catch (e) { console.error('[qualidade] GET /analista falhou:', e); res.status(500).json({ error: 'Erro ao ler os registros do analista.' }); }
 });
@@ -1079,6 +1084,17 @@ router.post('/gestor/ocorrencias/:id/filha', async (req, res) => {
       [pai.cliente_id, pai.cnpj, pai.cliente_nome, pai.tipo, [x.departamento], x.plano, x.assunto, pai.prioridade, x.prazo, dest.fila, req.user.name || null, req.user.id || null,
         pai.id, x.departamento, x.obs, String(x.analistas_ids[0]), x.mostrar_pai, x.mostrar_pai ? (pai.analista_origem_id || null) : null, x.ocultar_empresa]);
     for (const aid of x.analistas_ids) await pool.query('INSERT INTO cs_qualidade_resp (registro_id, analista_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [ins.rows[0].id, String(aid)]);
+    // a primeira vinculada põe a original em andamento, conduzida pelas vinculadas (não vai para nenhum analista); com responsáveis já definidos, nada muda
+    if (['registrada', 'tratativa_definida'].includes(pai.etapa)) {
+      const temResp = (await pool.query('SELECT 1 FROM cs_qualidade_resp WHERE registro_id = $1 LIMIT 1', [pai.id])).rows.length > 0;
+      if (!temResp) {
+        const upPai = await pool.query(`UPDATE cs_qualidade_registros SET etapa = 'com_analista', status = 'em_tratamento', analista_id = NULL, liberada_em = NOW(), liberada_por = $1,
+            plano_acao = COALESCE(NULLIF(plano_acao, ''), 'Conduzida pelas ocorrências vinculadas'), tratativa_depto = COALESCE(tratativa_depto, $2),
+            tratativa_definida_por = COALESCE(tratativa_definida_por, $1), tratativa_definida_em = COALESCE(tratativa_definida_em, NOW()), atualizado_em = NOW()
+          WHERE id = $3 AND etapa IN ('registrada', 'tratativa_definida')`, [req.user.name || null, (pai.departamentos || [])[0] || null, pai.id]);
+        if (upPai.rowCount) await registrar(pai.id, req.user.name, 'nota', 'Em andamento: conduzida pelas ocorrências vinculadas');
+      }
+    }
     await registrar(ins.rows[0].id, req.user.name, 'criado', 'Ocorrência vinculada a "' + (pai.assunto || '') + '" · ' + nomes.join(', ') + ' · prazo ' + x.prazo);
     await registrar(pai.id, req.user.name, 'nota', 'Abriu a ocorrência vinculada "' + x.assunto + '" para ' + nomes.join(', ') + ' (prazo ' + x.prazo.split('-').reverse().join('/') + ')');
     avisarPush(() => idsDosResponsaveis(ins.rows[0].id, null), { titulo: 'Ocorrência aberta para você', texto: (x.ocultar_empresa ? 'Empresa não informada' : (pai.cliente_nome || 'Empresa')) + ' — ' + x.assunto + ' · prazo ' + x.prazo.split('-').reverse().join('/'), url: '/cs?aba=analista', tag: 'fil-' + ins.rows[0].id }, req.user.id);
@@ -1127,7 +1143,7 @@ router.get('/analista/ocorrencias', async (req, res) => {
       `SELECT ${COLUNAS} ${DE} WHERE r.origem IN ('modulo', 'filha') AND r.status <> 'cancelado' AND r.etapa NOT IN ('registrada', 'tratativa_definida')${analista ? ' AND (r.analista_id = $1 OR EXISTS (SELECT 1 FROM cs_qualidade_resp x WHERE x.registro_id = r.id AND x.analista_id = $1))' : ''}
         ORDER BY (r.etapa = 'encerrada') ASC, r.prazo ASC NULLS LAST LIMIT 300`, vals);
     // ocorrências registradas sobre este analista (o analista indicado no registro): ele acompanha, mesmo que o gestor ponha outros para tratar
-    const sobre = analista ? (await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.origem = 'modulo' AND r.status <> 'cancelado' AND r.analista_origem_id = $1 ORDER BY r.criado_em DESC LIMIT 200`, vals)).rows : [];
+    const sobre = analista ? (await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.origem = 'modulo' AND r.status <> 'cancelado' AND (${APONTADO_SQL}) = $1 ORDER BY r.criado_em DESC LIMIT 200`, vals)).rows : [];
     const lider = PAPEIS.includes(req.user.role), meuId = analista ? String(analista.id) : null;
     const mascarar = (lista) => lista.map((r) => mascararParaAnalista(r, meuId, lider));
     res.json({
@@ -1356,8 +1372,37 @@ router.get('/sucesso/ocorrencias', async (req, res) => {
     await garantirSchema();
     if (!(await podeVerSucesso(req))) return res.status(403).json({ error: 'O portal do Sucesso do Cliente é da equipe do Sucesso do Cliente.' });
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.origem IN ('modulo', 'filha') ORDER BY (r.etapa = 'devolutiva_cliente') DESC, r.criado_em DESC LIMIT 500`);
-    res.json({ final: await ehGestorFinal(req.user.id), registros: await completar(rows) });
+    const regs = await completar(rows), apont = {};
+    try { (await pool.query("SELECT registro_id, em, por, texto FROM cs_qualidade_historico WHERE acao = 'apontado' AND registro_id = ANY($1::uuid[]) ORDER BY em", [regs.map((r) => r.id)])).rows.forEach((h) => { (apont[String(h.registro_id)] = apont[String(h.registro_id)] || []).push({ em: h.em, por: h.por, texto: h.texto }); }); } catch (e) { /* sem histórico ainda */ }
+    res.json({ final: await ehGestorFinal(req.user.id), registros: regs.map((r) => ({ ...r, apontamentos: apont[String(r.id)] || [] })) });
   } catch (e) { console.error('[qualidade] GET /sucesso/ocorrencias falhou:', e); res.status(500).json({ error: 'Erro ao ler as ocorrências do Sucesso do Cliente.' }); }
+});
+/** Corrige o analista APONTADO (o reclamado): o registro e o dashboard da Qualidade passam a apontar para quem o gestor final escolher. Só o gestor final
+ *  (que é também o Gestor(a) do Sucesso do Cliente). analista_id vazio volta ao apontado no registro; "__nenhum" tira de todos os analistas. O histórico guarda a troca. */
+router.post('/sucesso/ocorrencias/:id/apontar', async (req, res) => {
+  try {
+    await garantirSchema();
+    if (!(await ehGestorFinal(req.user.id))) return res.status(403).json({ error: 'Só o gestor final corrige o analista apontado.' });
+    const reg = (await pool.query(`SELECT r.id, r.origem, r.analista_origem_id, r.analista_apontado_id, ao.nome AS origem_nome, ap.nome AS apontado_nome
+        FROM cs_qualidade_registros r LEFT JOIN analistas ao ON ao.id::text = r.analista_origem_id LEFT JOIN analistas ap ON ap.id::text = r.analista_apontado_id
+       WHERE r.id::text = $1`, [String(req.params.id)])).rows[0];
+    if (!reg || reg.origem !== 'modulo') return res.status(404).json({ error: 'Ocorrência não encontrada.' });
+    const pedido = String((req.body && req.body.analista_id) == null ? '' : req.body.analista_id).trim();
+    let gravar = null, novoNome;   // gravar: null = volta ao apontado no registro; '' = ninguém; id = esse analista
+    if (pedido === '__nenhum') { gravar = ''; novoNome = 'ninguém'; }
+    else if (pedido) {
+      const a = (await pool.query('SELECT id, nome FROM analistas WHERE id::text = $1', [pedido])).rows[0];
+      if (!a) return res.status(404).json({ error: 'Analista não encontrado.' });
+      gravar = String(a.id); novoNome = a.nome;
+    } else novoNome = (reg.origem_nome || 'ninguém') + ' (o apontado no registro)';
+    const atual = reg.analista_apontado_id != null ? reg.analista_apontado_id : (reg.analista_origem_id || null);
+    const depois = gravar != null ? gravar : (reg.analista_origem_id || null);
+    if (String(atual || '') === String(depois || '')) return res.status(409).json({ error: 'Esse analista já é o apontado.' });
+    const antesNome = reg.analista_apontado_id === '' ? 'ninguém' : (reg.apontado_nome || reg.origem_nome || 'ninguém');
+    await pool.query('UPDATE cs_qualidade_registros SET analista_apontado_id = $1, atualizado_em = NOW() WHERE id = $2', [gravar, reg.id]);
+    await registrar(reg.id, req.user.name, 'apontado', 'Apontado: ' + antesNome + ' → corrigido para ' + novoNome + ' por ' + (req.user.name || 'gestor final'));
+    res.json({ ok: true });
+  } catch (e) { console.error('[qualidade] POST apontar falhou:', e); res.status(500).json({ error: 'Erro ao corrigir o analista apontado.' }); }
 });
 /** Encerra o processo: SÓ o gestor final (para um diretor administrador não encerrar achando que está encerrando no departamento dele). */
 router.post('/sucesso/ocorrencias/:id/encerrar', async (req, res) => {

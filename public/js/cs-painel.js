@@ -1709,7 +1709,7 @@
   }
   // ── MÓDULO QUALIDADE: ocorrências, pesos e lista ──────────────────────────────────────
   var DEPS_OCORRENCIA = [['Comercial', 'Comercial'], ['Contábil', 'Contábil'], ['Financeiro', 'Financeiro'], ['Fiscal', 'Fiscal'], ['Legalização', 'Legalização'], ['Pessoal', 'Pessoal'], ['Sucesso', 'Sucesso do Cliente']];
-  var ROT_ETAPA_Q = { registrada: 'registrada, aguardando análise', tratativa_definida: 'tratativa definida', com_analista: 'com o analista', validacao_gestor: 'em validação do gestor', devolutiva_cliente: 'devolutiva ao cliente (Sucesso do Cliente)', encerrada: 'encerrada', cancelada: 'cancelada' };
+  var ROT_ETAPA_Q = { registrada: 'registrada, aguardando análise', tratativa_definida: 'tratativa definida', com_analista: 'em andamento', validacao_gestor: 'em validação do gestor', devolutiva_cliente: 'devolutiva ao cliente (Sucesso do Cliente)', encerrada: 'encerrada', cancelada: 'cancelada' };
   var COR_PRIORIDADE = { 'Muito Alta': '#b91c1c', Alta: '#c2410c', 'Média': '#1d4ed8', Baixa: '#6b7280' };
   function rotuloDepto(d) { return d === 'Sucesso' ? 'Sucesso do Cliente' : d; }
   /** "Gestor(a) Pessoal", "Gestor(a) Fiscal"… (o Sucesso do Cliente fica "Gestor(a) Sucesso do Cliente"). */
@@ -2384,7 +2384,7 @@
   }
 
   // ── Qualidade para quem só registra (gestor ou analista): registrar e acompanhar as próprias ocorrências ──
-  var ETAPA_CURTA = { registrada: 'Aguardando análise', tratativa_definida: 'Tratativa definida', com_analista: 'Com o analista', validacao_gestor: 'Em validação', devolutiva_cliente: 'Devolutiva ao cliente', encerrada: 'Encerrada', cancelada: 'Cancelada' };
+  var ETAPA_CURTA = { registrada: 'Aguardando análise', tratativa_definida: 'Tratativa definida', com_analista: 'Em andamento', validacao_gestor: 'Em validação', devolutiva_cliente: 'Devolutiva ao cliente', encerrada: 'Encerrada', cancelada: 'Cancelada' };
   var COR_ETAPA = { registrada: '#b45309', tratativa_definida: '#2563eb', com_analista: '#7c3aed', validacao_gestor: '#0e7490', devolutiva_cliente: '#c2410c', encerrada: '#166534', cancelada: '#6b7280' };
   var ETAPAS_Q = ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada', 'cancelada'];
   function pillEtapaQ(e) { var c = COR_ETAPA[e] || '#6b7280'; return '<span class="pill" style="color:' + c + ';border-color:' + c + '55;background:' + c + '14">' + esc(ETAPA_CURTA[e] || e || '—') + '</span>'; }
@@ -2459,7 +2459,9 @@
     if (r.pai) h += '<div class="qa-obs" style="margin:8px 0">↳ Ocorrência vinculada a: <strong>' + esc(r.pai.assunto || '—') + '</strong></div>';
     if ((r.filhas || []).length) h += '<div class="ficha-sec">Ocorrências vinculadas</div>' + r.filhas.map(function (f) {
       return '<div class="qa-reg" style="margin-bottom:6px"><div class="qa-reg-topo"><strong>' + esc(f.assunto || '—') + '</strong> ' + pillEtapaQ(f.etapa) + '</div>' +
-        '<div class="qa-reg-rod">' + esc((f.departamentos || []).map(rotuloDepto).join(', ')) + ' · ' + esc(f.analista_nome || '—') + ' · prazo ' + data(f.prazo) + '</div></div>';
+        '<div class="qa-reg-rod">' + esc((f.departamentos || []).map(rotuloDepto).join(', ')) + ' · ' + esc(f.analista_nome || '—') + ' · prazo ' + data(f.prazo) + '</div>' +
+        (f.respostas || []).map(function (x) { return '<div class="qa-reg-trat"><strong>' + esc(x.nome || 'Analista') + ':</strong> ' + esc(x.nota) + (x.obs ? '<div class="cinza" style="margin-top:3px"><em>Observação:</em> ' + esc(x.obs) + '</div>' : '') + '</div>'; }).join('') +
+        (f.validacao_nota ? '<div class="qa-reg-trat"><strong>Validação do gestor:</strong> ' + esc(f.validacao_nota) + '</div>' : '') + '</div>';
     }).join('');
     return h;
   }
@@ -2575,12 +2577,13 @@
       if (!prazo) { erro.textContent = 'Informe o prazo para execução.'; return; }
       if (prazo < hojeIsoLocal()) { erro.textContent = 'O prazo não pode ser uma data que já passou.'; return; }
       var nomes = sel.map(function (c) { return c.getAttribute('data-nome'); }).join(', ');
-      if (!window.confirm('Abrir esta ocorrência vinculada para ' + nomes + '?')) return;
+      var primeira = ['registrada', 'tratativa_definida'].indexOf(pai.etapa) >= 0 && !(pai.filhas || []).length && !(pai.responsaveis || []).filter(function (x) { return x.analista_id; }).length;
+      if (!window.confirm('Abrir esta ocorrência vinculada para ' + nomes + '?' + (primeira ? '\n\nA ocorrência principal passa a "Em andamento", conduzida pelas vinculadas (não vai para nenhum analista).' : ''))) return;
       var depto = $('gf-depto').value;
       var b = $('gf-ok'); b.disabled = true;
       var x = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(pai.id) + '/filha', { assunto: assunto, plano: plano.value, analistas_ids: sel.map(function (c) { return c.getAttribute('data-chip'); }), departamento: $('gf-depto').value, prazo: prazo, obs: $('gf-obs').value, mostrar_pai: $('gf-mostrar').checked, ocultar_empresa: ocultarEmpresa });
       if (!x.ok) { erro.textContent = x.j.error || 'Não foi possível abrir a ocorrência vinculada.'; b.disabled = false; return; }
-      fechar(); if (aoCriar) aoCriar({ assunto: assunto, nomes: nomes, depto: depto, prazo: prazo });
+      fechar(); if (aoCriar) aoCriar({ assunto: assunto, nomes: nomes, depto: depto, prazo: prazo, original: x.j.original });
       estado.g.dados = null; desenharGestor();
     });
   }
@@ -2912,7 +2915,7 @@
       '<div class="gp-kpi-row">' +
         kpi('#c2410c', 'Devolutiva ao cliente', c.devolutiva_cliente, 'aguardando o Sucesso do Cliente') +
         kpi('#0e7490', 'Em validação', c.validacao_gestor, 'com os gestores') +
-        kpi('#7c3aed', 'Com o analista', c.com_analista, 'em tratamento') +
+        kpi('#7c3aed', 'Em andamento', c.com_analista, 'com os analistas ou nas vinculadas') +
         kpi('#b45309', 'Aguardando análise', c.registrada + c.tratativa_definida, 'ainda com o gestor') +
         kpi('#166534', 'Encerradas', c.encerrada, 'processo finalizado') +
         kpi('#b91c1c', 'Vencidas', c.vencidas, 'prazo passou') +
@@ -2942,10 +2945,27 @@
     var at = $('s-atualizar'); if (at) at.addEventListener('click', function () { estado.s.dados = null; desenharSucesso(); });
     Array.prototype.forEach.call(alvo.querySelectorAll('[data-sabrir]'), function (b) { b.addEventListener('click', function () { abrirOcorrenciaSucesso(b.getAttribute('data-sabrir')); }); });
   }
+  /** Portal do Sucesso do Cliente: o gestor final corrige o analista apontado; o registro e o dashboard da Qualidade passam a apontar para quem ele escolher. */
+  function htmlApontadoQ(r, final) {
+    if (!final || r.origem !== 'modulo') return '';
+    var op = function (v, rot, sel) { return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(rot) + '</option>'; };
+    var nenhum = r.analista_apontado_id === '';
+    var atualId = nenhum ? '' : (r.analista_apontado_id || r.analista_origem_id || '');
+    var atualNome = nenhum ? 'ninguém' : (r.analista_apontado_nome || r.analista_origem_nome || 'ninguém');
+    var corrigido = r.analista_apontado_id != null;
+    var opcoes = op('__escolha', 'Escolha o analista correto…', true) + (corrigido ? op('__volta', 'Voltar ao apontado no registro' + (r.analista_origem_nome ? ' (' + r.analista_origem_nome + ')' : ''), false) : '') +
+      (nenhum ? '' : op('__nenhum', 'Ninguém (não conta para nenhum analista)', false)) +
+      (estado.qAnalistas || []).filter(function (a) { return String(a.id) !== String(atualId); }).map(function (a) { return op(a.id, a.nome, false); }).join('');
+    return '<div class="ficha-sec">Analista apontado (registro e dashboard)</div>' +
+      '<div class="qa-reg-rod" style="margin-bottom:6px">O registro e o dashboard apontam para: <strong>' + esc(atualNome) + '</strong>' + (corrigido && r.analista_origem_nome ? ' · apontado no registro: ' + esc(r.analista_origem_nome) : '') + '. Se a falha não foi dele, escolha o analista correto.</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select class="gp-select" id="so-apontado">' + opcoes + '</select><button type="button" class="gp-footer-btn" id="so-apontar" style="width:auto">Corrigir analista apontado</button></div>' +
+      (r.apontamentos || []).map(function (h) { return '<div class="cinza" style="font-size:12px;margin-top:4px">' + dataHora(h.em) + ' · ' + esc(h.texto) + '</div>'; }).join('') +
+      '<div class="pop-erro" id="so-apontar-erro" role="alert"></div>';
+  }
   function htmlOcorrenciaSucesso(r, final) { return htmlOcorrenciaSucessoBase(r, final) + ((final || perfilCs().admin) ? htmlAcoesOcorrencia(r, true) : ''); }
   function htmlOcorrenciaSucessoBase(r, final) {
     var topo = '<div class="qa-modal-topo"><strong style="font-size:20px;color:#256050">' + esc(r.assunto || 'Ocorrência') + '</strong><button type="button" class="qa-x" id="so-fechar" aria-label="Fechar">✕</button></div>' +
-      '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' + cartaoOcorrenciaQ(r, true) + (r.plano_acao ? htmlPlanoGestor(r) : '') + htmlRetornos(r);
+      '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' + cartaoOcorrenciaQ(r, true) + (r.plano_acao ? htmlPlanoGestor(r) : '') + htmlRetornos(r) + htmlApontadoQ(r, final);
     if (r.etapa !== 'devolutiva_cliente') return topo + '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="so-cancel">Fechar</button></div>';
     if (!final) return topo + '<div class="qa-obs" style="margin:10px 0">ℹ Esta ocorrência está na devolutiva ao cliente. Faça as formalizações com o cliente; <strong>só o gestor final encerra o processo</strong>.</div><div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="so-cancel">Fechar</button></div>';
     return topo + '<div class="ficha-sec">Devolutiva ao cliente e encerramento</div>' + formNotaObs('so', 'Nota (o que foi devolvido ao cliente)') +
@@ -2960,6 +2980,14 @@
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Ocorrência">' + htmlOcorrenciaSucesso(r, !!d.final) + '</div>';
     $('so-fechar').addEventListener('click', fechar); $('so-cancel').addEventListener('click', fechar);
     if (d.final || perfilCs().admin) ligarAcoesOcorrencia(r, fechar, function () { estado.s.dados = null; desenharSucesso(); });
+    if ($('so-apontar')) $('so-apontar').addEventListener('click', async function () {
+      var v = $('so-apontado').value, er = $('so-apontar-erro'); er.textContent = '';
+      if (v === '__escolha') { er.textContent = 'Escolha o analista.'; return; }
+      if (!window.confirm('Corrigir o analista apontado? O registro e o dashboard passam a apontar para a nova escolha.')) return;
+      var x = await postarQ('/api/cs/painel/qualidade/sucesso/ocorrencias/' + encodeURIComponent(r.id) + '/apontar', { analista_id: v === '__volta' ? '' : v });
+      if (!x.ok) { er.textContent = x.j.error || 'Não foi possível corrigir o analista apontado.'; return; }
+      estado.qResumo = null; estado.s.dados = null; fechar(); desenharSucesso();
+    });
     if (!$('so-encerrar')) return;
     ligarContador('so');
     var erro = $('so-erro');
@@ -3015,7 +3043,7 @@
       '<div class="gp-kpi-row">' +
         kpi('#b45309', 'Aguardando análise', c.registrada, 'registradas, sem tratativa') +
         kpi('#2563eb', 'Tratativa definida', c.tratativa_definida, 'ainda não abertas ao analista') +
-        kpi('#7c3aed', 'Com o analista', c.com_analista, 'em tratamento') +
+        kpi('#7c3aed', 'Em andamento', c.com_analista, 'com os analistas ou nas vinculadas') +
         kpi('#0e7490', 'Em validação', c.validacao_gestor, 'aguardando você') +
         kpi('#c2410c', 'Devolutiva ao cliente', c.devolutiva_cliente, 'com o Sucesso do Cliente') +
         kpi('#b91c1c', 'Vencidas', c.vencidas, 'prazo passou') +
@@ -3094,6 +3122,11 @@
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Ocorrência">' + htmlTratativaGestor(r, estado.qAnalistas || []) + '</div>';
     $('gt-fechar').addEventListener('click', fechar); $('gt-cancel').addEventListener('click', fechar);
     if ($('gt-filha')) $('gt-filha').addEventListener('click', function () { abrirFilhaGestor(r, function (n) {   // a janela da original continua aberta: dá para salvar/abrir a original e abrir outras vinculadas
+      if (n.original && n.original.etapa !== r.etapa) {   // a primeira vinculada pôs a original em andamento: recarrega a janela com os dados novos
+        var regs0 = (estado.g && estado.g.dados && estado.g.dados.registros) || [];
+        regs0.forEach(function (q, i) { if (String(q.id) === String(r.id)) regs0[i] = n.original; });
+        fechar(); abrirOcorrenciaGestor(r.id); return;
+      }
       var c = $('gt-filhas-novas');
       if (c) c.insertAdjacentHTML('beforeend', '<div class="qa-obs" style="margin:4px 0">✔ Vinculada aberta: <strong>' + esc(n.assunto) + '</strong> para ' + esc(n.nomes) + ' · ' + esc(rotuloDepto(n.depto)) + ' · prazo ' + data(n.prazo) + '. Continue por aqui: salve esta tratativa ou abra outra vinculada.</div>');
     }); });

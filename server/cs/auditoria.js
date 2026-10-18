@@ -94,6 +94,7 @@ function descreverAcao(metodo, url, corpo) {
     return null;
   }
   if (m === 'POST' && r[0] === 'sucesso' && r[1] === 'ocorrencias' && r[3] === 'encerrar') return { acao: 'encerrar', modulo: M, texto: 'Encerrou o processo (gestor final)', registroId: id(2) };
+  if (m === 'POST' && r[0] === 'sucesso' && r[1] === 'ocorrencias' && r[3] === 'apontar') return { acao: 'editar', modulo: M, texto: b.analista_id === '__nenhum' ? 'Tirou o analista apontado (ninguém)' : b.analista_id ? 'Corrigiu o analista apontado para' : 'Voltou ao analista apontado no registro', registroId: id(2), analistaId: b.analista_id && b.analista_id !== '__nenhum' ? b.analista_id : undefined };
   if (r[0] === 'tipos') {
     if (m === 'POST') return { acao: 'criar', modulo: 'cs-qualidade', texto: 'Incluiu o tipo de registro "' + curto(b.nome, 40) + '" (peso ' + (b.peso == null ? '—' : b.peso) + ')' };
     if (m === 'PATCH') return { acao: 'editar', modulo: 'cs-qualidade', texto: 'Alterou um tipo de registro' + (b.nome ? ' (nome: "' + curto(b.nome, 40) + '")' : '') + (b.peso != null ? ' (peso ' + b.peso + ')' : '') + (b.ativo !== undefined ? (b.ativo ? ' (reativou)' : ' (desativou)') : '') };

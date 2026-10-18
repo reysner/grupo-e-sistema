@@ -109,6 +109,9 @@ teste('logs: cada ação que muda algo vira uma frase clara (e consulta nunca vi
   assert.deepStrictEqual(d('POST', '/api/cs/painel/qualidade/ocorrencias', { assunto: 'Guia errada', tipo: 'Erro', departamento: 'Fiscal' }), { acao: 'criar', modulo: 'cs-qualidade', texto: 'Registrou uma ocorrência: Guia errada (Erro · Fiscal)' });
   assert.strictEqual(d('PUT', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/tratativa', {}).registroId, 'abc');
   assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/abrir').acao, 'abrir');
+  const ap = d('POST', '/api/cs/painel/qualidade/sucesso/ocorrencias/abc/apontar', { analista_id: '7' });
+  assert.deepStrictEqual([ap.acao, ap.registroId, ap.analistaId, ap.texto], ['editar', 'abc', '7', 'Corrigiu o analista apontado para'], 'a correção do analista apontado vai para os logs');
+  assert.strictEqual(d('POST', '/api/cs/painel/qualidade/sucesso/ocorrencias/abc/apontar', { analista_id: '__nenhum' }).texto, 'Tirou o analista apontado (ninguém)');
   assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/filha', { assunto: 'Alinhar com o Bruno' }).texto, 'Abriu uma ocorrência vinculada: Alinhar com o Bruno');
   assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/validar').acao, 'validar');
   assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/devolver').acao, 'devolver');
