@@ -53,16 +53,22 @@ async function consultar(sql, params = [], rotulo = '') {
 }
 
 // ── Cache curto: a página faz poucas chamadas seguidas e o cálculo percorre a carteira inteira ──
-let _cache = null;
+let _cache = null, _emAndamento = null, _geracao = 0;
 const TTL_MS = 60 * 1000;
 /** Esquece o cálculo guardado: a próxima chamada refaz a carteira (usado quando uma ocorrência de Qualidade é excluída, cancelada, reaberta ou encerrada). */
-function invalidarCache() { _cache = null; }
+function invalidarCache() { _cache = null; _emAndamento = null; _geracao++; }
 
 // A ficha de um cliente aceita uma base mais velha (a lista já foi calculada ao abrir o painel); abrir a ficha não deve recalcular a carteira.
 const TTL_FICHA_MS = 10 * 60 * 1000;
 
 async function montarBase(forcar, ttl = TTL_MS) {
   if (!forcar && _cache && Date.now() - _cache.t < ttl) return _cache.v;
+  if (!forcar && _emAndamento) return _emAndamento;   // chamadas ao mesmo tempo dividem o mesmo cálculo (a carteira inteira)
+  const p = calcularBase(_geracao).finally(() => { if (_emAndamento === p) _emAndamento = null; });
+  _emAndamento = p;
+  return p;
+}
+async function calcularBase(geracao) {
 
   const [r, cat, clientes] = await Promise.all([
     risco.calcularTodos({ detalhes: true }),
@@ -144,7 +150,7 @@ async function montarBase(forcar, ttl = TTL_MS) {
     clientes: lista,
     clientes_outros: outros,
   };
-  _cache = { t: Date.now(), v };
+  if (geracao === _geracao) _cache = { t: Date.now(), v };   // se o cache foi invalidado no meio do cálculo, não guarda o resultado velho
   return v;
 }
 

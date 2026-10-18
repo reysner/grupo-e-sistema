@@ -38,6 +38,7 @@ app.use(cors({
   credentials: true,
 }));
 
+app.use(require('compression')());   // gzip nas respostas (a página do /cs tem ~370 KB de script e a carteira vai em JSON grande)
 app.use(cookieParser());
 app.use('/api/cs/questor/anual', express.json({ limit: '5mb' }));   // faturamento por ano da carteira (rotina local; só totais por CNPJ e ano)
 app.use('/api/cs/omie/honorarios', express.json({ limit: '3mb' }));   // honorário cobrado por cliente e ano, lido do Omie (carga manual; só totais por CNPJ e ano)

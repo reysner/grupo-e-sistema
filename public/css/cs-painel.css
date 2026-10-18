@@ -480,3 +480,6 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 .gp-toolbar-esq,.gp-toolbar-dir{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 .gp-toolbar-esq{gap:14px;}
 @media (max-width:700px){.gp-hdr2{padding:12px 14px 0;}.gp-hdr2>.gp-hd-conta{align-self:auto;}}
+
+/* O menu fica escondido até o perfil da pessoa chegar (evita mostrar todos os módulos a quem tem poucos enquanto a página carrega). */
+.gp-aguarda-perfil .gp-nav{visibility:hidden;}

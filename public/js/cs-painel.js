@@ -69,7 +69,10 @@
     if (msg) { e.textContent = msg; e.style.display = 'block'; } else { e.style.display = 'none'; }
   }
 
-  async function renovar() {
+  var renovando = null;
+  /** Uma renovação de sessão por vez: com várias chamadas ao mesmo tempo, a segunda usaria o código de renovação já trocado e derrubaria o login. */
+  function renovar() { if (!renovando) renovando = renovarDeVez().then(function (ok) { renovando = null; return ok; }, function () { renovando = null; return false; }); return renovando; }
+  async function renovarDeVez() {
     var rt = ls(K_REFRESH);
     if (!rt) return false;
     try {
@@ -175,6 +178,7 @@
   async function iniciar(forcar) {
     $('login-screen').style.display = 'none';
     $('app').style.display = 'block';
+    setTimeout(function () { var b = document.querySelector('.gp-sidebar'); if (b) b.classList.remove('gp-aguarda-perfil'); }, 20000);   // rede de segurança: se o perfil nunca chegar, o menu não fica sumido
     var u = null; try { u = JSON.parse(ls(K_USER) || 'null'); } catch (e) { u = null; }
     if (u && u.name) montarMenuUsuario(u);
     try { estado.eu = await api('/api/cs/painel/qualidade/eu'); } catch (e) { estado.eu = estado.eu || null; }   // módulos liberados (Acessos)
@@ -182,11 +186,16 @@
     if (!perfilCs().completo) return iniciarLimitado();   // gestor e analista: só os módulos deles, sem os dados da carteira
     ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="vazio">Carregando…</div>'; });
     try {
-      estado.dados = await api('/api/cs/painel/dados' + (forcar === true ? '?forcar=1' : ''));
-      try { estado.honorario = await api('/api/cs/painel/honorario-sugerido'); } catch (e) { estado.honorario = null; }
-      await carregarMotivosChurn(true);
-      try { estado.atend = await api('/api/cs/painel/atendimentos'); } catch (e) { estado.atend = null; }   // o módulo Atendimento avisa quando não chega
-      try { estado.anual = await api('/api/cs/painel/anual'); } catch (e) { estado.anual = null; }   // a Análise Anual avisa quando não chega   // sem o percentual, as colunas novas mostram "—"
+      // as cinco chamadas saem juntas (antes esperavam uma pela outra); só a da carteira é obrigatória
+      var nulo = function () { return null; };
+      var lote = await Promise.all([
+        api('/api/cs/painel/dados' + (forcar === true ? '?forcar=1' : '')),
+        api('/api/cs/painel/honorario-sugerido').catch(nulo),
+        carregarMotivosChurn(true),
+        api('/api/cs/painel/atendimentos').catch(nulo),   // o módulo Atendimento avisa quando não chega
+        api('/api/cs/painel/anual').catch(nulo)           // a Análise Anual avisa quando não chega
+      ]);
+      estado.dados = lote[0]; estado.honorario = lote[1]; estado.atend = lote[3]; estado.anual = lote[4];
       pintarBotaoValores();
       estado.churnLivre = null;
       desenharTudo();
@@ -2333,6 +2342,7 @@
       if (['consideracoes', 'gestor', 'analista', 'sucesso'].indexOf(estado.secao) < 0 || (estado.secao === 'gestor' && !p.gestor) || (estado.secao === 'analista' && !p.analista) || (estado.secao === 'sucesso' && !sucessoOk)) estado.secao = p.gestor ? 'gestor' : 'consideracoes';
     } else if ((estado.secao === 'gestor' && !p.gestor) || (estado.secao === 'analista' && !p.analista)) estado.secao = 'visao';
     if (secaoLiberada(estado.secao) === false) estado.secao = secaoInicialCs();   // a seção aberta não é mais da pessoa
+    var barra = document.querySelector('.gp-sidebar'); if (barra) barra.classList.remove('gp-aguarda-perfil');   // o menu só aparece quando já se sabe o que a pessoa pode ver
   }
   async function iniciarLimitado() {
     var p = perfilCs();
