@@ -2678,25 +2678,39 @@
     var t = new Date(r.criado_em).getTime(); return !isNaN(t) && t >= (agora || Date.now()) - n * 86400000;
   }
   function filtrosAtivosQ(f) { return !!(f && (f.busca || f.depto || f.analista || f.etapa || f.periodo || f.tipo || f.prioridade || f.por)); }
-  /** Filtros que valem para os três portais: período, tipo, prioridade e (Sucesso/Gestor) quem registrou. p = prefixo dos ids (s, g ou a). */
-  function htmlFiltrosExtraQ(p, f, regs, comPor) {
-    f = f || {};
+  /** Barra de filtros dos portais. Na linha principal: Buscar, Etapa e Registrada em. Em "Mais filtros": Departamento, Analista, Tipo, Prioridade e (Sucesso/Gestor) Registrada por.
+   *  p = prefixo dos ids (s, g ou a). o = { optD, optA (HTML das opções; null = o portal não tem o filtro), optE, comPor }. */
+  function htmlFiltrosPortalQ(p, f, regs, o) {
+    f = f || {}; o = o || {};
     var op = function (v, rot, sel) { return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(rot) + '</option>'; };
     var unicos = function (campo) { var v = []; (regs || []).forEach(function (r) { if (r[campo] && v.indexOf(r[campo]) < 0) v.push(r[campo]); }); return v.sort(function (a, b) { return String(a).localeCompare(String(b), 'pt-BR', { sensitivity: 'base' }); }); };
-    var h = '<span class="filter-label">Registrada em</span><select class="gp-select" id="' + p + '-periodo">' + PERIODOS_Q.map(function (x) { return op(x[0], x[1], (f.periodo || '') === x[0]); }).join('') + '</select>';
-    if (f.periodo === 'livre') h += '<input class="gp-input" type="date" id="' + p + '-de" value="' + esc(f.de || '') + '" aria-label="De"><span class="filter-label">a</span><input class="gp-input" type="date" id="' + p + '-ate" value="' + esc(f.ate || '') + '" aria-label="Até">';
-    h += '<span class="filter-label">Tipo</span><select class="gp-select" id="' + p + '-tipo">' + op('', 'Todos os tipos', !f.tipo) + unicos('tipo').map(function (t) { return op(t, t, f.tipo === t); }).join('') + '</select>';
-    h += '<span class="filter-label">Prioridade</span><select class="gp-select" id="' + p + '-prio">' + op('', 'Todas', !f.prioridade) + PRIORIDADES_Q.map(function (x) { return op(x, x, f.prioridade === x); }).join('') + '</select>';
-    if (comPor) h += '<span class="filter-label">Registrada por</span><select class="gp-select" id="' + p + '-por">' + op('', 'Todos', !f.por) + unicos('criado_por').map(function (n) { return op(n, n, f.por === n); }).join('') + '</select>';
-    if (filtrosAtivosQ(f)) h += '<button type="button" class="gp-footer-btn" id="' + p + '-limpar" style="width:auto">Limpar filtros</button>';
-    return h;
+    var principal = '<span class="filter-label">Buscar</span><input class="gp-input" id="' + p + '-busca" placeholder="Empresa ou assunto" value="' + esc(f.busca || '') + '">' +
+      '<span class="filter-label">Etapa</span><select class="gp-select" id="' + p + '-etapa">' + (o.optE || '') + '</select>' +
+      '<span class="filter-label">Registrada em</span><select class="gp-select" id="' + p + '-periodo">' + PERIODOS_Q.map(function (x) { return op(x[0], x[1], (f.periodo || '') === x[0]); }).join('') + '</select>';
+    if (f.periodo === 'livre') principal += '<input class="gp-input" type="date" id="' + p + '-de" value="' + esc(f.de || '') + '" aria-label="De"><span class="filter-label">a</span><input class="gp-input" type="date" id="' + p + '-ate" value="' + esc(f.ate || '') + '" aria-label="Até">';
+    var mais = '', ativos = [];   // ativos: [chave, texto da etiqueta] dos filtros de "Mais filtros" que estão ligados
+    if (o.optD != null) { mais += '<span class="filter-label">Departamento</span><select class="gp-select" id="' + p + '-depto">' + o.optD + '</select>'; if (f.depto) ativos.push(['depto', 'Departamento: ' + rotuloDepto(f.depto)]); }
+    if (o.optA != null) { mais += '<span class="filter-label">Analista</span><select class="gp-select" id="' + p + '-analista">' + o.optA + '</select>'; if (f.analista) { var an = ((estado.qAnalistas || []).filter(function (a) { return String(a.id) === String(f.analista); })[0]); ativos.push(['analista', 'Analista: ' + (an ? an.nome : f.analista)]); } }
+    mais += '<span class="filter-label">Tipo</span><select class="gp-select" id="' + p + '-tipo">' + op('', 'Todos os tipos', !f.tipo) + unicos('tipo').map(function (t) { return op(t, t, f.tipo === t); }).join('') + '</select>';
+    if (f.tipo) ativos.push(['tipo', 'Tipo: ' + f.tipo]);
+    mais += '<span class="filter-label">Prioridade</span><select class="gp-select" id="' + p + '-prio">' + op('', 'Todas', !f.prioridade) + PRIORIDADES_Q.map(function (x) { return op(x, x, f.prioridade === x); }).join('') + '</select>';
+    if (f.prioridade) ativos.push(['prioridade', 'Prioridade: ' + f.prioridade]);
+    if (o.comPor) { mais += '<span class="filter-label">Registrada por</span><select class="gp-select" id="' + p + '-por">' + op('', 'Todos', !f.por) + unicos('criado_por').map(function (n) { return op(n, n, f.por === n); }).join('') + '</select>'; if (f.por) ativos.push(['por', 'Registrada por: ' + f.por]); }
+    var botoes = '<button type="button" class="gp-footer-btn" id="' + p + '-mais" style="width:auto" aria-expanded="' + (f.maisAberto ? 'true' : 'false') + '">' + (f.maisAberto ? '▴ Menos filtros' : '▾ Mais filtros') + (ativos.length ? ' (' + ativos.length + ')' : '') + '</button>' +
+      (filtrosAtivosQ(f) ? '<button type="button" class="gp-footer-btn" id="' + p + '-limpar" style="width:auto">Limpar filtros</button>' : '') +
+      '<button type="button" class="gp-footer-btn" id="' + p + '-atualizar" style="width:auto">↻ Atualizar</button>';
+    var etiquetas = !f.maisAberto && ativos.length ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px">' + ativos.map(function (a) { return '<button type="button" class="chip" data-limpar-filtro="' + esc(a[0]) + '" style="cursor:pointer" title="Tirar este filtro">' + esc(a[1]) + ' ✕</button>'; }).join('') + '</div>' : '';
+    return '<div class="filter-group" style="margin-bottom:12px">' + principal + botoes + '</div>' +
+      '<div class="filter-group" id="' + p + '-mais-box" style="margin:0 0 14px;padding:10px 12px;border:1px solid var(--border);border-radius:10px' + (f.maisAberto ? '' : ';display:none') + '">' + mais + '</div>' + etiquetas;
   }
   function ligarFiltrosExtraQ(p, f, refazer) {
     [['periodo', 'periodo'], ['de', 'de'], ['ate', 'ate'], ['tipo', 'tipo'], ['prio', 'prioridade'], ['por', 'por']].forEach(function (x) {
       var e = $(p + '-' + x[0]); if (!e) return;
       e.addEventListener('change', function () { f[x[1]] = e.value; if (x[0] === 'periodo' && e.value !== 'livre') { f.de = ''; f.ate = ''; } refazer(); });
     });
+    var m = $(p + '-mais'); if (m) m.addEventListener('click', function () { f.maisAberto = !f.maisAberto; refazer(); });
     var l = $(p + '-limpar'); if (l) l.addEventListener('click', function () { ['busca', 'depto', 'analista', 'etapa', 'periodo', 'de', 'ate', 'tipo', 'prioridade', 'por'].forEach(function (k) { f[k] = ''; }); refazer(); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-limpar-filtro]'), function (b) { b.addEventListener('click', function () { f[b.getAttribute('data-limpar-filtro')] = ''; refazer(); }); });
   }
   function filtrarPortal(regs, f) {
     var b = String((f && f.busca) || '').trim().toLowerCase();
@@ -2716,7 +2730,7 @@
     var regs = d.registros || [], lista = filtrarPortal(regs, f), c = contagemEtapasGestor(regs);
     var op = function (v, rot, sel) { return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(rot) + '</option>'; };
     var optE = op('', 'Todas as etapas', !f.etapa) + ['com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada'].map(function (e) { return op(e, ETAPA_CURTA[e], f.etapa === e); }).join('') + op('vencidas', 'Vencidas', f.etapa === 'vencidas');
-    var selAn = d.admin ? '<span class="filter-label">Analista</span><select class="gp-select" id="a-analista">' + op('', 'Todos os analistas', !f.analista) + (d.analistas || []).map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('') + '</select>' : '';
+    var optAn = op('', 'Todos os analistas', !f.analista) + (d.analistas || []).map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
     var corpo = lista.map(function (r) {
       var jaEnc = (r.responsaveis || []).some(function (x) { return d.analista && String(x.analista_id) === String(d.analista.id) && x.encerrado_em; });
       var acao = r.etapa === 'com_analista' && !jaEnc ? 'Tratar' : 'Ver';
@@ -2734,10 +2748,7 @@
         kpi('#166534', 'Encerradas', c.encerrada, 'processo finalizado') +
         kpi('#b91c1c', 'Vencidas', c.vencidas, 'prazo passou') +
       '</div>' +
-      '<div class="card"><div class="filter-group" style="margin-bottom:14px">' + selAn +
-        '<span class="filter-label">Etapa</span><select class="gp-select" id="a-etapa">' + optE + '</select>' + htmlFiltrosExtraQ('a', f, regs, false) +
-        '<span class="filter-label">Buscar</span><input class="gp-input" id="a-busca" placeholder="Empresa ou assunto" value="' + esc(f.busca || '') + '">' +
-        '<button type="button" class="gp-footer-btn" id="a-atualizar" style="width:auto">↻ Atualizar</button></div>' +
+      '<div class="card">' + htmlFiltrosPortalQ('a', f, regs, { optA: d.admin ? optAn : null, optE: optE, comPor: false }) +
         '<div class="card-sub">' + lista.length + ' ocorrência(s)' + (d.todos ? ' · você é administrador: vê as de todos e age em nome do analista' : (d.analista ? (d.admin ? ' · visão do analista: ' : ' · analista: ') + esc(d.analista.nome) : '')) + '</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Aberta em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Assunto e plano</th>' + (d.todos ? '<th>Analista</th>' : '') + '<th class="c">Prazo</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
           : '<div class="vazio">Nenhuma ocorrência aberta para ' + (d.todos ? 'este filtro' : 'você') + ' por enquanto.</div>') + '</div>' + htmlSobreMim(d);
@@ -2846,12 +2857,7 @@
         kpi('#166534', 'Encerradas', c.encerrada, 'processo finalizado') +
         kpi('#b91c1c', 'Vencidas', c.vencidas, 'prazo passou') +
       '</div>' +
-      '<div class="card"><div class="filter-group" style="margin-bottom:14px">' +
-        '<span class="filter-label">Buscar</span><input class="gp-input" id="s-busca" placeholder="Empresa ou assunto" value="' + esc(f.busca || '') + '">' +
-        '<span class="filter-label">Departamento</span><select class="gp-select" id="s-depto">' + optD + '</select>' +
-        '<span class="filter-label">Analista</span><select class="gp-select" id="s-analista">' + optA + '</select>' +
-        '<span class="filter-label">Etapa</span><select class="gp-select" id="s-etapa">' + optE + '</select>' + htmlFiltrosExtraQ('s', f, regs, true) +
-        '<button type="button" class="gp-footer-btn" id="s-atualizar" style="width:auto">↻ Atualizar</button></div>' +
+      '<div class="card">' + htmlFiltrosPortalQ('s', f, regs, { optD: optD, optA: optA, optE: optE, comPor: true }) +
         '<div class="card-sub">' + lista.length + ' ocorrência(s) · as da devolutiva ao cliente vêm primeiro</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Registrada em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Departamento</th><th>Assunto</th><th>Analista</th><th class="c">Prazo</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
           : '<div class="vazio">Nenhuma ocorrência neste filtro.</div>') + '</div>' + htmlTemposBox();
@@ -2954,12 +2960,7 @@
         kpi('#c2410c', 'Devolutiva ao cliente', c.devolutiva_cliente, 'com o Sucesso do Cliente') +
         kpi('#b91c1c', 'Vencidas', c.vencidas, 'prazo passou') +
       '</div>' +
-      '<div class="card"><div class="filter-group" style="margin-bottom:14px">' +
-        '<span class="filter-label">Buscar</span><input class="gp-input" id="g-busca" placeholder="Empresa ou assunto" value="' + esc(f.busca || '') + '">' +
-        '<span class="filter-label">Departamento</span><select class="gp-select" id="g-depto">' + optD + '</select>' +
-        '<span class="filter-label">Analista</span><select class="gp-select" id="g-analista">' + optA + '</select>' +
-        '<span class="filter-label">Etapa</span><select class="gp-select" id="g-etapa">' + optE + '</select>' + htmlFiltrosExtraQ('g', f, regs, true) +
-        '<button type="button" class="gp-footer-btn" id="g-atualizar" style="width:auto">↻ Atualizar</button></div>' +
+      '<div class="card">' + htmlFiltrosPortalQ('g', f, regs, { optD: optD, optA: optA, optE: optE, comPor: true }) +
         '<div class="card-sub">' + lista.length + ' ocorrência(s)' + (esc_.todos ? ' · todos os departamentos' : ' · seus departamentos: ' + esc(deptos.map(rotuloDepto).join(', '))) + '</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Registrada em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Departamento</th><th>Assunto</th><th>Responsável</th><th class="c">Prazo</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
           : '<div class="vazio">Nenhuma ocorrência neste filtro.</div>') + '</div>' + htmlTemposBox();
