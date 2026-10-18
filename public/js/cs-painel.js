@@ -2510,12 +2510,17 @@
     ta.addEventListener('blur', function () { setTimeout(fecha, 150); });
   }
   /** Janela do gestor para abrir uma ocorrência vinculada (uma por situação): assunto, plano, responsáveis, departamento e prazo próprios. */
+  /** Assunto sugerido para a vinculada: nome da original e o da empresa (até 100 caracteres); quem abre edita ou apaga a empresa. */
+  function assuntoSugeridoFilha(pai) {
+    var a = String(pai.assunto || '').trim(), e = String(pai.cliente_nome || '').trim();
+    return (a && e ? a + ' — ' + e : a || e).slice(0, 100);
+  }
   function htmlFilhaGestor(pai, analistas) {
     var depPai = (pai.departamentos || [])[0] || '';
     var optD = DEPS_OCORRENCIA.map(function (d) { return '<option value="' + esc(d[0]) + '"' + (depPai === d[0] ? ' selected' : '') + '>' + esc(d[1]) + '</option>'; }).join('');
     return '<div class="qa-modal-topo"><strong style="font-size:20px;color:#256050">Abrir ocorrência vinculada</strong><button type="button" class="qa-x" id="gf-fechar" aria-label="Fechar">✕</button></div>' +
       '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">Vinculada a <strong>' + esc(pai.assunto || '—') + '</strong> (' + esc(pai.cliente_nome || '') + '). Abra uma para cada situação: cada uma tem o seu responsável e o seu prazo. A original só segue para a validação quando todas estiverem encerradas.</div>' +
-      '<div class="qa-campo"><label for="gf-assunto">Assunto <span class="req">*</span></label><input type="text" id="gf-assunto" maxlength="100" placeholder="Qual a situação a tratar?"></div>' +
+      '<div class="qa-campo"><label for="gf-assunto">Assunto <span class="req">*</span> <span class="cinza">(já vem com o nome da ocorrência e da empresa; pode editar ou apagar)</span></label><input type="text" id="gf-assunto" maxlength="100" value="' + esc(assuntoSugeridoFilha(pai)) + '" placeholder="Qual a situação a tratar?"></div>' +
       '<div class="qa-campo"><label for="gf-plano">Plano de ação <span class="req">*</span> <span class="cinza" id="gf-cont">0/1500</span></label><textarea id="gf-plano" rows="4" maxlength="1500" placeholder="O que precisa ser feito. Digite @ para chamar um analista."></textarea></div>' +
       '<div class="qa-campo"><label>Responsáveis <span class="req">*</span> <span class="cinza">(um ou vários · digite @ no plano de ação para chamar o(a) analista)</span></label><div class="qg-chips" id="gf-resp">' + htmlChipsResp([]) + '</div></div>' +
       '<div class="qa-oc-linha qa-g-grid">' +
