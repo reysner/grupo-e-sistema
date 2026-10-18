@@ -329,7 +329,7 @@
       return '<div class="tres-card" style="border-top-color:' + COR_TERM[k] + '"><div class="tres-nome">' + NOME_TERM[k].toUpperCase() + '</div><div class="tres-perg">' + perg + '</div>' +
         '<div class="tres-dest"><b style="color:' + COR_TERM[k] + '">' + (com.length ? pct(alto + med, com.length) + '%' : '—') + '</b><span>em risco Médio ou Alto · ' + (alto + med) + ' de ' + com.length + ' com dado</span></div>' +
         barra([{ rot: 'Alto', n: alto, cor: COR_RISCO.Alto }, { rot: 'Médio', n: med, cor: COR_RISCO['Médio'] }, { rot: 'Baixo', n: bai, cor: COR_RISCO.Baixo }]) +
-        (tm.sem_dado ? '<div class="sub" style="margin-top:6px">' + tm.sem_dado + (k === 'tratativas' ? ' cliente(s) sem tratativa em aberto (não entram na média).' : ' cliente(s) sem dado deste indicador (não presumimos que está em dia).') + '</div>' : '') +
+        (tm.sem_dado ? '<div class="sub" style="margin-top:6px">' + tm.sem_dado + (k === 'tratativas' ? ' cliente(s) sem ocorrência de qualidade nos últimos 90 dias (não entram na média). As com ocorrência só resolvida aparecem no card, fora da média.' : ' cliente(s) sem dado deste indicador (não presumimos que está em dia).') + '</div>' : '') +
         '<div class="tres-regua">' + regua + '</div></div>';
     }).join('');
 
@@ -1821,7 +1821,7 @@
     return '' +
       '<div><strong>Quem alimenta</strong><br>Só o que é <strong>registrado no módulo Qualidade</strong> (erro, multa, reclamação, atraso, falha…): aparece nos Sinais de atenção da ficha, na seção Qualidade da empresa, no card Tratativas da Visão Geral e pesa no risco, que agora tem quatro critérios: Financeiro, Atendimento, Operacional e Tratativas. O plano de ação escrito na ficha ("Descreva a tratativa") <strong>não conta</strong>.</div>' +
       '<div><strong>Como cada ocorrência pesa</strong><br>Vale o <strong>dobro do peso do seu tipo</strong> (tabela abaixo), multiplicado por: 1,5 se o prazo venceu · 1 em aberto ou em tratamento · 0,5 finalizada aguardando validação · 0,25 resolvida. Ocorrência com mais de 45 dias vale metade. Vale o que foi registrado nos últimos 90 dias, a soma é limitada a 100 por cliente e a cancelada não entra.</div>' +
-      '<div><strong>Quando entra na média</strong><br>Só enquanto houver tratativa em aberto (aberta, em tratamento ou finalizada aguardando validação). Sem pendência o termômetro fica de fora: uma tratativa resolvida não esconde um cliente com Financeiro alto e o risco não vira "parcial" à toa. Um termômetro a partir de 75 pontos já gera alerta e sobe o cliente para, no mínimo, Médio.</div>';
+      '<div><strong>Quando entra na média</strong><br>Só enquanto houver tratativa em aberto (aberta, em tratamento ou finalizada aguardando validação). Se só houver ocorrência resolvida nos últimos 90 dias, ela deixa a marca: aparece nos Sinais de atenção e no card Tratativas (até 25 pontos), mas fica fora da média — uma tratativa resolvida não esconde um cliente com Financeiro alto e o risco não vira "parcial" à toa. Um termômetro a partir de 75 pontos já gera alerta e sobe o cliente para, no mínimo, Médio.</div>';
   }
   function comoPesaTratativa(tipos, aberto) {
     var linhas = (tipos || []).map(function (t) {

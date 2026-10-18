@@ -76,24 +76,31 @@ teste('tratativas: pesa pelo tipo (dobro), vencida x1,5, a validar x0,5, resolvi
 
 teste('tratativas: ocorrência já resolvida nos últimos 90 dias aparece nos Sinais de atenção (sem pesar no risco)', () => {
   const t = termometroTratativas({ qualidade: [{ tipo: 'Atraso', status: 'resolvido', dias: 2 }] });
-  assert.strictEqual(t.pontos, null, 'não pesa');
+  assert.strictEqual(t.pontos, 5, 'alimenta o card: Atraso 10 x2 x0,25');
+  assert.strictEqual(t.foraDaMedia, true, 'mas fica fora da média');
   assert.strictEqual(t.sinal, '1 ocorrência de qualidade registrada nos últimos 90 dias (1 resolvida · Atraso)');
   const r = calcularRisco({ financeiro: { pontos: 0, detalhe: ['f'] }, atendimento: { pontos: 0, detalhe: ['a'] }, operacional: { pontos: 0, detalhe: ['o'] }, tratativas: t });
   assert.ok(r.motivos.includes(t.sinal), 'entra nos motivos (Sinais de atenção)');
   assert.strictEqual(r.pontos, 0, 'e o risco continua igual');
   const dois = termometroTratativas({ qualidade: [{ tipo: 'Erro', status: 'resolvido', dias: 5 }, { tipo: 'Multa', status: 'resolvido', dias: 6 }] });
   assert.strictEqual(dois.sinal, '2 ocorrências de qualidade registradas nos últimos 90 dias (2 resolvidas · Erro, Multa)');
-  assert.strictEqual(termometroTratativas({ qualidade: [] }).sinal, null, 'sem ocorrência, sem sinal');
-  assert.strictEqual(termometroTratativas({ qualidade: [{ tipo: 'Atraso', status: 'resolvido', dias: 120 }] }).sinal, null, 'passou de 90 dias: sem sinal');
+  assert.ok(!termometroTratativas({ qualidade: [] }).sinal && termometroTratativas({ qualidade: [] }).pontos === null, 'sem ocorrência, sem sinal e sem dado');
+  assert.ok(!termometroTratativas({ qualidade: [{ tipo: 'Atraso', status: 'resolvido', dias: 120 }] }).sinal, 'passou de 90 dias: sem sinal');
+  const muitas = termometroTratativas({ qualidade: [1, 2, 3, 4].map(() => ({ tipo: 'Multa', status: 'resolvido', dias: 2 })) });
+  assert.strictEqual(muitas.pontos, 25, 'resolvidas valem no máximo 25 no card');
 });
 teste('tratativas: sem pendência fica sem dado (fora da média) e não deixa o risco parcial', () => {
   assert.strictEqual(termometroTratativas({ qualidade: [] }).pontos, null);
-  assert.strictEqual(termometroTratativas({ qualidade: [{ tipo: 'Multa', status: 'resolvido', dias: 3 }] }).pontos, null);
+  const so = termometroTratativas({ qualidade: [{ tipo: 'Multa', status: 'resolvido', dias: 3 }] });
+  assert.ok(so.pontos > 0 && so.pontos <= 25 && so.foraDaMedia === true, 'só resolvida: alimenta o card, mas fica fora da média');
   assert.strictEqual(termometroTratativas({}).pontos, null);
   const r = calcularRisco({ financeiro: { pontos: 60, detalhe: ['f'] }, atendimento: { pontos: 20, detalhe: ['a'] }, operacional: { pontos: 10, detalhe: ['o'] }, tratativas: { pontos: null, detalhe: ['nada'] } });
   assert.strictEqual(r.parcial, false);
   assert.deepStrictEqual(r.sem_dado, []);
   assert.strictEqual(r.pontos, 30);          // (60+20+10)/3: a Tratativa sem pendência não dilui
+  const r2 = calcularRisco({ financeiro: { pontos: 60, detalhe: ['f'] }, atendimento: { pontos: 20, detalhe: ['a'] }, operacional: { pontos: 10, detalhe: ['o'] }, tratativas: so });
+  assert.strictEqual(r2.pontos, 30, 'a resolvida (que aparece no card) não dilui a média');
+  assert.strictEqual(r2.parcial, false);
 });
 
 teste('tratativas: com pendência entra na média, aparece nos motivos e um termômetro muito alto dá alerta', () => {

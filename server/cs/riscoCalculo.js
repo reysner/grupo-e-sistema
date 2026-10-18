@@ -134,14 +134,19 @@ function termometroTratativas(e) {
   const qs = ((e && e.qualidade) || []).filter((q) => q && q.status !== 'cancelado' && (q.dias == null || q.dias <= 90));
   const emAndamento = (q) => q.status === 'aberto' || q.status === 'em_tratamento';
   const pend = qs.filter((q) => emAndamento(q) || q.status === 'finalizada');
-  if (!pend.length) return { pontos: null, detalhe: [qs.length ? `Nenhuma tratativa em aberto (${plural(qs.length, 'ocorrência resolvida', 'ocorrências resolvidas')} nos últimos 90 dias)` : 'Nenhuma tratativa em aberto'],
-    sinal: qs.length ? `${plural(qs.length, 'ocorrência de qualidade registrada', 'ocorrências de qualidade registradas')} nos últimos 90 dias (${plural(qs.length, 'resolvida', 'resolvidas')} · ${Array.from(new Set(qs.map((q) => q.tipo).filter(Boolean))).join(', ') || 'sem tipo'})` : null };   // informativo: aparece nos Sinais de atenção, sem pesar no risco
   let p = 0;
   qs.forEach((q) => {
     const peso = q.peso !== null && q.peso !== undefined && Number.isFinite(Number(q.peso)) ? Number(q.peso) : (PESO_QUALIDADE[norm(q.tipo)] ?? 5);
     const fator = q.vencida && emAndamento(q) ? 1.5 : (FATOR_TRATATIVA[q.status] ?? 1);
     p += peso * 2 * fator * ((q.dias || 0) > 45 ? 0.5 : 1);
   });
+  if (!pend.length) {
+    if (!qs.length) return { pontos: null, detalhe: ['Nenhuma tratativa em aberto'] };
+    // só ocorrências resolvidas: a marca fica (Sinais de atenção) e alimenta o card Tratativas, mas fora da média do risco
+    return { pontos: Math.min(25, limitar(p)), foraDaMedia: true,
+      detalhe: [`Nenhuma tratativa em aberto (${plural(qs.length, 'ocorrência resolvida', 'ocorrências resolvidas')} nos últimos 90 dias)`],
+      sinal: `${plural(qs.length, 'ocorrência de qualidade registrada', 'ocorrências de qualidade registradas')} nos últimos 90 dias (${plural(qs.length, 'resolvida', 'resolvidas')} · ${Array.from(new Set(qs.map((q) => q.tipo).filter(Boolean))).join(', ') || 'sem tipo'})` };
+  }
   const abertas = pend.filter(emAndamento).length, vencidas = pend.filter((q) => q.vencida && emAndamento(q)).length, aValidar = pend.length - abertas;
   const partes = [];
   if (abertas) partes.push(`${abertas} em aberto`);
@@ -153,7 +158,7 @@ function termometroTratativas(e) {
 
 /** Junta os termômetros. pesos/cortes opcionais (config do admin). */
 function calcularRisco(termometros, pesos = PESOS_PADRAO, cortes = CORTES_PADRAO) {
-  const usados = TERMOMETROS.filter((t) => termometros[t] && termometros[t].pontos != null && (pesos[t] ?? 1) > 0);
+  const usados = TERMOMETROS.filter((t) => termometros[t] && termometros[t].pontos != null && !termometros[t].foraDaMedia && (pesos[t] ?? 1) > 0);   // foraDaMedia: aparece no card/ficha, não entra na média
   const semDado = TERMOMETROS_BASE.filter((t) => !termometros[t] || termometros[t].pontos == null);
   const sinalQualidade = termometros.tratativas && termometros.tratativas.sinal;   // ocorrência de qualidade já resolvida nos últimos 90 dias: avisa nos Sinais de atenção sem pesar
   if (!usados.length) return { pontos: null, nivel: 'Incompleto', parcial: true, sem_dado: semDado, alerta: false, motivos: sinalQualidade ? [sinalQualidade] : [], termometros };
