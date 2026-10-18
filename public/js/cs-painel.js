@@ -3163,10 +3163,13 @@
     return '<div class="ficha-sec">Conversa entre o Gestor(a) do departamento e o Sucesso do Cliente</div><div id="dlg-lista">' + d.map(linhaDialogoQ).join('') + '</div>' +
       (escreve ? '<div class="qa-campo"><label for="so-resp">' + (final ? 'Responder ao Gestor(a)' : 'Deixar uma observação para o Sucesso do Cliente') + ' <span class="cinza">(' + (final ? 'a resposta volta para a ocorrência no Portal do Gestor' : 'fica na conversa, aberta até finalizar') + ')</span></label><textarea id="so-resp" rows="3" maxlength="2000"></textarea><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button type="button" class="gp-footer-btn" id="so-resp-enviar" style="width:auto">' + (final ? 'Enviar resposta' : 'Enviar observação') + '</button><span class="cinza" id="so-resp-ok" style="font-size:12px"></span></div></div>' : '');
   }
-  /** Gestor(a): mensagem para quem está tratando (fica no histórico e avisa os responsáveis). */
-  function htmlMensagemGestorQ(r) {
-    if (r.etapa !== 'com_analista' || r.origem !== 'filha') return '';   // a matriz só das vinculadas não tem analista: a conversa com os analistas é nas vinculadas
-    return '<div class="qa-campo" style="margin-top:8px"><label for="gt-msg">Mensagem para quem está tratando <span class="cinza">(fica no histórico e avisa o(s) responsável(is))</span></label><div style="display:flex;gap:8px"><input type="text" id="gt-msg" maxlength="1000" style="flex:1" placeholder="Ex.: pode priorizar? o cliente cobrou de novo"><button type="button" class="gp-footer-btn" id="gt-msg-enviar" style="width:auto">Enviar</button></div><div class="pop-erro" id="gt-msg-erro" role="alert"></div></div>';
+  /** Vínculo aberto (janela do gestor(a)): Observação (vai ao analista, sem finalizar) ou Finalizar (nota final: encerra o vínculo) — o mesmo modelo das outras telas. */
+  function htmlObsFinalizarVinculoQ(r) {
+    if (r.origem !== 'filha' || ['com_analista', 'validacao_gestor'].indexOf(r.etapa) < 0) return '';
+    return '<div class="ficha-sec">Observação e finalizar</div><div class="qa-campo"><div style="display:flex;gap:18px;flex-wrap:wrap;margin:4px 0 8px"><label class="qa-dep"><input type="radio" name="gt-vf-modo" value="obs" checked> <strong>Observação</strong> <span class="cinza">(para o analista, sem finalizar)</span></label>' +
+      '<label class="qa-dep"><input type="radio" name="gt-vf-modo" value="fin"> <strong>Finalizar</strong> <span class="cinza">(nota final: encerra este vínculo)</span></label></div>' +
+      '<label for="gt-vf">Sua observação ou nota final <span class="cinza" id="gt-vf-cont">0/2000</span></label><textarea id="gt-vf" rows="4" maxlength="2000" placeholder="O analista recebe aviso e responde com uma observação. Ao finalizar, o vínculo é encerrado com esta nota."></textarea>' +
+      '<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><button type="button" class="gp-footer-btn" id="gt-vf-enviar" style="width:auto">Enviar observação ao analista</button><span class="cinza" id="gt-vf-ok" style="font-size:12px"></span></div></div>';
   }
   /** Matriz: "Observação com o analista". O gestor(a) escolhe um vínculo aberto e escreve ao analista dele; as observações do analista aparecem no andamento de cada vinculada (acima). */
   function htmlObsAnalistaQ(r) {
@@ -3217,7 +3220,7 @@
       return topo + htmlRetornos(r) + '<div class="ficha-sec">Tratativa</div><div class="qa-reg"><div class="qa-reg-txt">' + esc(r.plano_acao || '—') + '</div>' +
         '<div class="qa-reg-rod">Responsáve' + (nomesResp(r).length > 1 ? 'is' : 'l') + ': <strong>' + esc(nomesResp(r).join(', ') || (((r.filhas || []).length) ? 'conduzida pelas ocorrências vinculadas' : '—')) + '</strong> · departamento ' + esc(rotuloDepto(r.tratativa_depto || '')) + ' · prazo ' + data(r.prazo) + (r.tratativa_definida_por ? ' · definida por ' + esc(r.tratativa_definida_por) : '') + (r.liberada_em ? ' · aberta ao analista em ' + dataHora(r.liberada_em) : '') + '</div>' +
         (r.gestor_obs ? '<div class="qa-reg-trat"><strong>Observação:</strong> ' + esc(r.gestor_obs) + '</div>' : '') + '</div>' +
-        avisoRespostaFinalQ(r) + htmlRespostaFinalQ(r) + (podeFilha ? '<div style="margin:8px 0">' + btnFilha + '</div>' : '') + htmlMensagemGestorQ(r) +
+        avisoRespostaFinalQ(r) + htmlRespostaFinalQ(r) + (podeFilha ? '<div style="margin:8px 0">' + btnFilha + '</div>' : '') + htmlObsFinalizarVinculoQ(r) +
         '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="gt-cancel">Fechar</button></div>';
     }
     return topo + htmlRespostaFinalQ(r) + '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="gt-cancel">Fechar</button></div>';
@@ -3258,15 +3261,24 @@
         oa.value = ''; $('gt-oa-cont').textContent = '0/1000'; okl.textContent = '✔ Enviada. O analista recebe aviso e responde com uma observação no vínculo dele.';
       });
     }
-    if ($('gt-msg-enviar')) $('gt-msg-enviar').addEventListener('click', async function () {
-      var t = $('gt-msg').value.trim(), er = $('gt-msg-erro'); er.textContent = '';
-      if (t.length < 3) { er.textContent = 'Escreva a mensagem (mínimo de 3 caracteres).'; return; }
-      var x = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id) + '/mensagem', { texto: t });
-      if (!x.ok) { er.textContent = x.j.error || 'Não foi possível enviar a mensagem.'; return; }
-      var regsM = (estado.g && estado.g.dados && estado.g.dados.registros) || [];
-      regsM.forEach(function (q, i) { if (String(q.id) === String(r.id) && x.j.registro) regsM[i] = x.j.registro; });
-      fechar(); abrirOcorrenciaGestor(r.id);   // a janela volta com a mensagem já no histórico
-    });
+    if ($('gt-vf-enviar')) {   // vínculo: Observação (ao analista) ou Finalizar (encerra o vínculo)
+      var vf = $('gt-vf'), urlVf = '/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id) + '/resposta-final';
+      var modoVf = function () { var x = document.querySelector('input[name="gt-vf-modo"]:checked'); return x ? x.value : 'obs'; };
+      var rotuloVf = function () { $('gt-vf-enviar').textContent = modoVf() === 'fin' ? 'Finalizar este vínculo' : 'Enviar observação ao analista'; };
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="gt-vf-modo"]'), function (i) { i.addEventListener('change', rotuloVf); });
+      vf.addEventListener('input', function () { $('gt-vf-cont').textContent = vf.value.length + '/2000'; });
+      $('gt-vf-enviar').addEventListener('click', async function () {
+        var okv = $('gt-vf-ok'); okv.textContent = ''; var finV = modoVf() === 'fin';
+        if (vf.value.trim().length < (finV ? 5 : 3)) { okv.textContent = finV ? 'Escreva a nota final (mínimo de 5 caracteres).' : 'Escreva a observação (mínimo de 3 caracteres).'; return; }
+        if (finV && !window.confirm('Finalizar este vínculo? Ele é encerrado com esta nota, mesmo que o analista ainda não tenha finalizado.')) return;
+        var xv = await postarQ(urlVf, { acao: finV ? 'finalizar' : 'observacao', texto: vf.value });
+        if (!xv.ok) { okv.textContent = xv.j.error || 'Não foi possível enviar.'; return; }
+        if (finV) { estado.g.dados = null; fechar(); desenharGestor(); return; }
+        var regsV = (estado.g && estado.g.dados && estado.g.dados.registros) || [];
+        regsV.forEach(function (q, i) { if (String(q.id) === String(r.id) && xv.j.registro) regsV[i] = xv.j.registro; });
+        fechar(); abrirOcorrenciaGestor(r.id);   // a janela volta com a observação já no histórico
+      });
+    }
     if ($('gt-filha')) $('gt-filha').addEventListener('click', function () { abrirFilhaGestor(r, function (n) {   // a janela da original continua aberta: dá para salvar/abrir a original e abrir outras vinculadas
       if (n.original && n.original.etapa !== r.etapa) {   // a primeira vinculada pôs a original em andamento: recarrega a janela com os dados novos
         var regs0 = (estado.g && estado.g.dados && estado.g.dados.registros) || [];

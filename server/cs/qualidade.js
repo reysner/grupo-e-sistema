@@ -1351,8 +1351,36 @@ router.post('/gestor/ocorrencias/:id/mensagem', async (req, res) => {
 router.post('/gestor/ocorrencias/:id/resposta-final', async (req, res) => {
   try {
     await garantirSchema();
-    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, origem, departamentos, fila, assunto, cliente_nome, ocultar_empresa');
+    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, origem, departamentos, fila, assunto, cliente_nome, ocultar_empresa, analista_id, pai_id');
     if (!reg) return res.status(404).json({ error: 'Ocorrência não encontrada.' });
+    if (reg.origem === 'filha') {   // vínculo: Observação vai ao analista; Finalizar encerra o vínculo (o gestor(a) dá a última nota)
+      if (!(await podeCancelarOuReabrir(req, reg))) return res.status(403).json({ error: 'Só o gestor do departamento, o gestor final ou a administração agem neste vínculo.' });
+      if (['encerrada', 'cancelada'].includes(reg.etapa)) return res.status(409).json({ error: 'Este vínculo já foi encerrado ou cancelado.' });
+      const texto0 = String((req.body && req.body.texto) == null ? '' : req.body.texto).replace(/\r\n/g, '\n').trim();
+      const emp = reg.ocultar_empresa ? 'Empresa não informada' : (reg.cliente_nome || 'Empresa');
+      if (!(req.body && req.body.acao === 'finalizar')) {
+        if (texto0.length < 3) return res.status(400).json({ error: 'Escreva a observação (mínimo de 3 caracteres).' });
+        if (texto0.length > MAX_NOTA) return res.status(400).json({ error: 'A observação passa de ' + MAX_NOTA + ' caracteres.' });
+        await registrar(reg.id, req.user.name, 'nota', texto0);
+        avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Observação do gestor', texto: (req.user.name || 'O gestor') + ' — ' + emp + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(texto0, 120), url: '/cs?aba=analista', tag: 'msg-' + reg.id + '-' + Date.now() }, req.user.id);
+        return res.json({ ok: true, registro: await registroCompleto(reg.id) });
+      }
+      const vf = validarEncerramento({ nota: texto0 });
+      if (!vf.ok) return res.status(400).json({ error: vf.erro });
+      if (!['com_analista', 'validacao_gestor'].includes(reg.etapa)) return res.status(409).json({ error: 'Este vínculo não está em andamento.' });
+      const idsAn = await idsDosResponsaveis(reg.id, reg.analista_id);   // antes de mudar
+      const upF = await pool.query(`UPDATE cs_qualidade_registros SET etapa = 'encerrada', status = $1, validacao_nota = $2, validacao_obs = NULL, validacao_em = NOW(), validacao_por = $3, validado_em = NOW(), validado_por = $3,
+          encerrada_em = NOW(), encerrada_por = $3, resolvido_em = COALESCE(resolvido_em, NOW()), resolvido_por = COALESCE(resolvido_por, $3), atualizado_em = NOW() WHERE id = $4 AND etapa = $5`, [ETAPA_STATUS.encerrada, vf.valores.nota, req.user.name || null, reg.id, reg.etapa]);
+      if (!upF.rowCount) return res.status(409).json({ error: JA_MUDOU });
+      await registrar(reg.id, req.user.name, 'gestor_validou', textoNota(vf.valores));
+      if (reg.pai_id) {
+        await registrar(reg.pai_id, req.user.name, 'nota', 'Ocorrência vinculada encerrada: ' + (reg.assunto || ''));
+        await tentarAvancarParaValidacao(reg.pai_id, req.user.name, null, req.user.id);
+      }
+      avisarPush(async () => idsAn, { titulo: 'Vínculo encerrado pelo gestor', texto: emp + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(vf.valores.nota, 100), url: '/cs?aba=analista', tag: 'venc-' + reg.id }, req.user.id);
+      refrescarRisco();
+      return res.json({ ok: true, finalizada: true });
+    }
     if (reg.origem !== 'modulo') return res.status(400).json({ error: 'A resposta final é da ocorrência original (a matriz).' });
     if (!(await podeCancelarOuReabrir(req, reg))) return res.status(403).json({ error: 'Só o gestor do departamento, o gestor final ou a administração deixam a resposta final.' });
     if (['encerrada', 'cancelada'].includes(reg.etapa)) return res.status(409).json({ error: 'Esta ocorrência já foi encerrada ou cancelada.' });
