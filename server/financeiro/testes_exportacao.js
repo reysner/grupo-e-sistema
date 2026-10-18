@@ -704,6 +704,21 @@ const semLixo = (e, nome) => {
     assert.ok(C.t.htmlVinculos(m).includes('Polyanna: Liguei para o cliente'), 'o andamento da vinculada aparece na matriz');
     assert.ok(C.t.htmlOcorrenciaSucesso(m, true).includes('Liguei para o cliente'), 'e o gestor final do Sucesso do Cliente vê no Portal dele');
   });
+  await teste('cs: matriz com duas conversas — observação com o analista (no vínculo aberto) e observação com o Sucesso do Cliente, mais Finalizar', () => {
+    const f = (id, etapa, nome) => ({ id, assunto: 'Vínculo ' + id, etapa, departamentos: ['Pessoal'], prazo: '2026-10-20', analista_nome: nome, anotacoes: [{ em: '2026-10-18T12:00:00Z', por: nome, texto: 'Liguei e aguardo o retorno' }] });
+    const base = { id: 'm', origem: 'modulo', etapa: 'com_analista', assunto: 'A', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', plano_acao: 'Conduzida pelas ocorrências vinculadas', responsaveis: [], dialogo: [], filhas: [f('f1', 'com_analista', 'Polyanna'), f('f2', 'encerrada', 'João')] };
+    const g = C.t.htmlTratativaGestor(base, []);
+    assert.ok(g.includes('Observação com o analista') && g.includes('id="gt-oa-para"') && g.includes('id="gt-oa-enviar"') && g.includes('Polyanna — Vínculo f1') && !g.includes('João — Vínculo f2'), 'só os vínculos abertos recebem observação do gestor');
+    assert.ok(g.includes('Polyanna: Liguei e aguardo o retorno'), 'as observações do analista aparecem no andamento do vínculo, dentro da matriz');
+    assert.ok(g.includes('Resposta final ao Sucesso do Cliente') && g.includes('com o Sucesso do Cliente, sem finalizar') && g.includes('name="gt-rf-modo" value="fin"'), 'a conversa com o Sucesso do Cliente e o Finalizar continuam na mesma matriz');
+    const semVinc = C.t.htmlTratativaGestor(Object.assign({}, base, { etapa: 'registrada', filhas: [] }), []);
+    assert.ok(semVinc.includes('Observação com o analista') && semVinc.includes('Abra uma ocorrência vinculada para conversar com o analista') && !semVinc.includes('id="gt-oa-enviar"'), 'sem vínculo: explica como falar com o analista');
+    const fechados = C.t.htmlTratativaGestor(Object.assign({}, base, { filhas: [f('f2', 'encerrada', 'João')] }), []);
+    assert.ok(fechados.includes('Todas as vinculadas estão encerradas') && !fechados.includes('id="gt-oa-enviar"'), 'vínculos fechados podem ficar fechados: sem caixa');
+    assert.ok(!C.t.htmlTratativaGestor(Object.assign({}, base, { etapa: 'encerrada' }), []).includes('Observação com o analista'), 'depois de encerrada não aparece');
+    const an = C.t.htmlOcorrenciaAnalista({ id: 'f', origem: 'filha', etapa: 'com_analista', situacao: 'em_tratamento', tipo: 'Erro', prioridade: 'Alta', departamentos: ['Pessoal'], assunto: 'V', detalhe: 'D', cliente_nome: null, criado_em: '2026-10-17T12:00:00Z', prazo: '2026-10-25', plano_acao: 'P', responsaveis: [{ analista_id: '1', nome: 'Ana', encerrado_em: null }], filhas: [], anexos: [], notas: [] }, '', '1', false);
+    assert.ok(an.includes('Observação para o gestor') && an.includes('id="ao-anotar"') && !an.includes('Anotação no meio do caminho'), 'o analista deixa observação para o gestor no vínculo');
+  });
   await teste('cs: resposta final ao Sucesso do Cliente — Observação ou Finalizar, conversa com o Gestor final no Portal dele', () => {
     const base = { id: 'm', origem: 'modulo', etapa: 'com_analista', assunto: 'A', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', plano_acao: 'Conduzida pelas ocorrências vinculadas', responsaveis: [], dialogo: [], filhas: [{ id: 'f', assunto: 'B', etapa: 'com_analista', departamentos: ['Pessoal'], prazo: '2026-10-20', analista_nome: 'P' }] };
     const emAndamento = C.t.htmlTratativaGestor(base, []);
