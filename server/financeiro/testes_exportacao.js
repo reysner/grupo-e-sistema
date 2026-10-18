@@ -241,7 +241,7 @@ const semLixo = (e, nome) => {
     C.t.estado.dados.usuario = papel2;
     const g1 = C.t.cartaoOcorrenciaQ(Object.assign(r('x4', 'aberto'), { etapa: 'registrada', fila: 'gestor', departamentos: ['Fiscal'] }));
     assert.ok(g1.includes('Etapa: <strong>registrada, aguardando análise</strong>') && g1.includes('encaminhada ao gestor de Fiscal'), 'etapa e encaminhamento');
-    assert.ok(C.t.cartaoOcorrenciaQ(Object.assign(r('x5', 'aberto'), { etapa: 'registrada', fila: 'sucesso', departamentos: ['Pessoal'] })).includes('encaminhada ao Sucesso do Cliente (departamento sem gestor)'));
+    assert.ok(C.t.cartaoOcorrenciaQ(Object.assign(r('x5', 'aberto'), { etapa: 'registrada', fila: 'sucesso', departamentos: ['Pessoal'] })).includes('encaminhada ao gestor de Pessoal (sem gestor cadastrado: o Sucesso do Cliente faz esta etapa)'));
     assert.ok(C.t.cartaoOcorrenciaQ(r('x1', 'aberto')).includes('Registrada em') && C.t.cartaoOcorrenciaQ(r('x1', 'aberto')).includes('por Larissa'), 'quem registrou e quando');
   });
   await teste('cs: o botão "Ocultar valores" aparece só para o administrador e some nos portais (Gestor, Analista e Sucesso do Cliente)', () => {

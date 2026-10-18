@@ -1716,7 +1716,7 @@
       (r.assunto ? '<div class="qa-reg-txt"><strong>' + esc(r.assunto) + '</strong></div>' : '') +
       '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
       '<div class="qa-reg-rod">Registrada em ' + dataHora(r.criado_em) + ' por ' + esc(r.criado_por || '—') + (r.prazo ? ' · prazo ' + data(r.prazo) : '') + (r.resolvido_em ? ' · resolvida em ' + dataHora(r.resolvido_em) : '') + '</div>' +
-      '<div class="qa-reg-rod">' + (r.etapa ? 'Etapa: <strong>' + esc(ROT_ETAPA_Q[r.etapa] || r.etapa) + '</strong>' : '') + (r.fila ? (r.etapa ? ' · ' : '') + (r.fila === 'gestor' ? 'encaminhada ao gestor de ' + esc(rotuloDepto((r.departamentos || [])[0])) : 'encaminhada ao Sucesso do Cliente (departamento sem gestor)') : '') + '</div>' +
+      '<div class="qa-reg-rod">' + (r.etapa ? 'Etapa: <strong>' + esc(ROT_ETAPA_Q[r.etapa] || r.etapa) + '</strong>' : '') + (r.fila ? (r.etapa ? ' · ' : '') + (r.fila === 'gestor' ? 'encaminhada ao gestor de ' + esc(rotuloDepto((r.departamentos || [])[0])) : 'encaminhada ao gestor de ' + esc(rotuloDepto((r.departamentos || [])[0])) + ' (sem gestor cadastrado: o Sucesso do Cliente faz esta etapa)') : '') + '</div>' +
       anexosQ(r) + (semAcoes ? '' : acoesOcorrenciaQ(r)) + (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '</div>';
   }
   function podeAgirQ() { return !!(estado.dados && estado.dados.usuario && ['administrador', 'usuario'].indexOf(estado.dados.usuario.papel) >= 0); }
@@ -2368,7 +2368,7 @@
   var ETAPAS_Q = ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor', 'devolutiva_cliente', 'encerrada', 'cancelada'];
   function pillEtapaQ(e) { var c = COR_ETAPA[e] || '#6b7280'; return '<span class="pill" style="color:' + c + ';border-color:' + c + '55;background:' + c + '14">' + esc(ETAPA_CURTA[e] || e || '—') + '</span>'; }
   var OBS_REGISTRO = 'Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.';
-  function destinoCurto(r) { return r.fila === 'gestor' ? 'Gestor de ' + rotuloDepto((r.departamentos || [])[0]) : r.fila === 'sucesso' ? 'Sucesso do Cliente' : '—'; }
+  function destinoCurto(r) { return r.fila === 'gestor' ? 'Gestor de ' + rotuloDepto((r.departamentos || [])[0]) : r.fila === 'sucesso' ? ((r.departamentos || [])[0] && (r.departamentos || [])[0] !== 'Sucesso' ? 'Gestor de ' + rotuloDepto((r.departamentos || [])[0]) + ' (sem gestor cadastrado: Sucesso do Cliente faz esta etapa)' : 'Sucesso do Cliente') : '—'; }
   function htmlMinhasOcorrencias(lista) {
     var corpo = (lista || []).map(function (r) {
       return '<tr><td>' + dataHora(r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td>' +

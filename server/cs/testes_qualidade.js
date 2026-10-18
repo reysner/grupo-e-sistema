@@ -111,6 +111,7 @@ teste('encaminhamento: vai ao gestor do departamento escolhido; sem gestor, ao S
   assert.strictEqual(destinoDaOcorrencia('Pessoal', [{ papel: 'diretor', name: 'Só diretor' }]).fila, 'sucesso');
   assert.strictEqual(textoDestino('Fiscal', um), 'Encaminhada ao gestor de Fiscal: Eduardo, Denisa.');
   assert.strictEqual(textoDestino('Sucesso', { fila: 'sucesso', gestores: [] }), 'Sucesso do Cliente ainda não tem gestor cadastrado: encaminhada ao Sucesso do Cliente.');
+  assert.strictEqual(textoDestino('Pessoal', { fila: 'sucesso', gestores: [] }), 'Encaminhada ao gestor de Pessoal. Como ainda não há gestor cadastrado, o Sucesso do Cliente faz esta etapa (e acompanha o caso até o fim).', 'sem gestor: o texto continua dizendo gestor do departamento');
 });
 teste('prazo da ocorrência: administrador ou gestor/diretor do departamento; ninguém mais', () => {
   assert.strictEqual(podeAlterarPrazo({ role: 'administrador' }, ['Fiscal'], []), true);

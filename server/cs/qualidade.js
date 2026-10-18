@@ -165,7 +165,9 @@ function destinoDaOcorrencia(departamento, gestores) {
 function textoDestino(departamento, dest) {
   return dest.fila === 'gestor'
     ? 'Encaminhada ao gestor de ' + rotuloDepto(departamento) + ': ' + dest.gestores.join(', ') + '.'
-    : rotuloDepto(departamento) + ' ainda não tem gestor cadastrado: encaminhada ao Sucesso do Cliente.';
+    : departamento === 'Sucesso'
+      ? 'Sucesso do Cliente ainda não tem gestor cadastrado: encaminhada ao Sucesso do Cliente.'
+      : 'Encaminhada ao gestor de ' + rotuloDepto(departamento) + '. Como ainda não há gestor cadastrado, o Sucesso do Cliente faz esta etapa (e acompanha o caso até o fim).';
 }
 /** Quem muda o prazo de uma ocorrência: a administração ou o gestor/diretor de um dos departamentos dela. */
 function podeAlterarPrazo(user, departamentos, deptosDoUsuario) {
