@@ -748,18 +748,6 @@ router.get('/resumo', async (req, res) => {
   } catch (e) { console.error('[qualidade] GET /resumo falhou:', e); res.status(500).json({ error: 'Erro ao montar o módulo Qualidade.' }); }
 });
 
-/** Lançamentos dos últimos dias (todos os analistas), para o aviso de "novos" no módulo Qualidade. */
-router.get('/recentes', async (req, res) => {
-  if (!req.user || req.user.role !== 'administrador') return res.status(403).json({ error: 'Só o administrador vê os lançamentos de todos os analistas.' });
-  try {
-    await garantirSchema();
-    const dias = Math.min(30, Math.max(1, parseInt(req.query.dias, 10) || 7));
-    const { rows } = await pool.query(
-      `SELECT ${COLUNAS} ${DE} WHERE r.criado_em >= NOW() - ($1 || ' days')::interval AND r.status <> 'cancelado' ORDER BY r.criado_em DESC LIMIT 30`, [String(dias)]);
-    res.json({ dias, registros: comSituacao(rows) });
-  } catch (e) { console.error('[qualidade] GET /recentes falhou:', e); res.status(500).json({ error: 'Erro ao ler os lançamentos recentes.' }); }
-});
-
 router.get('/analista/:id', async (req, res, next) => {
   if (req.params.id === 'ocorrencias') return next();   // é a rota do Portal do Analista (mais abaixo), não o id de um analista
   try {

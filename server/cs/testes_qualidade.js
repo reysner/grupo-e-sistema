@@ -136,7 +136,7 @@ teste('lista branca do gestor/analista: registrar, ver as próprias, perfil, ges
   const no = (m, c) => assert.strictEqual(rotaAbertaGestorAnalista(m, c), false, m + ' ' + c);
   ['/opcoes', '/empresas', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/anexo/abc'].forEach((c) => ok('GET', c));
   ok('GET', '/empresas?q=ab'); ok('POST', '/ocorrencias'); ok('POST', '/ocorrencias/uuid-1/anexo'); ok('POST', '/gestor/ocorrencias/uuid-1/abrir'); ok('PUT', '/gestor/ocorrencias/uuid-1/tratativa');
-  ['/resumo', '/recentes', '/tipos', '/ocorrencias', '/cliente/123', '/analista/7', '/vinculo/1'].forEach((c) => no('GET', c));
+  ['/resumo', '/tipos', '/ocorrencias', '/cliente/123', '/analista/7', '/vinculo/1'].forEach((c) => no('GET', c));
   ['/analista/ocorrencias', '/sucesso/ocorrencias'].forEach((c) => ok('GET', c));
   ['/analista/ocorrencias/u1/nota', '/analista/ocorrencias/u1/encerrar', '/gestor/ocorrencias/u1/validar', '/gestor/ocorrencias/u1/devolver', '/sucesso/ocorrencias/u1/encerrar'].forEach((c) => ok('POST', c));
   ok('POST', '/gestor/ocorrencias/u1/excluir'); no('GET', '/gestor/ocorrencias/u1/excluir'); no('DELETE', '/gestor/ocorrencias/u1');
