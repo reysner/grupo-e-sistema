@@ -3115,7 +3115,7 @@
   /** Uma fala da conversa entre o gestor(a) e o Gestor final. */
   function linhaDialogoQ(m) {
     var final = m.lado === 'final';
-    return '<div class="qa-reg-trat"><strong>' + (final ? 'Gestor(a) Sucesso do Cliente' : 'Gestor(a)') + (m.por ? ' (' + esc(m.por) + ')' : '') + ' · ' + dataHora(m.em) + ':</strong> ' + esc(m.texto) + '</div>';
+    return '<div class="qa-reg-trat"><strong>' + (final ? 'Gestor(a) CS' : 'Gestor(a)') + (m.por ? ' (' + esc(m.por) + ')' : '') + ' · ' + dataHora(m.em) + ':</strong> ' + esc(m.texto) + '</div>';
   }
   /** Matriz: "Resposta final ao Sucesso do Cliente" com duas escolhas: Observação (fala com o Gestor final sem finalizar; ele responde no Portal do Sucesso do Cliente e a resposta volta aqui)
    *  ou Finalizar (nota final: a matriz segue para o Gestor final). Só vale a escolha Finalizar com as vinculadas encerradas e nenhum analista ainda tratando. */

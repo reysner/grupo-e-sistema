@@ -729,7 +729,7 @@ const semLixo = (e, nome) => {
     const antes = C.t.htmlTratativaGestor(Object.assign({}, base, { etapa: 'registrada', filhas: [] }), []);
     assert.ok(antes.includes('Resposta final ao Sucesso do Cliente') && !antes.includes('id="gt-plano"') && !/value="fin" disabled/.test(antes), 'antes de tudo: o gestor(a) pode finalizar sozinho, sem formulário de tratativa');
     const conv = C.t.htmlTratativaGestor(Object.assign({}, base, { dialogo: [{ em: '2026-10-18T12:00:00Z', por: 'Denisa', lado: 'gestor', texto: 'Precisa de apoio' }, { em: '2026-10-18T13:00:00Z', por: 'Reysner', lado: 'final', texto: 'Pode seguir' }] }), []);
-    assert.ok(conv.includes('Gestor(a) (Denisa)') && conv.includes('Precisa de apoio') && conv.includes('Gestor(a) Sucesso do Cliente (Reysner)') && conv.includes('Pode seguir'), 'a conversa aparece na matriz');
+    assert.ok(conv.includes('Gestor(a) (Denisa)') && conv.includes('Precisa de apoio') && conv.includes('Gestor(a) CS (Reysner)') && conv.includes('Pode seguir'), 'a conversa aparece na matriz');
     assert.ok(!C.t.htmlTratativaGestor(Object.assign({}, base, { origem: 'filha', pai_id: 'm' }), []).includes('gt-rf-enviar') && !C.t.htmlTratativaGestor(Object.assign({}, base, { etapa: 'encerrada' }), []).includes('gt-rf-enviar'), 'só na matriz e só enquanto aberta');
     const so = C.t.htmlOcorrenciaSucesso(Object.assign({}, base, { dialogo: [{ em: '2026-10-18T12:00:00Z', por: 'Denisa', lado: 'gestor', texto: 'Precisa de apoio' }] }), true);
     assert.ok(so.includes('Conversa entre o Gestor(a) do departamento e o Sucesso do Cliente') && so.includes('Precisa de apoio') && so.includes('id="so-resp-enviar"') && so.includes('a resposta volta para a ocorrência no Portal do Gestor'), 'o Gestor final vê e responde');
