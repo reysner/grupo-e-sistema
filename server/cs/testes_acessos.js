@@ -110,6 +110,8 @@ teste('logs: cada ação que muda algo vira uma frase clara (e consulta nunca vi
   assert.strictEqual(d('PUT', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/tratativa', {}).registroId, 'abc');
   assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/abrir').acao, 'abrir');
   assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/mensagem', { texto: 'Pode priorizar?' }).texto, 'Deixou uma mensagem para quem está tratando: Pode priorizar?');
+  assert.strictEqual(d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/resposta-final', { acao: 'observacao', texto: 'x' }).texto, 'Deixou uma observação para o Gestor final');
+  assert.deepStrictEqual([d('POST', '/api/cs/painel/qualidade/gestor/ocorrencias/abc/resposta-final', { acao: 'finalizar', texto: 'Tudo certo' }).acao, d('POST', '/api/cs/painel/qualidade/sucesso/ocorrencias/abc/responder', { texto: 'ok' }).texto], ['encerrar', 'Respondeu à observação do gestor (Gestor final)']);
   const ap = d('POST', '/api/cs/painel/qualidade/sucesso/ocorrencias/abc/apontar', { analista_id: '7' });
   assert.deepStrictEqual([ap.acao, ap.registroId, ap.analistaId, ap.texto], ['editar', 'abc', '7', 'Corrigiu o analista apontado para'], 'a correção do analista apontado vai para os logs');
   assert.strictEqual(d('POST', '/api/cs/painel/qualidade/sucesso/ocorrencias/abc/apontar', { analista_id: '__nenhum' }).texto, 'Tirou o analista apontado (ninguém)');

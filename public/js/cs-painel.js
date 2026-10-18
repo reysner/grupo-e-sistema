@@ -2956,7 +2956,7 @@
   function htmlOcorrenciaSucesso(r, final) { return htmlOcorrenciaSucessoBase(r, final) + ((final || perfilCs().admin) ? htmlAcoesOcorrencia(r, true) : ''); }
   function htmlOcorrenciaSucessoBase(r, final) {
     var topo = '<div class="qa-modal-topo"><strong style="font-size:20px;color:#256050">' + esc(r.assunto || 'Ocorrência') + '</strong><button type="button" class="qa-x" id="so-fechar" aria-label="Fechar">✕</button></div>' +
-      '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' + cartaoOcorrenciaQ(r, true) + (r.plano_acao ? htmlPlanoGestor(r) : '') + htmlRetornos(r) + htmlVinculos(r) + (r.resposta_final_gestor ? '<div class="ficha-sec">Nota do Gestor(a) para você</div><div class="qa-reg"><div class="qa-reg-txt">' + esc(r.resposta_final_gestor) + '</div></div>' : '') + htmlApontadoQ(r, final);
+      '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' + cartaoOcorrenciaQ(r, true) + (r.plano_acao ? htmlPlanoGestor(r) : '') + htmlRetornos(r) + htmlVinculos(r) + htmlDialogoSucessoQ(r, final) + htmlApontadoQ(r, final);
     if (r.etapa !== 'devolutiva_cliente') return topo + '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="so-cancel">Fechar</button></div>';
     if (!final) return topo + '<div class="qa-obs" style="margin:10px 0">ℹ Esta ocorrência está na devolutiva ao cliente. Faça as formalizações com o cliente; <strong>só o gestor final encerra o processo</strong>.</div><div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="so-cancel">Fechar</button></div>';
     return topo + '<div class="ficha-sec">Devolutiva ao cliente e encerramento</div>' + formNotaObs('so', 'Nota (o que foi devolvido ao cliente)') +
@@ -2971,6 +2971,14 @@
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Ocorrência">' + htmlOcorrenciaSucesso(r, !!d.final) + '</div>';
     $('so-fechar').addEventListener('click', fechar); $('so-cancel').addEventListener('click', fechar);
     if (d.final || perfilCs().admin) ligarAcoesOcorrencia(r, fechar, function () { estado.s.dados = null; desenharSucesso(); });
+    if ($('so-resp-enviar')) $('so-resp-enviar').addEventListener('click', async function () {   // o Gestor final responde ao gestor(a)
+      var t = $('so-resp').value.trim(), okl = $('so-resp-ok'); okl.textContent = '';
+      if (t.length < 3) { okl.textContent = 'Escreva a resposta (mínimo de 3 caracteres).'; return; }
+      var x = await postarQ('/api/cs/painel/qualidade/sucesso/ocorrencias/' + encodeURIComponent(r.id) + '/responder', { texto: t });
+      if (!x.ok) { okl.textContent = x.j.error || 'Não foi possível responder.'; return; }
+      var lista = $('dlg-lista'); if (lista && x.j.dialogo) lista.insertAdjacentHTML('beforeend', linhaDialogoQ(x.j.dialogo));
+      $('so-resp').value = ''; okl.textContent = '✔ Resposta enviada. O gestor(a) vê na ocorrência, no Portal do Gestor.';
+    });
     if ($('so-apontar')) $('so-apontar').addEventListener('click', async function () {
       var v = $('so-apontado').value, er = $('so-apontar-erro'); er.textContent = '';
       if (v === '__escolha') { er.textContent = 'Escolha o analista.'; return; }
@@ -3052,7 +3060,7 @@
     var optA = op('', 'Todos os analistas', !f.analista) + listaAnalistasFiltro(d, regs, f.depto).map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
     var optE = op('', 'Todas as etapas', !f.etapa) + ETAPAS_Q.map(function (e) { return op(e, ETAPA_CURTA[e], f.etapa === e); }).join('') + op('vencidas', 'Vencidas', f.etapa === 'vencidas');
     var linha = function (r, filho, nf) {
-      var acao = r.etapa === 'registrada' ? 'Analisar e criar tratativa' : r.etapa === 'tratativa_definida' ? 'Editar / abrir para o analista' : 'Ver';
+      var acao = r.origem !== 'filha' && r.etapa === 'registrada' ? 'Analisar' : r.etapa === 'tratativa_definida' ? 'Editar / abrir para o analista' : 'Ver';
       return '<tr><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
         '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
         '<td style="white-space:normal;min-width:240px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + (nf ? botaoFilhasQ(r, nf) : '') + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 140)) + '</div>' + anexosQ(r) + '</td>' +
@@ -3098,16 +3106,39 @@
   }
   /** Janela da ocorrência no Portal do Gestor: detalhes e a tratativa (editável até abrir para o analista). */
   function htmlTratativaGestor(r, analistas) { return htmlTratativaGestorBase(r, analistas) + htmlAcoesOcorrencia(r); }
-  /** Matriz: o gestor(a) deixa a qualquer momento a nota/observação para o Gestor final do Sucesso do Cliente (a resposta final). Fica salva; ao encerrar, a caixa da resposta final já vem com ela. */
+  /** Uma fala da conversa entre o gestor(a) e o Gestor final. */
+  function linhaDialogoQ(m) {
+    var final = m.lado === 'final';
+    return '<div class="qa-reg-trat"><strong>' + (final ? 'Gestor final' : 'Gestor(a)') + (m.por ? ' (' + esc(m.por) + ')' : '') + ' · ' + dataHora(m.em) + ':</strong> ' + esc(m.texto) + '</div>';
+  }
+  /** Matriz: "Resposta final ao Sucesso do Cliente" com duas escolhas: Observação (fala com o Gestor final sem finalizar; ele responde no Portal do Sucesso do Cliente e a resposta volta aqui)
+   *  ou Finalizar (nota final: a matriz segue para o Gestor final). Só vale a escolha Finalizar com as vinculadas encerradas e nenhum analista ainda tratando. */
   function htmlRespostaFinalQ(r) {
-    if (r.origem !== 'modulo' || ['registrada', 'tratativa_definida', 'com_analista'].indexOf(r.etapa) < 0) return '';
-    var t = r.resposta_final_gestor || '';
-    return '<div class="ficha-sec">Resposta final ao Sucesso do Cliente</div><div class="qa-campo"><label for="gt-rf">Sua nota ou observação para o Gestor final <span class="cinza" id="gt-rf-cont">' + t.length + '/2000</span></label><textarea id="gt-rf" rows="4" maxlength="2000" placeholder="Pode deixar aqui a qualquer momento. Ao encerrar, esta nota segue com a ocorrência para o Gestor final do Sucesso do Cliente.">' + esc(t) + '</textarea>' +
-      '<div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button type="button" class="gp-footer-btn" id="gt-rf-salvar" style="width:auto">Salvar nota</button><span class="cinza" id="gt-rf-ok" style="font-size:12px"></span></div></div>';
+    if (r.origem === 'filha' || ['encerrada', 'cancelada'].indexOf(r.etapa) >= 0) return '';
+    var abertas = (r.filhas || []).filter(function (f) { return f.etapa !== 'encerrada'; }).length;
+    var tratando = r.etapa === 'com_analista' && (r.responsaveis || []).some(function (x) { return !x.encerrado_em; });
+    var podeFin = ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor'].indexOf(r.etapa) >= 0 && !abertas && !tratando;
+    var dica = abertas ? 'Finalizar fica disponível quando as vinculadas forem encerradas.' : tratando ? 'Finalizar fica disponível quando os analistas encerrarem.' : '';
+    var conversa = (r.dialogo || []).map(linhaDialogoQ).join('');
+    var escolha =
+      '<div style="display:flex;gap:18px;flex-wrap:wrap;margin:4px 0 8px"><label class="qa-dep"><input type="radio" name="gt-rf-modo" value="obs" checked> <strong>Observação</strong> <span class="cinza">(leva ao Gestor final sem finalizar)</span></label>' +
+      '<label class="qa-dep"' + (podeFin ? '' : ' title="' + esc(dica) + '"') + '><input type="radio" name="gt-rf-modo" value="fin"' + (podeFin ? '' : ' disabled') + '> <strong>Finalizar</strong> <span class="cinza">(' + (podeFin ? 'nota final: segue para o Gestor final' : esc(dica)) + ')</span></label></div>';
+    return '<div class="ficha-sec">Resposta final ao Sucesso do Cliente</div><div class="qa-campo">' + escolha +
+      '<label for="gt-rf">' + 'Sua observação ou nota final' + ' <span class="cinza" id="gt-rf-cont">0/2000</span></label><textarea id="gt-rf" rows="4" maxlength="2000" placeholder="O Gestor final vê no Portal do Sucesso do Cliente, pode responder, e a resposta volta para esta ocorrência."></textarea>' +
+      '<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><button type="button" class="gp-footer-btn" id="gt-rf-enviar" style="width:auto">Enviar observação ao Gestor final</button><span class="cinza" id="gt-rf-ok" style="font-size:12px"></span></div></div>' +
+      '<div id="dlg-lista">' + conversa + '</div>';
+  }
+  /** Portal do Sucesso do Cliente: a conversa com o Gestor(a) e a caixa para o Gestor final responder. */
+  function htmlDialogoSucessoQ(r, final) {
+    if (r.origem !== 'modulo') return '';
+    var d = r.dialogo || [], aberta = ['encerrada', 'cancelada'].indexOf(r.etapa) < 0;
+    if (!d.length && !(final && aberta)) return '';
+    return '<div class="ficha-sec">Conversa com o Gestor(a)</div><div id="dlg-lista">' + d.map(linhaDialogoQ).join('') + '</div>' +
+      (final && aberta ? '<div class="qa-campo"><label for="so-resp">Responder ao Gestor(a) <span class="cinza">(a resposta volta para a ocorrência no Portal do Gestor)</span></label><textarea id="so-resp" rows="3" maxlength="2000"></textarea><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button type="button" class="gp-footer-btn" id="so-resp-enviar" style="width:auto">Enviar resposta</button><span class="cinza" id="so-resp-ok" style="font-size:12px"></span></div></div>' : '');
   }
   /** Gestor(a): mensagem para quem está tratando (fica no histórico e avisa os responsáveis). */
   function htmlMensagemGestorQ(r) {
-    if (r.etapa !== 'com_analista') return '';
+    if (r.etapa !== 'com_analista' || (r.origem !== 'filha' && !nomesResp(r).length)) return '';   // a matriz só das vinculadas não tem analista: a conversa com os analistas é nas vinculadas
     return '<div class="qa-campo" style="margin-top:8px"><label for="gt-msg">Mensagem para quem está tratando <span class="cinza">(fica no histórico e avisa o(s) responsável(is))</span></label><div style="display:flex;gap:8px"><input type="text" id="gt-msg" maxlength="1000" style="flex:1" placeholder="Ex.: pode priorizar? o cliente cobrou de novo"><button type="button" class="gp-footer-btn" id="gt-msg-enviar" style="width:auto">Enviar</button></div><div class="pop-erro" id="gt-msg-erro" role="alert"></div></div>';
   }
   /** Matriz conduzida só pelas vinculadas: continua aberta para a resposta final do gestor(a), que vai ao Gestor final do Sucesso do Cliente. */
@@ -3115,7 +3146,7 @@
     var fs = r.filhas || [];
     if (r.origem === 'filha' || r.etapa !== 'com_analista' || !fs.length || nomesResp(r).length) return '';
     var enc = fs.filter(function (f) { return f.etapa === 'encerrada'; }).length;
-    return '<div class="qa-obs" style="margin:8px 0">✔ Esta ocorrência continua aberta para a <strong>resposta final</strong>: ela é conduzida pelas vinculadas (' + enc + ' de ' + fs.length + ' encerrada' + (fs.length === 1 ? '' : 's') + '). Quando todas forem encerradas, ela volta para você escrever a nota final e enviar ao <strong>Gestor final do Sucesso do Cliente</strong>.</div>';
+    return '<div class="qa-obs" style="margin:8px 0">ℹ Esta ocorrência é a comunicação direta com o <strong>Gestor final do Sucesso do Cliente</strong>. Converse com os analistas pelas vinculadas (' + enc + ' de ' + fs.length + ' encerrada' + (fs.length === 1 ? '' : 's') + ') e responda aqui: <strong>Observação</strong> leva ao Gestor final sem finalizar; <strong>Finalizar</strong> envia a nota final.</div>';
   }
   function htmlTratativaGestorBase(r, analistas) {
     var editavel = r.etapa === 'registrada' || r.etapa === 'tratativa_definida';
@@ -3132,6 +3163,11 @@
       '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' +
       (r.analista_origem_nome ? '<div class="qa-obs" style="margin:8px 0">Analista indicado no registro: <strong>' + esc(r.analista_origem_nome) + '</strong>. <span class="cinza">Isso fica só com você: as ocorrências vinculadas não apontam essa pessoa, a não ser que você escolha.</span></div>' : '') +
       cartaoOcorrenciaQ(r, true) + htmlVinculos(r);
+    var legado = editavel && r.etapa === 'tratativa_definida' && ((r.responsaveis || []).some(function (x) { return x.analista_id; }) || !!r.analista_nome);   // matriz antiga, com analista já definido
+    if (r.origem !== 'filha' && !legado && (editavel || (r.etapa === 'validacao_gestor' && soVinc))) {   // a matriz é só comunicação com o Gestor final: resposta final + vinculadas
+      return topo + htmlRetornos(r) + htmlRespostaFinalQ(r) + (podeFilha ? '<div style="margin:8px 0">' + btnFilha + '</div>' : '') +
+        '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="gt-cancel">Fechar</button></div>';
+    }
     if (!editavel && r.etapa === 'validacao_gestor') {
       return topo + htmlPlanoGestor(r) + htmlRetornos(r) +
         '<div class="ficha-sec">' + (soVinc ? 'Resposta final da ocorrência' : 'Validar a tratativa') + '</div>' + formNotaObs('gv', soVinc ? 'Resposta final (apanhado de tudo)' : 'Nota da validação') +
@@ -3165,15 +3201,21 @@
     var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Ocorrência">' + htmlTratativaGestor(r, estado.qAnalistas || []) + '</div>';
     $('gt-fechar').addEventListener('click', fechar); $('gt-cancel').addEventListener('click', fechar);
-    if ($('gt-rf-salvar')) {   // nota para o Gestor final (a janela não recarrega: o que já foi digitado no resto fica)
-      var rf = $('gt-rf');
+    if ($('gt-rf-enviar')) {   // Resposta final: Observação (conversa com o Gestor final) ou Finalizar
+      var rf = $('gt-rf'), urlRf = '/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id) + '/resposta-final';
+      var modoRf = function () { var x = document.querySelector('input[name="gt-rf-modo"]:checked'); return x ? x.value : 'obs'; };
+      var rotuloRf = function () { $('gt-rf-enviar').textContent = modoRf() === 'fin' ? 'Finalizar e enviar ao Gestor final' : 'Enviar observação ao Gestor final'; };
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="gt-rf-modo"]'), function (i) { i.addEventListener('change', rotuloRf); });
       rf.addEventListener('input', function () { $('gt-rf-cont').textContent = rf.value.length + '/2000'; });
-      $('gt-rf-salvar').addEventListener('click', async function () {
-        var okl = $('gt-rf-ok'); okl.textContent = '';
-        var x = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id) + '/resposta-final', { texto: rf.value });
-        if (!x.ok) { okl.textContent = x.j.error || 'Não foi possível salvar a nota.'; return; }
-        r.resposta_final_gestor = rf.value.trim() || null;
-        okl.textContent = rf.value.trim() ? '✔ Salva. O Gestor final já vê esta nota.' : '✔ Nota apagada.';
+      $('gt-rf-enviar').addEventListener('click', async function () {
+        var okl = $('gt-rf-ok'); okl.textContent = ''; var fin = modoRf() === 'fin';
+        if (rf.value.trim().length < (fin ? 5 : 3)) { okl.textContent = fin ? 'Escreva a nota final (mínimo de 5 caracteres).' : 'Escreva a observação (mínimo de 3 caracteres).'; return; }
+        if (fin && !window.confirm('Finalizar? A ocorrência segue para o Gestor final do Sucesso do Cliente com esta nota.')) return;
+        var x = await postarQ(urlRf, { acao: fin ? 'finalizar' : 'observacao', texto: rf.value });
+        if (!x.ok) { okl.textContent = x.j.error || 'Não foi possível enviar.'; return; }
+        if (fin) { estado.g.dados = null; fechar(); desenharGestor(); return; }
+        var lista = $('dlg-lista'); if (lista && x.j.dialogo) lista.insertAdjacentHTML('beforeend', linhaDialogoQ(x.j.dialogo));
+        rf.value = ''; $('gt-rf-cont').textContent = '0/2000'; okl.textContent = '✔ Observação enviada. O Gestor final vê no Portal do Sucesso do Cliente e pode responder.';
       });
     }
     if ($('gt-msg-enviar')) $('gt-msg-enviar').addEventListener('click', async function () {
@@ -3197,7 +3239,6 @@
     ligarAcoesOcorrencia(r, fechar, function () { estado.g.dados = null; desenharGestor(); });
     if ($('gv-validar')) {   // validação do que o analista tratou
       ligarContador('gv');
-      var gvn = $('gv-nota'); if (gvn && !gvn.value && r.resposta_final_gestor) { gvn.value = r.resposta_final_gestor; $('gv-cont').textContent = gvn.value.length + '/2000'; }   // a resposta final já vem com a nota que o gestor deixou
       var verro = $('gv-erro'), base = '/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id);
       var decidir = async function (acao, confirmacao) {
         verro.textContent = ''; var nota = $('gv-nota').value.trim();

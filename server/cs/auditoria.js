@@ -85,7 +85,7 @@ function descreverAcao(metodo, url, corpo) {
   if (m === 'POST' && r[0] === 'ocorrencias' && r[2] === 'anexo') return { acao: 'anexar', modulo: M, texto: 'Anexou um arquivo à ocorrência', registroId: id(1) };
   if (m === 'PUT' && r[0] === 'gestor' && r[1] === 'ocorrencias' && r[3] === 'tratativa') return { acao: 'editar', modulo: M, texto: 'Definiu a tratativa (plano, responsáveis e prazo)', registroId: id(2) };
   if (m === 'POST' && r[0] === 'gestor' && r[1] === 'ocorrencias') {
-    const ac = { abrir: ['abrir', 'Abriu a ocorrência para os analistas'], validar: ['validar', 'Validou a tratativa'], devolver: ['devolver', 'Devolveu ao analista para ajustar'], filha: ['criar', 'Abriu uma ocorrência vinculada: ' + curto(b.assunto, 100)], cancelar: ['cancelar', 'Cancelou a ocorrência: ' + curto(b.motivo, 120)], mensagem: ['editar', 'Deixou uma mensagem para quem está tratando: ' + curto(b.texto, 120)], 'resposta-final': ['editar', 'Deixou a nota para o Gestor final (resposta final)'], reabrir: ['reabrir', 'Reabriu a ocorrência: ' + curto(b.motivo, 120)] }[r[3]];
+    const ac = { abrir: ['abrir', 'Abriu a ocorrência para os analistas'], validar: ['validar', 'Validou a tratativa'], devolver: ['devolver', 'Devolveu ao analista para ajustar'], filha: ['criar', 'Abriu uma ocorrência vinculada: ' + curto(b.assunto, 100)], cancelar: ['cancelar', 'Cancelou a ocorrência: ' + curto(b.motivo, 120)], mensagem: ['editar', 'Deixou uma mensagem para quem está tratando: ' + curto(b.texto, 120)], 'resposta-final': b.acao === 'finalizar' ? ['encerrar', 'Finalizou com a resposta final ao Gestor final: ' + curto(b.texto, 120)] : ['editar', 'Deixou uma observação para o Gestor final'], reabrir: ['reabrir', 'Reabriu a ocorrência: ' + curto(b.motivo, 120)] }[r[3]];
     return ac ? { acao: ac[0], modulo: M, texto: ac[1], registroId: id(2) } : null;
   }
   if (m === 'POST' && r[0] === 'analista' && r[1] === 'ocorrencias') {
@@ -94,6 +94,7 @@ function descreverAcao(metodo, url, corpo) {
     return null;
   }
   if (m === 'POST' && r[0] === 'sucesso' && r[1] === 'ocorrencias' && r[3] === 'encerrar') return { acao: 'encerrar', modulo: M, texto: 'Encerrou o processo (gestor final)', registroId: id(2) };
+  if (m === 'POST' && r[0] === 'sucesso' && r[1] === 'ocorrencias' && r[3] === 'responder') return { acao: 'editar', modulo: M, texto: 'Respondeu à observação do gestor (Gestor final)', registroId: id(2) };
   if (m === 'POST' && r[0] === 'sucesso' && r[1] === 'ocorrencias' && r[3] === 'apontar') return { acao: 'editar', modulo: M, texto: b.analista_id === '__nenhum' ? 'Tirou o analista apontado (ninguém)' : b.analista_id ? 'Corrigiu o analista apontado para' : 'Voltou ao analista apontado no registro', registroId: id(2), analistaId: b.analista_id && b.analista_id !== '__nenhum' ? b.analista_id : undefined };
   if (r[0] === 'tipos') {
     if (m === 'POST') return { acao: 'criar', modulo: 'cs-qualidade', texto: 'Incluiu o tipo de registro "' + curto(b.nome, 40) + '" (peso ' + (b.peso == null ? '—' : b.peso) + ')' };
