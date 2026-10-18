@@ -1695,7 +1695,8 @@
   function filtroQ() { return estado.filtroQ || (estado.filtroQ = { busca: '', todos: false }); }
   async function carregarResumoQ() {
     estado.qResumo = await api('/api/cs/painel/qualidade/resumo');
-    try { estado.qRecentes = (await api('/api/cs/painel/qualidade/recentes?dias=7')).registros; } catch (e) { estado.qRecentes = []; }
+    estado.qRecentes = [];
+    if (ehAdminPainel()) { try { estado.qRecentes = (await api('/api/cs/painel/qualidade/recentes?dias=7')).registros; } catch (e) { estado.qRecentes = []; } }   // só o administrador vê os lançamentos de todos
   }
   // ── MÓDULO QUALIDADE: ocorrências, pesos e lista ──────────────────────────────────────
   var DEPS_OCORRENCIA = [['Comercial', 'Comercial'], ['Contábil', 'Contábil'], ['Financeiro', 'Financeiro'], ['Fiscal', 'Fiscal'], ['Legalização', 'Legalização'], ['Pessoal', 'Pessoal'], ['Sucesso', 'Sucesso do Cliente']];

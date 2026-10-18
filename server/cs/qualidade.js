@@ -750,6 +750,7 @@ router.get('/resumo', async (req, res) => {
 
 /** Lançamentos dos últimos dias (todos os analistas), para o aviso de "novos" no módulo Qualidade. */
 router.get('/recentes', async (req, res) => {
+  if (!req.user || req.user.role !== 'administrador') return res.status(403).json({ error: 'Só o administrador vê os lançamentos de todos os analistas.' });
   try {
     await garantirSchema();
     const dias = Math.min(30, Math.max(1, parseInt(req.query.dias, 10) || 7));
