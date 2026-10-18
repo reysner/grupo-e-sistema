@@ -104,12 +104,14 @@ teste('gestores: pessoa, departamento da lista e papel (gestor ou diretor; gesto
   assert.strictEqual(validarGestor({ user_id: 'u1', departamento: 'Marte' }).ok, false);
   assert.strictEqual(validarGestor({ user_id: 'u1', departamento: 'Sucesso', papel: 'chefe' }).ok, false);
 });
-teste('encaminhamento: vai ao gestor do departamento escolhido; sem gestor, ao Sucesso do Cliente; diretor não recebe a fila', () => {
+teste('encaminhamento: vai ao gestor e ao diretor do departamento escolhido; sem nenhum dos dois, ao Sucesso do Cliente', () => {
   const um = destinoDaOcorrencia('Fiscal', [{ papel: 'gestor', name: 'Eduardo' }, { papel: 'diretor', name: 'Diretor' }, { papel: 'gestor', name: 'Denisa' }]);
-  assert.deepStrictEqual(um, { fila: 'gestor', gestores: ['Eduardo', 'Denisa'] });
+  assert.deepStrictEqual(um, { fila: 'gestor', gestores: ['Eduardo', 'Denisa', 'Diretor'] }, 'gestor e diretor recebem');
   assert.deepStrictEqual(destinoDaOcorrencia('Pessoal', []), { fila: 'sucesso', gestores: [] });
-  assert.strictEqual(destinoDaOcorrencia('Pessoal', [{ papel: 'diretor', name: 'Só diretor' }]).fila, 'sucesso');
-  assert.strictEqual(textoDestino('Fiscal', um), 'Encaminhada ao gestor de Fiscal: Eduardo, Denisa.');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(destinoDaOcorrencia('Pessoal', [{ papel: 'diretor', name: 'Denisa' }]))), { fila: 'gestor', gestores: ['Denisa'] }, 'só diretor(a): ele é o gestor do departamento');
+  assert.strictEqual(destinoDaOcorrencia('Pessoal', [{ papel: 'final', name: 'Gestor final' }]).fila, 'sucesso', 'só o gestor final não é do departamento');
+  assert.strictEqual(textoDestino('Pessoal', destinoDaOcorrencia('Pessoal', [{ papel: 'diretor', name: 'Denisa' }])), 'Encaminhada ao gestor de Pessoal: Denisa.');
+  assert.strictEqual(textoDestino('Fiscal', um), 'Encaminhada ao gestor de Fiscal: Eduardo, Denisa, Diretor.');
   assert.strictEqual(textoDestino('Sucesso', { fila: 'sucesso', gestores: [] }), 'Sucesso do Cliente ainda não tem gestor cadastrado: encaminhada ao Sucesso do Cliente.');
   assert.strictEqual(textoDestino('Pessoal', { fila: 'sucesso', gestores: [] }), 'Encaminhada ao gestor de Pessoal. Como ainda não há gestor cadastrado, o Sucesso do Cliente faz esta etapa (e acompanha o caso até o fim).', 'sem gestor: o texto continua dizendo gestor do departamento');
 });

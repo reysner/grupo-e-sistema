@@ -159,7 +159,8 @@ function validarGestor(corpo) {
  * Diretor não recebe a fila (diretores são administradores e já enxergam tudo). entrada: lista de { papel, name }.
  */
 function destinoDaOcorrencia(departamento, gestores) {
-  const nomes = (gestores || []).filter((g) => g && g.papel === 'gestor').map((g) => g.name).filter(Boolean);
+  const por = (papel) => (gestores || []).filter((g) => g && g.papel === papel).map((g) => g.name).filter(Boolean);
+  const nomes = Array.from(new Set(por('gestor').concat(por('diretor'))));   // gestor e diretor cuidam do departamento (onde só há diretor, ele é o gestor)
   return nomes.length ? { fila: 'gestor', gestores: nomes } : { fila: 'sucesso', gestores: [] };
 }
 function textoDestino(departamento, dest) {
@@ -893,7 +894,10 @@ router.get('/avisos', async (req, res) => {
 /** Quem recebe cada aviso push (as listas saem do cadastro de gestores e de usuários; nenhuma falha aqui derruba a ação). */
 async function idsAdmins() { return (await pool.query("SELECT id::text AS id FROM users WHERE role = 'administrador' AND active = 1")).rows.map((r) => r.id); }
 async function idsGestoresDe(departamentos) {
-  return (await pool.query("SELECT g.user_id FROM cs_qualidade_gestores g JOIN users u ON u.id::text = g.user_id WHERE g.departamento = ANY($1::text[]) AND g.papel = 'gestor' AND u.active = 1", [departamentos || []])).rows.map((r) => r.user_id);
+  const rows = (await pool.query("SELECT g.user_id, g.departamento, g.papel FROM cs_qualidade_gestores g JOIN users u ON u.id::text = g.user_id WHERE g.departamento = ANY($1::text[]) AND g.papel IN ('gestor', 'diretor') AND u.active = 1", [departamentos || []])).rows;
+  const ids = [];
+  rows.forEach((r) => ids.push(r.user_id));   // gestor e diretor do departamento
+  return Array.from(new Set(ids));
 }
 async function idsSucesso() {
   return (await pool.query("SELECT g.user_id FROM cs_qualidade_gestores g JOIN users u ON u.id::text = g.user_id WHERE (g.departamento = 'Sucesso' OR g.papel = 'final') AND u.active = 1")).rows.map((r) => r.user_id);
