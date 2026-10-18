@@ -738,6 +738,14 @@ const semLixo = (e, nome) => {
     const ge = C.t.htmlGestor({ registros: [m('d', { dialogo: [dg, df] })], escopo: { todos: true }, analistas: [] }, { depto: '', analista: '', etapa: '', busca: '' });
     assert.ok(ge.includes('Resposta do Gestor(a) CS') && !so.includes('Resposta do Gestor(a) CS'), 'etiqueta na linha do Portal do Gestor quando o Sucesso respondeu');
   });
+  await teste('cs: ficha da empresa — a lista de planos não mostra a ocorrência do módulo nem os vínculos', () => {
+    const r = (id, x) => Object.assign({ id, origem: 'modulo', etapa: 'encerrada', status: 'resolvido', situacao: 'resolvido', tipo: 'Atraso', departamentos: ['Pessoal'], assunto: 'A' + id, detalhe: 'D', criado_em: '2026-10-18T12:00:00Z', anexos: [], notas: [] }, x || {});
+    const regs = [r('m', { final_nota: 'Ciente das tratativas realizadas' }), r('f', { origem: 'filha', plano_acao: 'Plano do vínculo', tratativa: 'Parecer do João' }), { id: 'p', origem: 'ficha', status: 'aberto', tipo: 'Plano de ação', detalhe: 'Plano da ficha', criado_em: '2026-10-17T12:00:00Z', anexos: [], notas: [] }];
+    const h = C.t.listaRegistrosQ(regs);
+    assert.ok(!h.includes('Parecer do João') && !h.includes('Plano do vínculo') && !h.includes('Ciente das tratativas realizadas'), 'nem o vínculo nem a ocorrência do módulo aparecem aqui (ficam na seção Qualidade)');
+    assert.ok(h.includes('Plano da ficha'), 'o plano de ação lançado na ficha continua');
+    assert.ok(C.t.listaOcorrenciasQ(regs).includes('Ciente das tratativas realizadas') || C.t.listaOcorrenciasQ(regs).includes('Atraso'), 'a seção Qualidade continua mostrando a ocorrência');
+  });
   await teste('cs: reabrir vínculo encerrado na matriz e nota de encerramento sem repetir', () => {
     const mat = { id: 'm', origem: 'modulo', etapa: 'validacao_gestor', assunto: 'A', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', responsaveis: [], dialogo: [], filhas: [{ id: 'f1', assunto: 'V1', etapa: 'encerrada', departamentos: ['Pessoal'], prazo: '2026-10-20', analista_nome: 'João', respostas: [{ nome: 'João', nota: 'Resolvido' }] }, { id: 'f2', assunto: 'V2', etapa: 'com_analista', departamentos: ['Pessoal'], prazo: '2026-10-20', analista_nome: 'Ana', respostas: [] }] };
     const v = C.t.htmlVinculos(mat, true);

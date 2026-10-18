@@ -74,6 +74,18 @@ teste('tratativas: pesa pelo tipo (dobro), vencida x1,5, a validar x0,5, resolvi
   assert.strictEqual(t([{ tipo: 'Atraso', status: 'aberto', dias: 2 }, { tipo: 'Erro', status: 'finalizada', dias: 2 }, { tipo: 'Multa', status: 'resolvido', dias: 2 }]).detalhe[0], '3 ocorrências de qualidade registradas nos últimos 90 dias (1 em aberto, 1 aguardando validação)');
 });
 
+teste('tratativas: ocorrência já resolvida nos últimos 90 dias aparece nos Sinais de atenção (sem pesar no risco)', () => {
+  const t = termometroTratativas({ qualidade: [{ tipo: 'Atraso', status: 'resolvido', dias: 2 }] });
+  assert.strictEqual(t.pontos, null, 'não pesa');
+  assert.strictEqual(t.sinal, '1 ocorrência de qualidade registrada nos últimos 90 dias (1 resolvida · Atraso)');
+  const r = calcularRisco({ financeiro: { pontos: 0, detalhe: ['f'] }, atendimento: { pontos: 0, detalhe: ['a'] }, operacional: { pontos: 0, detalhe: ['o'] }, tratativas: t });
+  assert.ok(r.motivos.includes(t.sinal), 'entra nos motivos (Sinais de atenção)');
+  assert.strictEqual(r.pontos, 0, 'e o risco continua igual');
+  const dois = termometroTratativas({ qualidade: [{ tipo: 'Erro', status: 'resolvido', dias: 5 }, { tipo: 'Multa', status: 'resolvido', dias: 6 }] });
+  assert.strictEqual(dois.sinal, '2 ocorrências de qualidade registradas nos últimos 90 dias (2 resolvidas · Erro, Multa)');
+  assert.strictEqual(termometroTratativas({ qualidade: [] }).sinal, null, 'sem ocorrência, sem sinal');
+  assert.strictEqual(termometroTratativas({ qualidade: [{ tipo: 'Atraso', status: 'resolvido', dias: 120 }] }).sinal, null, 'passou de 90 dias: sem sinal');
+});
 teste('tratativas: sem pendência fica sem dado (fora da média) e não deixa o risco parcial', () => {
   assert.strictEqual(termometroTratativas({ qualidade: [] }).pontos, null);
   assert.strictEqual(termometroTratativas({ qualidade: [{ tipo: 'Multa', status: 'resolvido', dias: 3 }] }).pontos, null);

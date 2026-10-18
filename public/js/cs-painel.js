@@ -1482,8 +1482,9 @@
   }
   function maisRecenteQ(a, b) { return String(b.criado_em || '').localeCompare(String(a.criado_em || '')); }
   /** Planos de ação da ficha: só o mais recente aparece; os anteriores ficam recolhidos sob uma seta. */
+  /** Planos de ação da ficha: só o mais recente aparece; os anteriores ficam recolhidos sob uma seta. As ocorrências do módulo Qualidade (matriz e vínculos) ficam na seção Qualidade. */
   function listaRegistrosQ(regs) {
-    var planos = (regs || []).filter(function (r) { return r.origem !== 'modulo'; }).sort(maisRecenteQ);
+    var planos = (regs || []).filter(function (r) { return r.origem !== 'modulo' && r.origem !== 'filha'; }).sort(maisRecenteQ);
     if (!planos.length) return '<div class="linha-item"><span class="x">Nenhum plano de ação registrado para este cliente.</span></div>';
     return recolhivelQ(planos);
   }

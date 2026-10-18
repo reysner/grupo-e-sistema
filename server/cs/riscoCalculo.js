@@ -134,7 +134,8 @@ function termometroTratativas(e) {
   const qs = ((e && e.qualidade) || []).filter((q) => q && q.status !== 'cancelado' && (q.dias == null || q.dias <= 90));
   const emAndamento = (q) => q.status === 'aberto' || q.status === 'em_tratamento';
   const pend = qs.filter((q) => emAndamento(q) || q.status === 'finalizada');
-  if (!pend.length) return { pontos: null, detalhe: [qs.length ? `Nenhuma tratativa em aberto (${plural(qs.length, 'ocorrência resolvida', 'ocorrências resolvidas')} nos últimos 90 dias)` : 'Nenhuma tratativa em aberto'] };
+  if (!pend.length) return { pontos: null, detalhe: [qs.length ? `Nenhuma tratativa em aberto (${plural(qs.length, 'ocorrência resolvida', 'ocorrências resolvidas')} nos últimos 90 dias)` : 'Nenhuma tratativa em aberto'],
+    sinal: qs.length ? `${plural(qs.length, 'ocorrência de qualidade registrada', 'ocorrências de qualidade registradas')} nos últimos 90 dias (${plural(qs.length, 'resolvida', 'resolvidas')} · ${Array.from(new Set(qs.map((q) => q.tipo).filter(Boolean))).join(', ') || 'sem tipo'})` : null };   // informativo: aparece nos Sinais de atenção, sem pesar no risco
   let p = 0;
   qs.forEach((q) => {
     const peso = q.peso !== null && q.peso !== undefined && Number.isFinite(Number(q.peso)) ? Number(q.peso) : (PESO_QUALIDADE[norm(q.tipo)] ?? 5);
@@ -154,7 +155,8 @@ function termometroTratativas(e) {
 function calcularRisco(termometros, pesos = PESOS_PADRAO, cortes = CORTES_PADRAO) {
   const usados = TERMOMETROS.filter((t) => termometros[t] && termometros[t].pontos != null && (pesos[t] ?? 1) > 0);
   const semDado = TERMOMETROS_BASE.filter((t) => !termometros[t] || termometros[t].pontos == null);
-  if (!usados.length) return { pontos: null, nivel: 'Incompleto', parcial: true, sem_dado: semDado, alerta: false, motivos: [], termometros };
+  const sinalQualidade = termometros.tratativas && termometros.tratativas.sinal;   // ocorrência de qualidade já resolvida nos últimos 90 dias: avisa nos Sinais de atenção sem pesar
+  if (!usados.length) return { pontos: null, nivel: 'Incompleto', parcial: true, sem_dado: semDado, alerta: false, motivos: sinalQualidade ? [sinalQualidade] : [], termometros };
 
   const somaPesos = usados.reduce((s, t) => s + (pesos[t] ?? 1), 0);
   const pontos = limitar(usados.reduce((s, t) => s + termometros[t].pontos * (pesos[t] ?? 1), 0) / somaPesos);
@@ -167,6 +169,7 @@ function calcularRisco(termometros, pesos = PESOS_PADRAO, cortes = CORTES_PADRAO
     .filter((t) => termometros[t].pontos > 0)
     .sort((a, b) => termometros[b].pontos - termometros[a].pontos)
     .flatMap((t) => termometros[t].detalhe);
+  if (sinalQualidade && !motivos.includes(sinalQualidade)) motivos.push(sinalQualidade);
   return { pontos, nivel, parcial: semDado.length > 0, sem_dado: semDado, alerta, motivos, termometros };
 }
 
