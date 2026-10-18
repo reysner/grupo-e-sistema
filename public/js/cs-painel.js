@@ -3110,6 +3110,11 @@
   }
   /** Janela da ocorrência no Portal do Gestor: detalhes e a tratativa (editável até abrir para o analista). */
   function htmlTratativaGestor(r, analistas) { return htmlTratativaGestorBase(r, analistas) + htmlAcoesOcorrencia(r); }
+  /** Gestor(a): mensagem para quem está tratando (fica no histórico e avisa os responsáveis). */
+  function htmlMensagemGestorQ(r) {
+    if (r.etapa !== 'com_analista') return '';
+    return '<div class="qa-campo" style="margin-top:8px"><label for="gt-msg">Mensagem para quem está tratando <span class="cinza">(fica no histórico e avisa o(s) responsável(is))</span></label><div style="display:flex;gap:8px"><input type="text" id="gt-msg" maxlength="1000" style="flex:1" placeholder="Ex.: pode priorizar? o cliente cobrou de novo"><button type="button" class="gp-footer-btn" id="gt-msg-enviar" style="width:auto">Enviar</button></div><div class="pop-erro" id="gt-msg-erro" role="alert"></div></div>';
+  }
   /** Matriz conduzida só pelas vinculadas: continua aberta para a resposta final do gestor(a), que vai ao Gestor final do Sucesso do Cliente. */
   function avisoRespostaFinalQ(r) {
     var fs = r.filhas || [];
@@ -3119,6 +3124,7 @@
   }
   function htmlTratativaGestorBase(r, analistas) {
     var editavel = r.etapa === 'registrada' || r.etapa === 'tratativa_definida';
+    var soVinc = r.origem !== 'filha' && (r.filhas || []).length > 0 && !nomesResp(r).length;   // matriz conduzida só pelas vinculadas: o gestor(a) responde a matriz
     var depAtual = r.tratativa_depto || (r.departamentos || [])[0] || '';
     var podeFilha = r.origem !== 'filha' && ['registrada', 'tratativa_definida', 'com_analista'].indexOf(r.etapa) >= 0;
     var btnFilha = '<button type="button" class="gp-footer-btn" id="gt-filha" style="width:auto">＋ Abrir ocorrência vinculada <span class="cinza">(uma para cada situação)</span></button><div id="gt-filhas-novas" style="margin-top:6px"></div>';
@@ -3133,16 +3139,16 @@
       cartaoOcorrenciaQ(r, true) + htmlVinculos(r);
     if (!editavel && r.etapa === 'validacao_gestor') {
       return topo + htmlPlanoGestor(r) + htmlRetornos(r) +
-        '<div class="ficha-sec">Validar a tratativa</div>' + formNotaObs('gv', 'Nota da validação') +
-        (r.origem === 'filha' ? '<div class="qa-obs" style="margin:6px 0">ℹ <strong>Validar</strong> encerra esta ocorrência vinculada e libera a original para seguir. <strong>Devolver</strong> volta para o analista ajustar (a nota diz o que falta).</div>' : '<div class="qa-obs" style="margin:6px 0">ℹ <strong>Validar</strong> envia a ocorrência ao Sucesso do Cliente, que faz a devolutiva ao cliente. <strong>Devolver</strong> volta para o analista ajustar (a nota diz o que falta).</div>') +
-        '<div class="qa-oc-linha qa-g-botoes"><button type="button" class="qa-btn-cancel" id="gt-cancel" style="background:#64748b">Fechar</button><button type="button" class="qa-btn-ok" id="gv-devolver" style="background:#b45309">Devolver ao analista</button><button type="button" class="qa-btn-ok" id="gv-validar">' + (r.origem === 'filha' ? 'Validar: encerrar esta ocorrência' : 'Validar: enviar ao Sucesso do Cliente') + '</button></div>' +
+        '<div class="ficha-sec">' + (soVinc ? 'Resposta final da ocorrência' : 'Validar a tratativa') + '</div>' + formNotaObs('gv', soVinc ? 'Resposta final (apanhado de tudo)' : 'Nota da validação') +
+        (r.origem === 'filha' ? '<div class="qa-obs" style="margin:6px 0">ℹ <strong>Validar</strong> encerra esta ocorrência vinculada e libera a original para seguir. <strong>Devolver</strong> volta para o analista ajustar (a nota diz o que falta).</div>' : soVinc ? '<div class="qa-obs" style="margin:6px 0">ℹ Faça o apanhado das vinculadas acima e responda: a resposta vai <strong>direto para o Gestor final do Sucesso do Cliente</strong>, que faz a devolutiva ao cliente.</div>' : '<div class="qa-obs" style="margin:6px 0">ℹ <strong>Validar</strong> envia a ocorrência ao Sucesso do Cliente, que faz a devolutiva ao cliente. <strong>Devolver</strong> volta para o analista ajustar (a nota diz o que falta).</div>') +
+        '<div class="qa-oc-linha qa-g-botoes"><button type="button" class="qa-btn-cancel" id="gt-cancel" style="background:#64748b">Fechar</button><button type="button" class="qa-btn-ok" id="gv-devolver" style="background:#b45309' + (soVinc ? ';display:none' : '') + '">Devolver ao analista</button><button type="button" class="qa-btn-ok" id="gv-validar">' + (r.origem === 'filha' ? 'Validar: encerrar esta ocorrência' : soVinc ? 'Enviar a resposta final ao Gestor final' : 'Validar: enviar ao Sucesso do Cliente') + '</button></div>' +
         '<div class="pop-erro" id="gv-erro" role="alert"></div>';
     }
     if (!editavel) {
       return topo + htmlRetornos(r) + '<div class="ficha-sec">Tratativa</div><div class="qa-reg"><div class="qa-reg-txt">' + esc(r.plano_acao || '—') + '</div>' +
         '<div class="qa-reg-rod">Responsáve' + (nomesResp(r).length > 1 ? 'is' : 'l') + ': <strong>' + esc(nomesResp(r).join(', ') || (((r.filhas || []).length) ? 'conduzida pelas ocorrências vinculadas' : '—')) + '</strong> · departamento ' + esc(rotuloDepto(r.tratativa_depto || '')) + ' · prazo ' + data(r.prazo) + (r.tratativa_definida_por ? ' · definida por ' + esc(r.tratativa_definida_por) : '') + (r.liberada_em ? ' · aberta ao analista em ' + dataHora(r.liberada_em) : '') + '</div>' +
         (r.gestor_obs ? '<div class="qa-reg-trat"><strong>Observação:</strong> ' + esc(r.gestor_obs) + '</div>' : '') + '</div>' +
-        avisoRespostaFinalQ(r) + (podeFilha ? '<div style="margin:8px 0">' + btnFilha + '</div>' : '') +
+        avisoRespostaFinalQ(r) + (podeFilha ? '<div style="margin:8px 0">' + btnFilha + '</div>' : '') + htmlMensagemGestorQ(r) +
         '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="gt-cancel">Fechar</button></div>';
     }
     return topo + '<div class="ficha-sec">Criar a tratativa</div>' +
@@ -3164,6 +3170,15 @@
     var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Ocorrência">' + htmlTratativaGestor(r, estado.qAnalistas || []) + '</div>';
     $('gt-fechar').addEventListener('click', fechar); $('gt-cancel').addEventListener('click', fechar);
+    if ($('gt-msg-enviar')) $('gt-msg-enviar').addEventListener('click', async function () {
+      var t = $('gt-msg').value.trim(), er = $('gt-msg-erro'); er.textContent = '';
+      if (t.length < 3) { er.textContent = 'Escreva a mensagem (mínimo de 3 caracteres).'; return; }
+      var x = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id) + '/mensagem', { texto: t });
+      if (!x.ok) { er.textContent = x.j.error || 'Não foi possível enviar a mensagem.'; return; }
+      var regsM = (estado.g && estado.g.dados && estado.g.dados.registros) || [];
+      regsM.forEach(function (q, i) { if (String(q.id) === String(r.id) && x.j.registro) regsM[i] = x.j.registro; });
+      fechar(); abrirOcorrenciaGestor(r.id);   // a janela volta com a mensagem já no histórico
+    });
     if ($('gt-filha')) $('gt-filha').addEventListener('click', function () { abrirFilhaGestor(r, function (n) {   // a janela da original continua aberta: dá para salvar/abrir a original e abrir outras vinculadas
       if (n.original && n.original.etapa !== r.etapa) {   // a primeira vinculada pôs a original em andamento: recarrega a janela com os dados novos
         var regs0 = (estado.g && estado.g.dados && estado.g.dados.registros) || [];

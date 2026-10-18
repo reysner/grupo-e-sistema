@@ -143,6 +143,7 @@ teste('lista branca do gestor/analista: registrar, ver as próprias, perfil, ges
   ['/analista/ocorrencias', '/sucesso/ocorrencias'].forEach((c) => ok('GET', c));
   ['/analista/ocorrencias/u1/nota', '/analista/ocorrencias/u1/encerrar', '/gestor/ocorrencias/u1/validar', '/gestor/ocorrencias/u1/devolver', '/sucesso/ocorrencias/u1/encerrar'].forEach((c) => ok('POST', c));
   ok('POST', '/gestor/ocorrencias/u1/excluir'); no('GET', '/gestor/ocorrencias/u1/excluir'); no('DELETE', '/gestor/ocorrencias/u1');
+  ok('POST', '/gestor/ocorrencias/u1/mensagem'); no('PUT', '/gestor/ocorrencias/u1/mensagem');
   ok('POST', '/sucesso/ocorrencias/u1/apontar'); no('GET', '/sucesso/ocorrencias/u1/apontar'); no('PUT', '/sucesso/ocorrencias/u1/apontar');
   no('POST', '/sucesso/ocorrencias/u1/abrir'); no('POST', '/analista/ocorrencias/u1/validar'); no('POST', '/gestor/ocorrencias/u1/encerrar'); no('GET', '/analista/ocorrencias/u1'); no('PUT', '/sucesso/ocorrencias/u1/encerrar'); no('DELETE', '/analista/ocorrencias/u1');
   ok('POST', '/gestor/ocorrencias/u1/filha'); no('POST', '/analista/ocorrencias/u1/filha');

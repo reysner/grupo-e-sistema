@@ -684,6 +684,15 @@ const semLixo = (e, nome) => {
     assert.ok(j.includes('resposta final') && j.includes('1 de 2 encerradas') && j.includes('Gestor final do Sucesso do Cliente') && j.includes('id="gt-filha"'), 'a matriz continua aberta para a resposta final e ainda recebe vinculadas');
     assert.ok(!C.t.htmlTratativaGestor(Object.assign({}, m, { responsaveis: [{ analista_id: '1', nome: 'Ana' }] }), []).includes('resposta final'), 'com analista na matriz, o aviso não aparece');
   });
+  await teste('cs: gestor interage enquanto aguarda e responde a matriz (apanhado) que vai ao gestor final', () => {
+    const m = { id: 'm', origem: 'modulo', etapa: 'com_analista', assunto: 'Atraso', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', plano_acao: 'Conduzida pelas ocorrências vinculadas', responsaveis: [], filhas: [{ id: 'f', assunto: 'A', etapa: 'encerrada', departamentos: ['Pessoal'], prazo: '2026-10-20', analista_nome: 'P', respostas: [{ nome: 'P', nota: 'Resolvido com o cliente' }] }] };
+    assert.ok(C.t.htmlTratativaGestor(m, []).includes('id="gt-msg-enviar"') && C.t.htmlTratativaGestor(Object.assign({}, m, { origem: 'filha', pai_id: 'm', filhas: [], responsaveis: [{ analista_id: '1', nome: 'Ana' }] }), []).includes('id="gt-msg-enviar"'), 'o gestor deixa mensagem enquanto aguarda (matriz e vinculada)');
+    assert.ok(!C.t.htmlTratativaGestor(Object.assign({}, m, { etapa: 'encerrada' }), []).includes('gt-msg-enviar'), 'depois de encerrada não há mensagem');
+    const v = C.t.htmlTratativaGestor(Object.assign({}, m, { etapa: 'validacao_gestor' }), []);
+    assert.ok(v.includes('Resposta final (apanhado de tudo)') && v.includes('direto para o Gestor final do Sucesso do Cliente') && v.includes('Enviar a resposta final ao Gestor final') && /id="gv-devolver" style="background:#b45309;display:none"/.test(v) && v.includes('Resolvido com o cliente'), 'matriz só das vinculadas: resposta final com o apanhado, sem devolver');
+    const comAnalista = C.t.htmlTratativaGestor(Object.assign({}, m, { etapa: 'validacao_gestor', responsaveis: [{ analista_id: '1', nome: 'Ana' }] }), []);
+    assert.ok(comAnalista.includes('Nota da validação') && comAnalista.includes('Validar: enviar ao Sucesso do Cliente') && !comAnalista.includes('display:none'), 'com analista na matriz, segue a validação de sempre');
+  });
   await teste('cs: tratativa da matriz — o analista apontado vem fixo (sem ✕); o corrigido pelo gestor final é o fixo', () => {
     const an = [{ id: '9', nome: 'Polyanna' }, { id: '4', nome: 'João' }];
     const m = { id: 'm', origem: 'modulo', etapa: 'registrada', assunto: 'Atraso', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', analista_origem_id: '9', analista_origem_nome: 'Polyanna', responsaveis: [], filhas: [] };

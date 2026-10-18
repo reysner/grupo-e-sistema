@@ -253,7 +253,7 @@ function rotaAbertaGestorAnalista(metodo, caminho) {
   const c = String(caminho || '').split('?')[0].replace(/\/+$/, '') || '/';
   const p = c.split('/');   // '' + segmentos
   if (m === 'GET') return ['/opcoes', '/empresas', '/tempos', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/analista/ocorrencias', '/sucesso/ocorrencias'].includes(c) || (p.length === 3 && p[1] === 'anexo');
-  if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir', 'excluir'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && ['encerrar', 'apontar'].includes(p[4]));
+  if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir', 'excluir', 'mensagem'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && ['encerrar', 'apontar'].includes(p[4]));
   if (m === 'PUT') return p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && p[4] === 'tratativa';
   return false;
 }
@@ -1293,6 +1293,23 @@ async function podeCancelarOuReabrir(req, reg) {
   if (ocorrenciaNoEscopo(esc, reg)) return true;
   return ehGestorFinal(req.user.id);
 }
+/** Mensagem do gestor(a) para quem está tratando (matriz ou vinculada): fica no histórico e avisa os responsáveis. Vale enquanto a ocorrência não foi encerrada nem cancelada. */
+router.post('/gestor/ocorrencias/:id/mensagem', async (req, res) => {
+  try {
+    await garantirSchema();
+    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, analista_id, departamentos, fila, assunto, cliente_nome, origem, pai_id, ocultar_empresa');
+    if (!reg) return res.status(404).json({ error: 'Ocorrência não encontrada.' });
+    if (!(await podeCancelarOuReabrir(req, reg))) return res.status(403).json({ error: 'Só o gestor do departamento, o gestor final ou a administração deixam mensagem aqui.' });
+    if (['encerrada', 'cancelada'].includes(reg.etapa)) return res.status(409).json({ error: 'Esta ocorrência já foi encerrada ou cancelada.' });
+    const t = texto(req.body && req.body.texto, MAX_ANOTACAO + 1);
+    if (t.length < 3) return res.status(400).json({ error: 'Escreva a mensagem (mínimo de 3 caracteres).' });
+    if (t.length > MAX_ANOTACAO) return res.status(400).json({ error: 'A mensagem passa de ' + MAX_ANOTACAO + ' caracteres.' });
+    await registrar(reg.id, req.user.name, 'nota', t);
+    const empresa = reg.ocultar_empresa ? 'Empresa não informada' : (reg.cliente_nome || 'Empresa');
+    avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Mensagem do gestor', texto: (req.user.name || 'O gestor') + ' — ' + empresa + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(t, 120), url: '/cs?aba=analista', tag: 'msg-' + reg.id + '-' + Date.now() }, req.user.id);
+    res.json({ registro: await registroCompleto(reg.id) });
+  } catch (e) { console.error('[qualidade] POST mensagem falhou:', e); res.status(500).json({ error: 'Erro ao enviar a mensagem.' }); }
+});
 router.post('/gestor/ocorrencias/:id/cancelar', async (req, res) => {
   try {
     await garantirSchema();
