@@ -1681,20 +1681,9 @@
   }
 
   // ── Módulo Qualidade: uma linha por analista ───────────────────────────────────
-  /** Lançamentos dos últimos 7 dias, de todos os analistas: qualquer administrador abre o analista e interage. */
-  function recentesQ() {
-    var rs = estado.qRecentes || []; if (!rs.length) return '';
-    return '<div class="card"><div class="card-title">Lançamentos dos últimos 7 dias</div><div class="card-sub">' + rs.length + ' registro(s). Clique no analista para validar, devolver, ajustar o prazo ou cancelar.</div>' +
-      '<div class="table-wrap"><table><thead><tr><th>Lançado em</th><th>Empresa</th><th>Tipo</th><th>Analista</th><th class="c">Prazo</th><th class="c">Status</th></tr></thead><tbody>' + rs.map(function (r) {
-        return '<tr><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td>' +
-          '<td>' + (r.analista_id ? '<button class="link" data-qan="' + esc(r.analista_id) + '">' + esc(r.analista_nome || '—') + '</button>' : '<span class="cinza">ocorrência (sem responsável)</span>') + '</td><td class="c">' + celPrazo(r) + '</td><td class="c">' + pillStatusQ(r.situacao) + '</td></tr>';
-      }).join('') + '</tbody></table></div></div>';
-  }
   function filtroQ() { return estado.filtroQ || (estado.filtroQ = { busca: '', todos: false }); }
   async function carregarResumoQ() {
     estado.qResumo = await api('/api/cs/painel/qualidade/resumo');
-    estado.qRecentes = [];
-    if (ehAdminPainel()) { try { estado.qRecentes = (await api('/api/cs/painel/qualidade/recentes?dias=7')).registros; } catch (e) { estado.qRecentes = []; } }   // só o administrador vê os lançamentos de todos
   }
   // ── MÓDULO QUALIDADE: ocorrências, pesos e lista ──────────────────────────────────────
   var DEPS_OCORRENCIA = [['Comercial', 'Comercial'], ['Contábil', 'Contábil'], ['Financeiro', 'Financeiro'], ['Fiscal', 'Fiscal'], ['Legalização', 'Legalização'], ['Pessoal', 'Pessoal'], ['Sucesso', 'Sucesso do Cliente']];
@@ -2672,9 +2661,50 @@
       '<div class="qa-reg-rod">' + (nomesResp(r).length ? 'Responsáve' + (nomesResp(r).length > 1 ? 'is' : 'l') + ': <strong>' + esc(nomesResp(r).join(', ')) + '</strong> · ' : '') + 'Departamento ' + esc(rotuloDepto(r.tratativa_depto || '')) + ' · prazo <strong>' + data(r.prazo) + '</strong>' + (r.tratativa_definida_por ? ' · definido por ' + esc(r.tratativa_definida_por) : '') + (r.liberada_em ? ' · aberto em ' + dataHora(r.liberada_em) : '') + '</div>' +
       (r.gestor_obs ? '<div class="qa-reg-trat"><strong>Observação do gestor:</strong> ' + esc(r.gestor_obs) + '</div>' : '') + '</div>';
   }
+  // ── FILTROS COMUNS DOS PORTAIS (Sucesso do Cliente, Gestor e Analista) ──────────────────────────────
+  var PERIODOS_Q = [['', 'Todo o período'], ['7', 'Últimos 7 dias'], ['15', 'Últimos 15 dias'], ['30', 'Últimos 30 dias'], ['90', 'Últimos 90 dias'], ['livre', 'Escolher datas…']];
+  var PRIORIDADES_Q = ['Muito Alta', 'Alta', 'Média', 'Baixa'];
+  /** "AAAA-MM-DD" do dia (horário de Brasília) em que a ocorrência foi registrada. */
+  function diaLancamentoQ(v) { try { return new Date(v).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); } catch (e) { return ''; } }
+  /** Filtro "Registrada em": 7, 15, 30 ou 90 dias, ou datas livres (de/até). "agora" só serve para os testes. */
+  function noPeriodoQ(r, f, agora) {
+    var p = f && f.periodo; if (!p) return true;
+    if (p === 'livre') {
+      if (!f.de && !f.ate) return true;
+      var d = diaLancamentoQ(r.criado_em); if (!d) return false;
+      return !(f.de && d < f.de) && !(f.ate && d > f.ate);
+    }
+    var n = parseInt(p, 10); if (!n) return true;
+    var t = new Date(r.criado_em).getTime(); return !isNaN(t) && t >= (agora || Date.now()) - n * 86400000;
+  }
+  function filtrosAtivosQ(f) { return !!(f && (f.busca || f.depto || f.analista || f.etapa || f.periodo || f.tipo || f.prioridade || f.por)); }
+  /** Filtros que valem para os três portais: período, tipo, prioridade e (Sucesso/Gestor) quem registrou. p = prefixo dos ids (s, g ou a). */
+  function htmlFiltrosExtraQ(p, f, regs, comPor) {
+    f = f || {};
+    var op = function (v, rot, sel) { return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(rot) + '</option>'; };
+    var unicos = function (campo) { var v = []; (regs || []).forEach(function (r) { if (r[campo] && v.indexOf(r[campo]) < 0) v.push(r[campo]); }); return v.sort(function (a, b) { return String(a).localeCompare(String(b), 'pt-BR', { sensitivity: 'base' }); }); };
+    var h = '<span class="filter-label">Registrada em</span><select class="gp-select" id="' + p + '-periodo">' + PERIODOS_Q.map(function (x) { return op(x[0], x[1], (f.periodo || '') === x[0]); }).join('') + '</select>';
+    if (f.periodo === 'livre') h += '<input class="gp-input" type="date" id="' + p + '-de" value="' + esc(f.de || '') + '" aria-label="De"><span class="filter-label">a</span><input class="gp-input" type="date" id="' + p + '-ate" value="' + esc(f.ate || '') + '" aria-label="Até">';
+    h += '<span class="filter-label">Tipo</span><select class="gp-select" id="' + p + '-tipo">' + op('', 'Todos os tipos', !f.tipo) + unicos('tipo').map(function (t) { return op(t, t, f.tipo === t); }).join('') + '</select>';
+    h += '<span class="filter-label">Prioridade</span><select class="gp-select" id="' + p + '-prio">' + op('', 'Todas', !f.prioridade) + PRIORIDADES_Q.map(function (x) { return op(x, x, f.prioridade === x); }).join('') + '</select>';
+    if (comPor) h += '<span class="filter-label">Registrada por</span><select class="gp-select" id="' + p + '-por">' + op('', 'Todos', !f.por) + unicos('criado_por').map(function (n) { return op(n, n, f.por === n); }).join('') + '</select>';
+    if (filtrosAtivosQ(f)) h += '<button type="button" class="gp-footer-btn" id="' + p + '-limpar" style="width:auto">Limpar filtros</button>';
+    return h;
+  }
+  function ligarFiltrosExtraQ(p, f, refazer) {
+    [['periodo', 'periodo'], ['de', 'de'], ['ate', 'ate'], ['tipo', 'tipo'], ['prio', 'prioridade'], ['por', 'por']].forEach(function (x) {
+      var e = $(p + '-' + x[0]); if (!e) return;
+      e.addEventListener('change', function () { f[x[1]] = e.value; if (x[0] === 'periodo' && e.value !== 'livre') { f.de = ''; f.ate = ''; } refazer(); });
+    });
+    var l = $(p + '-limpar'); if (l) l.addEventListener('click', function () { ['busca', 'depto', 'analista', 'etapa', 'periodo', 'de', 'ate', 'tipo', 'prioridade', 'por'].forEach(function (k) { f[k] = ''; }); refazer(); });
+  }
   function filtrarPortal(regs, f) {
     var b = String((f && f.busca) || '').trim().toLowerCase();
     return (regs || []).filter(function (r) {
+      if (!noPeriodoQ(r, f)) return false;
+      if (f.tipo && r.tipo !== f.tipo) return false;
+      if (f.prioridade && r.prioridade !== f.prioridade) return false;
+      if (f.por && r.criado_por !== f.por) return false;
       if (f.depto && (r.departamentos || []).indexOf(f.depto) < 0) return false;
       if (f.analista && !casaAnalista(r, f.analista)) return false;
       if (f.etapa === 'vencidas') { if (r.situacao !== 'vencido') return false; } else if (f.etapa && r.etapa !== f.etapa) return false;
@@ -2705,7 +2735,7 @@
         kpi('#b91c1c', 'Vencidas', c.vencidas, 'prazo passou') +
       '</div>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px">' + selAn +
-        '<span class="filter-label">Etapa</span><select class="gp-select" id="a-etapa">' + optE + '</select>' +
+        '<span class="filter-label">Etapa</span><select class="gp-select" id="a-etapa">' + optE + '</select>' + htmlFiltrosExtraQ('a', f, regs, false) +
         '<span class="filter-label">Buscar</span><input class="gp-input" id="a-busca" placeholder="Empresa ou assunto" value="' + esc(f.busca || '') + '">' +
         '<button type="button" class="gp-footer-btn" id="a-atualizar" style="width:auto">↻ Atualizar</button></div>' +
         '<div class="card-sub">' + lista.length + ' ocorrência(s)' + (d.todos ? ' · você é administrador: vê as de todos e age em nome do analista' : (d.analista ? (d.admin ? ' · visão do analista: ' : ' · analista: ') + esc(d.analista.nome) : '')) + '</div>' +
@@ -2728,6 +2758,7 @@
     alvo.innerHTML = htmlAnalista(a.dados, a.f);
     var liga = function (id, prop, evento, refaz) { var e = $(id); if (e) e.addEventListener(evento || 'change', function () { a.f[prop] = e.value; var pos = e.selectionStart; if (refaz) a.dados = null; desenharAnalista(); if (prop === 'busca') { var n = $('a-busca'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { /* sem seleção */ } } } }); };
     liga('a-analista', 'analista', 'change', true); liga('a-etapa', 'etapa'); liga('a-busca', 'busca', 'input');
+    ligarFiltrosExtraQ('a', a.f, desenharAnalista);
     var at = $('a-atualizar'); if (at) at.addEventListener('click', function () { a.dados = null; desenharAnalista(); });
     Array.prototype.forEach.call(alvo.querySelectorAll('[data-aabrir]'), function (b) { b.addEventListener('click', function () { abrirOcorrenciaAnalista(b.getAttribute('data-aabrir')); }); });
   }
@@ -2819,7 +2850,7 @@
         '<span class="filter-label">Buscar</span><input class="gp-input" id="s-busca" placeholder="Empresa ou assunto" value="' + esc(f.busca || '') + '">' +
         '<span class="filter-label">Departamento</span><select class="gp-select" id="s-depto">' + optD + '</select>' +
         '<span class="filter-label">Analista</span><select class="gp-select" id="s-analista">' + optA + '</select>' +
-        '<span class="filter-label">Etapa</span><select class="gp-select" id="s-etapa">' + optE + '</select>' +
+        '<span class="filter-label">Etapa</span><select class="gp-select" id="s-etapa">' + optE + '</select>' + htmlFiltrosExtraQ('s', f, regs, true) +
         '<button type="button" class="gp-footer-btn" id="s-atualizar" style="width:auto">↻ Atualizar</button></div>' +
         '<div class="card-sub">' + lista.length + ' ocorrência(s) · as da devolutiva ao cliente vêm primeiro</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Registrada em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Departamento</th><th>Assunto</th><th>Analista</th><th class="c">Prazo</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
@@ -2841,6 +2872,7 @@
     ligarTempos();
     var liga = function (id, prop, evento) { var e = $(id); if (e) e.addEventListener(evento || 'change', function () { s.f[prop] = e.value; if (prop === 'depto') s.f.analista = ''; var pos = e.selectionStart; desenharSucesso(); if (prop === 'busca') { var n = $('s-busca'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { /* sem seleção */ } } } }); };
     liga('s-depto', 'depto'); liga('s-analista', 'analista'); liga('s-etapa', 'etapa'); liga('s-busca', 'busca', 'input');
+    ligarFiltrosExtraQ('s', s.f, desenharSucesso);
     var at = $('s-atualizar'); if (at) at.addEventListener('click', function () { estado.s.dados = null; desenharSucesso(); });
     Array.prototype.forEach.call(alvo.querySelectorAll('[data-sabrir]'), function (b) { b.addEventListener('click', function () { abrirOcorrenciaSucesso(b.getAttribute('data-sabrir')); }); });
   }
@@ -2891,16 +2923,7 @@
     var uso = dep ? base.filter(function (a) { return depsAnalista(a).indexOf(dep) >= 0; }) : base;
     return (uso.length ? uso : base).slice().sort(function (a, b) { return String(a.nome).localeCompare(String(b.nome), 'pt-BR'); });
   }
-  function filtrarGestor(regs, f) {
-    var b = String((f && f.busca) || '').trim().toLowerCase();
-    return (regs || []).filter(function (r) {
-      if (f.depto && (r.departamentos || []).indexOf(f.depto) < 0) return false;
-      if (f.analista && !casaAnalista(r, f.analista)) return false;
-      if (f.etapa === 'vencidas') { if (r.situacao !== 'vencido') return false; } else if (f.etapa && r.etapa !== f.etapa) return false;
-      if (b && String(r.cliente_nome || '').toLowerCase().indexOf(b) < 0 && String(r.assunto || '').toLowerCase().indexOf(b) < 0) return false;
-      return true;
-    });
-  }
+  function filtrarGestor(regs, f) { return filtrarPortal(regs, f); }   // a mesma função dos três portais
   function contagemEtapasGestor(regs) {
     var c = { vencidas: 0 }; ETAPAS_Q.forEach(function (e) { c[e] = 0; });
     (regs || []).forEach(function (r) { if (c[r.etapa] !== undefined) c[r.etapa]++; if (r.situacao === 'vencido') c.vencidas++; });
@@ -2935,7 +2958,7 @@
         '<span class="filter-label">Buscar</span><input class="gp-input" id="g-busca" placeholder="Empresa ou assunto" value="' + esc(f.busca || '') + '">' +
         '<span class="filter-label">Departamento</span><select class="gp-select" id="g-depto">' + optD + '</select>' +
         '<span class="filter-label">Analista</span><select class="gp-select" id="g-analista">' + optA + '</select>' +
-        '<span class="filter-label">Etapa</span><select class="gp-select" id="g-etapa">' + optE + '</select>' +
+        '<span class="filter-label">Etapa</span><select class="gp-select" id="g-etapa">' + optE + '</select>' + htmlFiltrosExtraQ('g', f, regs, true) +
         '<button type="button" class="gp-footer-btn" id="g-atualizar" style="width:auto">↻ Atualizar</button></div>' +
         '<div class="card-sub">' + lista.length + ' ocorrência(s)' + (esc_.todos ? ' · todos os departamentos' : ' · seus departamentos: ' + esc(deptos.map(rotuloDepto).join(', '))) + '</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Registrada em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Departamento</th><th>Assunto</th><th>Responsável</th><th class="c">Prazo</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
@@ -2957,6 +2980,7 @@
     ligarTempos();
     var liga = function (id, prop, evento) { var e = $(id); if (e) e.addEventListener(evento || 'change', function () { g.f[prop] = e.value; if (prop === 'depto') g.f.analista = ''; var pos = e.selectionStart; desenharGestor(); if (prop === 'busca') { var n = $('g-busca'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { /* sem seleção */ } } } }); };
     liga('g-depto', 'depto'); liga('g-analista', 'analista'); liga('g-etapa', 'etapa'); liga('g-busca', 'busca', 'input');
+    ligarFiltrosExtraQ('g', g.f, desenharGestor);
     var at = $('g-atualizar'); if (at) at.addEventListener('click', function () { estado.g.dados = null; desenharGestor(); });
     Array.prototype.forEach.call(alvo.querySelectorAll('[data-gabrir]'), function (b) { b.addEventListener('click', function () { abrirOcorrenciaGestor(b.getAttribute('data-gabrir')); }); });
   }
@@ -3136,8 +3160,7 @@
         kpi('#166534', 'Resolvidos', tot.resolvidos, 'considerações encerradas') +
       '</div>' +
       aviso +
-      '<div class="card qa-modal-oc qa-oc-inline" id="q-form-inline"><div class="vazio">Carregando o formulário…</div></div>' +
-      recentesQ();
+      '<div class="card qa-modal-oc qa-oc-inline" id="q-form-inline"><div class="vazio">Carregando o formulário…</div></div>';
     var atualiza = function () { estado.qResumo = null; desenharQualidadeMod(); };
     var fi = $('q-form-inline'); if (fi) abrirRegistrarOcorrencia(atualiza, fi);
     Array.prototype.forEach.call(document.querySelectorAll('#sec-consideracoes [data-qan]'), function (bt) { bt.addEventListener('click', function () { abrirFichaAnalistaQ(bt.getAttribute('data-qan')); }); });
@@ -3529,6 +3552,10 @@
     if (f.analista) { var an = (estado.qAnalistas || []).filter(function (a) { return String(a.id) === String(f.analista); })[0]; fl.push('Analista: ' + (an ? an.nome : f.analista)); }
     if (f.etapa) fl.push('Etapa: ' + (f.etapa === 'vencidas' ? 'Vencidas' : ETAPA_CURTA[f.etapa] || f.etapa));
     if (f.busca) fl.push('Busca: ' + f.busca);
+    if (f.periodo) fl.push('Registrada em: ' + (f.periodo === 'livre' ? ((f.de ? 'de ' + data(f.de) : '') + (f.ate ? ' até ' + data(f.ate) : '')).trim() || 'datas livres' : 'últimos ' + f.periodo + ' dias'));
+    if (f.tipo) fl.push('Tipo: ' + f.tipo);
+    if (f.prioridade) fl.push('Prioridade: ' + f.prioridade);
+    if (f.por) fl.push('Registrada por: ' + f.por);
     var nome = { gestor: 'Portal do Gestor', sucesso: 'Portal do Sucesso do Cliente', analista: 'Portal do Analista' }[sec];
     return { arquivo: 'cs-' + { gestor: 'portal-gestor', sucesso: 'portal-sucesso-do-cliente', analista: 'portal-analista' }[sec], titulo: 'Qualidade - ' + nome,
       filtros: [regs.length + ' ocorrência(s)' + (fl.length ? ' · ' + fl.join(' · ') : ' · sem filtro')],
