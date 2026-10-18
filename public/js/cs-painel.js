@@ -2904,14 +2904,15 @@
     var optD = op('', 'Todos os departamentos', !f.depto) + DEPS_OCORRENCIA.map(function (x) { return op(x[0], x[1], f.depto === x[0]); }).join('');
     var optE = op('', 'Todas as etapas', !f.etapa) + ETAPAS_Q.map(function (e) { return op(e, ETAPA_CURTA[e], f.etapa === e); }).join('') + op('vencidas', 'Vencidas', f.etapa === 'vencidas');
     var optA = op('', 'Todos os analistas', !f.analista) + listaAnalistasFiltro(d, regs, f.depto).map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
-    var corpo = lista.map(function (r) {
+    var linha = function (r, filho, nf) {
       var fila = r.etapa === 'devolutiva_cliente';
       return '<tr' + (fila ? ' style="background:rgba(194,65,12,.07)"' : '') + '><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
         '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
-        '<td style="white-space:normal;min-width:230px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 120)) + '</div></td>' +
+        '<td style="white-space:normal;min-width:230px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + (nf ? botaoFilhasQ(r, nf) : '') + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 120)) + '</div></td>' +
         '<td>' + responsavelAtualQ(r) + '</td><td class="c">' + celPrazo(r) + '</td><td class="c">' + pillEtapaQ(r.etapa) + '</td>' +
         '<td class="c" style="white-space:nowrap"><button type="button" class="gp-footer-btn" data-sabrir="' + esc(r.id) + '" style="width:auto">' + (fila ? (d.final ? 'Devolutiva e encerrar' : 'Ver devolutiva') : 'Ver') + '</button></td></tr>';
-    }).join('');
+    };
+    var corpo = agruparFilhasQ(lista, linha);
     return '<div class="qa-obs" style="margin-bottom:14px">ℹ Aqui o Sucesso do Cliente recebe a devolutiva do gestor, faz as formalizações com o cliente e <strong>encerra o caso</strong>. ' + (d.final ? 'Você é o <strong>gestor final</strong>: só você encerra o processo.' : 'Só o <strong>gestor final</strong> encerra o processo (para um diretor não encerrar achando que está encerrando só no departamento dele).') + '</div>' +
       '<div class="gp-kpi-row">' +
         kpi('#c2410c', 'Devolutiva ao cliente', c.devolutiva_cliente, 'aguardando o Sucesso do Cliente') +
@@ -2939,6 +2940,7 @@
     s.dados.analistas = estado.qAnalistas || [];
     var bs = $('badge-sucesso'); if (bs) bs.textContent = contagemEtapasGestor(s.dados.registros).devolutiva_cliente || '';
     alvo.innerHTML = htmlSucesso(s.dados, s.f);
+    ligarSetasFilhasQ(alvo);
     ligarTempos();
     var liga = function (id, prop, evento) { var e = $(id); if (e) e.addEventListener(evento || 'change', function () { s.f[prop] = e.value; if (prop === 'depto') s.f.analista = ''; var pos = e.selectionStart; desenharSucesso(); if (prop === 'busca') { var n = $('s-busca'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { /* sem seleção */ } } } }); };
     liga('s-depto', 'depto'); liga('s-analista', 'analista'); liga('s-etapa', 'etapa'); liga('s-busca', 'busca', 'input');
@@ -3024,6 +3026,36 @@
     (regs || []).forEach(function (r) { if (c[r.etapa] !== undefined) c[r.etapa]++; if (r.situacao === 'vencido') c.vencidas++; });
     return c;
   }
+  // ── VINCULADAS SOB A MATRIZ (Portal do Gestor e Portal do Sucesso do Cliente) ──────────────────────
+  /** Botão-setinha da matriz: abre e fecha as vinculadas que estão logo abaixo. */
+  function botaoFilhasQ(r, n) {
+    var ab = estado.fhAbertos && estado.fhAbertos[r.id];
+    return '<div><button type="button" class="link fh-seta" data-fh="' + esc(r.id) + '" aria-expanded="' + (ab ? 'true' : 'false') + '">' + (ab ? '▾' : '▸') + ' ' + n + (n === 1 ? ' vinculada' : ' vinculadas') + '</button></div>';
+  }
+  /** Monta as linhas da tabela: cada matriz seguida das suas vinculadas (recolhidas até abrir a setinha); a vinculada sem a matriz na lista fica sozinha. */
+  function agruparFilhasQ(lista, linha) {
+    var ids = {}, filhasDe = {}, ab = estado.fhAbertos || (estado.fhAbertos = {});
+    lista.forEach(function (r) { ids[r.id] = true; });
+    var dentro = function (r) { return r.origem === 'filha' && r.pai_id && ids[r.pai_id]; };
+    lista.forEach(function (r) { if (dentro(r)) (filhasDe[r.pai_id] = filhasDe[r.pai_id] || []).push(r); });
+    return lista.filter(function (r) { return !dentro(r); }).map(function (r) {
+      var fs = filhasDe[r.id] || [];
+      return linha(r, false, fs.length) + fs.map(function (f) {
+        return linha(f, true, 0).replace('<tr', function () { return '<tr class="fh-filha" data-pai="' + esc(r.id) + '"' + (ab[r.id] ? '' : ' hidden'); });
+      }).join('');
+    }).join('');
+  }
+  function ligarSetasFilhasQ(raiz) {
+    Array.prototype.forEach.call((raiz || document).querySelectorAll('[data-fh]'), function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-fh'), ab = estado.fhAbertos || (estado.fhAbertos = {});
+        ab[id] = !ab[id];
+        Array.prototype.forEach.call((raiz || document).querySelectorAll('tr[data-pai]'), function (tr) { if (tr.getAttribute('data-pai') === id) tr.hidden = !ab[id]; });
+        b.setAttribute('aria-expanded', ab[id] ? 'true' : 'false');
+        b.textContent = (ab[id] ? '▾ ' : '▸ ') + b.textContent.replace(/^[▸▾]\s*/, '');
+      });
+    });
+  }
   function htmlGestor(d, f) {
     var regs = d.registros || [], esc_ = d.escopo || {}, lista = filtrarGestor(regs, f), c = contagemEtapasGestor(regs);
     var deptos = esc_.todos ? DEPS_OCORRENCIA.map(function (x) { return x[0]; }) : (esc_.deptos || []);
@@ -3031,15 +3063,16 @@
     var optD = op('', 'Todos os departamentos', !f.depto) + deptos.map(function (x) { return op(x, rotuloDepto(x), f.depto === x); }).join('');
     var optA = op('', 'Todos os analistas', !f.analista) + listaAnalistasFiltro(d, regs, f.depto).map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
     var optE = op('', 'Todas as etapas', !f.etapa) + ETAPAS_Q.map(function (e) { return op(e, ETAPA_CURTA[e], f.etapa === e); }).join('') + op('vencidas', 'Vencidas', f.etapa === 'vencidas');
-    var corpo = lista.map(function (r) {
+    var linha = function (r, filho, nf) {
       var acao = r.etapa === 'registrada' ? 'Analisar e criar tratativa' : r.etapa === 'tratativa_definida' ? 'Editar / abrir para o analista' : 'Ver';
       return '<tr><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
         '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
-        '<td style="white-space:normal;min-width:240px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 140)) + '</div>' + anexosQ(r) + '</td>' +
+        '<td style="white-space:normal;min-width:240px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + (nf ? botaoFilhasQ(r, nf) : '') + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 140)) + '</div>' + anexosQ(r) + '</td>' +
         '<td>' + responsavelAtualQ(r) + '</td><td class="c">' + celPrazo(r) + '</td>' +
         '<td class="c">' + pillEtapaQ(r.etapa) + (r.situacao === 'vencido' ? '<div><span class="pill" style="color:#b91c1c;border-color:#b91c1c55;background:#b91c1c14">vencida</span></div>' : '') + '</td>' +
         '<td class="c" style="white-space:nowrap"><button type="button" class="gp-footer-btn" data-gabrir="' + esc(r.id) + '" style="width:auto">' + acao + '</button></td></tr>';
-    }).join('');
+    };
+    var corpo = agruparFilhasQ(lista, linha);
     return '<div class="qa-obs" style="margin-bottom:14px">ℹ Trâmite: você analisa a ocorrência, cria a tratativa (plano de ação, responsável e departamento, podendo ajustar o prazo) e abre para o analista. Quando o analista deixar a nota, a validação volta para você; depois de validada, segue para o <strong>Sucesso do Cliente</strong>, que faz a devolutiva ao cliente.</div>' +
       '<div class="gp-kpi-row">' +
         kpi('#b45309', 'Aguardando análise', c.registrada, 'registradas, sem tratativa') +
@@ -3067,6 +3100,7 @@
     g.dados.analistas = estado.qAnalistas || [];
     var bg = $('badge-gestor'); if (bg) bg.textContent = contagemEtapasGestor(g.dados.registros).registrada || '';
     alvo.innerHTML = htmlGestor(g.dados, g.f);
+    ligarSetasFilhasQ(alvo);
     ligarTempos();
     var liga = function (id, prop, evento) { var e = $(id); if (e) e.addEventListener(evento || 'change', function () { g.f[prop] = e.value; if (prop === 'depto') g.f.analista = ''; var pos = e.selectionStart; desenharGestor(); if (prop === 'busca') { var n = $('g-busca'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { /* sem seleção */ } } } }); };
     liga('g-depto', 'depto'); liga('g-analista', 'analista'); liga('g-etapa', 'etapa'); liga('g-busca', 'busca', 'input');

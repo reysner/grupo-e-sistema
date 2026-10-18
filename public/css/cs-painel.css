@@ -483,3 +483,10 @@ tr.filho td{background:transparent;font-size:12.5px;color:var(--text2);}
 
 /* O menu fica escondido até o perfil da pessoa chegar (evita mostrar todos os módulos a quem tem poucos enquanto a página carrega). */
 .gp-aguarda-perfil .gp-nav{visibility:hidden;}
+
+/* Vinculadas sob a matriz (Portal do Gestor e Portal do Sucesso do Cliente): recolhidas, abertas pela setinha, com recuo e seta de ligação. */
+.fh-filha{background:rgba(124,58,237,.05);}
+.fh-filha[hidden]{display:none;}
+.fh-filha td:first-child{padding-left:26px;}
+.fh-filha strong::before{content:'↳ ';color:#7c3aed;}
+.fh-seta{font-weight:700;font-size:12px;margin-top:4px;}

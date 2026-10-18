@@ -658,6 +658,23 @@ const semLixo = (e, nome) => {
     assert.strictEqual(e.dados, null, 'zerou a carteira');
     Object.keys(salvo).forEach((k) => { if (salvo[k] === undefined) delete e[k]; else e[k] = salvo[k]; });
   });
+  await teste('cs: vinculadas ficam sob a matriz, recolhidas e abertas por uma setinha (Gestor e Sucesso do Cliente)', () => {
+    const e = C.t.estado, salvo = e.fhAbertos; delete e.fhAbertos;
+    const reg = (id, x) => Object.assign({ id, origem: 'modulo', etapa: 'com_analista', situacao: 'em_tratamento', tipo: 'Atraso', prioridade: 'Média', departamentos: ['Pessoal'], assunto: 'A' + id, detalhe: 'D', cliente_nome: 'X', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', analista_nome: null, responsaveis: [], filhas: [], anexos: [], notas: [] }, x || {});
+    const regs = [reg('f1', { origem: 'filha', pai_id: 'm' }), reg('m', { filhas: [{ id: 'f1' }, { id: 'f2' }] }), reg('f2', { origem: 'filha', pai_id: 'm' }), reg('sozinha', { origem: 'filha', pai_id: 'fora' })];
+    const g = C.t.htmlGestor({ registros: regs, escopo: { todos: true }, analistas: [] }, { depto: '', analista: '', etapa: '', busca: '' });
+    assert.ok(g.includes('data-fh="m"') && g.includes('▸ 2 vinculadas'), 'a matriz mostra a setinha com a quantidade');
+    assert.strictEqual((g.match(/class="fh-filha" data-pai="m" hidden/g) || []).length, 2, 'as duas vinculadas ficam recolhidas sob a matriz');
+    assert.ok(g.indexOf('data-fh="m"') < g.indexOf('class="fh-filha"'), 'a matriz vem antes das vinculadas');
+    assert.ok(!g.includes('data-pai="fora"') && g.includes('Asozinha'), 'a vinculada sem a matriz na lista aparece sozinha');
+    e.fhAbertos = { m: true };
+    const aberto = C.t.htmlGestor({ registros: regs, escopo: { todos: true }, analistas: [] }, { depto: '', analista: '', etapa: '', busca: '' });
+    assert.ok(aberto.includes('▾ 2 vinculadas') && !/data-pai="m" hidden/.test(aberto), 'aberta pela setinha: mostra as vinculadas');
+    e.fhAbertos = {};
+    const s = C.t.htmlSucesso({ registros: regs, analistas: [], final: true }, { depto: '', analista: '', etapa: '', busca: '' });
+    assert.ok(s.includes('data-fh="m"') && /class="fh-filha" data-pai="m" hidden/.test(s), 'o Portal do Sucesso do Cliente também agrupa');
+    if (salvo === undefined) delete e.fhAbertos; else e.fhAbertos = salvo;
+  });
   await teste('cs: tratativa da matriz — o analista apontado vem fixo (sem ✕); o corrigido pelo gestor final é o fixo', () => {
     const an = [{ id: '9', nome: 'Polyanna' }, { id: '4', nome: 'João' }];
     const m = { id: 'm', origem: 'modulo', etapa: 'registrada', assunto: 'Atraso', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', analista_origem_id: '9', analista_origem_nome: 'Polyanna', responsaveis: [], filhas: [] };
