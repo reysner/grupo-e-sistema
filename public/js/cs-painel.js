@@ -2957,7 +2957,7 @@
   function htmlOcorrenciaSucesso(r, final) { return htmlOcorrenciaSucessoBase(r, final) + ((final || perfilCs().admin) ? htmlAcoesOcorrencia(r, true) : ''); }
   function htmlOcorrenciaSucessoBase(r, final) {
     var topo = '<div class="qa-modal-topo"><strong style="font-size:20px;color:#256050">' + esc(r.assunto || 'Ocorrência') + '</strong><button type="button" class="qa-x" id="so-fechar" aria-label="Fechar">✕</button></div>' +
-      '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' + cartaoOcorrenciaQ(r, true) + (r.plano_acao ? htmlPlanoGestor(r) : '') + htmlRetornos(r) + htmlVinculos(r) + htmlDialogoSucessoQ(r, final) + htmlApontadoQ(r, final);
+      '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' + cartaoOcorrenciaQ(r, true) + (r.plano_acao ? htmlPlanoGestor(r) : '') + htmlRetornos(r) + htmlVinculos(r) + htmlDialogoSucessoQ(r, final, podeFalarNoSucessoQ()) + htmlApontadoQ(r, final);
     if (r.etapa !== 'devolutiva_cliente') return topo + '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="so-cancel">Fechar</button></div>';
     if (!final) return topo + '<div class="qa-obs" style="margin:10px 0">ℹ Esta ocorrência está na devolutiva ao cliente. Faça as formalizações com o cliente; <strong>só o gestor final encerra o processo</strong>.</div><div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="so-cancel">Fechar</button></div>';
     return topo + '<div class="ficha-sec">Devolutiva ao cliente e encerramento</div>' + formNotaObs('so', 'Nota (o que foi devolvido ao cliente)') +
@@ -2972,13 +2972,14 @@
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Ocorrência">' + htmlOcorrenciaSucesso(r, !!d.final) + '</div>';
     $('so-fechar').addEventListener('click', fechar); $('so-cancel').addEventListener('click', fechar);
     if (d.final || perfilCs().admin) ligarAcoesOcorrencia(r, fechar, function () { estado.s.dados = null; desenharSucesso(); });
-    if ($('so-resp-enviar')) $('so-resp-enviar').addEventListener('click', async function () {   // o Gestor final responde ao gestor(a)
-      var t = $('so-resp').value.trim(), okl = $('so-resp-ok'); okl.textContent = '';
-      if (t.length < 3) { okl.textContent = 'Escreva a resposta (mínimo de 3 caracteres).'; return; }
-      var x = await postarQ('/api/cs/painel/qualidade/sucesso/ocorrencias/' + encodeURIComponent(r.id) + '/responder', { texto: t });
-      if (!x.ok) { okl.textContent = x.j.error || 'Não foi possível responder.'; return; }
+    if ($('so-resp-enviar')) $('so-resp-enviar').addEventListener('click', async function () {   // o Gestor final responde; o gestor(a)/administrador deixa observação (a conversa é a mesma)
+      var t = $('so-resp').value.trim(), okl = $('so-resp-ok'); okl.textContent = ''; var viaFinal = !!d.final;
+      if (t.length < 3) { okl.textContent = 'Escreva a mensagem (mínimo de 3 caracteres).'; return; }
+      var x = viaFinal ? await postarQ('/api/cs/painel/qualidade/sucesso/ocorrencias/' + encodeURIComponent(r.id) + '/responder', { texto: t })
+        : await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id) + '/resposta-final', { acao: 'observacao', texto: t });
+      if (!x.ok) { okl.textContent = x.j.error || 'Não foi possível enviar.'; return; }
       var lista = $('dlg-lista'); if (lista && x.j.dialogo) lista.insertAdjacentHTML('beforeend', linhaDialogoQ(x.j.dialogo));
-      $('so-resp').value = ''; okl.textContent = '✔ Resposta enviada. O gestor(a) vê na ocorrência, no Portal do Gestor.';
+      $('so-resp').value = ''; okl.textContent = viaFinal ? '✔ Resposta enviada. O gestor(a) vê na ocorrência, no Portal do Gestor.' : '✔ Observação enviada ao Sucesso do Cliente.';
     });
     if ($('so-apontar')) $('so-apontar').addEventListener('click', async function () {
       var v = $('so-apontado').value, er = $('so-apontar-erro'); er.textContent = '';
@@ -3112,7 +3113,7 @@
   /** Uma fala da conversa entre o gestor(a) e o Gestor final. */
   function linhaDialogoQ(m) {
     var final = m.lado === 'final';
-    return '<div class="qa-reg-trat"><strong>' + (final ? 'Gestor final' : 'Gestor(a)') + (m.por ? ' (' + esc(m.por) + ')' : '') + ' · ' + dataHora(m.em) + ':</strong> ' + esc(m.texto) + '</div>';
+    return '<div class="qa-reg-trat"><strong>' + (final ? 'Gestor(a) Sucesso do Cliente' : 'Gestor(a)') + (m.por ? ' (' + esc(m.por) + ')' : '') + ' · ' + dataHora(m.em) + ':</strong> ' + esc(m.texto) + '</div>';
   }
   /** Matriz: "Resposta final ao Sucesso do Cliente" com duas escolhas: Observação (fala com o Gestor final sem finalizar; ele responde no Portal do Sucesso do Cliente e a resposta volta aqui)
    *  ou Finalizar (nota final: a matriz segue para o Gestor final). Só vale a escolha Finalizar com as vinculadas encerradas e nenhum analista ainda tratando. */
@@ -3121,23 +3122,24 @@
     var abertas = (r.filhas || []).filter(function (f) { return f.etapa !== 'encerrada'; }).length;
     var tratando = r.etapa === 'com_analista' && (r.responsaveis || []).some(function (x) { return !x.encerrado_em; });
     var podeFin = ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor'].indexOf(r.etapa) >= 0 && !abertas && !tratando;
-    var dica = abertas ? 'Finalizar fica disponível quando as vinculadas forem encerradas.' : tratando ? 'Finalizar fica disponível quando os analistas encerrarem.' : '';
+    var dica = abertas ? 'Finalizar fica disponível quando as vinculadas forem encerradas.' : tratando ? 'Finalizar fica disponível quando os analistas encerrarem.' : (['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor'].indexOf(r.etapa) < 0 ? 'a ocorrência já está com o Sucesso do Cliente' : '');
     var conversa = (r.dialogo || []).map(linhaDialogoQ).join('');
     var escolha =
       '<div style="display:flex;gap:18px;flex-wrap:wrap;margin:4px 0 8px"><label class="qa-dep"><input type="radio" name="gt-rf-modo" value="obs" checked> <strong>Observação</strong> <span class="cinza">(com o Sucesso do Cliente, sem finalizar)</span></label>' +
-      '<label class="qa-dep"' + (podeFin ? '' : ' title="' + esc(dica) + '"') + '><input type="radio" name="gt-rf-modo" value="fin"' + (podeFin ? '' : ' disabled') + '> <strong>Finalizar</strong> <span class="cinza">(' + (podeFin ? 'nota final: segue para o Gestor final' : esc(dica)) + ')</span></label></div>';
+      '<label class="qa-dep"' + (podeFin ? '' : ' title="' + esc(dica) + '"') + '><input type="radio" name="gt-rf-modo" value="fin"' + (podeFin ? '' : ' disabled') + '> <strong>Finalizar</strong> <span class="cinza">(' + (podeFin ? 'nota final: segue para o Sucesso do Cliente' : esc(dica)) + ')</span></label></div>';
     return '<div class="ficha-sec">Resposta final ao Sucesso do Cliente</div><div class="qa-campo">' + escolha +
-      '<label for="gt-rf">' + 'Sua observação ou nota final' + ' <span class="cinza" id="gt-rf-cont">0/2000</span></label><textarea id="gt-rf" rows="4" maxlength="2000" placeholder="O Gestor final vê no Portal do Sucesso do Cliente, pode responder, e a resposta volta para esta ocorrência."></textarea>' +
-      '<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><button type="button" class="gp-footer-btn" id="gt-rf-enviar" style="width:auto">Enviar observação ao Gestor final</button><span class="cinza" id="gt-rf-ok" style="font-size:12px"></span></div></div>' +
+      '<label for="gt-rf">' + 'Sua observação ou nota final' + ' <span class="cinza" id="gt-rf-cont">0/2000</span></label><textarea id="gt-rf" rows="4" maxlength="2000" placeholder="O Sucesso do Cliente vê no Portal dele, pode responder, e a resposta volta para esta ocorrência."></textarea>' +
+      '<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><button type="button" class="gp-footer-btn" id="gt-rf-enviar" style="width:auto">Enviar observação ao Sucesso do Cliente</button><span class="cinza" id="gt-rf-ok" style="font-size:12px"></span></div></div>' +
       '<div id="dlg-lista">' + conversa + '</div>';
   }
   /** Portal do Sucesso do Cliente: a conversa com o Gestor(a) e a caixa para o Gestor final responder. */
-  function htmlDialogoSucessoQ(r, final) {
+  function podeFalarNoSucessoQ() { var p = perfilCs(); return !!(p.admin || p.gestor); }   // gestor(a) e administrador também escrevem na conversa, no Portal do Sucesso do Cliente
+  function htmlDialogoSucessoQ(r, final, podeFalar) {
     if (r.origem !== 'modulo') return '';
-    var d = r.dialogo || [], aberta = ['encerrada', 'cancelada'].indexOf(r.etapa) < 0;
-    if (!d.length && !(final && aberta)) return '';
-    return '<div class="ficha-sec">Conversa com o Gestor(a)</div><div id="dlg-lista">' + d.map(linhaDialogoQ).join('') + '</div>' +
-      (final && aberta ? '<div class="qa-campo"><label for="so-resp">Responder ao Gestor(a) <span class="cinza">(a resposta volta para a ocorrência no Portal do Gestor)</span></label><textarea id="so-resp" rows="3" maxlength="2000"></textarea><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button type="button" class="gp-footer-btn" id="so-resp-enviar" style="width:auto">Enviar resposta</button><span class="cinza" id="so-resp-ok" style="font-size:12px"></span></div></div>' : '');
+    var d = r.dialogo || [], aberta = ['encerrada', 'cancelada'].indexOf(r.etapa) < 0, escreve = aberta && (final || podeFalar);
+    if (!d.length && !escreve) return '';
+    return '<div class="ficha-sec">Conversa entre o Gestor(a) do departamento e o Sucesso do Cliente</div><div id="dlg-lista">' + d.map(linhaDialogoQ).join('') + '</div>' +
+      (escreve ? '<div class="qa-campo"><label for="so-resp">' + (final ? 'Responder ao Gestor(a)' : 'Deixar uma observação para o Sucesso do Cliente') + ' <span class="cinza">(' + (final ? 'a resposta volta para a ocorrência no Portal do Gestor' : 'fica na conversa, aberta até finalizar') + ')</span></label><textarea id="so-resp" rows="3" maxlength="2000"></textarea><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button type="button" class="gp-footer-btn" id="so-resp-enviar" style="width:auto">' + (final ? 'Enviar resposta' : 'Enviar observação') + '</button><span class="cinza" id="so-resp-ok" style="font-size:12px"></span></div></div>' : '');
   }
   /** Gestor(a): mensagem para quem está tratando (fica no histórico e avisa os responsáveis). */
   function htmlMensagemGestorQ(r) {
@@ -3207,18 +3209,18 @@
     if ($('gt-rf-enviar')) {   // Resposta final: Observação (conversa com o Gestor final) ou Finalizar
       var rf = $('gt-rf'), urlRf = '/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id) + '/resposta-final';
       var modoRf = function () { var x = document.querySelector('input[name="gt-rf-modo"]:checked'); return x ? x.value : 'obs'; };
-      var rotuloRf = function () { $('gt-rf-enviar').textContent = modoRf() === 'fin' ? 'Finalizar e enviar ao Gestor final' : 'Enviar observação ao Gestor final'; };
+      var rotuloRf = function () { $('gt-rf-enviar').textContent = modoRf() === 'fin' ? 'Finalizar e enviar ao Sucesso do Cliente' : 'Enviar observação ao Sucesso do Cliente'; };
       Array.prototype.forEach.call(document.querySelectorAll('input[name="gt-rf-modo"]'), function (i) { i.addEventListener('change', rotuloRf); });
       rf.addEventListener('input', function () { $('gt-rf-cont').textContent = rf.value.length + '/2000'; });
       $('gt-rf-enviar').addEventListener('click', async function () {
         var okl = $('gt-rf-ok'); okl.textContent = ''; var fin = modoRf() === 'fin';
         if (rf.value.trim().length < (fin ? 5 : 3)) { okl.textContent = fin ? 'Escreva a nota final (mínimo de 5 caracteres).' : 'Escreva a observação (mínimo de 3 caracteres).'; return; }
-        if (fin && !window.confirm('Finalizar? A ocorrência segue para o Gestor final do Sucesso do Cliente com esta nota.')) return;
+        if (fin && !window.confirm('Finalizar? A ocorrência segue para o Sucesso do Cliente com esta nota.')) return;
         var x = await postarQ(urlRf, { acao: fin ? 'finalizar' : 'observacao', texto: rf.value });
         if (!x.ok) { okl.textContent = x.j.error || 'Não foi possível enviar.'; return; }
         if (fin) { estado.g.dados = null; fechar(); desenharGestor(); return; }
         var lista = $('dlg-lista'); if (lista && x.j.dialogo) lista.insertAdjacentHTML('beforeend', linhaDialogoQ(x.j.dialogo));
-        rf.value = ''; $('gt-rf-cont').textContent = '0/2000'; okl.textContent = '✔ Observação enviada. O Gestor final vê no Portal do Sucesso do Cliente e pode responder.';
+        rf.value = ''; $('gt-rf-cont').textContent = '0/2000'; okl.textContent = '✔ Observação enviada. O Sucesso do Cliente vê no Portal dele e pode responder.';
       });
     }
     if ($('gt-oa-enviar')) {   // Observação com o analista (no vínculo escolhido)
