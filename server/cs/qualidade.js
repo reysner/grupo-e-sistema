@@ -294,7 +294,8 @@ function validarFilha(corpo, hoje) {
   if (!t.ok) return t;
   // por padrão a filha NÃO aponta a original nem o analista do registro (o reclamado): isso fica só com o gestor, a não ser que ele queira mostrar
   const mostrar_pai = b.mostrar_pai === true || b.mostrar_pai === 'true';
-  return { ok: true, valores: Object.assign({ assunto, mostrar_pai }, t.valores) };
+  const ocultar_empresa = b.ocultar_empresa === true || b.ocultar_empresa === 'true';   // por padrão a empresa aparece; o gestor pode tirar
+  return { ok: true, valores: Object.assign({ assunto, mostrar_pai, ocultar_empresa }, t.valores) };
 }
 
 /**
@@ -307,6 +308,10 @@ function mascararParaAnalista(reg, analistaId, ehLideranca) {
   const mostra = !!r.mostrar_pai;
   if (!mostra && String(r.analista_origem_id || '') !== String(analistaId || '')) { r.analista_origem_id = null; r.analista_origem_nome = null; }
   if (r.origem === 'filha' && !mostra) { r.pai_id = null; r.pai = null; }
+  if (r.ocultar_empresa) {   // o gestor escolheu não mostrar qual empresa reclamou a quem vai tratar
+    r.cliente_nome = null; r.cnpj = null; r.cliente_id = null;
+    if (r.pai) r.pai = Object.assign({}, r.pai, { cliente_nome: null });
+  }
   return r;
 }
 
@@ -454,6 +459,7 @@ function garantirSchema() {
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS pai_id UUID REFERENCES cs_qualidade_registros(id) ON DELETE CASCADE'))
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS etapa_antes TEXT'))   // etapa em que estava ao ser cancelada (para reabrir no mesmo ponto)
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS mostrar_pai BOOLEAN NOT NULL DEFAULT false'))   // filha: o gestor escolheu mostrar a origem (e o analista do registro) a quem vai tratar
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS ocultar_empresa BOOLEAN NOT NULL DEFAULT false'))   // filha: o gestor escolheu não mostrar a empresa a quem vai tratar
       .then(() => pool.query(`CREATE TABLE IF NOT EXISTS cs_qualidade_resp (
         registro_id UUID NOT NULL REFERENCES cs_qualidade_registros(id) ON DELETE CASCADE, analista_id TEXT NOT NULL,
         nota TEXT, obs TEXT, encerrado_em TIMESTAMPTZ, encerrado_por TEXT, PRIMARY KEY (registro_id, analista_id))`))
@@ -471,7 +477,7 @@ function soEquipe(req, res, next) {
   next();
 }
 
-const COLUNAS = `r.id, r.cliente_id, r.cnpj, r.cliente_nome, r.tipo, r.departamentos, r.detalhe, r.analista_id, a.nome AS analista_nome, r.analista_origem_id, ao.nome AS analista_origem_nome, r.pai_id, r.mostrar_pai,
+const COLUNAS = `r.id, r.cliente_id, r.cnpj, r.cliente_nome, r.tipo, r.departamentos, r.detalhe, r.analista_id, a.nome AS analista_nome, r.analista_origem_id, ao.nome AS analista_origem_nome, r.pai_id, r.mostrar_pai, r.ocultar_empresa,
        to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.status, r.origem, r.etapa, r.fila, r.plano_acao, r.tratativa_depto, r.gestor_obs, r.tratativa_definida_por, r.tratativa_definida_em, r.liberada_em, r.liberada_por, r.analista_nota, r.analista_obs, r.analista_em, r.analista_por, r.validacao_nota, r.validacao_obs, r.validacao_em, r.validacao_por, r.final_nota, r.final_obs, r.encerrada_em, r.encerrada_por, r.assunto, r.prioridade, r.criado_por, r.criado_em, r.resolvido_em, r.resolvido_por, r.tratativa, r.validado_em, r.validado_por`;
 const DE = `FROM cs_qualidade_registros r LEFT JOIN analistas a ON a.id::text = r.analista_id LEFT JOIN analistas ao ON ao.id::text = r.analista_origem_id`;
 const comSituacao = (rows) => rows.map((r) => ({ ...r, situacao: situacao(r.status, r.prazo), status_rotulo: ROTULO_STATUS[r.status] }));
@@ -556,7 +562,7 @@ async function notificarFinalizacao(reg, analistaNome, tratativa) {
       lida BOOLEAN DEFAULT false, link_modulo TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`);
     await pool.query(
       `INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ('qualidade_finalizada', $1, $2, 'cs-qualidade')`,
-      ['Tratativa finalizada: ' + reg.tipo, analistaNome + ' finalizou a tratativa de "' + (reg.cliente_nome || 'cliente') + '" (' + reg.tipo + '). Valide para encerrar o processo.' + (tratativa ? ' Resumo: ' + String(tratativa).slice(0, 160) : '')]);
+      ['Tratativa finalizada: ' + reg.tipo, analistaNome + ' finalizou a tratativa de "' + (reg.ocultar_empresa ? 'empresa não informada' : (reg.cliente_nome || 'cliente')) + '" (' + reg.tipo + '). Valide para encerrar o processo.' + (tratativa ? ' Resumo: ' + String(tratativa).slice(0, 160) : '')]);
   } catch (e) { console.warn('[qualidade] aviso de finalização não gravado:', e.message); }
 }
 
@@ -1066,14 +1072,14 @@ router.post('/gestor/ocorrencias/:id/filha', async (req, res) => {
     const dest = destinoDaOcorrencia(x.departamento, gest);
     const ins = await pool.query(
       `INSERT INTO cs_qualidade_registros (cliente_id, cnpj, cliente_nome, tipo, departamentos, detalhe, assunto, prioridade, prazo, origem, fila, criado_por, criado_por_id,
-         pai_id, etapa, status, plano_acao, tratativa_depto, gestor_obs, tratativa_definida_por, tratativa_definida_em, liberada_em, liberada_por, analista_id, mostrar_pai, analista_origem_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'filha', $10, $11, $12, $13, 'com_analista', 'em_tratamento', $6, $14, $15, $11, NOW(), NOW(), $11, $16, $17, $18) RETURNING id`,
+         pai_id, etapa, status, plano_acao, tratativa_depto, gestor_obs, tratativa_definida_por, tratativa_definida_em, liberada_em, liberada_por, analista_id, mostrar_pai, analista_origem_id, ocultar_empresa)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'filha', $10, $11, $12, $13, 'com_analista', 'em_tratamento', $6, $14, $15, $11, NOW(), NOW(), $11, $16, $17, $18, $19) RETURNING id`,
       [pai.cliente_id, pai.cnpj, pai.cliente_nome, pai.tipo, [x.departamento], x.plano, x.assunto, pai.prioridade, x.prazo, dest.fila, req.user.name || null, req.user.id || null,
-        pai.id, x.departamento, x.obs, String(x.analistas_ids[0]), x.mostrar_pai, x.mostrar_pai ? (pai.analista_origem_id || null) : null]);
+        pai.id, x.departamento, x.obs, String(x.analistas_ids[0]), x.mostrar_pai, x.mostrar_pai ? (pai.analista_origem_id || null) : null, x.ocultar_empresa]);
     for (const aid of x.analistas_ids) await pool.query('INSERT INTO cs_qualidade_resp (registro_id, analista_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [ins.rows[0].id, String(aid)]);
     await registrar(ins.rows[0].id, req.user.name, 'criado', 'Ocorrência vinculada a "' + (pai.assunto || '') + '" · ' + nomes.join(', ') + ' · prazo ' + x.prazo);
     await registrar(pai.id, req.user.name, 'nota', 'Abriu a ocorrência vinculada "' + x.assunto + '" para ' + nomes.join(', ') + ' (prazo ' + x.prazo.split('-').reverse().join('/') + ')');
-    avisarPush(() => idsDosResponsaveis(ins.rows[0].id, null), { titulo: 'Ocorrência aberta para você', texto: (pai.cliente_nome || 'Empresa') + ' — ' + x.assunto + ' · prazo ' + x.prazo.split('-').reverse().join('/'), url: '/cs?aba=analista', tag: 'fil-' + ins.rows[0].id }, req.user.id);
+    avisarPush(() => idsDosResponsaveis(ins.rows[0].id, null), { titulo: 'Ocorrência aberta para você', texto: (x.ocultar_empresa ? 'Empresa não informada' : (pai.cliente_nome || 'Empresa')) + ' — ' + x.assunto + ' · prazo ' + x.prazo.split('-').reverse().join('/'), url: '/cs?aba=analista', tag: 'fil-' + ins.rows[0].id }, req.user.id);
     res.status(201).json({ registro: await registroCompleto(ins.rows[0].id), original: await registroCompleto(pai.id) });
   } catch (e) { console.error('[qualidade] POST filha falhou:', e); res.status(500).json({ error: 'Erro ao abrir a ocorrência vinculada.' }); }
 });
@@ -1151,7 +1157,7 @@ router.post('/analista/ocorrencias/:id/nota', async (req, res) => {
 router.post('/analista/ocorrencias/:id/encerrar', async (req, res) => {
   try {
     await garantirSchema();
-    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, analista_id, departamentos, fila, assunto, cliente_nome, tipo');
+    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, analista_id, departamentos, fila, assunto, cliente_nome, tipo, ocultar_empresa');
     if (!reg) return res.status(404).json({ error: 'Ocorrência não encontrada.' });
     const t = transicao('analista_encerrar', reg.etapa);
     if (!t.ok) return res.status(409).json({ error: t.erro });
@@ -1247,7 +1253,7 @@ async function podeCancelarOuReabrir(req, reg) {
 router.post('/gestor/ocorrencias/:id/cancelar', async (req, res) => {
   try {
     await garantirSchema();
-    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, departamentos, fila, assunto, cliente_nome, origem, pai_id, analista_id');
+    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, departamentos, fila, assunto, cliente_nome, origem, pai_id, analista_id, ocultar_empresa');
     if (!reg) return res.status(404).json({ error: 'Ocorrência não encontrada.' });
     if (!(await podeCancelarOuReabrir(req, reg))) return res.status(403).json({ error: 'Só o gestor do departamento, o gestor final ou a administração cancelam uma ocorrência.' });
     const t = transicao('cancelar', reg.etapa);
@@ -1263,7 +1269,7 @@ router.post('/gestor/ocorrencias/:id/cancelar', async (req, res) => {
       await registrar(reg.pai_id, req.user.name, 'nota', 'Ocorrência vinculada cancelada: ' + (reg.assunto || ''));
       await tentarAvancarParaValidacao(reg.pai_id, req.user.name, null, req.user.id);
     }
-    avisarPush(async () => idsResp, { titulo: 'Ocorrência cancelada', texto: (reg.cliente_nome || 'Empresa') + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(v.valores.motivo, 100), url: '/cs?aba=analista', tag: 'canc-' + reg.id }, req.user.id);
+    avisarPush(async () => idsResp, { titulo: 'Ocorrência cancelada', texto: (reg.ocultar_empresa ? 'Empresa não informada' : (reg.cliente_nome || 'Empresa')) + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(v.valores.motivo, 100), url: '/cs?aba=analista', tag: 'canc-' + reg.id }, req.user.id);
     refrescarRisco();
     res.json({ registro: await registroCompleto(reg.id) });
   } catch (e) { console.error('[qualidade] POST cancelar falhou:', e); res.status(500).json({ error: 'Erro ao cancelar a ocorrência.' }); }
@@ -1295,7 +1301,7 @@ router.post('/gestor/ocorrencias/:id/excluir', async (req, res) => {
 router.post('/gestor/ocorrencias/:id/reabrir', async (req, res) => {
   try {
     await garantirSchema();
-    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, etapa_antes, departamentos, fila, assunto, cliente_nome, origem, pai_id, analista_id');
+    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, etapa_antes, departamentos, fila, assunto, cliente_nome, origem, pai_id, analista_id, ocultar_empresa');
     if (!reg) return res.status(404).json({ error: 'Ocorrência não encontrada.' });
     const reabreEncerrada = reg.etapa === 'encerrada';
     if (reabreEncerrada) {
@@ -1316,7 +1322,7 @@ router.post('/gestor/ocorrencias/:id/reabrir', async (req, res) => {
     if (!up.rowCount) return res.status(409).json({ error: JA_MUDOU });
     if (reabreEncerrada) await pool.query('UPDATE cs_qualidade_resp SET encerrado_em = NULL WHERE registro_id = $1', [reg.id]);   // cada responsável trata e encerra de novo
     await registrar(reg.id, req.user.name, 'reaberta', v.valores.motivo);
-    if (alvo.para === 'com_analista') avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Ocorrência reaberta', texto: (reg.cliente_nome || 'Empresa') + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(v.valores.motivo, 100), url: '/cs?aba=analista', tag: 'reab-' + reg.id + '-' + Date.now() }, req.user.id);
+    if (alvo.para === 'com_analista') avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Ocorrência reaberta', texto: (reg.ocultar_empresa ? 'Empresa não informada' : (reg.cliente_nome || 'Empresa')) + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(v.valores.motivo, 100), url: '/cs?aba=analista', tag: 'reab-' + reg.id + '-' + Date.now() }, req.user.id);
     refrescarRisco();
     res.json({ registro: await registroCompleto(reg.id) });
   } catch (e) { console.error('[qualidade] POST reabrir falhou:', e); res.status(500).json({ error: 'Erro ao reabrir a ocorrência.' }); }

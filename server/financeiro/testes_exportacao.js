@@ -414,9 +414,9 @@ const semLixo = (e, nome) => {
     const ret = C.t.htmlRetornos({ responsaveis: [{ nome: 'Bruno', nota: 'Conferi', encerrado_em: '2026-10-20T10:00:00Z' }, { nome: 'João', nota: 'Falta ajustar', encerrado_em: null }] });
     assert.ok(ret.includes('Analista (Bruno)') && ret.includes('Analista (João)') && ret.includes('ainda não encerrou') && ret.includes('Conferi'), 'uma devolutiva por responsável');
     const f = C.t.htmlFilhaGestor({ id: 'p', assunto: 'Guia', cliente_nome: 'ALFA', departamentos: ['Fiscal'] }, an);
-    assert.ok(f.includes('id="gf-assunto" maxlength="100" value="Guia — ALFA"'), 'o assunto da vinculada já vem com o nome da original e o da empresa (editável)');
-    const longo = C.t.htmlFilhaGestor({ id: 'p', assunto: 'A'.repeat(70), cliente_nome: 'B'.repeat(60), departamentos: ['Fiscal'] }, an);
-    assert.ok(/id="gf-assunto" maxlength="100" value="A{70} — B{27}"/.test(longo), 'cabe nos 100 caracteres');
+    assert.ok(f.includes('id="gf-assunto" maxlength="100" value="Guia"'), 'o assunto da vinculada já vem com o nome da original (editável)');
+    assert.ok(f.includes('id="gf-empresa-x"') && f.includes('<span>ALFA</span>') && f.includes('id="gf-empresa-volta"'), 'a empresa aparece fixa, com ✕ para tirar (e opção de mostrar de novo)');
+    assert.ok(C.t.marcaFilha({ origem: 'filha', ocultar_empresa: true, cliente_nome: 'ALFA' }).includes('empresa oculta ao analista') && !C.t.marcaFilha({ origem: 'filha', ocultar_empresa: true, cliente_nome: null }).includes('empresa oculta'), 'a liderança vê o aviso; o analista (empresa já tirada) não');
     assert.ok(f.includes('Abrir ocorrência vinculada') && f.includes('id="gf-assunto"') && f.includes('id="gf-plano"') && f.includes('id="gf-resp"') && f.includes('id="gf-depto"') && f.includes('id="gf-prazo"') && f.includes('id="gf-ok"'));
     assert.ok(f.includes('Digite @ para chamar um analista') && f.includes('<option value="Fiscal" selected>Fiscal</option>') && !f.includes('id="gf-mostrar" checked'), 'por padrão não mostra a origem');
     assert.ok(f.includes('Mostrar a origem e o analista do registro') && f.includes('fica só com você'));

@@ -373,6 +373,18 @@ teste('sigilo: a filha não aponta o analista do registro (o reclamado) nem a or
   assert.deepStrictEqual([aberta.pai.assunto, aberta.analista_origem_nome], ['Reclamação do cliente X', 'Fulano Reclamado'], 'se o gestor quis mostrar, mostra');
   assert.strictEqual(original.analista_origem_nome, 'Fulano Reclamado', 'não altera o original');
 });
+teste('sigilo: o gestor pode tirar a empresa da vinculada; o analista não a vê, a liderança continua vendo', () => {
+  const b = { assunto: 'Atraso na folha', plano: 'Resolver', analistas_ids: ['3'], departamento: 'Pessoal', prazo: '2026-10-25' };
+  assert.strictEqual(validarFilha(b, '2026-10-18').valores.ocultar_empresa, false, 'por padrão a empresa aparece');
+  assert.strictEqual(validarFilha(Object.assign({}, b, { ocultar_empresa: true }), '2026-10-18').valores.ocultar_empresa, true);
+  assert.strictEqual(validarFilha(Object.assign({}, b, { ocultar_empresa: 'sim' }), '2026-10-18').valores.ocultar_empresa, false, 'só true vale');
+  const filha = { id: 'f1', origem: 'filha', cliente_id: '9', cnpj: '123', cliente_nome: 'ALFA LTDA', ocultar_empresa: true, mostrar_pai: true, pai_id: 'o1', pai: { id: 'o1', assunto: 'X', cliente_nome: 'ALFA LTDA' } };
+  const vista = mascararParaAnalista(filha, '3', false);
+  assert.deepStrictEqual([vista.cliente_nome, vista.cnpj, vista.cliente_id, vista.pai.cliente_nome], [null, null, null, null], 'o analista não vê a empresa (nem pela original)');
+  assert.strictEqual(mascararParaAnalista(filha, '3', true).cliente_nome, 'ALFA LTDA', 'a liderança vê');
+  assert.strictEqual(mascararParaAnalista(Object.assign({}, filha, { ocultar_empresa: false }), '3', false).cliente_nome, 'ALFA LTDA', 'sem a marca, a empresa aparece');
+  assert.strictEqual(filha.cliente_nome, 'ALFA LTDA', 'não altera o original');
+});
 teste('original só vai à validação quando todos os responsáveis encerraram e as filhas estão encerradas', () => {
   const r = (id, ok) => ({ analista_id: id, encerrado_em: ok ? '2026-10-18' : null });
   assert.deepStrictEqual(prontoParaValidacao([r('1', true)], []), { pronto: true, pendentes: [], filhasPendentes: 0 });

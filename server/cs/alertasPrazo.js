@@ -39,7 +39,7 @@ const ROT_ETAPA = { registrada: 'aguardando análise do gestor', tratativa_defin
 const dataBr = (iso) => String(iso).slice(8, 10) + '/' + String(iso).slice(5, 7) + '/' + String(iso).slice(0, 4);
 function textoDoAlerta(nivel, reg) {
   const titulo = nivel === 'amanha' ? 'Prazo vence amanhã' : nivel === 'hoje' ? 'Prazo vence hoje' : 'Prazo vencido';
-  const texto = (reg.cliente_nome || 'Empresa') + ' — ' + (reg.assunto || 'ocorrência') + ' · prazo ' + dataBr(reg.prazo) + ' · ' + (ROT_ETAPA[reg.etapa] || reg.etapa);
+  const texto = (reg.ocultar_empresa ? 'Empresa não informada' : (reg.cliente_nome || 'Empresa')) + ' — ' + (reg.assunto || 'ocorrência') + ' · prazo ' + dataBr(reg.prazo) + ' · ' + (ROT_ETAPA[reg.etapa] || reg.etapa);
   return { titulo, texto };
 }
 
@@ -63,7 +63,7 @@ async function rodar(deps) {
   const { pool, hoje } = deps;
   await garantirTabela(pool);
   const { rows } = await pool.query(
-    `SELECT id, cliente_nome, assunto, etapa, departamentos, fila, analista_id, to_char(prazo, 'YYYY-MM-DD') AS prazo
+    `SELECT id, cliente_nome, ocultar_empresa, assunto, etapa, departamentos, fila, analista_id, to_char(prazo, 'YYYY-MM-DD') AS prazo
        FROM cs_qualidade_registros
       WHERE origem IN ('modulo', 'filha') AND status NOT IN ('cancelado', 'resolvido') AND etapa = ANY($1::text[])
         AND prazo IS NOT NULL AND prazo <= ($2::date + 1) AND prazo >= ($2::date - $3::int)`,

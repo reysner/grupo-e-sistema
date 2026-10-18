@@ -2431,7 +2431,7 @@
     var l = rotuloPrazo(r.prazo, r.etapa, hoje);
     return data(r.prazo) + (l ? '<div class="sub" style="color:' + l.cor + ';font-weight:700">' + l.txt + '</div>' : '');
   }
-  function marcaFilha(r) { return r && r.origem === 'filha' ? ' <span class="pill" style="color:#7c3aed;border-color:#7c3aed55;background:#7c3aed14;font-size:10px">vinculada</span>' : ''; }
+  function marcaFilha(r) { return r && r.origem === 'filha' ? ' <span class="pill" style="color:#7c3aed;border-color:#7c3aed55;background:#7c3aed14;font-size:10px">vinculada</span>' + (r.ocultar_empresa && r.cliente_nome ? ' <span class="pill" style="color:#6b7280;border-color:#6b728055;background:#6b728014;font-size:10px" title="Quem trata não vê a empresa">empresa oculta ao analista</span>' : '') : ''; }
   /** De qual ocorrência a filha veio (só aparece se o gestor quis mostrar) e as ocorrências vinculadas da original. */
   function htmlVinculos(r) {
     var h = '';
@@ -2510,17 +2510,13 @@
     ta.addEventListener('blur', function () { setTimeout(fecha, 150); });
   }
   /** Janela do gestor para abrir uma ocorrência vinculada (uma por situação): assunto, plano, responsáveis, departamento e prazo próprios. */
-  /** Assunto sugerido para a vinculada: nome da original e o da empresa (até 100 caracteres); quem abre edita ou apaga a empresa. */
-  function assuntoSugeridoFilha(pai) {
-    var a = String(pai.assunto || '').trim(), e = String(pai.cliente_nome || '').trim();
-    return (a && e ? a + ' — ' + e : a || e).slice(0, 100);
-  }
   function htmlFilhaGestor(pai, analistas) {
     var depPai = (pai.departamentos || [])[0] || '';
     var optD = DEPS_OCORRENCIA.map(function (d) { return '<option value="' + esc(d[0]) + '"' + (depPai === d[0] ? ' selected' : '') + '>' + esc(d[1]) + '</option>'; }).join('');
     return '<div class="qa-modal-topo"><strong style="font-size:20px;color:#256050">Abrir ocorrência vinculada</strong><button type="button" class="qa-x" id="gf-fechar" aria-label="Fechar">✕</button></div>' +
       '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">Vinculada a <strong>' + esc(pai.assunto || '—') + '</strong> (' + esc(pai.cliente_nome || '') + '). Abra uma para cada situação: cada uma tem o seu responsável e o seu prazo. A original só segue para a validação quando todas estiverem encerradas.</div>' +
-      '<div class="qa-campo"><label for="gf-assunto">Assunto <span class="req">*</span> <span class="cinza">(já vem com o nome da ocorrência e da empresa; pode editar ou apagar)</span></label><input type="text" id="gf-assunto" maxlength="100" value="' + esc(assuntoSugeridoFilha(pai)) + '" placeholder="Qual a situação a tratar?"></div>' +
+      '<div class="qa-campo"><label for="gf-assunto">Assunto <span class="req">*</span> <span class="cinza">(já vem com o nome da original; pode editar)</span></label><input type="text" id="gf-assunto" maxlength="100" value="' + esc(String(pai.assunto || '').slice(0, 100)) + '" placeholder="Qual a situação a tratar?"></div>' +
+      '<div class="qa-campo"><label>Empresa <span class="cinza">(tire com o ✕ se não quiser que quem vai tratar saiba qual empresa reclamou)</span></label><div id="gf-empresa" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span id="gf-empresa-chip" style="display:inline-flex;align-items:center;gap:8px;padding:3px 6px 3px 10px;border:1px solid var(--border);border-radius:999px;font-size:12.5px"><span>' + esc(pai.cliente_nome || '—') + '</span><button type="button" id="gf-empresa-x" class="qa-x" style="font-size:11px;padding:0 4px" aria-label="Não mostrar a empresa a quem vai tratar" title="Não mostrar a empresa a quem vai tratar">✕</button></span><span id="gf-empresa-oculta" style="display:none;font-size:12.5px" class="cinza">A empresa não será mostrada a quem vai tratar. <button type="button" class="link" id="gf-empresa-volta">Mostrar de novo</button></span></div></div>' +
       '<div class="qa-campo"><label for="gf-plano">Plano de ação <span class="req">*</span> <span class="cinza" id="gf-cont">0/1500</span></label><textarea id="gf-plano" rows="4" maxlength="1500" placeholder="O que precisa ser feito. Digite @ para chamar um analista."></textarea></div>' +
       '<div class="qa-campo"><label>Responsáveis <span class="req">*</span> <span class="cinza">(um ou vários · digite @ no plano de ação para chamar o(a) analista)</span></label><div class="qg-chips" id="gf-resp">' + htmlChipsResp([]) + '</div></div>' +
       '<div class="qa-oc-linha qa-g-grid">' +
@@ -2538,6 +2534,10 @@
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Abrir ocorrência vinculada">' + htmlFilhaGestor(pai, estado.qAnalistas || []) + '</div>';
     $('gf-fechar').addEventListener('click', fechar); $('gf-cancel').addEventListener('click', fechar);
     var plano = $('gf-plano'), erro = $('gf-erro');
+    var ocultarEmpresa = false;   // ✕ na empresa: quem vai tratar não vê qual empresa reclamou
+    var mostraEmpresa = function (oculta) { ocultarEmpresa = oculta; $('gf-empresa-chip').style.display = oculta ? 'none' : 'inline-flex'; $('gf-empresa-oculta').style.display = oculta ? 'inline' : 'none'; };
+    $('gf-empresa-x').addEventListener('click', function () { mostraEmpresa(true); });
+    $('gf-empresa-volta').addEventListener('click', function () { mostraEmpresa(false); });
     ligarChipsResp($('gf-resp'));
     var marcados = function () { return chipsDe($('gf-resp')); };
     plano.addEventListener('input', function () { $('gf-cont').textContent = plano.value.length + '/1500'; });
@@ -2556,7 +2556,7 @@
       var nomes = sel.map(function (c) { return c.getAttribute('data-nome'); }).join(', ');
       if (!window.confirm('Abrir esta ocorrência vinculada para ' + nomes + '?')) return;
       var b = $('gf-ok'); b.disabled = true;
-      var x = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(pai.id) + '/filha', { assunto: assunto, plano: plano.value, analistas_ids: sel.map(function (c) { return c.getAttribute('data-chip'); }), departamento: $('gf-depto').value, prazo: prazo, obs: $('gf-obs').value, mostrar_pai: $('gf-mostrar').checked });
+      var x = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(pai.id) + '/filha', { assunto: assunto, plano: plano.value, analistas_ids: sel.map(function (c) { return c.getAttribute('data-chip'); }), departamento: $('gf-depto').value, prazo: prazo, obs: $('gf-obs').value, mostrar_pai: $('gf-mostrar').checked, ocultar_empresa: ocultarEmpresa });
       if (!x.ok) { erro.textContent = x.j.error || 'Não foi possível abrir a ocorrência vinculada.'; b.disabled = false; return; }
       fechar(); if (aoCriar) aoCriar();
       estado.g.dados = null; desenharGestor();
