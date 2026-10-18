@@ -222,7 +222,7 @@
     $('titulo').textContent = TITULOS[sec][0];
     $('subtitulo').textContent = TITULOS[sec][1];
     $('filtro-periodo').style.display = (sec === 'visao' || sec === 'churn') ? 'flex' : 'none';
-    pintarBotaoValores();   // some nos portais
+    pintarBotaoValores();   // o botão acompanha o administrador em todas as páginas
     if (sec === 'gestor' && estado.g && !estado.g.dados) desenharGestor();
     if (sec === 'analista' && (!estado.a || !estado.a.dados) && perfilCs().analista) desenharAnalista();
     if (sec === 'sucesso' && (!estado.s || !estado.s.dados)) desenharSucesso();
@@ -3560,8 +3560,8 @@
   $('btn-csv').addEventListener('click', function () { exportar('csv'); });
   $('btn-pdf').addEventListener('click', function () { exportar('pdf'); });
   // Botão "Valores ocultos" (só administrador): esconde todo valor em R$ na tela, para apresentar sem mostrar valores. Lembra a escolha neste navegador.
-  /** O botão "Ocultar valores" só faz sentido onde há valores em R$: os portais (Gestor, Analista e Sucesso do Cliente) não têm. */
-  function botaoValoresVisivel(admin, sec) { return !!admin && ['gestor', 'analista', 'sucesso'].indexOf(sec) < 0; }
+  /** O botão "Ocultar valores" aparece em todas as páginas do painel, para o administrador (também nos portais). */
+  function botaoValoresVisivel(admin) { return !!admin; }
   function pintarBotaoValores() {
     var b = $('btn-valores'); var admin = estado.dados && estado.dados.usuario && estado.dados.usuario.papel === 'administrador';
     b.style.display = botaoValoresVisivel(admin, estado.secao) ? 'inline-flex' : 'none';

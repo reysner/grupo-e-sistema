@@ -246,7 +246,7 @@ const semLixo = (e, nome) => {
   });
   await teste('cs: o botão "Ocultar valores" aparece só para o administrador e some nos portais (Gestor, Analista e Sucesso do Cliente)', () => {
     ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'risco', 'churn', 'categorias', 'qualidade'].forEach((s) => assert.strictEqual(C.t.botaoValoresVisivel(true, s), true, s));
-    ['gestor', 'analista', 'sucesso'].forEach((s) => assert.strictEqual(C.t.botaoValoresVisivel(true, s), false, s));
+    ['gestor', 'analista', 'sucesso', 'acessos'].forEach((s) => assert.strictEqual(C.t.botaoValoresVisivel(true, s), true, 'também nos portais: ' + s));
     assert.strictEqual(C.t.botaoValoresVisivel(false, 'visao'), false);
     assert.strictEqual(C.t.botaoValoresVisivel(undefined, 'visao'), false);
   });
