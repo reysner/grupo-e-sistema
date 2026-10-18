@@ -2875,11 +2875,13 @@
     Array.prototype.forEach.call(document.querySelectorAll('input[name="ao-modo"]'), function (i) { i.addEventListener('change', rotulo); });
     tx.addEventListener('input', function () { $('ao-cont').textContent = tx.value.length + '/2000'; });
     $('ao-enviar').addEventListener('click', async function () {
+      if ($('ao-enviar').disabled) return;
       erro.textContent = ''; var fin = modo() === 'fin', t = tx.value.trim();
       if (t.length < (fin ? 5 : 3)) { erro.textContent = fin ? 'Deixe a nota do que foi feito (mínimo de 5 caracteres).' : 'Escreva a observação (mínimo de 3 caracteres).'; return; }
       if (!fin) {   // Observação: o gestor(a) recebe aviso; a janela se atualiza na hora e o campo é limpo
+        $('ao-enviar').disabled = true;
         var x1 = await postarQ(url + '/nota', { texto: t });
-        if (!x1.ok) { erro.textContent = x1.j.error || 'Não foi possível enviar a observação.'; return; }
+        if (!x1.ok) { erro.textContent = x1.j.error || 'Não foi possível enviar a observação.'; $('ao-enviar').disabled = false; return; }
         var regs = (estado.a.dados && estado.a.dados.registros) || [], pos = -1;
         regs.forEach(function (q, i) { if (String(q.id) === String(r.id)) pos = i; });
         if (pos >= 0 && x1.j.registro) { regs[pos] = x1.j.registro; fechar(); abrirOcorrenciaAnalista(r.id); } else fechar();
@@ -2987,10 +2989,13 @@
     $('so-fechar').addEventListener('click', fechar); $('so-cancel').addEventListener('click', fechar);
     if (d.final || perfilCs().admin) ligarAcoesOcorrencia(r, fechar, function () { estado.s.dados = null; desenharSucesso(); });
     if ($('so-resp-enviar')) $('so-resp-enviar').addEventListener('click', async function () {   // o Gestor final responde; o gestor(a)/administrador deixa observação (a conversa é a mesma)
+      if ($('so-resp-enviar').disabled) return;
       var t = $('so-resp').value.trim(), okl = $('so-resp-ok'); okl.textContent = ''; var viaFinal = !!d.final;
       if (t.length < 3) { okl.textContent = 'Escreva a mensagem (mínimo de 3 caracteres).'; return; }
+      $('so-resp-enviar').disabled = true;
       var x = viaFinal ? await postarQ('/api/cs/painel/qualidade/sucesso/ocorrencias/' + encodeURIComponent(r.id) + '/responder', { texto: t })
         : await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id) + '/resposta-final', { acao: 'observacao', texto: t });
+      $('so-resp-enviar').disabled = false;
       if (!x.ok) { okl.textContent = x.j.error || 'Não foi possível enviar.'; return; }
       var lista = $('dlg-lista'); if (lista && x.j.dialogo) lista.insertAdjacentHTML('beforeend', linhaDialogoQ(x.j.dialogo));
       $('so-resp').value = ''; okl.textContent = viaFinal ? '✔ Resposta enviada. O gestor(a) vê na ocorrência, no Portal do Gestor.' : '✔ Observação enviada ao Sucesso do Cliente.';
@@ -3238,10 +3243,13 @@
       Array.prototype.forEach.call(document.querySelectorAll('input[name="gt-rf-modo"]'), function (i) { i.addEventListener('change', rotuloRf); });
       rf.addEventListener('input', function () { $('gt-rf-cont').textContent = rf.value.length + '/2000'; });
       $('gt-rf-enviar').addEventListener('click', async function () {
+        if ($('gt-rf-enviar').disabled) return;
         var okl = $('gt-rf-ok'); okl.textContent = ''; var fin = modoRf() === 'fin';
         if (rf.value.trim().length < (fin ? 5 : 3)) { okl.textContent = fin ? 'Escreva a nota final (mínimo de 5 caracteres).' : 'Escreva a observação (mínimo de 3 caracteres).'; return; }
         if (fin && !window.confirm('Finalizar? A ocorrência segue para o Sucesso do Cliente com esta nota.')) return;
+        $('gt-rf-enviar').disabled = true;
         var x = await postarQ(urlRf, { acao: fin ? 'finalizar' : 'observacao', texto: rf.value });
+        $('gt-rf-enviar').disabled = false;
         if (!x.ok) { okl.textContent = x.j.error || 'Não foi possível enviar.'; return; }
         if (fin) { estado.g.dados = null; fechar(); desenharGestor(); return; }
         var lista = $('dlg-lista'); if (lista && x.j.dialogo) lista.insertAdjacentHTML('beforeend', linhaDialogoQ(x.j.dialogo));
@@ -3252,10 +3260,13 @@
       var oa = $('gt-oa');
       oa.addEventListener('input', function () { $('gt-oa-cont').textContent = oa.value.length + '/1000'; });
       $('gt-oa-enviar').addEventListener('click', async function () {
+        if ($('gt-oa-enviar').disabled) return;
         var okl = $('gt-oa-ok'); okl.textContent = '';
         var t = oa.value.trim(); if (t.length < 3) { okl.textContent = 'Escreva a observação (mínimo de 3 caracteres).'; return; }
         var sel = $('gt-oa-para'), idF = sel.value, nomeF = sel.options[sel.selectedIndex].text;
+        $('gt-oa-enviar').disabled = true;
         var x = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(idF) + '/mensagem', { texto: t });
+        $('gt-oa-enviar').disabled = false;
         if (!x.ok) { okl.textContent = x.j.error || 'Não foi possível enviar a observação.'; return; }
         $('dlg-oa').insertAdjacentHTML('beforeend', '<div class="qa-reg-trat"><strong>Você → ' + esc(nomeF) + ' · ' + dataHora(new Date().toISOString()) + ':</strong> ' + esc(t) + '</div>');
         oa.value = ''; $('gt-oa-cont').textContent = '0/1000'; okl.textContent = '✔ Enviada. O analista recebe aviso e responde com uma observação no vínculo dele.';
@@ -3268,11 +3279,13 @@
       Array.prototype.forEach.call(document.querySelectorAll('input[name="gt-vf-modo"]'), function (i) { i.addEventListener('change', rotuloVf); });
       vf.addEventListener('input', function () { $('gt-vf-cont').textContent = vf.value.length + '/2000'; });
       $('gt-vf-enviar').addEventListener('click', async function () {
+        if ($('gt-vf-enviar').disabled) return;
         var okv = $('gt-vf-ok'); okv.textContent = ''; var finV = modoVf() === 'fin';
         if (vf.value.trim().length < (finV ? 5 : 3)) { okv.textContent = finV ? 'Escreva a nota final (mínimo de 5 caracteres).' : 'Escreva a observação (mínimo de 3 caracteres).'; return; }
         if (finV && !window.confirm('Finalizar este vínculo? Ele é encerrado com esta nota, mesmo que o analista ainda não tenha finalizado.')) return;
+        $('gt-vf-enviar').disabled = true;
         var xv = await postarQ(urlVf, { acao: finV ? 'finalizar' : 'observacao', texto: vf.value });
-        if (!xv.ok) { okv.textContent = xv.j.error || 'Não foi possível enviar.'; return; }
+        if (!xv.ok) { okv.textContent = xv.j.error || 'Não foi possível enviar.'; $('gt-vf-enviar').disabled = false; return; }
         if (finV) { estado.g.dados = null; fechar(); desenharGestor(); return; }
         var regsV = (estado.g && estado.g.dados && estado.g.dados.registros) || [];
         regsV.forEach(function (q, i) { if (String(q.id) === String(r.id) && xv.j.registro) regsV[i] = xv.j.registro; });

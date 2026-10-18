@@ -592,6 +592,13 @@ async function notificarFinalizacao(reg, analistaNome, tratativa) {
 async function registrar(registroId, por, acao, txt) {
   await pool.query('INSERT INTO cs_qualidade_historico (registro_id, por, acao, texto) VALUES ($1, $2, $3, $4)', [registroId, por || null, acao, txt || null]);
 }
+/** Como registrar(), mas ignora a mesma fala (mesmo autor, ação e texto) repetida em até 20 segundos (duplo clique). Devolve true se gravou. */
+async function registrarUnico(registroId, por, acao, txt) {
+  const dup = await pool.query("SELECT 1 FROM cs_qualidade_historico WHERE registro_id = $1 AND por IS NOT DISTINCT FROM $2 AND acao = $3 AND texto IS NOT DISTINCT FROM $4 AND em > NOW() - INTERVAL '20 seconds' LIMIT 1", [registroId, por || null, acao, txt || null]);
+  if (dup.rows.length) return false;
+  await registrar(registroId, por, acao, txt);
+  return true;
+}
 
 // ── Equipe do painel ─────────────────────────────────────────────────────────────
 const router = express.Router();
@@ -1226,8 +1233,8 @@ router.post('/analista/ocorrencias/:id/nota', async (req, res) => {
     const t = texto(req.body && req.body.texto, MAX_ANOTACAO + 1);
     if (t.length < 3) return res.status(400).json({ error: 'Escreva a nota (mínimo de 3 caracteres).' });
     if (t.length > MAX_ANOTACAO) return res.status(400).json({ error: 'A anotação passa de ' + MAX_ANOTACAO + ' caracteres.' });
-    await registrar(reg.id, ag.por, 'nota', t);
-    avisarAnotacao(req, reg, ag, t);   // sem esperar: o aviso nunca atrasa nem derruba a anotação
+    const novaNota = await registrarUnico(reg.id, ag.por, 'nota', t);
+    if (novaNota) avisarAnotacao(req, reg, ag, t);   // sem esperar: o aviso nunca atrasa nem derruba a anotação (e não repete se foi duplo clique)
     res.json({ registro: registroParaQuemAgiu(req.user, ag, await registroCompleto(reg.id)) });
   } catch (e) { console.error('[qualidade] POST analista nota falhou:', e); res.status(500).json({ error: 'Erro ao guardar a nota.' }); }
 });
@@ -1340,9 +1347,9 @@ router.post('/gestor/ocorrencias/:id/mensagem', async (req, res) => {
     const t = texto(req.body && req.body.texto, MAX_ANOTACAO + 1);
     if (t.length < 3) return res.status(400).json({ error: 'Escreva a mensagem (mínimo de 3 caracteres).' });
     if (t.length > MAX_ANOTACAO) return res.status(400).json({ error: 'A mensagem passa de ' + MAX_ANOTACAO + ' caracteres.' });
-    await registrar(reg.id, req.user.name, 'nota', t);
+    const novaMsg = await registrarUnico(reg.id, req.user.name, 'nota', t);
     const empresa = reg.ocultar_empresa ? 'Empresa não informada' : (reg.cliente_nome || 'Empresa');
-    avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Mensagem do gestor', texto: (req.user.name || 'O gestor') + ' — ' + empresa + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(t, 120), url: '/cs?aba=analista', tag: 'msg-' + reg.id + '-' + Date.now() }, req.user.id);
+    if (novaMsg) avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Mensagem do gestor', texto: (req.user.name || 'O gestor') + ' — ' + empresa + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(t, 120), url: '/cs?aba=analista', tag: 'msg-' + reg.id + '-' + Date.now() }, req.user.id);
     res.json({ registro: await registroCompleto(reg.id) });
   } catch (e) { console.error('[qualidade] POST mensagem falhou:', e); res.status(500).json({ error: 'Erro ao enviar a mensagem.' }); }
 });
@@ -1361,8 +1368,8 @@ router.post('/gestor/ocorrencias/:id/resposta-final', async (req, res) => {
       if (!(req.body && req.body.acao === 'finalizar')) {
         if (texto0.length < 3) return res.status(400).json({ error: 'Escreva a observação (mínimo de 3 caracteres).' });
         if (texto0.length > MAX_NOTA) return res.status(400).json({ error: 'A observação passa de ' + MAX_NOTA + ' caracteres.' });
-        await registrar(reg.id, req.user.name, 'nota', texto0);
-        avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Observação do gestor', texto: (req.user.name || 'O gestor') + ' — ' + emp + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(texto0, 120), url: '/cs?aba=analista', tag: 'msg-' + reg.id + '-' + Date.now() }, req.user.id);
+        const novaObs = await registrarUnico(reg.id, req.user.name, 'nota', texto0);
+        if (novaObs) avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Observação do gestor', texto: (req.user.name || 'O gestor') + ' — ' + emp + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(texto0, 120), url: '/cs?aba=analista', tag: 'msg-' + reg.id + '-' + Date.now() }, req.user.id);
         return res.json({ ok: true, registro: await registroCompleto(reg.id) });
       }
       const vf = validarEncerramento({ nota: texto0 });
@@ -1390,8 +1397,8 @@ router.post('/gestor/ocorrencias/:id/resposta-final', async (req, res) => {
       const t = String((req.body && req.body.texto) == null ? '' : req.body.texto).replace(/\r\n/g, '\n').trim();
       if (t.length < 3) return res.status(400).json({ error: 'Escreva a observação (mínimo de 3 caracteres).' });
       if (t.length > MAX_NOTA) return res.status(400).json({ error: 'A observação passa de ' + MAX_NOTA + ' caracteres.' });
-      await registrar(reg.id, req.user.name, 'dialogo_gestor', t);
-      avisarPush(() => idsSucesso(), { titulo: 'Observação do gestor para o Gestor final', texto: (req.user.name || 'O gestor') + ' — ' + empresa + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(t, 120), url: '/cs?aba=sucesso', tag: 'dg-' + reg.id + '-' + Date.now() }, req.user.id);
+      const novoDg = await registrarUnico(reg.id, req.user.name, 'dialogo_gestor', t);
+      if (novoDg) avisarPush(() => idsSucesso(), { titulo: 'Observação do gestor para o Gestor final', texto: (req.user.name || 'O gestor') + ' — ' + empresa + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(t, 120), url: '/cs?aba=sucesso', tag: 'dg-' + reg.id + '-' + Date.now() }, req.user.id);
       return res.json({ ok: true, dialogo: { em: new Date().toISOString(), por: req.user.name || null, lado: 'gestor', texto: t } });
     }
     if (!['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor'].includes(reg.etapa)) return res.status(409).json({ error: 'Esta ocorrência já está com o Gestor final.' });
@@ -1517,8 +1524,8 @@ router.post('/sucesso/ocorrencias/:id/responder', async (req, res) => {
     const t = String((req.body && req.body.texto) == null ? '' : req.body.texto).replace(/\r\n/g, '\n').trim();
     if (t.length < 3) return res.status(400).json({ error: 'Escreva a resposta (mínimo de 3 caracteres).' });
     if (t.length > MAX_NOTA) return res.status(400).json({ error: 'A resposta passa de ' + MAX_NOTA + ' caracteres.' });
-    await registrar(reg.id, req.user.name, 'dialogo_final', t);
-    avisarPush(async () => [].concat(await idsGestoresDe(reg.departamentos), await idsAdmins()), { titulo: 'Resposta do Gestor final', texto: (req.user.name || 'O Gestor final') + ' — ' + (reg.ocultar_empresa ? 'Empresa não informada' : (reg.cliente_nome || 'Empresa')) + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(t, 120), url: '/cs?aba=gestor', tag: 'df-' + reg.id + '-' + Date.now() }, req.user.id);
+    const novoDf = await registrarUnico(reg.id, req.user.name, 'dialogo_final', t);
+    if (novoDf) avisarPush(async () => [].concat(await idsGestoresDe(reg.departamentos), await idsAdmins()), { titulo: 'Resposta do Gestor final', texto: (req.user.name || 'O Gestor final') + ' — ' + (reg.ocultar_empresa ? 'Empresa não informada' : (reg.cliente_nome || 'Empresa')) + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(t, 120), url: '/cs?aba=gestor', tag: 'df-' + reg.id + '-' + Date.now() }, req.user.id);
     res.json({ ok: true, dialogo: { em: new Date().toISOString(), por: req.user.name || null, lado: 'final', texto: t } });
   } catch (e) { console.error('[qualidade] POST responder falhou:', e); res.status(500).json({ error: 'Erro ao responder.' }); }
 });
