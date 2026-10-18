@@ -1717,7 +1717,7 @@
   /** Coluna do responsável: o analista; antes de existir um, quem está com a ocorrência é o(a) gestor(a) do departamento. */
   function responsavelAtualQ(r) {
     if (r.analista_nome) return esc(r.analista_nome);
-    if (['registrada', 'tratativa_definida'].indexOf(r.etapa) >= 0 && (r.departamentos || [])[0]) return esc(rotuloGestor(r.departamentos[0]));
+    if (r.origem !== 'filha' && ['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor'].indexOf(r.etapa) >= 0 && (r.departamentos || [])[0]) return esc(rotuloGestor(r.departamentos[0]));   // a matriz sem analista está com o(a) gestor(a)
     return '<span class="cinza">—</span>';
   }
   function pillPrioridadeQ(p) {
@@ -3110,6 +3110,13 @@
   }
   /** Janela da ocorrência no Portal do Gestor: detalhes e a tratativa (editável até abrir para o analista). */
   function htmlTratativaGestor(r, analistas) { return htmlTratativaGestorBase(r, analistas) + htmlAcoesOcorrencia(r); }
+  /** Matriz conduzida só pelas vinculadas: continua aberta para a resposta final do gestor(a), que vai ao Gestor final do Sucesso do Cliente. */
+  function avisoRespostaFinalQ(r) {
+    var fs = r.filhas || [];
+    if (r.origem === 'filha' || r.etapa !== 'com_analista' || !fs.length || nomesResp(r).length) return '';
+    var enc = fs.filter(function (f) { return f.etapa === 'encerrada'; }).length;
+    return '<div class="qa-obs" style="margin:8px 0">✔ Esta ocorrência continua aberta para a <strong>resposta final</strong>: ela é conduzida pelas vinculadas (' + enc + ' de ' + fs.length + ' encerrada' + (fs.length === 1 ? '' : 's') + '). Quando todas forem encerradas, ela volta para você escrever a nota final e enviar ao <strong>Gestor final do Sucesso do Cliente</strong>.</div>';
+  }
   function htmlTratativaGestorBase(r, analistas) {
     var editavel = r.etapa === 'registrada' || r.etapa === 'tratativa_definida';
     var depAtual = r.tratativa_depto || (r.departamentos || [])[0] || '';
@@ -3135,7 +3142,7 @@
       return topo + htmlRetornos(r) + '<div class="ficha-sec">Tratativa</div><div class="qa-reg"><div class="qa-reg-txt">' + esc(r.plano_acao || '—') + '</div>' +
         '<div class="qa-reg-rod">Responsáve' + (nomesResp(r).length > 1 ? 'is' : 'l') + ': <strong>' + esc(nomesResp(r).join(', ') || (((r.filhas || []).length) ? 'conduzida pelas ocorrências vinculadas' : '—')) + '</strong> · departamento ' + esc(rotuloDepto(r.tratativa_depto || '')) + ' · prazo ' + data(r.prazo) + (r.tratativa_definida_por ? ' · definida por ' + esc(r.tratativa_definida_por) : '') + (r.liberada_em ? ' · aberta ao analista em ' + dataHora(r.liberada_em) : '') + '</div>' +
         (r.gestor_obs ? '<div class="qa-reg-trat"><strong>Observação:</strong> ' + esc(r.gestor_obs) + '</div>' : '') + '</div>' +
-        (podeFilha ? '<div style="margin:8px 0">' + btnFilha + '</div>' : '') +
+        avisoRespostaFinalQ(r) + (podeFilha ? '<div style="margin:8px 0">' + btnFilha + '</div>' : '') +
         '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="gt-cancel">Fechar</button></div>';
     }
     return topo + '<div class="ficha-sec">Criar a tratativa</div>' +
