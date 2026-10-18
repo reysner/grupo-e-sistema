@@ -2837,11 +2837,13 @@
     var quem = emNomeDe && pendentes.length > 1 ? '<div class="qa-campo"><label for="ao-quem">Encerrar em nome de</label><select id="ao-quem">' + pendentes.map(function (x) { return '<option value="' + esc(x.analista_id) + '">' + esc(x.nome) + '</option>'; }).join('') + '</select></div>' : '';
     return topo + htmlRetornos(r) +
       (emNomeDe ? '<div class="qa-obs" style="margin:10px 0">Você está agindo em nome de <strong>' + esc(emNomeDe) + '</strong>: o que registrar aparece com o seu nome e o dele.</div>' : '') +
-      '<div class="ficha-sec">Sua tratativa</div>' +
-      '<div class="qa-campo"><label for="ao-nota-rapida">Observação para o gestor <span class="cinza">(opcional; o gestor recebe aviso e fica no histórico)</span></label><div style="display:flex;gap:8px"><input type="text" id="ao-nota-rapida" maxlength="1000" style="flex:1" placeholder="Ex.: liguei para o cliente, aguardando retorno"><button type="button" class="gp-footer-btn" id="ao-anotar" style="width:auto">Enviar</button></div></div>' +
-      '<div class="ficha-sec">Encerrar a tratativa</div>' + quem + formNotaObs('ao', 'Nota (o que foi feito)') +
-      (r.origem === 'filha' ? '<div class="qa-obs" style="margin:6px 0">ℹ Ao clicar em <strong>Encerrada</strong>, esta ocorrência vinculada é concluída' + (rs.length > 1 ? ' quando todos os responsáveis tiverem encerrado' : '') + ' e ajuda a liberar a original para a validação do gestor.</div>' : '<div class="qa-obs" style="margin:6px 0">ℹ Ao clicar em <strong>Encerrada</strong>, a ocorrência vai para a validação do seu gestor' + (rs.length > 1 ? ' quando todos os responsáveis tiverem encerrado' : '') + '; depois, para o Sucesso do Cliente fazer a devolutiva ao cliente.</div>') +
-      '<div class="qa-oc-linha qa-oc-bot"><button type="button" class="qa-btn-cancel" id="ao-cancel" style="background:#64748b">Fechar</button><button type="button" class="qa-btn-ok" id="ao-encerrar">Encerrada: enviar para validação</button></div>' +
+      '<div class="ficha-sec">Observação e finalizar</div>' + quem +
+      '<div class="qa-campo"><div style="display:flex;gap:18px;flex-wrap:wrap;margin:4px 0 8px"><label class="qa-dep"><input type="radio" name="ao-modo" value="obs" checked> <strong>Observação</strong> <span class="cinza">(deixa uma observação ao gestor(a), sem finalizar)</span></label>' +
+      '<label class="qa-dep"><input type="radio" name="ao-modo" value="fin"> <strong>Finalizar</strong> <span class="cinza">(nota final: encerra a sua parte)</span></label></div>' +
+      '<label for="ao-texto">Sua observação ou nota final <span class="cinza" id="ao-cont">0/2000</span></label><textarea id="ao-texto" rows="4" maxlength="2000" placeholder="O gestor(a) recebe aviso e responde aqui. Ao finalizar, esta nota fica como a sua resposta."></textarea>' +
+      (r.origem === 'filha' ? '<div class="qa-obs" style="margin:6px 0">ℹ Ao <strong>Finalizar</strong>, esta ocorrência vinculada é concluída' + (rs.length > 1 ? ' quando todos os responsáveis tiverem finalizado' : '') + ' e ajuda a liberar a original para a resposta final do gestor(a).</div>' : '<div class="qa-obs" style="margin:6px 0">ℹ Ao <strong>Finalizar</strong>, a ocorrência vai para a validação do seu gestor' + (rs.length > 1 ? ' quando todos os responsáveis tiverem finalizado' : '') + '; depois, para o Sucesso do Cliente fazer a devolutiva ao cliente.</div>') +
+      '<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><button type="button" class="gp-footer-btn" id="ao-enviar" style="width:auto">Enviar observação ao gestor(a)</button><span class="cinza" id="ao-ok" style="font-size:12px"></span></div></div>' +
+      '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="ao-cancel">Fechar</button></div>' +
       '<div class="pop-erro" id="ao-erro" role="alert"></div>';
   }
   function abrirOcorrenciaAnalista(id) {
@@ -2854,32 +2856,32 @@
     var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Ocorrência">' + htmlOcorrenciaAnalista(r, emNome, meuId, soLeitura) + '</div>';
     $('ao-fechar').addEventListener('click', fechar); $('ao-cancel').addEventListener('click', fechar);
-    if (!$('ao-encerrar')) return;
-    ligarContador('ao');
-    var erro = $('ao-erro'), url = '/api/cs/painel/qualidade/analista/ocorrencias/' + encodeURIComponent(r.id);
-    $('ao-anotar').addEventListener('click', async function () {
-      erro.textContent = ''; var t = $('ao-nota-rapida').value.trim();
-      if (t.length < 3) { erro.textContent = 'Escreva a anotação (mínimo de 3 caracteres).'; return; }
-      var x = await postarQ(url + '/nota', { texto: t });
-      if (!x.ok) { erro.textContent = x.j.error || 'Não foi possível anotar.'; return; }
-      // a janela se atualiza na hora: a anotação entra no histórico e o campo é limpo (a lista por trás também recarrega)
-      var regs = (estado.a.dados && estado.a.dados.registros) || [], pos = -1;
-      regs.forEach(function (q, i) { if (String(q.id) === String(r.id)) pos = i; });
-      if (pos >= 0 && x.j.registro) { regs[pos] = x.j.registro; fechar(); abrirOcorrenciaAnalista(r.id); } else fechar();
-      estado.a.dados = null; desenharAnalista();
-    });
-    $('ao-encerrar').addEventListener('click', async function () {
-      erro.textContent = '';
-      var nota = $('ao-nota').value.trim();
-      if (nota.length < 5) { erro.textContent = 'Deixe a nota do que foi feito (mínimo de 5 caracteres).'; return; }
-      if (!window.confirm('Encerrar a sua tratativa? Depois disso você não edita mais.')) return;
-      var b = $('ao-encerrar'); b.disabled = true;
-      var x = await postarQ(url + '/encerrar', { nota: nota, obs: $('ao-obs').value, analista_id: $('ao-quem') ? $('ao-quem').value : undefined });
-      if (!x.ok) { erro.textContent = x.j.error || 'Não foi possível encerrar.'; b.disabled = false; return; }
+    if (!$('ao-enviar')) return;
+    var erro = $('ao-erro'), url = '/api/cs/painel/qualidade/analista/ocorrencias/' + encodeURIComponent(r.id), tx = $('ao-texto');
+    var modo = function () { var x = document.querySelector('input[name="ao-modo"]:checked'); return x ? x.value : 'obs'; };
+    var rotulo = function () { $('ao-enviar').textContent = modo() === 'fin' ? 'Finalizar' : 'Enviar observação ao gestor(a)'; };
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="ao-modo"]'), function (i) { i.addEventListener('change', rotulo); });
+    tx.addEventListener('input', function () { $('ao-cont').textContent = tx.value.length + '/2000'; });
+    $('ao-enviar').addEventListener('click', async function () {
+      erro.textContent = ''; var fin = modo() === 'fin', t = tx.value.trim();
+      if (t.length < (fin ? 5 : 3)) { erro.textContent = fin ? 'Deixe a nota do que foi feito (mínimo de 5 caracteres).' : 'Escreva a observação (mínimo de 3 caracteres).'; return; }
+      if (!fin) {   // Observação: o gestor(a) recebe aviso; a janela se atualiza na hora e o campo é limpo
+        var x1 = await postarQ(url + '/nota', { texto: t });
+        if (!x1.ok) { erro.textContent = x1.j.error || 'Não foi possível enviar a observação.'; return; }
+        var regs = (estado.a.dados && estado.a.dados.registros) || [], pos = -1;
+        regs.forEach(function (q, i) { if (String(q.id) === String(r.id)) pos = i; });
+        if (pos >= 0 && x1.j.registro) { regs[pos] = x1.j.registro; fechar(); abrirOcorrenciaAnalista(r.id); } else fechar();
+        estado.a.dados = null; desenharAnalista();
+        return;
+      }
+      if (!window.confirm('Finalizar a sua parte? Depois disso você não edita mais.')) return;
+      var b = $('ao-enviar'); b.disabled = true;
+      var x = await postarQ(url + '/encerrar', { nota: t, analista_id: $('ao-quem') ? $('ao-quem').value : undefined });
+      if (!x.ok) { erro.textContent = x.j.error || 'Não foi possível finalizar.'; b.disabled = false; return; }
       estado.a.dados = null; fechar(); desenharAnalista();
       var j = x.j || {};
       if (!j.avancou) {
-        if (j.pendentes && j.pendentes.length) window.alert('Sua parte foi registrada. Aguardando: ' + j.pendentes.join(', ') + '. Quando todos encerrarem, segue para a validação do gestor.');
+        if (j.pendentes && j.pendentes.length) window.alert('Sua parte foi registrada. Aguardando: ' + j.pendentes.join(', ') + '. Quando todos finalizarem, segue para o gestor(a).');
         else if (j.filhas_pendentes) window.alert('Sua parte foi registrada. Aguardando ' + j.filhas_pendentes + ' ocorrência(s) vinculada(s) serem encerradas.');
       }
     });

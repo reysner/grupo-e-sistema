@@ -264,11 +264,11 @@ const semLixo = (e, nome) => {
     const admFiltrado = C.t.htmlAnalista({ analista: { id: '7', nome: 'Josiane' }, todos: false, admin: true, registros: regs, analistas: [{ id: '7', nome: 'Josiane' }, { id: '8', nome: 'Outra' }] }, F({ analista: '7' }));
     assert.ok(admFiltrado.includes('id="a-analista"') && admFiltrado.includes('<option value="7" selected>Josiane</option>') && admFiltrado.includes('visão do analista: Josiane'), 'o filtro de analista não some depois de escolher');
     const tratar = C.t.htmlOcorrenciaAnalista(regs[0], '');
-    assert.ok(tratar.includes('Plano de ação do gestor') && tratar.includes('Retificar a guia') && tratar.includes('Observação') && tratar.includes('id="ao-encerrar"') && tratar.includes('id="ao-anotar"') && tratar.includes('Nota (o que foi feito)'));
+    assert.ok(tratar.includes('Plano de ação do gestor') && tratar.includes('Retificar a guia') && tratar.includes('Observação') && tratar.includes('id="ao-enviar"') && tratar.includes('name="ao-modo" value="obs" checked') && tratar.includes('name="ao-modo" value="fin"') && !tratar.includes('Sua tratativa</div>'), 'mesmo modelo do Portal do Gestor: Observação ou Finalizar');
     assert.ok(tratar.includes('vai para a validação do seu gestor'), 'avisa o caminho depois de encerrar');
     assert.ok(C.t.htmlOcorrenciaAnalista(regs[0], 'Josiane').includes('agindo em nome de <strong>Josiane</strong>'));
     const lida = C.t.htmlOcorrenciaAnalista(regs[1], '');
-    assert.ok(!lida.includes('id="ao-encerrar"') && lida.includes('Guia retificada') && lida.includes('cliente avisado') && lida.includes('Analista (Josiane)'), 'depois de encerrada só leitura, com a nota e a observação');
+    assert.ok(!lida.includes('id="ao-enviar"') && lida.includes('Guia retificada') && lida.includes('cliente avisado') && lida.includes('Analista (Josiane)'), 'depois de encerrada só leitura, com a nota e a observação');
   });
   await teste('cs: Portal do Sucesso do Cliente — dashboard de todos, devolutiva primeiro; só o gestor final vê o botão de encerrar', () => {
     const r = (id, etapa) => ({ id, etapa, situacao: 'aberto', tipo: 'Erro', prioridade: 'Alta', departamentos: ['Fiscal'], assunto: 'Guia ' + id, detalhe: 'Det', cliente_nome: 'ALFA LTDA', criado_em: '2026-10-17T12:00:00Z', criado_por: 'Larissa', analista_nome: 'Josiane', prazo: '2026-10-25', plano_acao: 'Plano', tratativa_depto: 'Fiscal', analista_nota: 'Feito', validacao_nota: 'Tudo ok', validacao_por: 'Eduardo', validacao_em: '2026-10-20T10:00:00Z', anexos: [], notas: [] });
@@ -428,14 +428,14 @@ const semLixo = (e, nome) => {
   await teste('cs: Portal do Analista — vários responsáveis (já encerrei / aguardando), em nome de, e sem o quadro "Ocorrências sobre mim"', () => {
     const r = (extra) => Object.assign({ id: 'a', etapa: 'com_analista', situacao: 'em_tratamento', tipo: 'Erro', prioridade: 'Alta', departamentos: ['Fiscal'], assunto: 'Guia', detalhe: 'Det', cliente_nome: 'ALFA', criado_em: '2026-10-17T12:00:00Z', prazo: '2026-10-25', plano_acao: 'Plano', tratativa_depto: 'Fiscal', responsaveis: [{ analista_id: '7', nome: 'Josiane', encerrado_em: '2026-10-19T10:00:00Z', nota: 'Feito' }, { analista_id: '9', nome: 'Bruno', encerrado_em: null }], filhas: [], anexos: [], notas: [] }, extra || {});
     const euJa = C.t.htmlOcorrenciaAnalista(r(), '', '7', false);
-    assert.ok(!euJa.includes('id="ao-encerrar"') && euJa.includes('Você já encerrou a sua parte') && euJa.includes('Aguardando: <strong>Bruno</strong>'), 'quem já encerrou só espera');
+    assert.ok(!euJa.includes('id="ao-enviar"') && euJa.includes('Você já encerrou a sua parte') && euJa.includes('Aguardando: <strong>Bruno</strong>'), 'quem já encerrou só espera');
     const euFalta = C.t.htmlOcorrenciaAnalista(r(), '', '9', false);
-    assert.ok(euFalta.includes('id="ao-encerrar"') && euFalta.includes('quando todos os responsáveis tiverem encerrado') && !euFalta.includes('id="ao-quem"'));
+    assert.ok(euFalta.includes('id="ao-enviar"') && euFalta.includes('quando todos os responsáveis tiverem finalizado') && !euFalta.includes('id="ao-quem"'));
     const adm = C.t.htmlOcorrenciaAnalista(r({ responsaveis: [{ analista_id: '7', nome: 'Josiane', encerrado_em: null }, { analista_id: '9', nome: 'Bruno', encerrado_em: null }] }), 'Josiane, Bruno', null, false);
     assert.ok(adm.includes('id="ao-quem"') && adm.includes('Encerrar em nome de') && adm.includes('value="9"'), 'o administrador escolhe em nome de quem encerra');
     const espera = C.t.htmlOcorrenciaAnalista(r({ responsaveis: [{ analista_id: '7', nome: 'Josiane', encerrado_em: '2026-10-19T10:00:00Z' }], filhas: [{ id: 'f', assunto: 'Alinhar', etapa: 'com_analista', departamentos: ['Pessoal'], analista_nome: 'Ana', prazo: '2026-10-28' }] }), '', '7', false);
     assert.ok(espera.includes('Aguardando as ocorrências vinculadas') && espera.includes('Alinhar'), 'todos encerraram, mas falta uma filha');
-    assert.ok(!C.t.htmlOcorrenciaAnalista(r(), '', '9', true).includes('id="ao-encerrar"'), 'sobre mim: só leitura');
+    assert.ok(!C.t.htmlOcorrenciaAnalista(r(), '', '9', true).includes('id="ao-enviar"'), 'sobre mim: só leitura');
     const tela = C.t.htmlAnalista({ analista: { id: '7', nome: 'Josiane' }, todos: false, registros: [r()], sobre_mim: [r({ id: 's', etapa: 'registrada' })] }, { depto: '', analista: '', etapa: '', busca: '' });
     assert.ok(!tela.includes('Ocorrências sobre mim') && tela.includes('>Ver<') && !tela.includes('>Tratar<'), 'sem o quadro "sobre mim"; já encerrei: o botão vira Ver');
   });
@@ -717,7 +717,7 @@ const semLixo = (e, nome) => {
     assert.ok(fechados.includes('Todas as vinculadas estão encerradas') && !fechados.includes('id="gt-oa-enviar"'), 'vínculos fechados podem ficar fechados: sem caixa');
     assert.ok(!C.t.htmlTratativaGestor(Object.assign({}, base, { etapa: 'encerrada' }), []).includes('Observação com o analista'), 'depois de encerrada não aparece');
     const an = C.t.htmlOcorrenciaAnalista({ id: 'f', origem: 'filha', etapa: 'com_analista', situacao: 'em_tratamento', tipo: 'Erro', prioridade: 'Alta', departamentos: ['Pessoal'], assunto: 'V', detalhe: 'D', cliente_nome: null, criado_em: '2026-10-17T12:00:00Z', prazo: '2026-10-25', plano_acao: 'P', responsaveis: [{ analista_id: '1', nome: 'Ana', encerrado_em: null }], filhas: [], anexos: [], notas: [] }, '', '1', false);
-    assert.ok(an.includes('Observação para o gestor') && an.includes('id="ao-anotar"') && !an.includes('Anotação no meio do caminho'), 'o analista deixa observação para o gestor no vínculo');
+    assert.ok(an.includes('Observação e finalizar') && an.includes('name="ao-modo" value="obs" checked') && an.includes('Enviar observação ao gestor(a)') && an.includes('id="ao-enviar"') && !an.includes('Anotação no meio do caminho') && !an.includes('Sua tratativa</div>'), 'o analista deixa observação para o gestor antes de finalizar (mesmo modelo do Portal do Gestor)');
   });
   await teste('cs: resposta final ao Sucesso do Cliente — Observação ou Finalizar, conversa com o Gestor final no Portal dele', () => {
     const base = { id: 'm', origem: 'modulo', etapa: 'com_analista', assunto: 'A', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', plano_acao: 'Conduzida pelas ocorrências vinculadas', responsaveis: [], dialogo: [], filhas: [{ id: 'f', assunto: 'B', etapa: 'com_analista', departamentos: ['Pessoal'], prazo: '2026-10-20', analista_nome: 'P' }] };
