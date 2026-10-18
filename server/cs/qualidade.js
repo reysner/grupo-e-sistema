@@ -1137,10 +1137,24 @@ router.get('/analista/ocorrencias', async (req, res) => {
 });
 
 /** O analista deixa uma nota no meio da tratativa (fica no histórico da ocorrência). */
+/** Anotação do analista no meio do caminho: o(a) Gestor(a) do departamento recebe o aviso no celular e a liderança, no sino. Quem anotou não é avisado. */
+async function avisarAnotacao(req, reg, ag, texto) {
+  const empresa = reg.ocultar_empresa ? 'Empresa não informada' : (reg.cliente_nome || 'Empresa');
+  const resumo = curtoTexto(texto, 120);
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS notificacoes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(), tipo TEXT NOT NULL, titulo TEXT NOT NULL, mensagem TEXT NOT NULL,
+      lida BOOLEAN DEFAULT false, link_modulo TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`);
+    await pool.query(`INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ('qualidade_nota', $1, $2, 'cs-qualidade')`,
+      ['Anotação do analista: ' + (reg.assunto || 'ocorrência'), ag.por + ' anotou em "' + empresa + '": ' + resumo]);
+  } catch (e) { console.warn('[qualidade] aviso da anotação não gravado:', e.message); }
+  avisarPush(() => idsDaFila(reg), { titulo: 'Anotação do analista', texto: ag.por + ' — ' + empresa + ' — ' + (reg.assunto || '') + ': ' + resumo, url: '/cs?aba=gestor', tag: 'nota-' + reg.id + '-' + Date.now() }, req.user.id);
+}
+
 router.post('/analista/ocorrencias/:id/nota', async (req, res) => {
   try {
     await garantirSchema();
-    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, analista_id');
+    const reg = await carregarOcorrencia(req.params.id, 'id, etapa, analista_id, departamentos, fila, assunto, cliente_nome, ocultar_empresa');
     if (!reg) return res.status(404).json({ error: 'Ocorrência não encontrada.' });
     const ag = await autorizaAgir(req.user, reg);
     if (!ag.ok) return res.status(ag.status).json({ error: ag.erro });
@@ -1149,6 +1163,7 @@ router.post('/analista/ocorrencias/:id/nota', async (req, res) => {
     if (t.length < 3) return res.status(400).json({ error: 'Escreva a nota (mínimo de 3 caracteres).' });
     if (t.length > MAX_TRATATIVA) return res.status(400).json({ error: 'A nota passa de ' + MAX_TRATATIVA + ' caracteres.' });
     await registrar(reg.id, ag.por, 'nota', t);
+    avisarAnotacao(req, reg, ag, t);   // sem esperar: o aviso nunca atrasa nem derruba a anotação
     res.json({ registro: registroParaQuemAgiu(req.user, ag, await registroCompleto(reg.id)) });
   } catch (e) { console.error('[qualidade] POST analista nota falhou:', e); res.status(500).json({ error: 'Erro ao guardar a nota.' }); }
 });
