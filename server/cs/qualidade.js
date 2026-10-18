@@ -214,6 +214,11 @@ function transicao(acao, etapa) {
   if (!t.de.includes(etapa)) return { ok: false, erro: t.erro };
   return { ok: true, para: t.para, status: ETAPA_STATUS[t.para] };
 }
+/** O analista apontado hoje (corrigido pelo gestor final ou o do registro) fica fixo como responsável da matriz; sem responsáveis (só pelas vinculadas) pode. */
+function analistaFixoPresente(fixoId, analistasIds) {
+  if (!fixoId || !(analistasIds || []).length) return true;
+  return analistasIds.map(String).includes(String(fixoId));
+}
 /** Nota (obrigatória, 5 a 2000) e observação (opcional, até 2000) de quem encerra, valida ou devolve. */
 function validarEncerramento(corpo) {
   const b = corpo || {};
@@ -1026,7 +1031,7 @@ router.put('/gestor/ocorrencias/:id/tratativa', async (req, res) => {
   try {
     await garantirSchema();
     const esc = await escopoDaRequisicao(req);
-    const reg = (await pool.query("SELECT id, etapa, origem, departamentos, fila FROM cs_qualidade_registros WHERE id::text = $1", [String(req.params.id)])).rows[0];
+    const reg = (await pool.query("SELECT id, etapa, origem, departamentos, fila, analista_origem_id, analista_apontado_id FROM cs_qualidade_registros WHERE id::text = $1", [String(req.params.id)])).rows[0];
     if (!reg || reg.origem !== 'modulo') return res.status(404).json({ error: 'Ocorrência não encontrada.' });
     if (!ocorrenciaNoEscopo(esc, reg)) return res.status(403).json({ error: 'Esta ocorrência não é do seu departamento.' });
     if (!['registrada', 'tratativa_definida'].includes(reg.etapa)) return res.status(409).json({ error: 'A tratativa já foi aberta para o analista: não dá mais para editar por aqui.' });
@@ -1038,6 +1043,11 @@ router.put('/gestor/ocorrencias/:id/tratativa', async (req, res) => {
     if (ans.length !== x.analistas_ids.length) return res.status(404).json({ error: 'Responsável não encontrado na lista de analistas.' });
     const inativo = ans.find((a) => !a.ativo);
     if (inativo) return res.status(400).json({ error: inativo.nome + ' está desativado na lista de analistas.' });
+    const fixoId = reg.analista_apontado_id != null ? reg.analista_apontado_id : reg.analista_origem_id;   // vazio = a correção deixou ninguém apontado
+    if (!analistaFixoPresente(fixoId, x.analistas_ids)) {
+      const fx = (await pool.query('SELECT nome FROM analistas WHERE id::text = $1', [String(fixoId)])).rows[0];
+      return res.status(400).json({ error: 'O analista apontado no registro (' + (fx ? fx.nome : 'o indicado') + ') fica fixo como responsável desta ocorrência. Se a falha não for dele, abra ocorrências vinculadas e deixe esta só para o registro final.' });
+    }
     const nomes = x.analistas_ids.map((id) => (ans.find((a) => String(a.id) === String(id)) || {}).nome);
     const upEtapa3 = await pool.query(
       `UPDATE cs_qualidade_registros SET plano_acao = $1, analista_id = $2, tratativa_depto = $3, prazo = $4, gestor_obs = $5, etapa = 'tratativa_definida',
@@ -1795,4 +1805,4 @@ async function rodarAlertasPrazo() {
   });
 }
 
-module.exports = { rodarAlertasPrazo, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { rodarAlertasPrazo, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, analistaFixoPresente, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };

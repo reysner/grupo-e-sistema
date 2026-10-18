@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { TIPO_PLANO, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { analistaFixoPresente, TIPO_PLANO, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -386,6 +386,13 @@ teste('sigilo: o gestor pode tirar a empresa da vinculada; o analista não a vê
   assert.strictEqual(mascararParaAnalista(filha, '3', true).cliente_nome, 'ALFA LTDA', 'a liderança vê');
   assert.strictEqual(mascararParaAnalista(Object.assign({}, filha, { ocultar_empresa: false }), '3', false).cliente_nome, 'ALFA LTDA', 'sem a marca, a empresa aparece');
   assert.strictEqual(filha.cliente_nome, 'ALFA LTDA', 'não altera o original');
+});
+teste('analista apontado fica fixo como responsável da matriz; sem responsáveis (só vinculadas) pode', () => {
+  assert.strictEqual(analistaFixoPresente('9', ['9', '4']), true);
+  assert.strictEqual(analistaFixoPresente('9', ['4']), false, 'não dá para tirar o apontado e deixar só outro');
+  assert.strictEqual(analistaFixoPresente('9', []), true, 'sem responsáveis: a matriz é conduzida só pelas vinculadas');
+  assert.strictEqual(analistaFixoPresente(null, ['4']), true, 'sem apontado, qualquer responsável');
+  assert.strictEqual(analistaFixoPresente('', ['4']), true, 'a correção deixou ninguém apontado');
 });
 teste('analista apontado: o corrigido pelo gestor final vale; o apontado no registro (reclamado) deixa de ver; a liderança vê tudo', () => {
   const reg = { id: 'o1', origem: 'modulo', analista_origem_id: '9', analista_origem_nome: 'Polyanna', analista_apontado_id: '4', analista_apontado_nome: 'João', mostrar_pai: false };

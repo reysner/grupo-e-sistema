@@ -404,7 +404,7 @@ const semLixo = (e, nome) => {
     try { assert.deepStrictEqual(JSON.parse(JSON.stringify(C.t.analistasPorDepto('Fiscal').map((x) => x.nome))), ['João Victor', 'Ana Souza', 'Bruno Cesar Xavier'], 'no @, os do departamento vêm primeiro'); } finally { C.t.estado.qAnalistas = ant; }
     assert.ok(h.includes('id="gt-filha"') && h.includes('Abrir ocorrência vinculada') && !h.includes('id="gt-analista"'));
     const dois = C.t.htmlTratativaGestor(Object.assign({}, base, { etapa: 'tratativa_definida', responsaveis: [{ analista_id: '1', nome: 'Bruno Cesar Xavier' }, { analista_id: '2', nome: 'João Victor' }] }), an);
-    assert.ok(dois.includes('data-chip="1" data-nome="Bruno Cesar Xavier"') && dois.includes('data-chip="2" data-nome="João Victor"') && !dois.includes('data-chip="3"'), 'os responsáveis já definidos aparecem como etiquetas');
+    assert.ok(dois.includes('data-chip="1" data-nome="Bruno Cesar Xavier"') && dois.includes('data-chip="2" data-nome="João Victor"') && dois.includes('data-chip="3" data-nome="Ana Souza" data-fixo="1"'), 'os responsáveis já definidos aparecem como etiquetas, e o apontado no registro entra fixo');
     const aberta = C.t.htmlTratativaGestor(Object.assign({}, base, { etapa: 'com_analista', plano_acao: 'Plano', tratativa_depto: 'Fiscal', responsaveis: [{ analista_id: '1', nome: 'Bruno Cesar Xavier' }, { analista_id: '2', nome: 'João Victor' }], filhas: [{ id: 'f', assunto: 'Alinhar com o Bruno', etapa: 'com_analista', departamentos: ['Financeiro'], analista_nome: 'Bruno Cesar Xavier', prazo: '2026-10-28' }] }), an);
     assert.ok(aberta.includes('Responsáveis: <strong>Bruno Cesar Xavier, João Victor</strong>') && aberta.includes('Ocorrências vinculadas') && aberta.includes('Alinhar com o Bruno') && aberta.includes('id="gt-filha"'), 'aberta: mostra os responsáveis, as filhas e ainda deixa vincular outra');
     const filha = C.t.htmlTratativaGestor(Object.assign({}, base, { id: 'f', origem: 'filha', etapa: 'validacao_gestor', analista_origem_nome: null, pai: null, plano_acao: 'P', tratativa_depto: 'Financeiro', responsaveis: [{ analista_id: '1', nome: 'Bruno Cesar Xavier', nota: 'Feito', encerrado_em: '2026-10-20T10:00:00Z' }] }), an);
@@ -657,6 +657,18 @@ const semLixo = (e, nome) => {
     ['a', 'g', 's', 'eu', 'qAnalistas', 'qResumo', 'ac', 'ficha'].forEach((k) => assert.strictEqual(e[k], undefined, 'zerou ' + k));
     assert.strictEqual(e.dados, null, 'zerou a carteira');
     Object.keys(salvo).forEach((k) => { if (salvo[k] === undefined) delete e[k]; else e[k] = salvo[k]; });
+  });
+  await teste('cs: tratativa da matriz — o analista apontado vem fixo (sem ✕); o corrigido pelo gestor final é o fixo', () => {
+    const an = [{ id: '9', nome: 'Polyanna' }, { id: '4', nome: 'João' }];
+    const m = { id: 'm', origem: 'modulo', etapa: 'registrada', assunto: 'Atraso', cliente_nome: 'X', departamentos: ['Pessoal'], tipo: 'Atraso', prioridade: 'Média', criado_em: '2026-10-18T10:00:00Z', prazo: '2026-10-21', analista_origem_id: '9', analista_origem_nome: 'Polyanna', responsaveis: [], filhas: [] };
+    const t1 = C.t.htmlTratativaGestor(m, an);
+    assert.ok(t1.includes('data-chip="9"') && t1.includes('data-fixo="1"') && !t1.includes('data-chip-x="9"') && t1.includes('(fixo)'), 'Polyanna aparece fixa, sem ✕');
+    const t2 = C.t.htmlTratativaGestor(Object.assign({}, m, { analista_apontado_id: '4', analista_apontado_nome: 'João' }), an);
+    assert.ok(t2.includes('data-chip="4"') && !t2.includes('data-chip-x="4"') && t2.includes('data-chip="9"') === false, 'o corrigido pelo gestor final é o fixo');
+    const t3 = C.t.htmlTratativaGestor(Object.assign({}, m, { analista_apontado_id: '' }), an);
+    assert.ok(!t3.includes('data-fixo'), 'sem apontado, nenhum fixo');
+    const t4 = C.t.htmlTratativaGestor(Object.assign({}, m, { responsaveis: [{ analista_id: '4', nome: 'João' }] }), an);
+    assert.ok(t4.includes('data-chip="9"') && t4.includes('data-fixo="1"') && t4.includes('data-chip-x="4"'), 'o apontado entra mesmo que o responsável salvo seja outro; o acrescentado pode sair');
   });
   await teste('cs: matriz e vínculos — Em andamento, resposta dos vínculos na matriz e analista apontado corrigido pelo gestor final', () => {
     const e = C.t.estado, salvo = e.qAnalistas; e.qAnalistas = [{ id: '9', nome: 'Polyanna' }, { id: '4', nome: 'João' }];

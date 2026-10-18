@@ -2467,10 +2467,11 @@
   }
   /** Responsáveis escolhidos: etiquetas com ✕ (quem entra é chamado com @ no plano de ação). */
   var VAZIO_RESP = '<span class="cinza" data-vazio="1">Ninguém ainda: digite @ no plano de ação para chamar o(a) analista.</span>';
-  function htmlChipResp(a) {
+  function htmlChipResp(a, fixo) {
+    if (fixo) return '<span class="qg-chip" data-chip="' + esc(a.id) + '" data-nome="' + esc(a.nome) + '" data-fixo="1" title="Apontado no registro: fica fixo. Se a falha não for dele, abra ocorrências vinculadas.">' + esc(a.nome) + ' <span class="cinza" style="font-size:11px">(fixo)</span></span>';
     return '<span class="qg-chip" data-chip="' + esc(a.id) + '" data-nome="' + esc(a.nome) + '">' + esc(a.nome) + '<button type="button" data-chip-x="' + esc(a.id) + '" title="Retirar" aria-label="Retirar ' + esc(a.nome) + '">✕</button></span>';
   }
-  function htmlChipsResp(lista) { return (lista || []).length ? lista.map(htmlChipResp).join('') : VAZIO_RESP; }
+  function htmlChipsResp(lista, fixoId) { return (lista || []).length ? lista.map(function (a) { return htmlChipResp(a, fixoId != null && fixoId !== '' && String(a.id) === String(fixoId)); }).join('') : VAZIO_RESP; }
   function chipsDe(raiz) { return raiz ? Array.prototype.slice.call(raiz.querySelectorAll('[data-chip]')) : []; }
   function adicionarChipResp(raiz, a) {
     if (!raiz || raiz.querySelector('[data-chip="' + a.id + '"]')) return;
@@ -3081,7 +3082,8 @@
     var podeFilha = r.origem !== 'filha' && ['registrada', 'tratativa_definida', 'com_analista'].indexOf(r.etapa) >= 0;
     var btnFilha = '<button type="button" class="gp-footer-btn" id="gt-filha" style="width:auto">＋ Abrir ocorrência vinculada <span class="cinza">(uma para cada situação)</span></button><div id="gt-filhas-novas" style="margin-top:6px"></div>';
     var marcados = (r.responsaveis || []).map(function (x) { return String(x.analista_id); });
-    if (!marcados.length && r.analista_origem_id) marcados = [String(r.analista_origem_id)];   // sugestão: o analista indicado no registro (o gestor troca ou acrescenta)
+    var fixoId = r.analista_apontado_id != null ? r.analista_apontado_id : r.analista_origem_id;   // o analista apontado hoje fica fixo: se não for dele, o gestor abre vinculadas
+    if (fixoId && marcados.indexOf(String(fixoId)) < 0) marcados.unshift(String(fixoId));
     var optA = opcoesAnalistasAg(analistas, depAtual, r.analista_id, 'Escolha o analista…');
     var optD = DEPS_OCORRENCIA.map(function (d) { return '<option value="' + esc(d[0]) + '"' + (depAtual === d[0] ? ' selected' : '') + '>' + esc(d[1]) + '</option>'; }).join('');
     var topo = '<div class="qa-modal-topo"><strong style="font-size:20px;color:#256050">' + esc(r.assunto || 'Ocorrência') + '</strong><button type="button" class="qa-x" id="gt-fechar" aria-label="Fechar">✕</button></div>' +
@@ -3104,7 +3106,7 @@
     }
     return topo + '<div class="ficha-sec">Criar a tratativa</div>' +
       '<div class="qa-campo"><label for="gt-plano">Plano de ação <span class="req">*</span> <span class="cinza" id="gt-cont">0/1500</span></label><textarea id="gt-plano" rows="5" maxlength="1500" placeholder="O que será feito para resolver e evitar que se repita">' + esc(r.plano_acao || '') + '</textarea></div>' +
-      '<div class="qa-campo"><label>Responsável <span class="req">*</span> <span class="cinza">(um ou vários · digite @ no plano de ação para chamar alguém · pode ficar sem responsável se você conduzir só pelas ocorrências vinculadas)</span></label><div class="qg-chips" id="gt-resp">' + htmlChipsResp((analistas || []).filter(function (a) { return marcados.indexOf(String(a.id)) >= 0; })) + '</div></div>' +
+      '<div class="qa-campo"><label>Responsável <span class="req">*</span> <span class="cinza">(o analista apontado no registro fica fixo · digite @ no plano de ação para acrescentar alguém · se a falha não for dele, abra ocorrências vinculadas e deixe esta só para o registro final)</span></label><div class="qg-chips" id="gt-resp">' + htmlChipsResp((analistas || []).filter(function (a) { return marcados.indexOf(String(a.id)) >= 0; }), fixoId) + '</div></div>' +
       '<div class="qa-oc-linha qa-g-grid">' +
         '<div class="qa-campo"><label for="gt-depto">Departamento que trata <span class="req">*</span></label><select id="gt-depto">' + optD + '</select></div>' +
         '<div class="qa-campo"><label for="gt-prazo">Prazo para execução (SLA) <span class="req">*</span></label><input type="date" id="gt-prazo" min="' + hojeIsoLocal() + '" value="' + esc(r.prazo || '') + '"></div>' +
