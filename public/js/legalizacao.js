@@ -478,7 +478,7 @@
     var d = estado.dias || {};
     var kpis = '<div class="gp-kpi-row">' +
       kpi('#dc2626', 'Vencidos', num(tot.vencido), num(empresasComStatus('vencido')) + ' empresa(s) · precisam de ação agora') +
-      kpi('#d97706', 'Vencendo', num(tot.vencendo), 'funcionamento ' + (d.funcionamento || 30) + ' d · sanitário ' + (d.sanitario || 120) + ' d · certificado e procuração ' + (d.certificado || 10) + ' d') +
+      kpi('#d97706', 'Vencendo', num(tot.vencendo), 'funcionamento ' + (d.funcionamento || 30) + ' d · sanitário ' + (d.sanitario || 120) + ' d · certificado e procuração ' + (d.certificado || 30) + ' d') +
       kpi('#2563eb', 'Solicitação em andamento', num(tot.solicitacao), 'renovação já pedida à prefeitura') +
       kpi('#10b981', 'Em dia', num(tot.ok), 'tudo certo') +
       kpi('#9ca3af', 'Sem data', num(tot.sem_data), 'documento sem vencimento informado') +

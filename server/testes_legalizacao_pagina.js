@@ -65,7 +65,7 @@ const linhas = [
     municipio: 'Araguari', uf: 'MG', prefeitura_integrada: false, prefeitura_url: 'https://exemplo.gov.br', automacao: 'pasta' },
 ];
 T.estado.linhas = linhas.map((l, ix) => { l._ix = ix; return l; });
-T.estado.dias = { funcionamento: 30, sanitario: 120, certificado: 10, procuracao: 10 };
+T.estado.dias = { funcionamento: 30, sanitario: 120, certificado: 30, procuracao: 30 };
 T.estado.historico = [
   { semana: '2026-10-05', atualizado_em: '2026-10-11T12:00:00Z', clientes: 4, vencidos: 3, vencendo: 2, solicitacao: 1, em_dia: 5, sem_data: 2, por_tipo: { func: { total: 2, vencido: 1, vencendo: 0, solicitacao: 0, ok: 1, sem_data: 0 } } },
   { semana: '2026-10-12', atualizado_em: '2026-10-14T12:00:00Z', clientes: 4, vencidos: 2, vencendo: 2, solicitacao: 1, em_dia: 6, sem_data: 2, por_tipo: { func: { total: 2, vencido: 1, vencendo: 0, solicitacao: 0, ok: 1, sem_data: 0 } } },

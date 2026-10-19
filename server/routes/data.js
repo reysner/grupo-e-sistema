@@ -5285,7 +5285,7 @@ router.get('/churn', requireAdmin, async (req, res) => {
 const LEGAL_DIAS_ALERTA_FUNCIONAMENTO = 30;
 const LEGAL_DIAS_ALERTA_SANITARIO = 120;
 const LEGAL_DIAS_ALERTA_ALVARA = LEGAL_DIAS_ALERTA_FUNCIONAMENTO; // compat: chave antiga 'alvara' da resposta
-const LEGAL_DIAS_ALERTA_CERTIFICADO = 10;
+const LEGAL_DIAS_ALERTA_CERTIFICADO = 30;   // pedido do Reysner, 19/10/2026: certificado e procuração avisam com 30 dias, como o alvará de funcionamento (antes 10)
 
 // Diagnóstico rodado em 17/09/2026 (removido depois de confirmar): a API do
 // Acessórias (endpoint único e ListAll com registrationData) NÃO tem CNAE em
@@ -5391,7 +5391,7 @@ async function ensureLegalizacaoSchema() {
   // propósito: pode ter várias PF avulsas, ou nenhuma ligada a cliente
   // nenhum). Mesmo raciocínio do índice de alvarás acima.
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_cert_cliente_pj ON legalizacao_certificados (cliente_id) WHERE tipo = 'pj' AND cliente_id IS NOT NULL`).catch(()=>{});
-  // Mesmo esquema de notificação dos alvarás, mas 10 dias (ver LEGAL_DIAS_ALERTA_CERTIFICADO).
+  // Mesmo esquema de notificação dos alvarás (ver LEGAL_DIAS_ALERTA_CERTIFICADO).
   await pool.query(`ALTER TABLE legalizacao_certificados ADD COLUMN IF NOT EXISTS notificado_vencimento_em TIMESTAMPTZ`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_certificados ADD COLUMN IF NOT EXISTS desativado_em TIMESTAMPTZ`).catch(()=>{});
 
@@ -5462,14 +5462,14 @@ async function ensureLegalizacaoSchema() {
   await pool.query(`ALTER TABLE legalizacao_historico ENABLE ROW LEVEL SECURITY`).catch(()=>{});
 }
 
-const LEGAL_DIAS_ALERTA_PROCURACAO = 10;
+const LEGAL_DIAS_ALERTA_PROCURACAO = 30;
 
 /**
  * CASE de status por coluna de data — mesmo critério em todo o módulo.
  * `prioridade` é um WHEN extra que vence sobre a data (ex.: alvará com
  * solicitação de renovação em andamento na prefeitura). Alvará tem prazo de
- * "vencendo" mais longo que certificado (60 x 10 dias — pedido do Reysner:
- * alvará demora bem mais pra renovar).
+ * "vencendo" mais longo no sanitário (120 dias); funcionamento, certificado e
+ * procuração avisam com 30 dias.
  */
 const _legalStatusSql = (col, dias, prioridade = '') => `CASE ${prioridade}
   WHEN ${col} IS NULL THEN 'sem_data'
