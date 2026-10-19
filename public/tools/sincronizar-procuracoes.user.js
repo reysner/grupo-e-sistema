@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Grupo-E · Sincronizar procurações (e-CAC + FGTS Digital)
 // @namespace    https://grupo-e-sistema-uc2w.onrender.com/
-// @version      1.4.0
+// @version      1.5.0
 // @description  Ao abrir as procurações recebidas no e-CAC ou no SPE (FGTS Digital), lê a lista completa e envia pro sistema Grupo-E (módulo Legalização).
 // @match        https://servicos.receitafederal.gov.br/servico/autorizacoes/*
 // @match        https://spe.sistema.gov.br/*
@@ -28,7 +28,7 @@
  *   - FGTS Digital → Procurações (SPE)
  * SÓ na rodada semanal: segunda-feira, das 09:30 às 10:30 (pedido do Reysner, 23/09/2026). Fora dessa janela, abrir o e-CAC ou o
  * FGTS Digital NÃO busca nada. Único jeito de rodar fora dela: o menu do Tampermonkey "Sincronizar procurações agora" (clique explícito).
- * O e-CAC e o FGTS Digital hoje usam o mesmo sistema de procurações (SPE) e mostram a mesma lista — o script grava nas duas colunas.
+ * O e-CAC (Minhas Autorizações de Acesso) e o FGTS Digital (SPE) são sistemas distintos, com listas diferentes: cada leitura grava só na própria coluna.
  * FGTS Digital também atualiza sozinho: (a) logo depois do e-CAC sincronizar, numa aba em segundo plano
  * (usa o login gov.br já feito); (b) quando você mesmo abre o FGTS Digital e chega na tela inicial.
  * Nesses dois casos o script só clica em "Entrar com GOV.BR", "Definir" (perfil) e no card "Procurações".
@@ -83,19 +83,26 @@
   async function lerEcac() {
     for (let i = 0; i < 60 && !xhv; i++) await esperar(500);
     if (!xhv) throw new Error('não consegui identificar a sessão do portal. Abra "Minhas Autorizações de Acesso" e tente de novo.');
-    const r = await fetch('/servico/autorizacoes/api/autorizacoes/recebidas/buscar', {
-      credentials: 'include', headers: { 'x-hv': xhv, Accept: 'application/json, text/plain, */*' },
-    });
-    if (!r.ok) throw new Error('a Receita respondeu ' + r.status + ' (entre de novo no e-CAC).');
-    const j = await r.json();
-    const lista = j.lista || [];
-    if (!lista.length) throw new Error('a lista de procurações veio vazia — nada foi enviado.');
-    if (lista.some((p) => p.outorgado && p.outorgado.ni !== CNPJ_ESCRITORIO)) {
-      throw new Error('você não está logado como o escritório (perfil diferente) — nada foi enviado.');
-    }
+    // Sem filtro o e-CAC devolve só as 100 últimas autorizações (qtdEncontrada > qtdRecuperada). Com ?situacao=ATIVA / EXPIRADA devolve TODAS
+    // daquela situação em uma chamada (achado de 19/10/2026: 958 ativas + 103 expiradas). Cancelada/Rejeitada não interessam.
+    const buscar = async (situacao) => {
+      const r = await fetch('/servico/autorizacoes/api/autorizacoes/recebidas/buscar?situacao=' + situacao, {
+        credentials: 'include', headers: { 'x-hv': xhv, Accept: 'application/json, text/plain, */*' },
+      });
+      if (!r.ok) throw new Error('a Receita respondeu ' + r.status + ' (entre de novo no e-CAC).');
+      const j = await r.json();
+      const lista = j.lista || [];
+      if (lista.some((p) => p.outorgado && p.outorgado.ni !== CNPJ_ESCRITORIO)) {
+        throw new Error('você não está logado como o escritório (perfil diferente) — nada foi enviado.');
+      }
+      return { lista, completo: !!j.cabecalho && j.cabecalho.qtdEncontrada === lista.length };
+    };
+    const ativas = await buscar('ATIVA');
+    if (!ativas.lista.length) throw new Error('a lista de procurações ativas veio vazia — nada foi enviado.');
+    const expiradas = await buscar('EXPIRADA');
     return {
-      completo: !!j.cabecalho && j.cabecalho.qtdEncontrada === lista.length,
-      procuracoes: lista
+      completo: ativas.completo && expiradas.completo,
+      procuracoes: ativas.lista.concat(expiradas.lista)
         .filter((p) => p.situacao === 'ATIVA' || p.situacao === 'EXPIRADA')
         .map((p) => ({ cnpj: p.outorgante.ni, validade: br(p.fimVigencia), situacao: p.situacao.toLowerCase() })),
     };
@@ -191,11 +198,9 @@
     try {
       aviso('sincronizando procurações ' + rotulo + '…');
       const dados = ehEcac ? await lerEcac() : await lerSpe();
+      // e-CAC e SPE (FGTS Digital) são sistemas DIFERENTES e as listas divergem (conferido em 19/10/2026: dezenas de CNPJs só no e-CAC e datas diferentes):
+      // cada um grava só na sua própria coluna.
       let r = await enviar(dados);
-      if (!ehEcac) { // SPE: mesma lista serve para as duas colunas (e-CAC e FGTS Digital)
-        await enviar(dados, 'ecac');
-        GM_setValue('ultimo_ecac', Date.now());
-      }
       GM_setValue(chaveUltimo, Date.now());
       aviso('procurações ' + rotulo + ' em dia: ' + r.atualizados + ' atualizada(s)' + (r.limpos ? ', ' + r.limpos + ' zerada(s)' : '') + '.', 'ok');
       if (ehEcac) abrirFgtsEmSegundoPlano(forcar);

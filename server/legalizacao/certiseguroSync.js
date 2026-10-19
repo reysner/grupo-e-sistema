@@ -109,8 +109,41 @@ async function enviarParaSistema(certificados) {
   return dados;
 }
 
+/**
+ * Caminho preferido (19/10/2026): pede ao SERVIDOR (Render, IP de saída fixo cadastrado na CertiSeguro) que busque e grave. A estação só "bate" na rota
+ * (e acorda o Render, que dorme no plano gratuito). Devolve o resultado, ou null se o servidor ainda não tem as variáveis da CertiSeguro (aí cai no
+ * caminho antigo, direto da estação). Se a CertiSeguro recusar o IP do Render, falha com a mensagem (que traz o IP a cadastrar).
+ */
+async function sincronizarPeloServidor() {
+  const appUrl = (process.env.APP_URL || 'https://grupo-e-sistema.onrender.com').replace(/\/+$/, '');
+  const syncToken = obrigatorio('CERTISEGURO_SYNC_TOKEN');
+  let ultimoErro = null;
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    try {
+      const resp = await fetch(`${appUrl}/api/data/legalizacao/certificados/sincronizar-certiseguro`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sync-Token': syncToken }, body: '{}', signal: AbortSignal.timeout(150000),
+      });
+      const dados = await resp.json().catch(() => ({}));
+      if (resp.ok) return dados;
+      if (resp.status === 503 || resp.status === 404) return null;                // servidor sem configuração (ou versão antiga): usa o caminho direto
+      if (resp.status === 502) throw Object.assign(new Error(`CertiSeguro recusou o servidor: ${dados.error}`), { definitivo: true });
+      ultimoErro = new Error(`Sistema Grupo-E devolveu HTTP ${resp.status}: ${dados.error || JSON.stringify(dados)}`);
+    } catch (e) {
+      if (e.definitivo) throw e;
+      ultimoErro = e;                                                               // Render acordando / rede: tenta de novo
+    }
+    await new Promise((r) => setTimeout(r, 20000));
+  }
+  throw ultimoErro;
+}
+
 async function main() {
-  console.log('[certiseguroSync] Buscando lista de certificados na CertiSeguro...');
+  const viaServidor = await sincronizarPeloServidor();
+  if (viaServidor) {
+    console.log(`[certiseguroSync] (via servidor) Concluído: ${viaServidor.atualizados} atualizado(s), ${viaServidor.criados} criado(s), ${viaServidor.ignorados} ignorado(s) de ${viaServidor.total}.`);
+    return;
+  }
+  console.log('[certiseguroSync] Servidor sem as variáveis da CertiSeguro — buscando direto da estação...');
   const certificados = await buscarCertificadosCertiseguro();
   console.log(`[certiseguroSync] ${certificados.length} certificado(s) recebido(s). Enviando para o sistema...`);
   const resultado = await enviarParaSistema(certificados);

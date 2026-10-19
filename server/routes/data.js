@@ -522,14 +522,9 @@ router.post('/legalizacao/redesim-resultado', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao gravar a consulta da Redesim.' }); }
 });
 
-router.post('/legalizacao/certificados/importar-certiseguro', async (req, res) => {
-  try {
-    const tokenEsperado = process.env.CERTISEGURO_SYNC_TOKEN;
-    if (!tokenEsperado) return res.status(503).json({ error: 'Sincronização CertiSeguro não configurada (variável CERTISEGURO_SYNC_TOKEN ausente no servidor).' });
-    if (req.get('X-Sync-Token') !== tokenEsperado) return res.status(401).json({ error: 'Token de sincronização inválido.' });
-
+/** Grava a lista de certificados da CertiSeguro (upsert por CNPJ/CPF). Usada pelo envio da estação e pela busca feita pelo próprio servidor. */
+async function importarCertificadosCertiseguro(lista, req) {
     await ensureLegalizacaoSchema();
-    const lista = Array.isArray(req.body.certificados) ? req.body.certificados : [];
     let atualizados = 0, criados = 0, ignorados = 0;
 
     for (const item of lista) {
@@ -584,10 +579,41 @@ router.post('/legalizacao/certificados/importar-certiseguro', async (req, res) =
 
     await registrarLog('sync', 'CertiSeguro (sync automático)', 'importar', 'legalizacao',
       `Sincronização CertiSeguro: ${atualizados} atualizado(s), ${criados} criado(s), ${ignorados} ignorado(s) de ${lista.length} certificado(s).`, req);
-    res.json({ ok: true, atualizados, criados, ignorados, total: lista.length });
+    return { ok: true, atualizados, criados, ignorados, total: lista.length };
+}
+
+router.post('/legalizacao/certificados/importar-certiseguro', async (req, res) => {
+  try {
+    const tokenEsperado = process.env.CERTISEGURO_SYNC_TOKEN;
+    if (!tokenEsperado) return res.status(503).json({ error: 'Sincronização CertiSeguro não configurada (variável CERTISEGURO_SYNC_TOKEN ausente no servidor).' });
+    if (req.get('X-Sync-Token') !== tokenEsperado) return res.status(401).json({ error: 'Token de sincronização inválido.' });
+    res.json(await importarCertificadosCertiseguro(Array.isArray(req.body.certificados) ? req.body.certificados : [], req));
   } catch (err) {
     console.error('[legalizacao] importar-certiseguro falhou:', err);
     res.status(500).json({ error: err.message || 'Erro ao importar certificados da CertiSeguro.' });
+  }
+});
+
+/**
+ * POST /api/data/legalizacao/certificados/sincronizar-certiseguro — o PRÓPRIO SERVIDOR busca a lista na CertiSeguro e grava.
+ * Motivo (19/10/2026): a API da CertiSeguro só aceita IPs cadastrados e o IP da estação do escritório muda toda semana, então a tarefa de segunda
+ * falhava ("IP não liberado"). O Render sai por IPs fixos (cadastrados uma vez na CertiSeguro); a estação só "bate" nesta rota (acorda o Render).
+ * Precisa no Render: CERTISEGURO_URL, CERTISEGURO_TOKEN, CERTISEGURO_CNPJ (mesmos valores do server/legalizacao/.env). Autenticada pelo token de sincronização.
+ * Se a CertiSeguro recusar o IP, a mensagem de erro traz o IP de saída do Render (é ele que deve ser cadastrado).
+ */
+router.post('/legalizacao/certificados/sincronizar-certiseguro', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    const faltam = ['CERTISEGURO_URL', 'CERTISEGURO_TOKEN', 'CERTISEGURO_CNPJ'].filter((v) => !String(process.env[v] || '').trim());
+    if (faltam.length) return res.status(503).json({ error: 'Faltam variáveis no servidor: ' + faltam.join(', ') + '.' });
+    const { buscarCertificadosCertiseguro } = require('../legalizacao/certiseguroSync');
+    let certificados;
+    try { certificados = await buscarCertificadosCertiseguro(); }
+    catch (e) { return res.status(502).json({ error: String(e.message || e).replace(/\s+/g, ' ').slice(0, 400) }); }
+    res.json(await importarCertificadosCertiseguro(certificados, req));
+  } catch (err) {
+    console.error('[legalizacao] sincronizar-certiseguro falhou:', err);
+    res.status(500).json({ error: err.message || 'Erro ao sincronizar certificados da CertiSeguro.' });
   }
 });
 
