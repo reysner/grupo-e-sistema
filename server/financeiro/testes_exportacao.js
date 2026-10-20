@@ -180,6 +180,8 @@ const semLixo = (e, nome) => {
     ['oc-assunto', 'oc-resp', 'oc-anexo', 'oc-prior', 'oc-prazo', 'oc-emp', 'oc-tipo', 'oc-dep', 'oc-det', 'oc-ok'].forEach((id) => assert.ok(f.includes('id="' + id + '"'), 'campo ' + id));
     assert.ok(f.includes('OK - Registrar') && f.includes('Limpar'));
     assert.ok(C.t.formularioOcorrenciaQ(o, true).includes('>Registrar ocorrência</strong>'), 'sem título, continua "Registrar ocorrência" (tela Qualidade)');
+    assert.ok(C.t.formularioOcorrenciaQ(o, true).includes('Usar só para fatos fora do padrão'), 'na tela Qualidade o aviso continua');
+    assert.ok(!C.t.formularioOcorrenciaQ(o, true, titulo, true).includes('Usar só para fatos fora do padrão'), 'na ficha (Gestão da Permanência) o aviso não aparece');
   });
   await teste('cs: ocorrência aberta pela ficha leva o selo "CS - Plano de Ação"; a da Qualidade não', () => {
     assert.ok(C.t.seloPlanoCS({ plano_cs: true }).includes('CS - Plano de Ação'));

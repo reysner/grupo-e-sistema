@@ -1544,12 +1544,12 @@
     alvo.innerHTML = '<div class="cinza">Carregando…</div>';
     try {
       var lista = await api('/api/cs/painel/qualidade/cliente/' + encodeURIComponent(c.id));
-      alvo.innerHTML = '<div id="qa-form-ficha"></div><div class="qa-lista">' + listaRegistrosQ(lista.registros) + '</div>';
+      alvo.innerHTML = '<div id="qa-form-ficha" class="card qa-modal-oc qa-oc-inline"></div><div class="qa-lista">'   // mesmas classes do formulário da tela Qualidade: campos (assunto, empresa) na largura toda + listaRegistrosQ(lista.registros) + '</div>';
       var oc = $('qa-ocorrencias');
       var recarrega = function () { estado.qResumo = null; montarConsideracoes(c); };
       if (oc) { oc.innerHTML = listaOcorrenciasQ(lista.registros); ligarAcoesOcorrenciaQ('#qa-ocorrencias', recarrega); }
       // o MESMO formulário do módulo Qualidade ("Registrar ocorrência"), com a empresa da ficha já escolhida
-      await abrirRegistrarOcorrencia(recarrega, $('qa-form-ficha'), { titulo: TITULO_CONSIDERACOES, planoCs: true, empresa: { id: c.id, nome: c.nome, cnpj: c.cnpj } });
+      await abrirRegistrarOcorrencia(recarrega, $('qa-form-ficha'), { titulo: TITULO_CONSIDERACOES, planoCs: true, semAviso: true, empresa: { id: c.id, nome: c.nome, cnpj: c.cnpj } });
     } catch (e) { alvo.innerHTML = '<div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div>'; }
   }
 
@@ -1862,12 +1862,12 @@
   }
   function opcoesTiposOc(lista) { return '<option value="">Selecione o tipo…</option>' + (lista || []).map(function (t) { return '<option>' + esc(t) + '</option>'; }).join(''); }
   /** Formulário "Registrar ocorrência" (o miolo da janela). */
-  function formularioOcorrenciaQ(o, emTela, titulo) {
+  function formularioOcorrenciaQ(o, emTela, titulo, semAviso) {
     var tipos = opcoesTiposOc(o.tipos);
     var deps = '<option value="">Selecione o departamento…</option>' + DEPS_OCORRENCIA.map(function (d) { return '<option value="' + esc(d[0]) + '">' + esc(d[1]) + '</option>'; }).join('');
     var pri = (o.prioridades || ['Muito Alta', 'Alta', 'Média', 'Baixa']).map(function (p) { return '<option' + (p === 'Média' ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('');
     return '<div class="qa-modal-topo"><strong style="font-size:22px;color:#256050">' + esc(titulo || 'Registrar ocorrência') + '</strong>' + (emTela ? '' : '<button type="button" class="qa-x" id="oc-fechar" aria-label="Fechar">✕</button>') + '</div>' +
-      '<div class="qa-oc-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</div>' +
+      (semAviso ? '' : '<div class="qa-oc-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</div>') +   // na ficha (Gestão da Permanência) o aviso não aparece
       '<div class="qa-oc-quem">Registrando como <strong>' + esc(usuarioLogadoNome() || 'você') + '</strong> em <strong>' + hojeIsoLocal().split('-').reverse().join('/') + '</strong>. Quem registra, a data e o horário ficam gravados na ocorrência.</div>' +
       '<div class="qa-oc-linha qa-oc-l1">' +
         '<div class="qa-campo"><label for="oc-assunto">Assunto da ocorrência</label><input type="text" id="oc-assunto" maxlength="100" placeholder="Qual o assunto da ocorrência?"></div>' +
@@ -1896,12 +1896,12 @@
     var ov = null, fechar;
     var $ = function (id) { return (raiz || ov || document).querySelector('#' + id); };   // procura só dentro deste formulário (a ficha e a tela Qualidade podem existir ao mesmo tempo)
     if (raiz) {   // direto na tela de Qualidade (ou na ficha da empresa): sem janela; "Limpar" recomeça o formulário
-      raiz.innerHTML = formularioOcorrenciaQ(o, true, opc.titulo);
+      raiz.innerHTML = formularioOcorrenciaQ(o, true, opc.titulo, opc.semAviso);
       fechar = function () { abrirRegistrarOcorrencia(aoSalvar, raiz, opc); };
     } else {
       ov = document.createElement('div'); ov.className = 'qa-overlay'; document.body.appendChild(ov);
       fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
-      ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Registrar ocorrência">' + formularioOcorrenciaQ(o, false, opc.titulo) + '</div>';
+      ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Registrar ocorrência">' + formularioOcorrenciaQ(o, false, opc.titulo, opc.semAviso) + '</div>';
       $('oc-fechar').addEventListener('click', fechar);
     }
     $('oc-cancel').addEventListener('click', fechar);
