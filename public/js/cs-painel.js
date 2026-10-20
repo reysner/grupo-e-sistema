@@ -7,7 +7,7 @@
 
   var COR_RISCO = { 'Alto': '#dc2626', 'Médio': '#d97706', 'Baixo': '#10b981', 'Incompleto': '#9ca3af', 'Suspenso': '#6b21a8' };
   var COR_TERM = { financeiro: '#b45309', atendimento: '#7c3aed', operacional: '#ef4444', tratativas: '#0e7490' };
-  var NOME_TERM = { financeiro: 'Financeiro', atendimento: 'Atendimento', operacional: 'Operacional', tratativas: 'Tratativas' };
+  var NOME_TERM = { financeiro: 'Financeiro', atendimento: 'Atendimento', operacional: 'Operacional', tratativas: 'Ocorrências' };
   var COR_CAT = { 'Diamante': '#0891b2', 'Ouro': '#c99a06', 'Prata': '#6b7280', 'Bronze': '#b45309' };
   var ICONE_CAT = { 'Diamante': '💎', 'Ouro': '🥇', 'Prata': '🥈', 'Bronze': '🥉' };
   var TIPO_SAIDA = {
@@ -325,7 +325,7 @@
       var med = com.filter(function (x) { return nivelTerm(x.risco.termometros[k], c) === 'Médio'; }).length;
       var bai = com.length - alto - med;
       var perg = { financeiro: 'O cliente está com honorário em atraso?', atendimento: 'O cliente teve falha de atendimento ou reclamou?', operacional: 'Estamos entregando guias e fechamentos no prazo?', tratativas: 'As ocorrências lançadas no módulo Qualidade estão sendo tratadas no prazo?' }[k];
-      var regua = { financeiro: 'Fonte: Omie. Pesa os dias do título mais antigo em atraso e a quantidade de títulos.', atendimento: 'Fonte: Zappy depois da revisão da Gamificação, mais insatisfações registradas e pesquisas. Falha marcada como indevida não conta.', operacional: 'Fonte: entregas do Acessórias nos últimos 90 dias (entregues com atraso e vencidas sem entrega).', tratativas: 'Fonte: módulo Qualidade (erro, multa, reclamação, atraso, falha…, últimos 90 dias). Prazo vencido pesa mais; só entra na média enquanto houver tratativa em aberto. O plano de ação escrito na ficha não conta.' }[k];
+      var regua = { financeiro: 'Fonte: Omie. Pesa os dias do título mais antigo em atraso e a quantidade de títulos.', atendimento: 'Fonte: Zappy depois da revisão da Gamificação, mais insatisfações registradas e pesquisas. Falha marcada como indevida não conta.', operacional: 'Fonte: entregas do Acessórias nos últimos 90 dias (entregues com atraso e vencidas sem entrega).', tratativas: 'Fonte: módulo Qualidade (erro, multa, reclamação, atraso, falha…, últimos 90 dias). Prazo vencido pesa mais; só entra na média enquanto houver ocorrência em aberto. As ocorrências abertas pela ficha (CS - Plano de Ação) são informativas e não contam.' }[k];
       return '<div class="tres-card" style="border-top-color:' + COR_TERM[k] + '"><div class="tres-nome">' + NOME_TERM[k].toUpperCase() + '</div><div class="tres-perg">' + perg + '</div>' +
         '<div class="tres-dest"><b style="color:' + COR_TERM[k] + '">' + (com.length ? pct(alto + med, com.length) + '%' : '—') + '</b><span>em risco Médio ou Alto · ' + (alto + med) + ' de ' + com.length + ' com dado</span></div>' +
         barra([{ rot: 'Alto', n: alto, cor: COR_RISCO.Alto }, { rot: 'Médio', n: med, cor: COR_RISCO['Médio'] }, { rot: 'Baixo', n: bai, cor: COR_RISCO.Baixo }]) +
@@ -341,7 +341,7 @@
     var emRisco = t.risco.Alto + t.risco['Médio'];
     var pontos = [];
     if (t.risco.Alto) pontos.push('<strong>' + t.risco.Alto + ' cliente(s) em Alto risco</strong>: abra a Gestão da Permanência e combine o próximo passo de cada um.');
-    if (emRisco) pontos.push('Dos ' + emRisco + ' clientes em risco Alto ou Médio, o termômetro que mais pesa é <strong>Financeiro em ' + dominantes.financeiro + '</strong>, Atendimento em ' + dominantes.atendimento + ', Operacional em ' + dominantes.operacional + ' e Tratativas em ' + dominantes.tratativas + '.');
+    if (emRisco) pontos.push('Dos ' + emRisco + ' clientes em risco Alto ou Médio, o termômetro que mais pesa é <strong>Financeiro em ' + dominantes.financeiro + '</strong>, Atendimento em ' + dominantes.atendimento + ', Operacional em ' + dominantes.operacional + ' e Ocorrências em ' + dominantes.tratativas + '.');
     if (t.termometros.operacional.com_dado === 0) pontos.push('O termômetro <strong>Operacional ainda está sem dado</strong> (entregas do Acessórias em leitura). Enquanto isso, o risco é calculado só com Financeiro e Atendimento.');
     if (t.suspensos) pontos.push('<strong>' + t.suspensos + ' cliente(s) com contrato suspenso no Omie</strong>' + (t.suspensos_lidos_em ? ' (lista lida em ' + data(t.suspensos_lidos_em) + ', atualizada toda segunda)' : '') + ': a ação é de cobrança e as entregas deles não entram no Operacional. Filtre pelo selo ⏸ Suspenso na Gestão da Permanência.');
     if (p.fora_do_churn && p.fora_do_churn.a_confirmar) pontos.push(p.fora_do_churn.a_confirmar + ' saída(s) ainda <strong>a confirmar</strong> (sem motivo lido do Acessórias): o churn real fica entre ' + p.taxa + '% e ' + p.taxa_teto + '%.');
@@ -404,7 +404,7 @@
       return '<tr><td style="min-width:220px;max-width:280px;white-space:normal">' + nomeLink(c) + '</td><td class="c">' + pillCat(c) + '</td><td class="c">' + pillRisco(c.risco) + '</td>' +
         '<td class="c">' + celTerm(c, 'financeiro') + '</td><td class="c">' + celTerm(c, 'atendimento') + '</td><td class="c">' + celTerm(c, 'operacional') + '</td><td class="c">' + celTerm(c, 'tratativas') + '</td></tr>';
     }).join('');
-    return { n: lista.length, html: lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Categoria</th><th class="c">Risco</th><th class="c">Financeiro</th><th class="c">Atendimento</th><th class="c">Operacional</th><th class="c">Tratativas</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' +
+    return { n: lista.length, html: lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Categoria</th><th class="c">Risco</th><th class="c">Financeiro</th><th class="c">Atendimento</th><th class="c">Operacional</th><th class="c">Ocorrências</th></tr></thead><tbody>' + corpo + '</tbody></table></div>' +
       (lista.length > mostrar.length ? '<div class="vazio">Mostrando ' + mostrar.length + ' de ' + lista.length + '. <button class="link" id="r-todos">Mostrar todos</button></div>' : '') : '<div class="vazio">Nenhum cliente neste filtro.</div>' };
   }
   function desenharRisco() {
@@ -416,7 +416,7 @@
         '<div><strong style="color:' + COR_TERM.financeiro + '">Financeiro</strong><br>Dias de atraso do título mais antigo (até 15 dias = 25 pontos; acima de 90 = 90), mais 10 pontos com 3 ou mais títulos. Cliente marcado como inadimplente crônico fica em 70, no mínimo.</div>' +
         '<div><strong style="color:' + COR_TERM.atendimento + '">Atendimento</strong><br>Insatisfações registradas (pesam pela gravidade e diminuem depois de 90 dias), notas baixas, e SLA vermelho do Zappy <em>depois da revisão da Gamificação</em>, e detratores das pesquisas.</div>' +
         '<div><strong style="color:' + COR_TERM.operacional + '">Operacional</strong><br>Proporção das entregas do Acessórias (últimos 90 dias) que chegam ao cliente e foram entregues com atraso ou venceram sem entrega: guias e declarações com multa, folha, FGTS, DCTFWeb, INSS e envios ao cliente. Tarefas internas (balancete, renovação de certificado, aniversário de sócio, cadastros) não contam. Entrega dentro do prazo técnico ou do prazo legal não é atraso. Só conta com <strong>5 entregas ou mais</strong> no período (com menos, a taxa não é confiável: fica sem dado). Empresa com contrato <strong>Suspenso no Omie</strong> (selo ⏸) também fica fora do Operacional: o atraso dela já pesa no Financeiro.</div>' +
-        '<div><strong style="color:' + COR_TERM.tratativas + '">Tratativas</strong><br>Ocorrências <strong>lançadas no módulo Qualidade</strong> (erro, multa, reclamação, atraso, falha…) dos últimos 90 dias e o andamento da tratativa de cada uma. Só entra na média enquanto houver tratativa em aberto. O que se escreve em "Descreva a tratativa" na ficha é plano de ação e <strong>não conta</strong>.</div>' +
+        '<div><strong style="color:' + COR_TERM.tratativas + '">Ocorrências</strong><br>Ocorrências <strong>lançadas no módulo Qualidade</strong> (erro, multa, reclamação, atraso, falha…) dos últimos 90 dias e o andamento de cada uma. Só entra na média enquanto houver ocorrência em aberto. As ocorrências abertas pela ficha ("CS - Plano de Ação") são informativas e <strong>não contam</strong>.</div>' +
       '</div></details>' +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px">' +
         '<span class="filter-label">Buscar</span><input class="gp-input" id="r-busca" placeholder="Nome ou CNPJ" value="' + esc(f.busca) + '">' +
@@ -1425,6 +1425,10 @@
       return '<div><strong>' + esc(ROT_ACAO_Q[x.acao] || x.acao) + '</strong> · ' + dataHora(x.em) + (x.por ? ' · ' + esc(x.por) : '') + (x.texto && ['analista_encerrou', 'gestor_validou'].indexOf(x.acao) < 0 ? ': ' + esc(x.texto) : '') + '</div>';   // a nota de quem encerra/valida aparece uma vez só, em Devolutivas
     }).join('') + '</div>';
   }
+  /** Selo das ocorrências abertas pela ficha da empresa ("Considerações Sucesso do Cliente / Time Operacional (Plano de ação)"): mesmo processo da Qualidade, mas informativas (não pesam no risco). */
+  function seloPlanoCS(r) {
+    return r && r.plano_cs ? ' <span class="pill" style="color:#6d28d9;border-color:#6d28d955;background:#6d28d914" title="Aberta pela ficha da empresa (Considerações Sucesso do Cliente / Time Operacional). Informativa: não pesa no risco de churn.">CS - Plano de Ação</span>' : '';
+  }
   function pillStatusQ(sit) {
     var c = COR_STATUS_Q[sit] || '#6b7280';
     return '<span class="pill" style="color:' + c + ';border-color:' + c + '55;background:' + c + '14">' + esc(ROT_STATUS_Q[sit] || sit) + '</span>';
@@ -1445,7 +1449,7 @@
   function listaRegistrosQAntigo(regs) {
     if (!regs.length) return '<div class="linha-item"><span class="x">Nenhuma consideração registrada para este cliente.</span></div>';
     return regs.map(function (r) {
-      return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao) + ' <strong>' + esc(r.tipo) + '</strong> <span class="cinza">· ' + esc((r.departamentos || []).join(', ')) + '</span></div>' +
+      return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao) + ' <strong>' + esc(r.tipo) + '</strong>' + seloPlanoCS(r) + ' <span class="cinza">· ' + esc((r.departamentos || []).join(', ')) + '</span></div>' +
         '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
         '<div class="qa-reg-rod">Analista: <strong>' + esc(r.analista_nome || '—') + '</strong> · lançado em ' + dataHora(r.criado_em) + ' por ' + esc(r.criado_por || '—') + ' · prazo ' + data(r.prazo) +
           (r.resolvido_em ? ' · resolvido em ' + dataHora(r.resolvido_em) : '') + '</div>' +
@@ -1474,7 +1478,7 @@
 
   /** Cartão de um plano de ação (registro feito na ficha). */
   function cartaoRegistroQ(r) {
-    return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao) + ' <strong>' + esc(r.tipo) + '</strong> <span class="cinza">· ' + esc((r.departamentos || []).join(', ')) + '</span></div>' +
+    return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao) + ' <strong>' + esc(r.tipo) + '</strong>' + seloPlanoCS(r) + ' <span class="cinza">· ' + esc((r.departamentos || []).join(', ')) + '</span></div>' +
       '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>' +
       '<div class="qa-reg-rod">Responsável: <strong>' + esc(r.analista_nome || '—') + '</strong> · lançado em ' + dataHora(r.criado_em) + ' por ' + esc(r.criado_por || '—') + ' · prazo ' + data(r.prazo) +
         (r.resolvido_em ? ' · resolvido em ' + dataHora(r.resolvido_em) : '') + '</div>' +
@@ -1545,7 +1549,7 @@
       var recarrega = function () { estado.qResumo = null; montarConsideracoes(c); };
       if (oc) { oc.innerHTML = listaOcorrenciasQ(lista.registros); ligarAcoesOcorrenciaQ('#qa-ocorrencias', recarrega); }
       // o MESMO formulário do módulo Qualidade ("Registrar ocorrência"), com a empresa da ficha já escolhida
-      await abrirRegistrarOcorrencia(recarrega, $('qa-form-ficha'), { titulo: TITULO_CONSIDERACOES, empresa: { id: c.id, nome: c.nome, cnpj: c.cnpj } });
+      await abrirRegistrarOcorrencia(recarrega, $('qa-form-ficha'), { titulo: TITULO_CONSIDERACOES, planoCs: true, empresa: { id: c.id, nome: c.nome, cnpj: c.cnpj } });
     } catch (e) { alvo.innerHTML = '<div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div>'; }
   }
 
@@ -1716,7 +1720,7 @@
   }
   /** Cartão de uma ocorrência (seção Qualidade da ficha): tipo, prioridade, departamento, assunto, descrição, anexos e andamento. */
   function cartaoOcorrenciaQ(r, semAcoes) {
-    return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao || r.status) + ' <strong>' + esc(r.tipo) + '</strong> ' + pillPrioridadeQ(r.prioridade) + ' <span class="cinza">· ' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</span></div>' +
+    return '<div class="qa-reg"><div class="qa-reg-topo">' + pillStatusQ(r.situacao || r.status) + ' <strong>' + esc(r.tipo) + '</strong>' + seloPlanoCS(r) + ' ' + pillPrioridadeQ(r.prioridade) + ' <span class="cinza">· ' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</span></div>' +
       (r.assunto ? '<div class="qa-reg-txt"><strong>' + esc(r.assunto) + '</strong></div>' : '') +
       (r.detalhe && r.detalhe === r.plano_acao ? '' : '<div class="qa-reg-txt">' + esc(r.detalhe) + '</div>') +
       '<div class="qa-reg-rod">Registrada em ' + dataHora(r.criado_em) + ' por ' + esc(r.criado_por || '—') + (r.prazo ? ' · prazo ' + data(r.prazo) : '') + (r.resolvido_em ? ' · resolvida em ' + dataHora(r.resolvido_em) : '') + '</div>' +
@@ -1786,12 +1790,12 @@
   });
 
   /** Quadro "Como a Tratativa pesa no risco de churn": só o administrador vê; o peso de cada tipo se edita aqui e tipos novos já entram no formulário. */
-  /** O resumo de como as ocorrências pesam no termômetro Tratativas do risco (texto único, usado na janela de Tipos de registro). */
+  /** O resumo de como as ocorrências pesam no termômetro Ocorrências do risco (texto único, usado na janela de Tipos de registro). */
   function resumoCalculoQ() {
     return '' +
-      '<div><strong>Quem alimenta</strong><br>Só o que é <strong>registrado no módulo Qualidade</strong> (erro, multa, reclamação, atraso, falha…): aparece nos Sinais de atenção da ficha, na seção Qualidade da empresa, no card Tratativas da Visão Geral e pesa no risco, que agora tem quatro critérios: Financeiro, Atendimento, Operacional e Tratativas. O plano de ação escrito na ficha ("Descreva a tratativa") <strong>não conta</strong>.</div>' +
+      '<div><strong>Quem alimenta</strong><br>Só o que é <strong>registrado no módulo Qualidade</strong> (erro, multa, reclamação, atraso, falha…): aparece nos Sinais de atenção da ficha, na seção Qualidade da empresa, no card Ocorrências da Visão Geral e pesa no risco, que agora tem quatro critérios: Financeiro, Atendimento, Operacional e Ocorrências. As ocorrências abertas pela ficha ("CS - Plano de Ação") são informativas e <strong>não contam</strong>.</div>' +
       '<div><strong>Como cada ocorrência pesa</strong><br>Vale o <strong>dobro do peso do seu tipo</strong> (tabela abaixo), multiplicado por: 1,5 se o prazo venceu · 1 em aberto ou em tratamento · 0,5 finalizada aguardando validação · 0,25 resolvida. Ocorrência com mais de 45 dias vale metade. Vale o que foi registrado nos últimos 90 dias, a soma é limitada a 100 por cliente e a cancelada não entra.</div>' +
-      '<div><strong>Quando entra na média</strong><br>Só enquanto houver tratativa em aberto (aberta, em tratamento ou finalizada aguardando validação). Se só houver ocorrência resolvida nos últimos 90 dias, ela deixa a marca: aparece nos Sinais de atenção e no card Tratativas (até 25 pontos), mas fica fora da média — uma tratativa resolvida não esconde um cliente com Financeiro alto e o risco não vira "parcial" à toa. Um termômetro a partir de 75 pontos já gera alerta e sobe o cliente para, no mínimo, Médio.</div>';
+      '<div><strong>Quando entra na média</strong><br>Só enquanto houver ocorrência em aberto (aberta, em tratamento ou finalizada aguardando validação). Se só houver ocorrência resolvida nos últimos 90 dias, ela deixa a marca: aparece nos Sinais de atenção e no card Ocorrências (até 25 pontos), mas fica fora da média — uma tratativa resolvida não esconde um cliente com Financeiro alto e o risco não vira "parcial" à toa. Um termômetro a partir de 75 pontos já gera alerta e sobe o cliente para, no mínimo, Médio.</div>';
   }
   function comoPesaTratativa(tipos, aberto) {
     var linhas = (tipos || []).map(function (t) {
@@ -1812,14 +1816,14 @@
       var aberta = r.status === 'aberto' || r.status === 'em_tratamento' || r.status === 'finalizada';
       return '<tr><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td>' +
         '<td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
-        '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
+        '<td>' + esc(r.tipo) + seloPlanoCS(r) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
         '<td style="white-space:normal;min-width:260px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 150)) + '</div>' + anexosQ(r) + notasHtml(r) + '</td>' +
         '<td class="c">' + pillStatusQ(r.situacao || r.status) + '</td>' +
         '<td class="c" style="white-space:nowrap">' +
           (aberta ? '<button type="button" class="gp-footer-btn" data-oc-res="' + esc(r.id) + '" style="width:auto">Resolver</button> <button type="button" class="gp-footer-btn" data-oc-can="' + esc(r.id) + '" style="width:auto">Cancelar</button> ' : '') +
           (adm ? '<button type="button" class="gp-footer-btn qa-excluir" data-oc-del="' + esc(r.id) + '" style="width:auto" title="Apaga a ocorrência de vez (teste ou lançamento errado)">Excluir</button>' : '') + '</td></tr>';
     }).join('');
-    return '<div class="card"><div class="card-title">Ocorrências registradas</div><div class="card-sub">' + (oc || []).length + ' ocorrência(s). Cada uma aparece nos Sinais de atenção e na seção Qualidade da empresa e pesa no termômetro Tratativas enquanto estiver em aberto.</div>' +
+    return '<div class="card"><div class="card-title">Ocorrências registradas</div><div class="card-sub">' + (oc || []).length + ' ocorrência(s). Cada uma aparece nos Sinais de atenção e na seção Qualidade da empresa e pesa no termômetro Ocorrências enquanto estiver em aberto.</div>' +
       ((oc || []).length ? '<div class="table-wrap"><table><thead><tr><th>Registrada em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Departamento</th><th>Assunto</th><th class="c">Status</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
         : '<div class="vazio">Nenhuma ocorrência registrada ainda. Clique em "Registrar ocorrência" para lançar a primeira.</div>') + '</div>';
   }
@@ -1988,12 +1992,12 @@
       var grande = arqs.filter(function (f) { return f.size > (o.max_anexo || 10485760); })[0];
       if (grande) { erro.textContent = 'O arquivo "' + grande.name + '" passa de ' + Math.round((o.max_anexo || 10485760) / 1048576) + ' MB.'; return; }
       var avResp = avisoRespOc(acharAn($('oc-resp').value), dep);
-      if (!window.confirm('Deseja realmente registrar esta ocorrência para "' + emp.nome + '"?' + (avResp ? '\n\nAtenção: ' + avResp : ''))) return;
+      if (!window.confirm('Deseja realmente registrar ' + (opc.planoCs ? 'este Plano de ação (CS)' : 'esta ocorrência') + ' para "' + emp.nome + '"?' + (avResp ? '\n\nAtenção: ' + avResp : ''))) return;
       var ok = $('oc-ok'); ok.disabled = true; ok.textContent = 'Registrando…';
       var reabrir = function () { ok.disabled = false; ok.textContent = '✉ OK - Registrar'; };
       try {
         var r = await chamarApi('/api/cs/painel/qualidade/ocorrencias', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cliente_id: emp.id, assunto: assunto, tipo: tipo, prioridade: $('oc-prior').value, departamento: dep, prazo: prazo, detalhe: det.value, analista_id: $('oc-resp').value || null }) });
+          body: JSON.stringify({ cliente_id: emp.id, assunto: assunto, tipo: tipo, prioridade: $('oc-prior').value, departamento: dep, prazo: prazo, detalhe: det.value, analista_id: $('oc-resp').value || null, plano_cs: !!opc.planoCs }) });
         var j = await r.json().catch(function () { return {}; });
         if (!r.ok) { erro.textContent = j.error || 'Não foi possível registrar a ocorrência.'; reabrir(); return; }
         var falhas = [];
@@ -2382,7 +2386,7 @@
   function destinoCurto(r) { var d = (r.departamentos || [])[0]; return r.fila === 'gestor' ? rotuloGestor(d) : r.fila === 'sucesso' ? (d && d !== 'Sucesso' ? rotuloGestor(d) + ' (sem gestor cadastrado: Sucesso do Cliente faz esta etapa)' : 'Sucesso do Cliente') : '—'; }
   function htmlMinhasOcorrencias(lista) {
     var corpo = (lista || []).map(function (r) {
-      return '<tr><td>' + dataHora(r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td>' +
+      return '<tr><td>' + dataHora(r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + seloPlanoCS(r) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td>' +
         '<td style="white-space:normal;min-width:220px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '' + anexosQ(r) + '</td><td class="c">' + celPrazo(r) + '</td><td>' + esc(destinoCurto(r)) + '</td><td class="c">' + pillEtapaQ(r.etapa) + '</td></tr>';
     }).join('');
     return '<div class="card"><div class="card-title">Minhas ocorrências</div><div class="card-sub">As ocorrências que você registrou. Quem registra não precisa ser quem trata: cada uma vai para o gestor do departamento escolhido (ou para o Sucesso do Cliente, se o departamento ainda não tem gestor).</div>' +
@@ -2774,7 +2778,7 @@
     var corpo = lista.map(function (r) {
       var jaEnc = (r.responsaveis || []).some(function (x) { return d.analista && String(x.analista_id) === String(d.analista.id) && x.encerrado_em; });
       var acao = r.etapa === 'com_analista' && !jaEnc ? 'Tratar' : 'Ver';
-      return '<tr><td>' + dataHora(r.liberada_em || r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td>' +
+      return '<tr><td>' + dataHora(r.liberada_em || r.criado_em) + '</td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td><td>' + esc(r.tipo) + seloPlanoCS(r) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td>' +
         '<td style="white-space:normal;min-width:240px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + '<div class="sub" title="' + esc(r.plano_acao || '') + '">' + esc(curtoQ(r.plano_acao || r.detalhe, 130)) + '</div></td>' +
         (d.todos ? '<td>' + esc(r.analista_nome || '—') + '</td>' : '') +
         '<td class="c">' + celPrazo(r) + '</td><td class="c">' + pillEtapaQ(r.etapa) + (r.situacao === 'vencido' ? '<div><span class="pill" style="color:#b91c1c;border-color:#b91c1c55;background:#b91c1c14">vencida</span></div>' : '') + '</td>' +
@@ -2890,7 +2894,7 @@
     var linha = function (r, filho, nf) {
       var fila = r.etapa === 'devolutiva_cliente';
       return '<tr' + (fila ? ' style="background:rgba(194,65,12,.07)"' : '') + '><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
-        '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
+        '<td>' + esc(r.tipo) + seloPlanoCS(r) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
         '<td style="white-space:normal;min-width:230px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + pillConversaQ(r, 'gestor', 'Observação nova do gestor(a)') + (nf ? botaoFilhasQ(r, nf) : '') + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 120)) + '</div></td>' +
         '<td>' + responsavelAtualQ(r) + '</td><td class="c">' + celPrazo(r) + '</td><td class="c">' + pillEtapaQ(r.etapa) + '</td>' +
         '<td class="c" style="white-space:nowrap"><button type="button" class="gp-footer-btn" data-sabrir="' + esc(r.id) + '" style="width:auto">' + (fila ? (d.final ? 'Devolutiva e encerrar' : 'Ver devolutiva') : 'Ver') + '</button></td></tr>';
@@ -3072,7 +3076,7 @@
     var linha = function (r, filho, nf) {
       var acao = r.origem !== 'filha' && (r.etapa === 'registrada' || r.etapa === 'tratativa_definida') ? 'Analisar' : 'Ver';
       return '<tr><td>' + dataHora(r.criado_em) + '<div class="sub">' + esc(r.criado_por || '—') + '</div></td><td style="white-space:normal;min-width:170px">' + esc(r.cliente_nome || '—') + '</td>' +
-        '<td>' + esc(r.tipo) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
+        '<td>' + esc(r.tipo) + seloPlanoCS(r) + '</td><td class="c">' + pillPrioridadeQ(r.prioridade) + '</td><td>' + esc((r.departamentos || []).map(rotuloDepto).join(', ')) + '</td>' +
         '<td style="white-space:normal;min-width:240px"><strong>' + esc(r.assunto || '—') + '</strong>' + marcaFilha(r) + pillConversaQ(r, 'final', 'Resposta do Gestor(a) CS') + (nf ? botaoFilhasQ(r, nf) : '') + '<div class="sub" title="' + esc(r.detalhe) + '">' + esc(curtoQ(r.detalhe, 140)) + '</div>' + anexosQ(r) + '</td>' +
         '<td>' + responsavelAtualQ(r) + '</td><td class="c">' + celPrazo(r) + '</td>' +
         '<td class="c">' + pillEtapaQ(r.etapa) + (r.situacao === 'vencido' ? '<div><span class="pill" style="color:#b91c1c;border-color:#b91c1c55;background:#b91c1c14">vencida</span></div>' : '') + '</td>' +
@@ -3415,7 +3419,7 @@
         var abertos = r.status === 'aberto' || r.status === 'em_tratamento';
         return '<tr><td>' + dataHora(r.criado_em) + '</td><td>' + data(r.prazo) + '</td><td>' + pillStatusQ(r.situacao) + '</td>' +
           '<td style="white-space:normal">' + esc(r.cliente_nome || '—') + '<div class="sub">' + esc(r.cnpj || '') + '</div></td>' +
-          '<td>' + esc(r.tipo) + '<div class="sub">' + esc((r.departamentos || []).join(', ')) + '</div></td>' +
+          '<td>' + esc(r.tipo) + seloPlanoCS(r) + '<div class="sub">' + esc((r.departamentos || []).join(', ')) + '</div></td>' +
           '<td style="white-space:normal;min-width:220px">' + esc(r.detalhe) + (r.tratativa ? '<div class="qa-reg-trat"><strong>Tratativa:</strong> ' + esc(r.tratativa) + '</div>' : '') + notasHtml(r) + '<div class="sub">lançado por ' + esc(r.criado_por || '—') + '</div></td>' +
           '<td style="white-space:normal">' + (r.status === 'finalizada' ?
             '<button type="button" class="login-btn" data-qvalida="' + esc(r.id) + '" style="width:auto;margin:0;padding:6px 12px">Dar como finalizado</button> ' +
@@ -3499,7 +3503,7 @@
         linha('Financeiro com dado', t.termometros.financeiro.com_dado, t.termometros.financeiro.sem_dado + ' sem dado do Omie.') +
         linha('Atendimento com dado', t.termometros.atendimento.com_dado, 'Sem ocorrência conta como 0 (nenhuma falha registrada).') +
         linha('Operacional com dado', t.termometros.operacional.com_dado, 'Entregas do Acessórias lidas para ' + t.operacional_lido + ' empresas; ' + t.termometros.operacional.sem_dado + ' ainda sem entregas no período.') +
-        linha('Tratativas com dado', t.termometros.tratativas.com_dado, 'Só tem dado quem tem ocorrência lançada no módulo Qualidade com tratativa em aberto (últimos 90 dias); os demais ficam de fora da média.') +
+        linha('Ocorrências com dado', t.termometros.tratativas.com_dado, 'Só tem dado quem tem ocorrência lançada no módulo Qualidade em aberto (últimos 90 dias); os demais ficam de fora da média.') +
         linha('Sem categoria', t.categorias.sem_categoria, 'Sem honorário cadastrado e sem grupo ou TAG que defina a categoria.') +
       '</tbody></table></div></div>' +
       '<div class="card"><div class="card-title">Fontes</div><div class="card-sub" style="margin-bottom:0;line-height:1.8">Financeiro: Omie (títulos em aberto) · Atendimento: Zappy depois da revisão da Gamificação, insatisfações e pesquisas registradas no Grupo-E · Operacional: entregas do Acessórias · Categorias: honorário do Grupo-E e TAGs do Acessórias · Churn: motivo de cancelamento do Acessórias e situação do CNPJ na Receita. Atualizado em ' + new Date(d.gerado_em).toLocaleString('pt-BR') + '.</div></div>';
@@ -3721,7 +3725,7 @@
       var fr = estado.filtroRisco, lr = filtrarRisco();
       var fx = ['Risco: ' + (ROT_NIVEL[fr.nivel] || fr.nivel)]; if (fr.busca) fx.push('Busca: ' + fr.busca); if (fr.cat) fx.push('Categoria: ' + fr.cat); if (fr.term) fx.push('Pesa mais: ' + NOME_TERM[fr.term]); if (fr.soAtend) fx.push('Só com sinal de Atendimento');
       return { arquivo: 'cs-gestao-da-permanencia', titulo: 'Painel do Sucesso do Cliente - Gestão da Permanência', filtros: [lr.length + ' cliente(s) · ' + fx.join(' · ') + ' · ordem alfabética', aviso],
-        colunas: ['Cliente', 'CNPJ', 'Categoria', 'Risco', 'Pontos', 'Financeiro', 'Atendimento', 'Operacional', 'Tratativas', 'Suspenso no Omie', 'Honorário (R$)', 'O que está puxando'],
+        colunas: ['Cliente', 'CNPJ', 'Categoria', 'Risco', 'Pontos', 'Financeiro', 'Atendimento', 'Operacional', 'Ocorrências', 'Suspenso no Omie', 'Honorário (R$)', 'O que está puxando'],
         linhas: lr.map(function (c) {
           var tm = c.risco.termometros, v = function (x) { return x == null ? 'sem dado' : x; };
           return [c.nome, c.cnpj || '', c.categoria || '', c.risco.nivel, c.risco.pontos == null ? '' : c.risco.pontos, v(tm.financeiro), v(tm.atendimento), v(tm.operacional), tm.tratativas == null ? '' : tm.tratativas, c.risco.suspenso ? 'Sim' : '', moedaExp(c.honorario), (c.risco.motivos || []).join(' | ')];

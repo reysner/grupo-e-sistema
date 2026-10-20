@@ -424,6 +424,9 @@ function garantirSchema() {
       // origem: 'ficha' = plano de ação escrito na ficha do cliente (informativo: não entra nos Sinais de atenção, no card Tratativa nem no risco);
       // 'modulo' = lançado no módulo Qualidade (aparece nos Sinais de atenção, alimenta o card Tratativa e pesa no risco de churn).
       .then(() => pool.query("ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS origem TEXT NOT NULL DEFAULT 'ficha'"))
+      // plano_cs: ocorrência aberta pela ficha da empresa ("Considerações Sucesso do Cliente / Time Operacional (Plano de ação)"). Segue o MESMO processo da Qualidade
+      // (gestor, vínculos, devolutiva), mas é INFORMATIVA: não entra nos Sinais de atenção, no card Tratativas nem no risco de churn (ver risco.js). Aparece com o selo "CS - Plano de Ação".
+      .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS plano_cs BOOLEAN NOT NULL DEFAULT false'))
       // ocorrências do módulo: assunto e prioridade; ainda sem responsável nem prazo (a tratativa por departamento vem na próxima etapa)
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS assunto TEXT'))
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS prioridade TEXT'))
@@ -495,7 +498,7 @@ function soEquipe(req, res, next) {
   next();
 }
 
-const COLUNAS = `r.id, r.cliente_id, r.cnpj, r.cliente_nome, r.tipo, r.departamentos, r.detalhe, r.analista_id, a.nome AS analista_nome, r.analista_origem_id, ao.nome AS analista_origem_nome, r.analista_apontado_id, ap.nome AS analista_apontado_nome, r.pai_id, r.mostrar_pai, r.ocultar_empresa,
+const COLUNAS = `r.id, r.cliente_id, r.cnpj, r.cliente_nome, r.tipo, r.departamentos, r.detalhe, r.analista_id, a.nome AS analista_nome, r.analista_origem_id, ao.nome AS analista_origem_nome, r.analista_apontado_id, ap.nome AS analista_apontado_nome, r.pai_id, r.mostrar_pai, r.ocultar_empresa, r.plano_cs,
        to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.status, r.origem, r.etapa, r.fila, r.plano_acao, r.tratativa_depto, r.gestor_obs, r.tratativa_definida_por, r.tratativa_definida_em, r.liberada_em, r.liberada_por, r.analista_nota, r.analista_obs, r.analista_em, r.analista_por, r.validacao_nota, r.validacao_obs, r.validacao_em, r.validacao_por, r.final_nota, r.final_obs, r.encerrada_em, r.encerrada_por, r.assunto, r.prioridade, r.criado_por, r.criado_em, r.resolvido_em, r.resolvido_por, r.tratativa, r.validado_em, r.validado_por`;
 const DE = `FROM cs_qualidade_registros r LEFT JOIN analistas a ON a.id::text = r.analista_id LEFT JOIN analistas ao ON ao.id::text = r.analista_origem_id LEFT JOIN analistas ap ON ap.id::text = r.analista_apontado_id`;
 /** A quem o registro e o dashboard da Qualidade apontam: na ocorrência do módulo, o apontado corrigido pelo gestor final ou, sem correção, o do registro; vinculadas não contam; os registros antigos (ficha) seguem o analista deles. */
@@ -1653,6 +1656,7 @@ router.post('/ocorrencias', async (req, res) => {
     const cli = await pool.query(`SELECT id::text AS id, nome_empresa, regexp_replace(cnpj, '\\D', '', 'g') AS cnpj FROM clientes WHERE id::text = $1 AND status = 'ativo'`, [x.cliente_id]);
     if (!cli.rows.length) return res.status(404).json({ error: 'Empresa não encontrada entre os clientes ativos.' });
     const c = cli.rows[0];
+    const planoCs = !!(req.body && (req.body.plano_cs === true || req.body.plano_cs === 'true'));   // aberta pela ficha: informativa (não pesa no risco) e com selo "CS - Plano de Ação"
     let avisoResp = '';
     if (x.analista_id) {   // responsável sugerido: tem de estar na lista de analistas e ativo; se não for do departamento, só avisa
       const an = (await pool.query('SELECT nome, ativo, departamentos FROM analistas WHERE id::text = $1', [x.analista_id])).rows[0];
@@ -1665,14 +1669,14 @@ router.post('/ocorrencias', async (req, res) => {
       `SELECT g.papel, u.name FROM cs_qualidade_gestores g JOIN users u ON u.id::text = g.user_id WHERE g.departamento = $1 AND u.active = 1 ORDER BY u.name`, [x.departamento])).rows;
     const dest = destinoDaOcorrencia(x.departamento, gest), textoDest = textoDestino(x.departamento, dest);
     const ins = await pool.query(
-      `INSERT INTO cs_qualidade_registros (cliente_id, cnpj, cliente_nome, tipo, departamentos, detalhe, assunto, prioridade, prazo, origem, fila, criado_por, criado_por_id, analista_origem_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'modulo', $10, $11, $12, $13) RETURNING id`,
-      [c.id, soDigitos(c.cnpj), c.nome_empresa, x.tipo, [x.departamento], x.detalhe, x.assunto, x.prioridade, x.prazo, dest.fila, req.user.name || null, req.user.id || null, x.analista_id]);
-    await registrar(ins.rows[0].id, req.user.name, 'criado', x.tipo + ' · ' + x.prioridade + ' · ' + x.assunto);
+      `INSERT INTO cs_qualidade_registros (cliente_id, cnpj, cliente_nome, tipo, departamentos, detalhe, assunto, prioridade, prazo, origem, fila, criado_por, criado_por_id, analista_origem_id, plano_cs)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'modulo', $10, $11, $12, $13, $14) RETURNING id`,
+      [c.id, soDigitos(c.cnpj), c.nome_empresa, x.tipo, [x.departamento], x.detalhe, x.assunto, x.prioridade, x.prazo, dest.fila, req.user.name || null, req.user.id || null, x.analista_id, planoCs]);
+    await registrar(ins.rows[0].id, req.user.name, 'criado', (planoCs ? 'CS - Plano de Ação · ' : '') + x.tipo + ' · ' + x.prioridade + ' · ' + x.assunto);
     const { rows } = await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.id = $1`, [ins.rows[0].id]);
     await notificarLancamento(rows[0], req.user.name, textoDest);
     avisarPush(async () => [].concat(await idsAdmins(), dest.fila === 'gestor' ? await idsGestoresDe([x.departamento]) : [], await idsSucesso()),   // o Sucesso do Cliente acompanha todos os casos: é avisado de toda ocorrência nova, vá ela para o gestor ou não
-      { titulo: 'Nova ocorrência: ' + x.tipo + ' (' + (x.prioridade || '—') + ')', texto: (rows[0].cliente_nome || 'Empresa') + ' — ' + (x.assunto || '') + ' · ' + rotuloDepto(x.departamento), url: '/cs?aba=gestor', tag: String(rows[0].id) }, req.user.id);
+      { titulo: (planoCs ? 'CS - Plano de Ação: ' : 'Nova ocorrência: ') + x.tipo + ' (' + (x.prioridade || '—') + ')', texto: (rows[0].cliente_nome || 'Empresa') + ' — ' + (x.assunto || '') + ' · ' + rotuloDepto(x.departamento), url: '/cs?aba=gestor', tag: String(rows[0].id) }, req.user.id);
     res.status(201).json({ registro: comSituacao(rows)[0], destino: textoDest, fila: dest.fila, aviso_responsavel: avisoResp || null });
   } catch (e) { console.error('[qualidade] POST /ocorrencias falhou:', e); res.status(500).json({ error: 'Erro ao registrar a ocorrência.' }); }
 });

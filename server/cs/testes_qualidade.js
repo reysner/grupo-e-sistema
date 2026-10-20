@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
@@ -505,5 +505,15 @@ teste('segunda-feira da semana', () => {
   assert.strictEqual(segundaDe('2026-10-18'), '2026-10-12');   // domingo
 });
 
+teste('plano de ação da ficha (plano_cs): grava a marca, é informativo (fora do risco) e vai marcado no aviso e no histórico', () => {
+  const fonteQ = require('fs').readFileSync(require('path').join(__dirname, 'qualidade.js'), 'utf8');
+  const fonteR = require('fs').readFileSync(require('path').join(__dirname, 'risco.js'), 'utf8');
+  assert.ok(/ADD COLUMN IF NOT EXISTS plano_cs BOOLEAN NOT NULL DEFAULT false/.test(fonteQ), 'coluna plano_cs');
+  assert.ok(/origem, fila, criado_por, criado_por_id, analista_origem_id, plano_cs\)/.test(fonteQ) && /planoCs\]\);/.test(fonteQ), 'a rota grava plano_cs');
+  assert.ok(fonteQ.includes("'CS - Plano de Ação · '") && fonteQ.includes("'CS - Plano de Ação: '"), 'histórico e aviso identificam');
+  assert.ok(/r\.ocultar_empresa, r\.plano_cs,/.test(fonteQ), 'a marca volta nas listas (selo)');
+  const semRisco = fonteR.match(/plano_cs', 'false'\) <> 'true'/g) || [];
+  assert.strictEqual(semRisco.length, 2, 'as duas consultas do risco ignoram plano_cs');
+});
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);

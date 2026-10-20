@@ -141,10 +141,10 @@ function termometroTratativas(e) {
     p += peso * 2 * fator * ((q.dias || 0) > 45 ? 0.5 : 1);
   });
   if (!pend.length) {
-    if (!qs.length) return { pontos: null, detalhe: ['Nenhuma tratativa em aberto'] };
+    if (!qs.length) return { pontos: null, detalhe: ['Nenhuma ocorrência em aberto'] };
     // só ocorrências resolvidas: a marca fica (Sinais de atenção) e alimenta o card Tratativas, mas fora da média do risco
     return { pontos: Math.min(25, limitar(p)), foraDaMedia: true,
-      detalhe: [`Nenhuma tratativa em aberto (${plural(qs.length, 'ocorrência resolvida', 'ocorrências resolvidas')} nos últimos 90 dias)`],
+      detalhe: [`Nenhuma ocorrência em aberto (${plural(qs.length, 'ocorrência resolvida', 'ocorrências resolvidas')} nos últimos 90 dias)`],
       sinal: `${plural(qs.length, 'ocorrência de qualidade registrada', 'ocorrências de qualidade registradas')} nos últimos 90 dias (${plural(qs.length, 'resolvida', 'resolvidas')} · ${Array.from(new Set(qs.map((q) => q.tipo).filter(Boolean))).join(', ') || 'sem tipo'})` };
   }
   const abertas = pend.filter(emAndamento).length, vencidas = pend.filter((q) => q.vencida && emAndamento(q)).length, aValidar = pend.length - abertas;
