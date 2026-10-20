@@ -5593,7 +5593,7 @@ async function montarPainelLegalizacao(verDesativados) {
     const aConferir = new Set(pend.map(p => p.cliente_id + '|' + p.tipo));
     const rows = verDesativados ? todas : todas.filter(r => !(r.sem_cadastro_acessorias && r.cert_desat)).map(r => (r.sanit_desat ? { ...r, sanit_id: null } : r));
     return {
-      data: rows.map(r => {
+      data: casarCertificadosPF(rows.map(r => {   // certificado PF avulso ("sem cadastro") vai para o cliente de mesmo CPF/CAEPF
         const l = legalPainelLinha(r);
         const m = munPorId.get(r.cliente_id);
         l.municipio = m && m.municipio ? m.municipio : null;
@@ -5610,13 +5610,13 @@ async function montarPainelLegalizacao(verDesativados) {
         const cnpjValido = (d) => { if (d.length !== 14 || /^(\d)\1+$/.test(d)) return false; const dv = (n) => { let s = 0, p = n - 7; for (let i = 0; i < n; i++) { s += +d[i] * p--; if (p < 2) p = 9; } const r = s % 11; return r < 2 ? 0 : 11 - r; }; return dv(12) === +d[12] && dv(13) === +d[13]; };
         const ehPF = docPF.length === 11 || !cnpjValido(docPF);
         limparSemDataSeNaoCnpj(l, ehPF);   // CPF/CNO/CAEPF/PF: não mostra "Sem data" de alvará, certificado PJ e procuração (só o que tem data)
-        l.automacao =l.prefeitura_integrada === true ? 'automatica' : (m && m.municipio ? 'pasta' : (ehPF ? 'pessoa_fisica' : 'sem_municipio'));
+        l.automacao = l.prefeitura_integrada === true ? 'automatica' : (m && m.municipio ? 'pasta' : (ehPF ? 'pessoa_fisica' : 'sem_municipio'));
         if (l.prefeitura_integrada === false) { // atalho pro portal da cidade (consulta manual)
           const p = portalDaPrefeitura(m.municipio, m.uf);
           l.prefeitura_url = p.url; l.prefeitura_url_oficial = p.oficial; l.prefeitura_url_sanitario = p.url_sanitario;
         }
         return l;
-      }),
+      })),
       diasAlerta: { alvara: LEGAL_DIAS_ALERTA_ALVARA, funcionamento: LEGAL_DIAS_ALERTA_FUNCIONAMENTO, sanitario: LEGAL_DIAS_ALERTA_SANITARIO, certificado: LEGAL_DIAS_ALERTA_CERTIFICADO, procuracao: LEGAL_DIAS_ALERTA_PROCURACAO },
     };
 }
@@ -5670,6 +5670,7 @@ router.get('/legalizacao/historico', async (req, res) => {
  */
 const { motivoFalhaRotina } = require('../legalizacao/saudeRotinas');
 const { limparSemDataSeNaoCnpj } = require('../legalizacao/naoSeAplica');
+const { casarCertificadosPF } = require('../legalizacao/casarCertificadoPF');
 const ROTINAS_LEGALIZACAO = {
   consulta_prefeituras: { nome: 'Consulta às prefeituras', horario: 'toda segunda às 08:30', horasMax: 200 },
   leitura_pastas: { nome: 'Leitura das pastas da Legalização', horario: 'toda segunda às 08:30', horasMax: 200 },

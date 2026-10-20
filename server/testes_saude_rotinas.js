@@ -46,4 +46,29 @@ teste('CNPJ válido segue como está; linha "sem cadastro" também', () => {
   const b = limparSemDataSeNaoCnpj(Object.assign(linha(), { sem_cadastro_acessorias: true }), true);
   assert.strictEqual(b.func.status, 'sem_data');
 });
+const { casarCertificadosPF, cnpjValido } = require('./legalizacao/casarCertificadoPF');
+const cli = (nome, cnpj, codigo, cert) => ({ nome_empresa: nome, cnpj, codigo, sem_cadastro_acessorias: false, cert: cert || null });
+const avulso = (nome, cpf, cert) => ({ nome_empresa: nome, cnpj: cpf, codigo: null, sem_cadastro_acessorias: true, cert: Object.assign({ tipo: 'pf', id: 'c1', status: 'ok', vencimento: '2027-02-09' }, cert || {}) });
+teste('certificado PF avulso vai para o cliente de mesmo CPF/CAEPF (prefere o cadastro do Acessórias)', () => {
+  assert.ok(!cnpjValido('06278763600119'), 'o CAEPF não é um CNPJ válido');
+  const caepf = cli('GABRIEL ABREU REIS', '062.787.636/001-19', '1399', { tipo: 'pj', status: 'sem_data' });
+  const cpf = cli('GABRIEL ABREU REIS', '062.787.636-64', null, null);
+  const r = casarCertificadosPF([cpf, caepf, avulso('GABRIEL ABREU REIS', '06278763664')]);
+  assert.strictEqual(r.length, 2, 'a linha avulsa sumiu');
+  assert.strictEqual(caepf.cert.tipo, 'pf'); assert.strictEqual(caepf.cert.vencimento, '2027-02-09'); assert.strictEqual(caepf.cert.id, 'c1');
+  assert.strictEqual(cpf.cert, null, 'o cadastro sem código não recebe');
+});
+teste('sem cliente correspondente a linha avulsa fica; certificado com data do cliente não é pisado', () => {
+  const a = avulso('FULANO', '12345678909');
+  assert.strictEqual(casarCertificadosPF([cli('OUTRO', '99999999999', '1', null), a]).length, 2);
+  const c = cli('FULANO', '123.456.789-09', '2', { tipo: 'pf', status: 'ok', id: 'outro' });
+  const r = casarCertificadosPF([c, avulso('FULANO', '12345678909')]);
+  assert.strictEqual(r.length, 2); assert.strictEqual(c.cert.id, 'outro');
+});
+teste('CNPJ válido com os mesmos 9 primeiros dígitos do CPF NÃO casa (só CPF e CAEPF)', () => {
+  const emp = cli('EMPRESA LTDA', '11.222.333/0001-81', '3', null);
+  assert.ok(cnpjValido('11222333000181'));
+  assert.strictEqual(casarCertificadosPF([emp, avulso('PESSOA', '11222333081')]).length, 2);
+  assert.strictEqual(emp.cert, null);
+});
 console.log(`\n${ok} testes passaram.`);
