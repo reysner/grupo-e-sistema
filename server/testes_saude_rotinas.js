@@ -5,7 +5,10 @@ const { motivoFalhaRotina } = require('./legalizacao/saudeRotinas');
 const { limparSemDataSeNaoCnpj } = require('./legalizacao/naoSeAplica');
 
 let ok = 0;
-const teste = (nome, fn) => { try { fn(); ok++; console.log('  ok - ' + nome); } catch (e) { console.error('  FALHOU - ' + nome + '\n    ' + e.message); process.exitCode = 1; } };
+const pendentes = [];
+const passou = (nome) => { ok++; console.log('  ok - ' + nome); };
+const falhou = (nome, e) => { console.error('  FALHOU - ' + nome + '\n    ' + e.message); process.exitCode = 1; };
+const teste = (nome, fn) => { try { const r = fn(); if (r && typeof r.then === 'function') pendentes.push(r.then(() => passou(nome), (e) => falhou(nome, e))); else passou(nome); } catch (e) { falhou(nome, e); } };
 
 teste('rodada normal não gera aviso', () => {
   assert.strictEqual(motivoFalhaRotina({ status: 'ok', ultima: { total: 170, ok: 170, falhas: 0, resumo: {} } }), null);
@@ -71,4 +74,30 @@ teste('CNPJ válido com os mesmos 9 primeiros dígitos do CPF NÃO casa (só CPF
   assert.strictEqual(casarCertificadosPF([emp, avulso('PESSOA', '11222333081')]).length, 2);
   assert.strictEqual(emp.cert, null);
 });
-console.log(`\n${ok} testes passaram.`);
+const { importarCertificados } = require('./legalizacao/importarCertificados');
+const bancoFalso = ({ clientes = [], existentes = [] }) => {
+  const chamadas = [];
+  return { chamadas, query: async (sql, params) => {
+    chamadas.push({ sql: sql.replace(/\s+/g, ' ').slice(0, 60), params });
+    if (/FROM clientes/.test(sql)) return { rows: clientes.filter((c) => params[0].includes(c.doc)) };
+    if (/DISTINCT ON/.test(sql)) return { rows: existentes.filter((e) => params[0].includes(e.d)) };
+    return { rows: [] };
+  } };
+};
+teste('CertiSeguro em lote: PJ de cliente, certificado existente, avulso novo e ignorados — poucas consultas', async () => {
+  const pool = bancoFalso({ clientes: [{ id: '10', nome_empresa: 'ACME LTDA', cnpj: '11.222.333/0001-81', doc: '11222333000181' }], existentes: [{ id: 'aaaaaaaa-0000-0000-0000-000000000001', d: '12345678909' }] });
+  const lista = [
+    { cnpj: '11222333000181', nome: 'ACME', validade: '10/05/2027' },        // PJ de cliente
+    { cnpj: '12345678909', nome: 'FULANO', validade: '01/02/2027' },         // já existe (PF)
+    { cnpj: '98765432100', nome: 'BELTRANO', validade: '03/04/2027' },       // novo avulso
+    { cnpj: '55555555000155', nome: null, validade: '03/04/2027' },          // sem cliente e sem nome → ignorado
+    { cnpj: '', nome: 'SEM DOC', validade: '03/04/2027' },                   // sem documento → ignorado
+    { cnpj: '11111111111', nome: 'X', validade: 'sem data' },                // validade inválida → ignorado
+  ];
+  const r = await importarCertificados(pool, lista);
+  assert.deepStrictEqual({ a: r.atualizados, c: r.criados, i: r.ignorados, t: r.total }, { a: 2, c: 1, i: 3, t: 6 });
+  assert.ok(pool.chamadas.length <= 5, 'poucas consultas: ' + pool.chamadas.length);
+  const upsertPj = pool.chamadas.find((c) => /INSERT INTO legalizacao_certificados/.test(c.sql) && c.params[0][0] === '10');
+  assert.ok(upsertPj && upsertPj.params[3][0] === '2027-05-10' && upsertPj.params[1][0] === 'ACME LTDA', 'PJ vai com o nome do cadastro e a data ISO');
+});
+Promise.all(pendentes).then(() => console.log(`\n${ok} testes passaram.`));

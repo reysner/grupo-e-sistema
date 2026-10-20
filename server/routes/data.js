@@ -561,62 +561,11 @@ router.post('/legalizacao/redesim-resultado', async (req, res) => {
 /** Grava a lista de certificados da CertiSeguro (upsert por CNPJ/CPF). Usada pelo envio da estação e pela busca feita pelo próprio servidor. */
 async function importarCertificadosCertiseguro(lista, req) {
     await ensureLegalizacaoSchema();
-    let atualizados = 0, criados = 0, ignorados = 0;
-
-    for (const item of lista) {
-      const doc = String(item.cnpj || item.documento || '').replace(/\D/g, '');
-      const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(item.validade || '').trim());
-      if (!doc || !m) { ignorados++; continue; }
-      const dataVencimento = `${m[3]}-${m[2]}-${m[1]}`;
-      const nome = item.nome_amigavel || item.nome || null;
-
-      if (doc.length === 14) {
-        const { rows: cli } = await pool.query(
-          `SELECT id, nome_empresa, cnpj FROM clientes WHERE regexp_replace(cnpj, '\\D', '', 'g') = $1 LIMIT 1`, [doc]
-        );
-        if (cli.length) {
-          const clienteId = String(cli[0].id);
-          await pool.query(
-            `INSERT INTO legalizacao_certificados (cliente_id, tipo, titular_nome, titular_documento, data_vencimento, fonte, criado_por)
-             VALUES ($1,'pj',$2,$3,$4,'certiseguro',$5)
-             ON CONFLICT (cliente_id) WHERE tipo = 'pj' AND cliente_id IS NOT NULL DO UPDATE SET
-               data_vencimento = $4, fonte = 'certiseguro', atualizado_em = NOW(),
-               notificado_vencimento_em = CASE WHEN $4 IS DISTINCT FROM legalizacao_certificados.data_vencimento THEN NULL ELSE legalizacao_certificados.notificado_vencimento_em END`,
-            [clienteId, cli[0].nome_empresa, cli[0].cnpj, dataVencimento, 'CertiSeguro (sync automático)']
-          );
-          atualizados++;
-          continue;
-        }
-      }
-
-      // Não bateu com nenhum cliente ativo (ou é CPF) — tenta achar um certificado PF/avulso já cadastrado com esse documento.
-      const { rows: existente } = await pool.query(
-        `SELECT id FROM legalizacao_certificados WHERE regexp_replace(titular_documento, '\\D', '', 'g') = $1 LIMIT 1`, [doc]
-      );
-      if (existente.length) {
-        await pool.query(
-          `UPDATE legalizacao_certificados SET data_vencimento = $2, fonte = 'certiseguro', atualizado_em = NOW(),
-             notificado_vencimento_em = CASE WHEN $2 IS DISTINCT FROM data_vencimento THEN NULL ELSE notificado_vencimento_em END
-           WHERE id = $1`,
-          [existente[0].id, dataVencimento]
-        );
-        atualizados++;
-      } else if (nome) {
-        await pool.query(
-          `INSERT INTO legalizacao_certificados (cliente_id, tipo, titular_nome, titular_documento, data_vencimento, fonte, criado_por)
-           VALUES (NULL,'pf',$1,$2,$3,'certiseguro',$4)`,
-          [nome, doc, dataVencimento, 'CertiSeguro (sync automático)']
-        );
-        criados++;
-      } else {
-        ignorados++;
-      }
-    }
-
+    const r = await importarCertificados(pool, lista);   // em lote (ver legalizacao/importarCertificados.js): 479 certificados em segundos, não em minutos
     await registrarLog('sync', 'CertiSeguro (sync automático)', 'importar', 'legalizacao',
-      `Sincronização CertiSeguro: ${atualizados} atualizado(s), ${criados} criado(s), ${ignorados} ignorado(s) de ${lista.length} certificado(s).`, req);
-    await registrarRotinaLegalizacao('certiseguro', { total: lista.length, ok: lista.length - ignorados, falhas: 0, resumo: { atualizados, criados, ignorados } });
-    return { ok: true, atualizados, criados, ignorados, total: lista.length };
+      `Sincronização CertiSeguro: ${r.atualizados} atualizado(s), ${r.criados} criado(s), ${r.ignorados} ignorado(s) de ${r.total} certificado(s).`, req);
+    await registrarRotinaLegalizacao('certiseguro', { total: r.total, ok: r.total - r.ignorados, falhas: 0, resumo: { atualizados: r.atualizados, criados: r.criados, ignorados: r.ignorados } });
+    return { ok: true, atualizados: r.atualizados, criados: r.criados, ignorados: r.ignorados, total: r.total };
 }
 
 router.post('/legalizacao/certificados/importar-certiseguro', async (req, res) => {
@@ -5713,6 +5662,7 @@ router.get('/legalizacao/historico', async (req, res) => {
 const { motivoFalhaRotina } = require('../legalizacao/saudeRotinas');
 const { limparSemDataSeNaoCnpj } = require('../legalizacao/naoSeAplica');
 const { casarCertificadosPF } = require('../legalizacao/casarCertificadoPF');
+const { importarCertificados } = require('../legalizacao/importarCertificados');
 const ROTINAS_LEGALIZACAO = {
   consulta_prefeituras: { nome: 'Consulta às prefeituras', horario: 'toda segunda às 08:30', horasMax: 200 },
   leitura_pastas: { nome: 'Leitura das pastas da Legalização', horario: 'toda segunda às 08:30', horasMax: 200 },
