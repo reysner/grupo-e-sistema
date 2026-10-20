@@ -32,7 +32,8 @@
   var ROT_PEND = {
     sem_municipio: 'Município não identificado',
     pasta: 'Cidade sem consulta automática',
-    sem_data: 'Documento sem data',
+    sem_data: 'Sem data, ainda não consultado',
+    consultado: 'Consultado, nada localizado',
     conferir: 'Data lida do documento, aguardando conferência',
     sem_cadastro: 'Sem cadastro no Acessórias',
   };
@@ -200,6 +201,8 @@
     return l[tipo] || null;
   }
   function stDe(i) { return i && COR_ST[i.status] ? i.status : 'sem_data'; }
+  /** Alvará (funcionamento/sanitário) sem data que JÁ foi consultado (consulta à prefeitura ou leitura da pasta) e nada foi localizado. */
+  function consultadoSemAlvara(i, tipo) { return !!(i && (tipo === 'func' || tipo === 'sanit') && stDe(i) === 'sem_data' && i.consulta_em); }
   /** Todos os documentos (uma linha por documento) que passam no teste. */
   function docsDe(teste, tipos) {
     var out = [];
@@ -400,7 +403,8 @@
       if (l.automacao === 'pasta') out.push({ l: l, tipo: null, i: null, st: 'sem_data', pend: 'pasta' });
       TIPOS.forEach(function (t) {
         var i = itemDe(l, t); if (!i) return;
-        if (stDe(i) === 'sem_data') out.push({ l: l, tipo: t, i: i, st: 'sem_data', pend: 'sem_data' });
+        // Alvará sem data: se alguma consulta (prefeitura/pasta) já olhou e não achou, não é pendência — é "consultado, nada localizado".
+        if (stDe(i) === 'sem_data') out.push({ l: l, tipo: t, i: i, st: 'sem_data', pend: consultadoSemAlvara(i, t) ? 'consultado' : 'sem_data' });
         if (i.a_conferir) out.push({ l: l, tipo: t, i: i, st: stDe(i), pend: 'conferir' });
       });
     });
@@ -451,11 +455,12 @@
   function cartoesQualidade(sel) {
     var cont = {}; Object.keys(ROT_PEND).forEach(function (p) { cont[p] = 0; });
     linhasQualidade().forEach(function (r) { cont[r.pend]++; });
-    var cor = { sem_municipio: '#dc2626', pasta: '#6b7280', sem_data: '#d97706', conferir: '#2563eb', sem_cadastro: '#92400e' };
+    var cor = { sem_municipio: '#dc2626', pasta: '#6b7280', sem_data: '#d97706', consultado: '#9ca3af', conferir: '#2563eb', sem_cadastro: '#92400e' };
     var sub = {
       sem_municipio: 'informe a cidade para a consulta automática alcançar',
       pasta: 'a consulta é feita pela pasta ou no portal da cidade',
-      sem_data: 'documento existe, mas sem data de vencimento',
+      sem_data: 'nunca foi consultado: falta buscar a data',
+      consultado: 'a consulta já rodou e não achou alvará (pode ser que não exista)',
       conferir: 'data lida do arquivo, falta conferir',
       sem_cadastro: 'aparece na lista, mas não no Acessórias',
     };
@@ -481,7 +486,7 @@
       kpi('#d97706', 'Vencendo', num(tot.vencendo), 'funcionamento ' + (d.funcionamento || 30) + ' d · sanitário ' + (d.sanitario || 120) + ' d · certificado e procuração ' + (d.certificado || 30) + ' d') +
       kpi('#2563eb', 'Solicitação em andamento', num(tot.solicitacao), 'renovação já pedida à prefeitura') +
       kpi('#10b981', 'Em dia', num(tot.ok), 'tudo certo') +
-      kpi('#9ca3af', 'Sem data', num(tot.sem_data), 'documento sem vencimento informado') +
+      kpi('#9ca3af', 'Sem data', num(tot.sem_data), (function () { var n = docsDe(function (i, l, t) { return consultadoSemAlvara(i, t); }).length; return n ? num(n) + ' alvará(s) já consultado(s), nada localizado · ' + num(tot.sem_data - n) + ' sem consulta' : 'documento sem vencimento informado'; })()) +
       '</div>';
     var cartoes = '<div class="lg-docs">' + TIPOS.map(function (t) {
       var c = porTipo[t];
@@ -508,7 +513,8 @@
       '<div class="blocos">' +
       '<div class="bloco"><div class="t">Sem município</div><div class="v">' + num(cq.sem_municipio || 0) + '</div><div class="d">a consulta automática não alcança</div></div>' +
       '<div class="bloco"><div class="t">Só pela pasta</div><div class="v">' + num(cq.pasta || 0) + '</div><div class="d">cidade sem consulta automática</div></div>' +
-      '<div class="bloco"><div class="t">Sem data</div><div class="v">' + num(cq.sem_data || 0) + '</div><div class="d">documentos sem vencimento</div></div>' +
+      '<div class="bloco"><div class="t">Sem data, não consultado</div><div class="v">' + num(cq.sem_data || 0) + '</div><div class="d">falta buscar a data</div></div>' +
+      '<div class="bloco"><div class="t">Consultado, nada localizado</div><div class="v">' + num(cq.consultado || 0) + '</div><div class="d">a consulta rodou e não achou alvará</div></div>' +
       '<div class="bloco"><div class="t">A conferir</div><div class="v">' + num(cq.conferir || 0) + '</div><div class="d">datas lidas aguardando conferência</div></div>' +
       '</div><div style="margin-top:12px"><button class="lg-acao" data-ir="qualidade">Abrir qualidade dos dados →</button></div></div>';
     $('sec-visao').innerHTML = kpis + cartoes + blocoPrio + blocoQual;

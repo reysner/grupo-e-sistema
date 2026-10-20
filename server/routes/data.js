@@ -5517,9 +5517,9 @@ END`;
  */
 const LEGAL_PAINEL_SQL = `
 SELECT x.cliente_id, x.nome_empresa, x.cnpj, x.codigo, x.sem_cadastro_acessorias,
-  x.func_id, x.func_venc::text AS func_venc, x.func_numero, x.func_obs, x.func_cr, x.func_cd,
+  x.func_id, x.func_venc::text AS func_venc, x.func_numero, x.func_obs, x.func_cr, x.func_cd, x.func_ce::text AS func_ce,
   ${_legalStatusSql('x.func_venc', LEGAL_DIAS_ALERTA_FUNCIONAMENTO, "WHEN x.func_cs = 'solicitacao_andamento' THEN 'solicitacao'")} AS func_status,
-  x.sanit_id, x.sanit_venc::text AS sanit_venc, x.sanit_numero, x.sanit_obs, x.sanit_cr, x.sanit_cd,
+  x.sanit_id, x.sanit_venc::text AS sanit_venc, x.sanit_numero, x.sanit_obs, x.sanit_cr, x.sanit_cd, x.sanit_ce::text AS sanit_ce,
   ${_legalStatusSql('x.sanit_venc', LEGAL_DIAS_ALERTA_SANITARIO, "WHEN x.sanit_cs = 'solicitacao_andamento' THEN 'solicitacao'")} AS sanit_status,
   x.cert_id, x.cert_tipo, x.cert_venc::text AS cert_venc, x.cert_obs,
   ${_legalStatusSql('x.cert_venc', LEGAL_DIAS_ALERTA_CERTIFICADO)} AS cert_status,
@@ -5530,9 +5530,9 @@ SELECT x.cliente_id, x.nome_empresa, x.cnpj, x.codigo, x.sem_cadastro_acessorias
 FROM (
   SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj, c.codigo, false AS sem_cadastro_acessorias,
          fa.id AS func_id, fa.data_vencimento AS func_venc, fa.numero AS func_numero, fa.observacoes AS func_obs,
-         fa.ultima_consulta_status AS func_cs, fa.ultima_consulta_resumo AS func_cr, fa.ultima_consulta_data_solicitacao AS func_cd,
+         fa.ultima_consulta_status AS func_cs, fa.ultima_consulta_resumo AS func_cr, fa.ultima_consulta_data_solicitacao AS func_cd, fa.ultima_consulta_em AS func_ce,
          sa.id AS sanit_id, sa.data_vencimento AS sanit_venc, sa.numero AS sanit_numero, sa.observacoes AS sanit_obs,
-         sa.ultima_consulta_status AS sanit_cs, sa.ultima_consulta_resumo AS sanit_cr, sa.ultima_consulta_data_solicitacao AS sanit_cd,
+         sa.ultima_consulta_status AS sanit_cs, sa.ultima_consulta_resumo AS sanit_cr, sa.ultima_consulta_data_solicitacao AS sanit_cd, sa.ultima_consulta_em AS sanit_ce,
          ce.id AS cert_id, ce.tipo AS cert_tipo, ce.data_vencimento AS cert_venc, ce.observacoes AS cert_obs,
          pe.id AS ecac_id, pe.data_vencimento AS ecac_venc, pe.observacoes AS ecac_obs,
          pg.id AS fgts_id, pg.data_vencimento AS fgts_venc, pg.observacoes AS fgts_obs,
@@ -5546,8 +5546,8 @@ FROM (
    WHERE c.status = 'ativo'
   UNION ALL
   SELECT ce.cliente_id, ce.titular_nome, ce.titular_documento, NULL, true,
-         NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-         NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+         NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+         NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
          ce.id, ce.tipo, ce.data_vencimento, ce.observacoes,
          NULL, NULL, NULL,
          NULL, NULL, NULL,
@@ -5562,7 +5562,7 @@ function legalPainelLinha(r) {
   const orfao = !!r.sem_cadastro_acessorias;
   const alvara = (p) => ({
     id: r[p + '_id'], vencimento: r[p + '_venc'], numero: r[p + '_numero'], observacoes: r[p + '_obs'],
-    consulta_resumo: r[p + '_cr'], consulta_data_solicitacao: r[p + '_cd'],
+    consulta_resumo: r[p + '_cr'], consulta_data_solicitacao: r[p + '_cd'], consulta_em: r[p + '_ce'] || null,   // quando a consulta automática/pasta conferiu pela última vez (distingue "consultado, sem alvará" de "não consultado")
     desativado: !!r[p + '_desat'], status: r[p + '_desat'] ? 'desativado' : r[p + '_status'],
   });
   const procuracao = (p) => ({ id: r[p + '_id'], vencimento: r[p + '_venc'], observacoes: r[p + '_obs'], status: r[p + '_status'] });

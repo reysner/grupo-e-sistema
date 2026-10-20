@@ -103,6 +103,23 @@ teste('qualidade lista cada pendência', () => {
   assert.ok(q.includes('conferir:a1'));
   assert.ok(q.filter((x) => x.startsWith('sem_data:')).length === 2);
 });
+teste('alvará sem data já consultado vira "consultado, nada localizado" (não é pendência); sem consulta continua pendente', () => {
+  const n = T.estado.linhas.length;
+  T.estado.linhas.push(
+    { _ix: n, cliente_id: 'c1', nome_empresa: 'Consultada Ltda', cnpj: '11111111000111', func: { id: 'x1', vencimento: null, status: 'sem_data', consulta_em: iso(-1) }, sanit: null, cert: { tipo: 'pj', vencimento: iso(200), status: 'ok' }, ecac: null, fgts: null, automacao: 'automatica' },
+    { _ix: n + 1, cliente_id: 'c2', nome_empresa: 'Nunca Consultada Ltda', cnpj: '22222222000122', func: { id: 'x2', vencimento: null, status: 'sem_data', consulta_em: null }, sanit: null, cert: { tipo: 'pj', vencimento: iso(200), status: 'ok' }, ecac: null, fgts: null, automacao: 'automatica' },
+    { _ix: n + 2, cliente_id: 'c3', nome_empresa: 'Cert sem data', cnpj: '33333333000133', func: null, sanit: null, cert: { tipo: 'pj', vencimento: null, status: 'sem_data', consulta_em: iso(-1) }, ecac: null, fgts: null, automacao: 'automatica' },
+  );
+  try {
+    const q = T.linhasQualidade().map((r) => r.pend + ':' + r.l.cliente_id);
+    assert.ok(q.includes('consultado:c1'), 'consultado e sem alvará');
+    assert.ok(q.includes('sem_data:c2'), 'nunca consultado segue pendente');
+    assert.ok(q.includes('sem_data:c3'), 'certificado sem data nunca vira "consultado" (só alvarás)');
+    assert.ok(!q.includes('sem_data:c1'));
+    T.desenharVisao();
+    assert.ok(el('sec-visao').innerHTML.includes('Consultado, nada localizado'), 'a visão geral mostra a separação');
+  } finally { T.estado.linhas.length = n; }
+});
 teste('todas as seções desenham sem undefined/NaN e escapam HTML do nome', () => {
   T.desenharVisao(); T.desenharEvolucao();
   ['prioridades', 'funcionamento', 'sanitario', 'certificados', 'procuracoes', 'carteira', 'solicitacoes', 'qualidade'].forEach((s) => T.desenharLista(s));
