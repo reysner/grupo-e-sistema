@@ -126,7 +126,9 @@ async function sincronizarPeloServidor() {
       const dados = await resp.json().catch(() => ({}));
       if (resp.ok) return dados;
       if (resp.status === 503 || resp.status === 404) return null;                // servidor sem configuração (ou versão antiga): usa o caminho direto
-      if (resp.status === 502) throw Object.assign(new Error(`CertiSeguro recusou o servidor: ${dados.error}`), { definitivo: true });
+      // 502 com mensagem = a CertiSeguro recusou o servidor (o IP do Render não está liberado; o Render sai por faixas, não por IP único): cai no caminho
+      // direto pela estação, que tem o IP cadastrado. Se a estação também for recusada, a falha (com o IP dela) vai para o sino.
+      if (resp.status === 502 && dados.error) { console.log(`[certiseguroSync] Servidor recusado pela CertiSeguro (${String(dados.error).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(-90)}) — tentando direto da estação...`); return null; }
       ultimoErro = new Error(`Sistema Grupo-E devolveu HTTP ${resp.status}: ${dados.error || JSON.stringify(dados)}`);
     } catch (e) {
       if (e.definitivo) throw e;

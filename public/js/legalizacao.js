@@ -25,9 +25,9 @@
   var ROT_TIPO = { func: 'Alvará de funcionamento', sanit: 'Alvará sanitário', cert_pf: 'Certificado digital PF', cert_pj: 'Certificado digital PJ', ecac: 'Procuração E-CAC', fgts: 'Procuração FGTS Digital' };
   var ROT_CURTO = { func: 'Funcionamento', sanit: 'Sanitário', cert_pf: 'Certificado PF', cert_pj: 'Certificado PJ', ecac: 'E-CAC', fgts: 'FGTS Digital' };
   var ICO_TIPO = { func: '🏢', sanit: '🩺', cert_pf: '👤', cert_pj: '🏛️', ecac: '📜', fgts: '🧾' };
-  var ST_ORDEM = ['vencido', 'vencendo', 'solicitacao', 'sem_data', 'ok'];
-  var ROT_ST = { vencido: 'Vencido', vencendo: 'Vencendo', solicitacao: 'Solicitação', sem_data: 'Sem data', ok: 'Em dia', na: 'Não se aplica' };
-  var COR_ST = { vencido: '#dc2626', vencendo: '#d97706', solicitacao: '#2563eb', sem_data: '#9ca3af', ok: '#10b981', na: '#cbd5e1' };
+  var ST_ORDEM = ['vencido', 'vencendo', 'solicitacao', 'sem_data', 'dispensado', 'ok'];
+  var ROT_ST = { vencido: 'Vencido', vencendo: 'Vencendo', solicitacao: 'Solicitação', sem_data: 'Sem data', dispensado: 'Dispensado', ok: 'Em dia', na: 'Não se aplica' };
+  var COR_ST = { vencido: '#dc2626', vencendo: '#d97706', solicitacao: '#2563eb', sem_data: '#9ca3af', dispensado: '#7c3aed', ok: '#10b981', na: '#cbd5e1' };
   var ROT_AUTO = { automatica: 'Consulta automática', pasta: 'Só pela pasta', sem_municipio: 'Sem município', pessoa_fisica: 'Pessoa física' };
   var ROT_PEND = {
     sem_municipio: 'Município não identificado',
@@ -222,7 +222,7 @@
     });
   }
   function contagem(tipo) {
-    var c = { vencido: 0, vencendo: 0, solicitacao: 0, sem_data: 0, ok: 0, total: 0, proximo: null };
+    var c = { vencido: 0, vencendo: 0, solicitacao: 0, sem_data: 0, dispensado: 0, ok: 0, total: 0, proximo: null };
     docsDe(null, [tipo]).forEach(function (r) {
       c[r.st]++; c.total++;
       if ((r.st === 'vencendo' || r.st === 'ok') && r.i.vencimento && (!c.proximo || r.i.vencimento < c.proximo.venc)) c.proximo = { venc: r.i.vencimento, nome: r.l.nome_empresa };
@@ -263,7 +263,8 @@
   }
   function celDoc(i) {
     if (!i) return '<span class="cinza">—</span>';
-    return '<div class="lg-cel">' + pillSt(stDe(i)) + (i.vencimento ? '<span class="sub">' + data(String(i.vencimento).slice(0, 10)) + '</span>' : '') + '</div>';
+    return '<div class="lg-cel">' + pillSt(stDe(i)) + (i.vencimento ? '<span class="sub">' + data(String(i.vencimento).slice(0, 10)) + '</span>' : '') +
+      (stDe(i) === 'dispensado' && i.dispensado_motivo ? '<span class="sub" title="' + esc(i.dispensado_motivo) + '">' + esc(String(i.dispensado_motivo).slice(0, 60)) + '</span>' : '') + '</div>';
   }
   function paginacao(total, pag, chave) {
     var paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
@@ -303,6 +304,7 @@
     var i = r.i; if (!i) return '';
     var p = [];
     if (i.status === 'solicitacao' && i.consulta_resumo) p.push(i.consulta_resumo);
+    if (i.status === 'dispensado' && i.dispensado_motivo) p.push(i.dispensado_motivo);   // por que a prefeitura dispensou
     if (i.observacoes) p.push(i.observacoes);
     return p.join(' · ');
   }
@@ -477,7 +479,7 @@
     }).join('') + '</div>';
   }
   function desenharVisao() {
-    var tot = { vencido: 0, vencendo: 0, solicitacao: 0, sem_data: 0, ok: 0 };
+    var tot = { vencido: 0, vencendo: 0, solicitacao: 0, sem_data: 0, dispensado: 0, ok: 0 };
     var porTipo = {};
     TIPOS.forEach(function (t) { var c = contagem(t); porTipo[t] = c; ST_ORDEM.forEach(function (s) { tot[s] += c[s]; }); });
     var d = estado.dias || {};
@@ -486,6 +488,7 @@
       kpi('#d97706', 'Vencendo', num(tot.vencendo), 'funcionamento ' + (d.funcionamento || 30) + ' d · sanitário ' + (d.sanitario || 120) + ' d · certificado e procuração ' + (d.certificado || 30) + ' d') +
       kpi('#2563eb', 'Solicitação em andamento', num(tot.solicitacao), 'renovação já pedida à prefeitura') +
       kpi('#10b981', 'Em dia', num(tot.ok), 'tudo certo') +
+      kpi('#7c3aed', 'Dispensado', num(tot.dispensado), 'a prefeitura dispensou o alvará (ex.: dispensa sanitária)') +
       kpi('#9ca3af', 'Sem data', num(tot.sem_data), (function () { var n = docsDe(function (i, l, t) { return consultadoSemAlvara(i, t); }).length; return n ? num(n) + ' alvará(s) já consultado(s), nada localizado · ' + num(tot.sem_data - n) + ' sem consulta' : 'documento sem vencimento informado'; })()) +
       '</div>';
     var cartoes = '<div class="lg-docs">' + TIPOS.map(function (t) {

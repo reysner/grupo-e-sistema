@@ -120,6 +120,21 @@ teste('alvará sem data já consultado vira "consultado, nada localizado" (não 
     assert.ok(el('sec-visao').innerHTML.includes('Consultado, nada localizado'), 'a visão geral mostra a separação');
   } finally { T.estado.linhas.length = n; }
 });
+teste('alvará dispensado tem situação própria: não conta como Sem data e mostra o motivo', () => {
+  const n = T.estado.linhas.length;
+  T.estado.linhas.push({ _ix: n, cliente_id: 'dp', nome_empresa: 'Dispensada Ltda', cnpj: '44444444000144', func: null, cert: null, ecac: null, fgts: null, automacao: 'automatica',
+    sanit: { id: 'sd', vencimento: null, status: 'dispensado', dispensado_motivo: 'Dispensado de Alvará Sanitário (Res. SES/MG 8.765/2023)' } });
+  try {
+    const c = T.contagem('sanit');
+    assert.strictEqual(c.dispensado, 1); assert.strictEqual(c.sem_data, 0);
+    T.desenharVisao();
+    const h = el('sec-visao').innerHTML;
+    assert.ok(h.includes('Dispensado'), 'cartão Dispensado na visão geral');
+    assert.ok(!/undefined|NaN/.test(h));
+    T.desenharLista('sanitario');
+    assert.ok(el('sec-sanitario').innerHTML.includes('Res. SES/MG 8.765/2023'), 'o motivo aparece na lista');
+  } finally { T.estado.linhas.length = n; }
+});
 teste('todas as seções desenham sem undefined/NaN e escapam HTML do nome', () => {
   T.desenharVisao(); T.desenharEvolucao();
   ['prioridades', 'funcionamento', 'sanitario', 'certificados', 'procuracoes', 'carteira', 'solicitacoes', 'qualidade'].forEach((s) => T.desenharLista(s));

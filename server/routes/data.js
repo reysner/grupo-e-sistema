@@ -242,6 +242,42 @@ router.post('/legalizacao/saude-rotina', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao registrar a rotina.' }); }
 });
 
+/**
+ * POST /api/data/legalizacao/alvaras-dispensa (X-Sync-Token) — { itens: [{ cnpj, tipo: 'funcionamento'|'sanitario', motivo, fonte }], desfazer?: true }.
+ * Marca alvarás que a prefeitura DISPENSOU (ex.: Protocolo Online de Uberlândia: "Dispensado de Alvará Sanitário", Res. SES/MG 8.765/2023).
+ * A situação do alvará passa a "Dispensado" (em vez de "Sem data"), com o motivo. Só vale enquanto o alvará não tem data de vencimento.
+ */
+router.post('/legalizacao/alvaras-dispensa', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    await ensureLegalizacaoSchema();
+    const itens = Array.isArray(req.body && req.body.itens) ? req.body.itens.slice(0, 500) : [];
+    const desfazer = !!(req.body && req.body.desfazer);
+    let marcados = 0, semCliente = 0, invalidos = 0;
+    for (const it of itens) {
+      const doc = String(it.cnpj || '').replace(/\D/g, '');
+      const tipo = it.tipo;
+      if (!doc || !['funcionamento', 'sanitario'].includes(tipo)) { invalidos++; continue; }
+      const { rows: cli } = await pool.query(`SELECT id::text AS id FROM clientes WHERE status = 'ativo' AND regexp_replace(COALESCE(cnpj,''), '\\D', '', 'g') = $1 LIMIT 1`, [doc]);
+      if (!cli.length) { semCliente++; continue; }
+      if (desfazer) {
+        await pool.query(`UPDATE legalizacao_alvaras SET dispensado_motivo = NULL, dispensado_em = NULL, dispensado_fonte = NULL WHERE cliente_id = $1 AND tipo = $2`, [cli[0].id, tipo]);
+      } else {
+        const motivo = String(it.motivo || 'Dispensado pela prefeitura').slice(0, 300);
+        await pool.query(
+          `INSERT INTO legalizacao_alvaras (cliente_id, tipo, dispensado_motivo, dispensado_em, dispensado_fonte, criado_por)
+           VALUES ($1, $2, $3, NOW(), $4, 'Dispensa (importação)')
+           ON CONFLICT (cliente_id, tipo) DO UPDATE SET dispensado_motivo = EXCLUDED.dispensado_motivo, dispensado_em = NOW(), dispensado_fonte = EXCLUDED.dispensado_fonte`,
+          [cli[0].id, tipo, motivo, String(it.fonte || 'importação').slice(0, 120)]
+        );
+      }
+      marcados++;
+    }
+    await registrarLog('sync', 'Dispensa de alvará (importação)', desfazer ? 'desfazer dispensa' : 'dispensa', 'legalizacao', `Dispensas: ${marcados} ${desfazer ? 'desfeita(s)' : 'marcada(s)'}, ${semCliente} sem cliente ativo, ${invalidos} inválido(s).`, req);
+    res.json({ ok: true, marcados, semCliente, invalidos });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao gravar a dispensa.' }); }
+});
+
 router.post('/legalizacao/alvaras-consulta-local', async (req, res) => {
   try {
     if (!tokenSyncOk(req, res)) return;
@@ -5356,6 +5392,11 @@ async function ensureLegalizacaoSchema() {
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS ultima_consulta_resumo TEXT`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS ultima_consulta_data_solicitacao TEXT`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS ultima_consulta_em TIMESTAMPTZ`).catch(()=>{});
+  // 20/10/2026 (pedido do Reysner): "Sem data" estava alto e indefinido. Alvará que a prefeitura DISPENSOU (ex.: Dispensa de Alvará Sanitário, Res. SES/MG 8.765/2023)
+  // ganha a situação própria "Dispensado" (com o motivo), em vez de ficar como "Sem data".
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS dispensado_motivo TEXT`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS dispensado_em TIMESTAMPTZ`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS dispensado_fonte TEXT`).catch(()=>{});
   // Um alvará por (cliente, tipo) — pedido do Reysner, 17/09/2026: a lista
   // agora traz TODO cliente ativo automaticamente (Funcionamento é
   // universal), então grava/edita por UPSERT em vez de escolher empresa
@@ -5487,6 +5528,7 @@ async function ensureLegalizacaoSchema() {
     sem_data INTEGER NOT NULL DEFAULT 0,
     por_tipo JSONB NOT NULL DEFAULT '{}'::jsonb
   )`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_historico ADD COLUMN IF NOT EXISTS dispensado INTEGER NOT NULL DEFAULT 0`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_historico ENABLE ROW LEVEL SECURITY`).catch(()=>{});
 }
 
@@ -5520,9 +5562,9 @@ END`;
 const LEGAL_PAINEL_SQL = `
 SELECT x.cliente_id, x.nome_empresa, x.cnpj, x.codigo, x.sem_cadastro_acessorias,
   x.func_id, x.func_venc::text AS func_venc, x.func_numero, x.func_obs, x.func_cr, x.func_cd, x.func_ce::text AS func_ce,
-  ${_legalStatusSql('x.func_venc', LEGAL_DIAS_ALERTA_FUNCIONAMENTO, "WHEN x.func_cs = 'solicitacao_andamento' THEN 'solicitacao'")} AS func_status,
+  ${_legalStatusSql('x.func_venc', LEGAL_DIAS_ALERTA_FUNCIONAMENTO, "WHEN x.func_cs = 'solicitacao_andamento' THEN 'solicitacao' WHEN x.func_dm IS NOT NULL AND x.func_venc IS NULL THEN 'dispensado'")} AS func_status, x.func_dm AS func_dm,
   x.sanit_id, x.sanit_venc::text AS sanit_venc, x.sanit_numero, x.sanit_obs, x.sanit_cr, x.sanit_cd, x.sanit_ce::text AS sanit_ce,
-  ${_legalStatusSql('x.sanit_venc', LEGAL_DIAS_ALERTA_SANITARIO, "WHEN x.sanit_cs = 'solicitacao_andamento' THEN 'solicitacao'")} AS sanit_status,
+  ${_legalStatusSql('x.sanit_venc', LEGAL_DIAS_ALERTA_SANITARIO, "WHEN x.sanit_cs = 'solicitacao_andamento' THEN 'solicitacao' WHEN x.sanit_dm IS NOT NULL AND x.sanit_venc IS NULL THEN 'dispensado'")} AS sanit_status, x.sanit_dm AS sanit_dm,
   x.cert_id, x.cert_tipo, x.cert_venc::text AS cert_venc, x.cert_obs,
   ${_legalStatusSql('x.cert_venc', LEGAL_DIAS_ALERTA_CERTIFICADO)} AS cert_status,
   x.ecac_id, x.ecac_venc::text AS ecac_venc, x.ecac_obs,
@@ -5532,9 +5574,9 @@ SELECT x.cliente_id, x.nome_empresa, x.cnpj, x.codigo, x.sem_cadastro_acessorias
 FROM (
   SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj, c.codigo, false AS sem_cadastro_acessorias,
          fa.id AS func_id, fa.data_vencimento AS func_venc, fa.numero AS func_numero, fa.observacoes AS func_obs,
-         fa.ultima_consulta_status AS func_cs, fa.ultima_consulta_resumo AS func_cr, fa.ultima_consulta_data_solicitacao AS func_cd, fa.ultima_consulta_em AS func_ce,
+         fa.ultima_consulta_status AS func_cs, fa.ultima_consulta_resumo AS func_cr, fa.ultima_consulta_data_solicitacao AS func_cd, fa.ultima_consulta_em AS func_ce, fa.dispensado_motivo AS func_dm,
          sa.id AS sanit_id, sa.data_vencimento AS sanit_venc, sa.numero AS sanit_numero, sa.observacoes AS sanit_obs,
-         sa.ultima_consulta_status AS sanit_cs, sa.ultima_consulta_resumo AS sanit_cr, sa.ultima_consulta_data_solicitacao AS sanit_cd, sa.ultima_consulta_em AS sanit_ce,
+         sa.ultima_consulta_status AS sanit_cs, sa.ultima_consulta_resumo AS sanit_cr, sa.ultima_consulta_data_solicitacao AS sanit_cd, sa.ultima_consulta_em AS sanit_ce, sa.dispensado_motivo AS sanit_dm,
          ce.id AS cert_id, ce.tipo AS cert_tipo, ce.data_vencimento AS cert_venc, ce.observacoes AS cert_obs,
          pe.id AS ecac_id, pe.data_vencimento AS ecac_venc, pe.observacoes AS ecac_obs,
          pg.id AS fgts_id, pg.data_vencimento AS fgts_venc, pg.observacoes AS fgts_obs,
@@ -5548,8 +5590,8 @@ FROM (
    WHERE c.status = 'ativo'
   UNION ALL
   SELECT ce.cliente_id, ce.titular_nome, ce.titular_documento, NULL, true,
-         NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-         NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+         NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+         NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
          ce.id, ce.tipo, ce.data_vencimento, ce.observacoes,
          NULL, NULL, NULL,
          NULL, NULL, NULL,
@@ -5564,7 +5606,7 @@ function legalPainelLinha(r) {
   const orfao = !!r.sem_cadastro_acessorias;
   const alvara = (p) => ({
     id: r[p + '_id'], vencimento: r[p + '_venc'], numero: r[p + '_numero'], observacoes: r[p + '_obs'],
-    consulta_resumo: r[p + '_cr'], consulta_data_solicitacao: r[p + '_cd'], consulta_em: r[p + '_ce'] || null,   // quando a consulta automática/pasta conferiu pela última vez (distingue "consultado, sem alvará" de "não consultado")
+    consulta_resumo: r[p + '_cr'], consulta_data_solicitacao: r[p + '_cd'], consulta_em: r[p + '_ce'] || null, dispensado_motivo: r[p + '_dm'] || null,   // quando a consulta automática/pasta conferiu pela última vez (distingue "consultado, sem alvará" de "não consultado")
     desativado: !!r[p + '_desat'], status: r[p + '_desat'] ? 'desativado' : r[p + '_status'],
   });
   const procuracao = (p) => ({ id: r[p + '_id'], vencimento: r[p + '_venc'], observacoes: r[p + '_obs'], status: r[p + '_status'] });
@@ -5638,11 +5680,11 @@ async function gravarRetratoLegalizacao() {
   const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
   const r = legalRetrato.retratoDeLinhas(painel.data, hoje);
   await pool.query(
-    `INSERT INTO legalizacao_historico (semana, atualizado_em, clientes, vencidos, vencendo, solicitacao, em_dia, sem_data, por_tipo)
-     VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7, $8::jsonb)
+    `INSERT INTO legalizacao_historico (semana, atualizado_em, clientes, vencidos, vencendo, solicitacao, em_dia, sem_data, dispensado, por_tipo)
+     VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
      ON CONFLICT (semana) DO UPDATE SET atualizado_em = NOW(), clientes = EXCLUDED.clientes, vencidos = EXCLUDED.vencidos,
-       vencendo = EXCLUDED.vencendo, solicitacao = EXCLUDED.solicitacao, em_dia = EXCLUDED.em_dia, sem_data = EXCLUDED.sem_data, por_tipo = EXCLUDED.por_tipo`,
-    [r.semana, r.clientes, r.vencidos, r.vencendo, r.solicitacao, r.em_dia, r.sem_data, JSON.stringify(r.por_tipo)]
+       vencendo = EXCLUDED.vencendo, solicitacao = EXCLUDED.solicitacao, em_dia = EXCLUDED.em_dia, sem_data = EXCLUDED.sem_data, dispensado = EXCLUDED.dispensado, por_tipo = EXCLUDED.por_tipo`,
+    [r.semana, r.clientes, r.vencidos, r.vencendo, r.solicitacao, r.em_dia, r.sem_data, r.dispensado || 0, JSON.stringify(r.por_tipo)]
   );
   return r;
 }
