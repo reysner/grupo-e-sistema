@@ -1533,49 +1533,19 @@
       '<div class="pop-erro" id="qa-erro" role="alert"></div></div>';
   }
 
+  /** Título da seção da ficha (e do formulário): mesmo processo da Qualidade — abre uma ocorrência para o gestor —, só muda o nome. */
+  var TITULO_CONSIDERACOES = 'Considerações Sucesso do Cliente / Time Operacional (Plano de ação)';
   async function montarConsideracoes(c) {
     var alvo = $('qa-secao'); if (!alvo) return;
     alvo.innerHTML = '<div class="cinza">Carregando…</div>';
     try {
-      var o = await carregarOpcoesQ();
       var lista = await api('/api/cs/painel/qualidade/cliente/' + encodeURIComponent(c.id));
-      alvo.innerHTML = formularioQ(o) + '<div class="qa-lista">' + listaRegistrosQ(lista.registros) + '</div>';
+      alvo.innerHTML = '<div id="qa-form-ficha"></div><div class="qa-lista">' + listaRegistrosQ(lista.registros) + '</div>';
       var oc = $('qa-ocorrencias');
-      if (oc) { oc.innerHTML = listaOcorrenciasQ(lista.registros); ligarAcoesOcorrenciaQ('#qa-ocorrencias', function () { estado.qResumo = null; montarConsideracoes(c); }); }
-      var cont = $('qa-cont'), det = $('qa-detalhe');
-      det.addEventListener('input', function () { cont.textContent = det.value.length + '/' + o.max_detalhe; });
-      var todos = $('qa-dep-todos');
-      todos.addEventListener('change', function () { Array.prototype.forEach.call(document.querySelectorAll('.qa-dep-ck'), function (k) { k.checked = todos.checked; }); });
-      Array.prototype.forEach.call(document.querySelectorAll('.qa-dep-ck'), function (k) {
-        k.addEventListener('change', function () { todos.checked = document.querySelectorAll('.qa-dep-ck:checked').length === o.departamentos.length; });
-      });
-      // Responsáveis: lista com caixas de marcar (pode escolher mais de um); o texto do campo resume a escolha e a lista fecha ao clicar fora.
-      var resumoResp = function () {
-        var marc = Array.prototype.filter.call(document.querySelectorAll('.qa-resp-ck'), function (k) { return k.checked; });
-        var rot = $('qa-resp-rot'); if (rot) rot.textContent = !marc.length ? 'Selecione' : marc.length === 1 ? marc[0].getAttribute('data-nome') : marc.length + ' responsáveis';
-      };
-      Array.prototype.forEach.call(document.querySelectorAll('.qa-resp-ck'), function (k) { k.addEventListener('change', resumoResp); });
-      var fechaResp = function (ev) { var d = $('qa-resp'); if (!d) { document.removeEventListener('click', fechaResp); return; } if (d.open && !(d.contains && d.contains(ev.target))) d.open = false; };
-      document.addEventListener('click', fechaResp);
-      var ed = $('qa-editar-an'); if (ed) ed.addEventListener('click', function (ev) { ev.preventDefault(); abrirGerenciarAnalistas(function () { montarConsideracoes(c); }); });
-      $('qa-salvar').addEventListener('click', async function () {
-        var erro = $('qa-erro'); erro.textContent = '';
-        var deps = Array.prototype.map.call(document.querySelectorAll('.qa-dep-ck:checked'), function (k) { return k.value; });
-        var resp = Array.prototype.filter.call(document.querySelectorAll('.qa-resp-ck'), function (k) { return k.checked; }).map(function (k) { return k.value; });
-        var corpo = { cliente_id: c.id, departamentos: deps, detalhe: det.value, analistas_ids: resp, prazo: $('qa-prazo').value };
-        if (!deps.length) { erro.textContent = 'Escolha ao menos um departamento envolvido.'; return; }
-        if (!resp.length) { erro.textContent = 'Escolha ao menos um responsável.'; return; }
-        if (!corpo.prazo) { erro.textContent = 'Informe o prazo para execução.'; return; }
-        if (det.value.trim().length < 5) { erro.textContent = 'Descreva a tratativa (mínimo de 5 caracteres).'; return; }
-        $('qa-salvar').disabled = true;
-        try {
-          var resp = await chamarApi('/api/cs/painel/qualidade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
-          var j = await resp.json().catch(function () { return {}; });
-          if (!resp.ok) { erro.textContent = j.error || 'Não foi possível salvar.'; $('qa-salvar').disabled = false; return; }
-          estado.qResumo = null;       // o módulo Qualidade recarrega ao abrir
-          await montarConsideracoes(c);
-        } catch (e) { erro.textContent = 'Sem conexão com o servidor. Tente de novo.'; $('qa-salvar').disabled = false; }
-      });
+      var recarrega = function () { estado.qResumo = null; montarConsideracoes(c); };
+      if (oc) { oc.innerHTML = listaOcorrenciasQ(lista.registros); ligarAcoesOcorrenciaQ('#qa-ocorrencias', recarrega); }
+      // o MESMO formulário do módulo Qualidade ("Registrar ocorrência"), com a empresa da ficha já escolhida
+      await abrirRegistrarOcorrencia(recarrega, $('qa-form-ficha'), { titulo: TITULO_CONSIDERACOES, empresa: { id: c.id, nome: c.nome, cnpj: c.cnpj } });
     } catch (e) { alvo.innerHTML = '<div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div>'; }
   }
 
@@ -1888,11 +1858,11 @@
   }
   function opcoesTiposOc(lista) { return '<option value="">Selecione o tipo…</option>' + (lista || []).map(function (t) { return '<option>' + esc(t) + '</option>'; }).join(''); }
   /** Formulário "Registrar ocorrência" (o miolo da janela). */
-  function formularioOcorrenciaQ(o, emTela) {
+  function formularioOcorrenciaQ(o, emTela, titulo) {
     var tipos = opcoesTiposOc(o.tipos);
     var deps = '<option value="">Selecione o departamento…</option>' + DEPS_OCORRENCIA.map(function (d) { return '<option value="' + esc(d[0]) + '">' + esc(d[1]) + '</option>'; }).join('');
     var pri = (o.prioridades || ['Muito Alta', 'Alta', 'Média', 'Baixa']).map(function (p) { return '<option' + (p === 'Média' ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('');
-    return '<div class="qa-modal-topo"><strong style="font-size:22px;color:#256050">Registrar ocorrência</strong>' + (emTela ? '' : '<button type="button" class="qa-x" id="oc-fechar" aria-label="Fechar">✕</button>') + '</div>' +
+    return '<div class="qa-modal-topo"><strong style="font-size:22px;color:#256050">' + esc(titulo || 'Registrar ocorrência') + '</strong>' + (emTela ? '' : '<button type="button" class="qa-x" id="oc-fechar" aria-label="Fechar">✕</button>') + '</div>' +
       '<div class="qa-oc-obs">⚠ Usar só para fatos fora do padrão (reclamação, insatisfação, multa, caso grave), não para o atendimento do dia a dia.</div>' +
       '<div class="qa-oc-quem">Registrando como <strong>' + esc(usuarioLogadoNome() || 'você') + '</strong> em <strong>' + hojeIsoLocal().split('-').reverse().join('/') + '</strong>. Quem registra, a data e o horário ficam gravados na ocorrência.</div>' +
       '<div class="qa-oc-linha qa-oc-l1">' +
@@ -1913,18 +1883,21 @@
   }
 
   /** Janela "Registrar ocorrência": empresa com sugestão ao digitar, descrição até 1500, anexos; ao registrar vai para o módulo, os Sinais de atenção e o risco. */
-  async function abrirRegistrarOcorrencia(aoSalvar, raiz) {
+  /** opc (opcional): { titulo } troca o título do formulário; { empresa: { id, nome, cnpj } } já vem com a empresa escolhida e travada (ficha da empresa). */
+  async function abrirRegistrarOcorrencia(aoSalvar, raiz, opc) {
+    opc = opc || {};
     estado.qOpcoes = null;   // sempre a lista de tipos atual (outro administrador pode ter criado ou editado tipos)
     var o; try { o = await carregarOpcoesQ(true); } catch (e) { window.alert(e.message || 'Não foi possível abrir o formulário.'); return; }
     o = Object.assign({}, o, { analistas: estado.qAnalistas || [] });   // lista de analistas sempre atual (nome completo)
     var ov = null, fechar;
-    if (raiz) {   // direto na tela de Qualidade: sem janela; "Limpar" recomeça o formulário
-      raiz.innerHTML = formularioOcorrenciaQ(o, true);
-      fechar = function () { abrirRegistrarOcorrencia(aoSalvar, raiz); };
+    var $ = function (id) { return (raiz || ov || document).querySelector('#' + id); };   // procura só dentro deste formulário (a ficha e a tela Qualidade podem existir ao mesmo tempo)
+    if (raiz) {   // direto na tela de Qualidade (ou na ficha da empresa): sem janela; "Limpar" recomeça o formulário
+      raiz.innerHTML = formularioOcorrenciaQ(o, true, opc.titulo);
+      fechar = function () { abrirRegistrarOcorrencia(aoSalvar, raiz, opc); };
     } else {
       ov = document.createElement('div'); ov.className = 'qa-overlay'; document.body.appendChild(ov);
       fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
-      ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Registrar ocorrência">' + formularioOcorrenciaQ(o) + '</div>';
+      ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Registrar ocorrência">' + formularioOcorrenciaQ(o, false, opc.titulo) + '</div>';
       $('oc-fechar').addEventListener('click', fechar);
     }
     $('oc-cancel').addEventListener('click', fechar);
@@ -1969,6 +1942,10 @@
     });
     var campo = $('oc-emp'), lista = $('oc-emp-lista'), sel = $('oc-emp-sel'), det = $('oc-det'), erro = $('oc-erro');
     var emp = null, itens = [], idx = -1, tmr = null;
+    if (opc.empresa && opc.empresa.id) {   // ficha da empresa: a empresa já vem escolhida e travada
+      emp = { id: opc.empresa.id, nome: opc.empresa.nome, cnpj: opc.empresa.cnpj || '' };
+      campo.value = emp.nome; campo.readOnly = true; sel.hidden = false; sel.textContent = '✔ ' + emp.nome + (emp.cnpj ? ' · ' + emp.cnpj : '');
+    }
     det.addEventListener('input', function () { $('oc-cont').textContent = det.value.length + '/' + (o.max_detalhe || 1500); });
     var desenhaLista = function () {
       lista.hidden = false;
@@ -3615,7 +3592,7 @@
       sub('Insatisfações registradas (180 dias)') + insat + (sens ? sub('Cliente sensível (90 dias)') + sens : '') + (pesq ? sub('Pesquisas (180 dias)') + pesq : '') + '<div class="nota" style="margin-top:10px">Atendimentos do Zappy e e-mails (recebidos e sem resposta, por destinatário) estão no módulo <strong>Atendimento</strong>.</div>');
     $('ficha-corpo').innerHTML = blocos1 + blocos2 +
       '<div class="ficha-sec">Sinais de atenção</div><div>' + sinais + '</div>' +
-      '<div class="ficha-sec">Considerações Sucesso do Cliente / Time Operacional</div><div id="qa-secao"></div>' +
+      '<div id="qa-secao" style="margin-top:18px"></div>' +   // o próprio formulário traz o título (Considerações Sucesso do Cliente / Time Operacional (Plano de ação))
       secaoFicha('financeiro', 'Financeiro', fin) +
       secaoFicha('acessorias', 'Acessórias', oper + '<div id="ac-lista" style="margin-top:8px"><span class="cinza">Consultando as obrigações no Acessórias…</span></div>') +
       secaoFicha('qualidade', 'Qualidade', '<div id="qa-ocorrencias"><span class="cinza">Carregando…</span></div>') +

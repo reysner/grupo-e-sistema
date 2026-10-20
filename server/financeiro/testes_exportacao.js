@@ -171,6 +171,16 @@ const semLixo = (e, nome) => {
     assert.ok(f.includes('Departamentos envolvidos'));
     assert.ok(C.t.formularioQAntigo(o).includes('Descreva a ocorrência'), 'o layout antigo continua guardado');
   });
+  await teste('cs: ficha — Considerações Sucesso do Cliente / Time Operacional usa o MESMO formulário da Qualidade (abre ocorrência para o gestor), só com o título novo', () => {
+    const o = { tipos: ['Erro', 'Multa'], prioridades: ['Muito Alta', 'Alta', 'Média', 'Baixa'], max_detalhe: 1500, max_anexo: 10485760, max_anexos: 5 };
+    const titulo = 'Considerações Sucesso do Cliente / Time Operacional (Plano de ação)';
+    const f = C.t.formularioOcorrenciaQ(o, true, titulo);
+    assert.ok(f.includes('>' + titulo + '</strong>'), 'o título novo no lugar de "Registrar ocorrência"');
+    assert.ok(!f.includes('>Registrar ocorrência</strong>'));
+    ['oc-assunto', 'oc-resp', 'oc-anexo', 'oc-prior', 'oc-prazo', 'oc-emp', 'oc-tipo', 'oc-dep', 'oc-det', 'oc-ok'].forEach((id) => assert.ok(f.includes('id="' + id + '"'), 'campo ' + id));
+    assert.ok(f.includes('OK - Registrar') && f.includes('Limpar'));
+    assert.ok(C.t.formularioOcorrenciaQ(o, true).includes('>Registrar ocorrência</strong>'), 'sem título, continua "Registrar ocorrência" (tela Qualidade)');
+  });
   await teste('cs: ficha — Financeiro, Acessórias, Qualidade e Atendimentos são seções que recolhem (começam recolhidas, só nome e setinha)', () => {
     const h = C.t.secaoFicha('financeiro', 'Financeiro', '<p>corpo da seção</p>');
     assert.ok(h.startsWith('<details class="ficha-det" data-sec="financeiro"><summary class="ficha-sec">') && !h.includes(' open'), 'recolhida por padrão');
