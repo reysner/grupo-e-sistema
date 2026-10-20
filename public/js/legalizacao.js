@@ -26,8 +26,8 @@
   var ROT_CURTO = { func: 'Funcionamento', sanit: 'Sanitário', cert_pf: 'Certificado PF', cert_pj: 'Certificado PJ', ecac: 'E-CAC', fgts: 'FGTS Digital' };
   var ICO_TIPO = { func: '🏢', sanit: '🩺', cert_pf: '👤', cert_pj: '🏛️', ecac: '📜', fgts: '🧾' };
   var ST_ORDEM = ['vencido', 'vencendo', 'solicitacao', 'sem_data', 'ok'];
-  var ROT_ST = { vencido: 'Vencido', vencendo: 'Vencendo', solicitacao: 'Solicitação', sem_data: 'Sem data', ok: 'Em dia' };
-  var COR_ST = { vencido: '#dc2626', vencendo: '#d97706', solicitacao: '#2563eb', sem_data: '#9ca3af', ok: '#10b981' };
+  var ROT_ST = { vencido: 'Vencido', vencendo: 'Vencendo', solicitacao: 'Solicitação', sem_data: 'Sem data', ok: 'Em dia', na: 'Não se aplica' };
+  var COR_ST = { vencido: '#dc2626', vencendo: '#d97706', solicitacao: '#2563eb', sem_data: '#9ca3af', ok: '#10b981', na: '#cbd5e1' };
   var ROT_AUTO = { automatica: 'Consulta automática', pasta: 'Só pela pasta', sem_municipio: 'Sem município', pessoa_fisica: 'Pessoa física' };
   var ROT_PEND = {
     sem_municipio: 'Município não identificado',
@@ -232,7 +232,7 @@
   function piorDe(l) {
     var pior = null;
     TIPOS.forEach(function (t) { var i = itemDe(l, t); if (!i) return; var s = stDe(i); if (pior == null || ST_ORDEM.indexOf(s) < ST_ORDEM.indexOf(pior)) pior = s; });
-    return pior || 'sem_data';
+    return pior || 'na';   // sem nenhum documento aplicável (CPF/CNO/CAEPF…): "Não se aplica", não "Sem data"
   }
   function empresasComStatus(st) {
     var vistos = {}, n = 0;

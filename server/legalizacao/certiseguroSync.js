@@ -150,9 +150,24 @@ async function main() {
   console.log(`[certiseguroSync] Concluído: ${resultado.atualizados} atualizado(s), ${resultado.criados} criado(s), ${resultado.ignorados} ignorado(s) de ${resultado.total}.`);
 }
 
+/** Falha da rodada (ex.: "IP não liberado"): registra na tela de saúde para o sino avisar. Nunca derruba nada. */
+async function registrarFalha(mensagem) {
+  try {
+    const appUrl = (process.env.APP_URL || 'https://grupo-e-sistema.onrender.com').replace(/\/+$/, '');
+    const syncToken = process.env.LEGALIZACAO_SYNC_TOKEN || process.env.CERTISEGURO_SYNC_TOKEN;
+    if (!syncToken) return;
+    await fetch(`${appUrl}/api/data/legalizacao/saude-rotina`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sync-Token': syncToken },
+      body: JSON.stringify({ rotina: 'certiseguro', inicio: new Date().toISOString(), total: 0, ok: 0, falhas: 1, resumo: { erro: String(mensagem).replace(/\s+/g, ' ').slice(0, 300) } }),
+      signal: AbortSignal.timeout(60000),
+    });
+  } catch (e) { /* sem rede: o alerta de "rotina atrasada" cobre */ }
+}
+
 if (require.main === module) {
-  main().catch(err => {
+  main().catch(async (err) => {
     console.error('[certiseguroSync] Falhou:', err.message || err);
+    await registrarFalha(err.message || err);
     process.exit(1);
   });
 }

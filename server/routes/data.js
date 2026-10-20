@@ -579,6 +579,7 @@ async function importarCertificadosCertiseguro(lista, req) {
 
     await registrarLog('sync', 'CertiSeguro (sync automático)', 'importar', 'legalizacao',
       `Sincronização CertiSeguro: ${atualizados} atualizado(s), ${criados} criado(s), ${ignorados} ignorado(s) de ${lista.length} certificado(s).`, req);
+    await registrarRotinaLegalizacao('certiseguro', { total: lista.length, ok: lista.length - ignorados, falhas: 0, resumo: { atualizados, criados, ignorados } });
     return { ok: true, atualizados, criados, ignorados, total: lista.length };
 }
 
@@ -689,6 +690,7 @@ async function importarProcuracoesCore(tipo, listaBruta, completo, quemChamou) {
   }
   await registrarLog(quemChamou.id, quemChamou.name, 'importar', 'legalizacao',
     `Procurações ${tipo === 'ecac' ? 'e-CAC' : 'FGTS Digital'}: ${atualizados} atualizada(s), ${limpos} zerada(s), ${semCliente} sem cliente ativo na Carteira, de ${lista.length} lida(s).`);
+  await registrarRotinaLegalizacao('procuracoes_' + tipo, { total: lista.length, ok: melhor.size, falhas: 0, resumo: { atualizados, limpos, semCliente, completo: completo === true } });
   return { ok: true, tipo, recebidas: lista.length, consideradas: melhor.size, atualizados, limpos, semCliente };
 }
 
@@ -5607,7 +5609,8 @@ async function montarPainelLegalizacao(verDesativados) {
         const docPF = String(r.cnpj || l.cnpj || '').replace(/\D/g, '');
         const cnpjValido = (d) => { if (d.length !== 14 || /^(\d)\1+$/.test(d)) return false; const dv = (n) => { let s = 0, p = n - 7; for (let i = 0; i < n; i++) { s += +d[i] * p--; if (p < 2) p = 9; } const r = s % 11; return r < 2 ? 0 : 11 - r; }; return dv(12) === +d[12] && dv(13) === +d[13]; };
         const ehPF = docPF.length === 11 || !cnpjValido(docPF);
-        l.automacao = l.prefeitura_integrada === true ? 'automatica' : (m && m.municipio ? 'pasta' : (ehPF ? 'pessoa_fisica' : 'sem_municipio'));
+        limparSemDataSeNaoCnpj(l, ehPF);   // CPF/CNO/CAEPF/PF: não mostra "Sem data" de alvará, certificado PJ e procuração (só o que tem data)
+        l.automacao =l.prefeitura_integrada === true ? 'automatica' : (m && m.municipio ? 'pasta' : (ehPF ? 'pessoa_fisica' : 'sem_municipio'));
         if (l.prefeitura_integrada === false) { // atalho pro portal da cidade (consulta manual)
           const p = portalDaPrefeitura(m.municipio, m.uf);
           l.prefeitura_url = p.url; l.prefeitura_url_oficial = p.oficial; l.prefeitura_url_sanitario = p.url_sanitario;
@@ -5665,10 +5668,23 @@ router.get('/legalizacao/historico', async (req, res) => {
  *   POST /legalizacao/saude-rotina  (X-Sync-Token) → { rotina, inicio, total, ok, falhas, resumo, por_cidade }
  *   GET  /legalizacao/saude         (admin)        → rotinas + cidades
  */
+const { motivoFalhaRotina } = require('../legalizacao/saudeRotinas');
+const { limparSemDataSeNaoCnpj } = require('../legalizacao/naoSeAplica');
 const ROTINAS_LEGALIZACAO = {
   consulta_prefeituras: { nome: 'Consulta às prefeituras', horario: 'toda segunda às 08:30', horasMax: 200 },
   leitura_pastas: { nome: 'Leitura das pastas da Legalização', horario: 'toda segunda às 08:30', horasMax: 200 },
+  // 19/10/2026: o IP da estação muda e a sincronização do CertiSeguro falhava sem ninguém saber; as procurações dependem de login do Reysner na segunda.
+  certiseguro: { nome: 'Sincronização dos certificados (CertiSeguro)', horario: 'toda segunda às 09:00', horasMax: 200 },
+  procuracoes_ecac: { nome: 'Procurações do e-CAC', horario: 'toda segunda, a partir das 09:30 (precisa do login com certificado)', horasMax: 200 },
+  procuracoes_fgts: { nome: 'Procurações do FGTS Digital', horario: 'toda segunda, a partir das 09:30 (precisa do login com certificado)', horasMax: 200 },
 };
+
+/** Registra uma rodada na tela de saúde (usado pelas rotas que já recebem os dados: CertiSeguro e procurações). Nunca derruba a operação principal. */
+async function registrarRotinaLegalizacao(rotina, { total = 0, ok = 0, falhas = 0, resumo = {} } = {}) {
+  try {
+    await pool.query(`INSERT INTO legalizacao_rotinas (rotina, inicio, total, ok, falhas, resumo) VALUES ($1, NOW(), $2, $3, $4, $5::jsonb)`, [rotina, total, ok, falhas, JSON.stringify(resumo)]);
+  } catch (e) { console.error('[Legalização] registrar rotina:', e.message); }
+}
 
 /** Situação de cada rotina: última rodada, se está atrasada e se houve muitas falhas. */
 async function situacaoRotinas() {
@@ -5721,6 +5737,15 @@ async function checarSaudeRotinasLegalizacao() {
   try {
     await ensureLegalizacaoSchema();
     for (const r of await situacaoRotinas()) {
+      // Rodada que terminou mas falhou (muitas falhas, ou interrompida por bloqueio/IP recusado): avisa UMA vez por rodada.
+      const motivoFalha = motivoFalhaRotina(r);
+      if (motivoFalha) {
+        const { rows: ja } = await pool.query(`SELECT 1 FROM notificacoes WHERE tipo = 'legalizacao_rotina_falha' AND mensagem LIKE $1 AND created_at > $2 LIMIT 1`, [r.nome + '%', r.ultima.fim]);
+        if (!ja.length) {
+          await pool.query(`INSERT INTO notificacoes (tipo, titulo, mensagem, link_modulo) VALUES ('legalizacao_rotina_falha', $1, $2, 'legalizacao')`,
+            ['Rotina da Legalização falhou', `${r.nome}: ${motivoFalha}.`]);
+        }
+      }
       if (r.status !== 'atrasada') continue; // 'sem_registro' (nunca rodou) não alarma: evita falso alerta antes da 1ª rodada
       const { rows } = await pool.query(`SELECT 1 FROM notificacoes WHERE tipo = 'legalizacao_rotina_atrasada' AND mensagem LIKE $1 AND created_at > NOW() - INTERVAL '20 hours' LIMIT 1`, [r.nome + '%']);
       if (rows.length) continue;
@@ -6221,9 +6246,9 @@ router.get('/legalizacao/notificacoes', async (req, res) => {
     const visto = v[0] ? v[0].visto_em : new Date(Date.now() - 7 * 24 * 3600 * 1000);
     const { rows } = await pool.query(
       `SELECT id, titulo, mensagem, created_at, (created_at > $1) AS nova
-         FROM notificacoes WHERE tipo = 'legalizacao_vencimento' AND NOT EXISTS (SELECT 1 FROM clientes ci WHERE ci.status <> 'ativo' AND (ci.id::text = notificacoes.cliente_id::text OR left(notificacoes.mensagem, length(ci.nome_empresa) + 3) = ci.nome_empresa || ' — ')) ORDER BY created_at DESC LIMIT 60`, [visto]);
+         FROM notificacoes WHERE tipo IN ('legalizacao_vencimento', 'legalizacao_rotina_falha', 'legalizacao_rotina_atrasada') AND NOT EXISTS (SELECT 1 FROM clientes ci WHERE ci.status <> 'ativo' AND (ci.id::text = notificacoes.cliente_id::text OR left(notificacoes.mensagem, length(ci.nome_empresa) + 3) = ci.nome_empresa || ' — ')) ORDER BY created_at DESC LIMIT 60`, [visto]);
     const { rows: c } = await pool.query(
-      `SELECT COUNT(*)::int AS n FROM notificacoes WHERE tipo = 'legalizacao_vencimento' AND created_at > $1 AND NOT EXISTS (SELECT 1 FROM clientes ci WHERE ci.status <> 'ativo' AND (ci.id::text = notificacoes.cliente_id::text OR left(notificacoes.mensagem, length(ci.nome_empresa) + 3) = ci.nome_empresa || ' — '))`, [visto]);
+      `SELECT COUNT(*)::int AS n FROM notificacoes WHERE tipo IN ('legalizacao_vencimento', 'legalizacao_rotina_falha', 'legalizacao_rotina_atrasada') AND created_at > $1 AND NOT EXISTS (SELECT 1 FROM clientes ci WHERE ci.status <> 'ativo' AND (ci.id::text = notificacoes.cliente_id::text OR left(notificacoes.mensagem, length(ci.nome_empresa) + 3) = ci.nome_empresa || ' — '))`, [visto]);
     res.json({ data: rows, naoLidas: c[0].n });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao carregar notificações.' }); }
 });
