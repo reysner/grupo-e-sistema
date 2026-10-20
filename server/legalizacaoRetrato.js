@@ -5,7 +5,7 @@
  * Alimenta a seção "Evolução" da página /legalizacao.
  */
 const TIPOS = ['func', 'sanit', 'cert_pf', 'cert_pj', 'ecac', 'fgts'];
-const STATUS = ['vencido', 'vencendo', 'solicitacao', 'ok', 'sem_data', 'dispensado'];
+const STATUS = ['vencido', 'vencendo', 'solicitacao', 'ok', 'sem_data', 'dispensado', 'nao_possui'];
 
 /** Segunda-feira da semana de uma data AAAA-MM-DD. */
 function semanaDe(iso) {
@@ -27,7 +27,7 @@ function itemDe(l, tipo) {
 function retratoDeLinhas(linhas, hoje) {
   const por_tipo = {};
   TIPOS.forEach((t) => { por_tipo[t] = { total: 0 }; STATUS.forEach((s) => { por_tipo[t][s] = 0; }); });
-  const totais = { vencido: 0, vencendo: 0, solicitacao: 0, ok: 0, sem_data: 0, dispensado: 0 };
+  const totais = { vencido: 0, vencendo: 0, solicitacao: 0, ok: 0, sem_data: 0, dispensado: 0, nao_possui: 0 };
   (linhas || []).forEach((l) => {
     TIPOS.forEach((t) => {
       const i = itemDe(l, t);
@@ -39,7 +39,7 @@ function retratoDeLinhas(linhas, hoje) {
   return {
     semana: semanaDe(hoje),
     clientes: (linhas || []).length,
-    vencidos: totais.vencido, vencendo: totais.vencendo, solicitacao: totais.solicitacao, em_dia: totais.ok, sem_data: totais.sem_data, dispensado: totais.dispensado,
+    vencidos: totais.vencido, vencendo: totais.vencendo, solicitacao: totais.solicitacao, em_dia: totais.ok, sem_data: totais.sem_data, dispensado: totais.dispensado, nao_possui: totais.nao_possui,
     por_tipo,
   };
 }

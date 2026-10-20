@@ -36,7 +36,7 @@ function casarCertificadosPF(linhas) {
     guardar(k.tipo === 'cpf' ? porCpf : porRaiz, k.chave, l);
     if (k.tipo === 'cpf') guardar(porRaiz, k.chave.slice(0, 9), l);   // o CPF também responde pela raiz (um CAEPF do mesmo produtor pode ter o certificado)
   });
-  const semCertUtil = (l) => !l.cert || l.cert.status === 'sem_data';   // não pisa em certificado que já tem data
+  const semCertUtil = (l) => !l.cert || l.cert.status === 'sem_data' || l.cert.status === 'nao_possui';   // não pisa em certificado que já tem data
   const remover = new Set();
   lista.forEach((o) => {
     if (!o.sem_cadastro_acessorias || !o.cert || o.cert.tipo !== 'pf') return;

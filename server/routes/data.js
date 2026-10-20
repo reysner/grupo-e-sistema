@@ -5478,6 +5478,7 @@ async function ensureLegalizacaoSchema() {
     por_tipo JSONB NOT NULL DEFAULT '{}'::jsonb
   )`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_historico ADD COLUMN IF NOT EXISTS dispensado INTEGER NOT NULL DEFAULT 0`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_historico ADD COLUMN IF NOT EXISTS nao_possui INTEGER NOT NULL DEFAULT 0`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_historico ENABLE ROW LEVEL SECURITY`).catch(()=>{});
 }
 
@@ -5582,6 +5583,12 @@ async function montarPainelLegalizacao(verDesativados) {
     const munPorId = new Map(muns.map(m => [m.id, m]));
     const { rows: pend } = await pool.query(`SELECT cliente_id, tipo FROM legalizacao_alvaras WHERE lido_por_ocr AND conferido_em IS NULL AND desativado_em IS NULL AND data_vencimento IS NOT NULL`);
     const aConferir = new Set(pend.map(p => p.cliente_id + '|' + p.tipo));
+    // Listas completas lidas há ≤ 15 dias e sem falha (CertiSeguro lista TODOS os certificados; e-CAC e SPE são lidos por completo): "não está na lista" = "não possui"
+    const { rows: lc } = await pool.query(
+      `SELECT DISTINCT ON (rotina) rotina, (resumo->>'completo') AS completo FROM legalizacao_rotinas
+        WHERE rotina IN ('certiseguro','procuracoes_ecac','procuracoes_fgts') AND falhas = 0 AND fim > NOW() - INTERVAL '15 days' ORDER BY rotina, fim DESC`).catch(() => ({ rows: [] }));
+    const lcMapa = new Map(lc.map(r => [r.rotina, r.completo]));
+    const flagsListaCompleta = { cert: lcMapa.has('certiseguro'), ecac: lcMapa.get('procuracoes_ecac') === 'true', fgts: lcMapa.get('procuracoes_fgts') === 'true' };
     const rows = verDesativados ? todas : todas.filter(r => !(r.sem_cadastro_acessorias && r.cert_desat)).map(r => (r.sanit_desat ? { ...r, sanit_id: null } : r));
     return {
       data: casarCertificadosPF(rows.map(r => {   // certificado PF avulso ("sem cadastro") vai para o cliente de mesmo CPF/CAEPF
@@ -5601,6 +5608,7 @@ async function montarPainelLegalizacao(verDesativados) {
         const cnpjValido = (d) => { if (d.length !== 14 || /^(\d)\1+$/.test(d)) return false; const dv = (n) => { let s = 0, p = n - 7; for (let i = 0; i < n; i++) { s += +d[i] * p--; if (p < 2) p = 9; } const r = s % 11; return r < 2 ? 0 : 11 - r; }; return dv(12) === +d[12] && dv(13) === +d[13]; };
         const ehPF = docPF.length === 11 || !cnpjValido(docPF);
         limparSemDataSeNaoCnpj(l, ehPF);   // CPF/CNO/CAEPF/PF: não mostra "Sem data" de alvará, certificado PJ e procuração (só o que tem data)
+        marcarNaoPossui(l, flagsListaCompleta);   // lista completa lida há pouco: quem não está nela "não possui" (em vez de "Sem data")
         l.automacao = l.prefeitura_integrada === true ? 'automatica' : (m && m.municipio ? 'pasta' : (ehPF ? 'pessoa_fisica' : 'sem_municipio'));
         if (l.prefeitura_integrada === false) { // atalho pro portal da cidade (consulta manual)
           const p = portalDaPrefeitura(m.municipio, m.uf);
@@ -5629,11 +5637,11 @@ async function gravarRetratoLegalizacao() {
   const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
   const r = legalRetrato.retratoDeLinhas(painel.data, hoje);
   await pool.query(
-    `INSERT INTO legalizacao_historico (semana, atualizado_em, clientes, vencidos, vencendo, solicitacao, em_dia, sem_data, dispensado, por_tipo)
-     VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+    `INSERT INTO legalizacao_historico (semana, atualizado_em, clientes, vencidos, vencendo, solicitacao, em_dia, sem_data, dispensado, nao_possui, por_tipo)
+     VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
      ON CONFLICT (semana) DO UPDATE SET atualizado_em = NOW(), clientes = EXCLUDED.clientes, vencidos = EXCLUDED.vencidos,
-       vencendo = EXCLUDED.vencendo, solicitacao = EXCLUDED.solicitacao, em_dia = EXCLUDED.em_dia, sem_data = EXCLUDED.sem_data, dispensado = EXCLUDED.dispensado, por_tipo = EXCLUDED.por_tipo`,
-    [r.semana, r.clientes, r.vencidos, r.vencendo, r.solicitacao, r.em_dia, r.sem_data, r.dispensado || 0, JSON.stringify(r.por_tipo)]
+       vencendo = EXCLUDED.vencendo, solicitacao = EXCLUDED.solicitacao, em_dia = EXCLUDED.em_dia, sem_data = EXCLUDED.sem_data, dispensado = EXCLUDED.dispensado, nao_possui = EXCLUDED.nao_possui, por_tipo = EXCLUDED.por_tipo`,
+    [r.semana, r.clientes, r.vencidos, r.vencendo, r.solicitacao, r.em_dia, r.sem_data, r.dispensado || 0, r.nao_possui || 0, JSON.stringify(r.por_tipo)]
   );
   return r;
 }
@@ -5663,6 +5671,7 @@ const { motivoFalhaRotina } = require('../legalizacao/saudeRotinas');
 const { limparSemDataSeNaoCnpj } = require('../legalizacao/naoSeAplica');
 const { casarCertificadosPF } = require('../legalizacao/casarCertificadoPF');
 const { importarCertificados } = require('../legalizacao/importarCertificados');
+const { marcarNaoPossui } = require('../legalizacao/naoPossui');
 const ROTINAS_LEGALIZACAO = {
   consulta_prefeituras: { nome: 'Consulta às prefeituras', horario: 'toda segunda às 08:30', horasMax: 200 },
   leitura_pastas: { nome: 'Leitura das pastas da Legalização', horario: 'toda segunda às 08:30', horasMax: 200 },

@@ -74,6 +74,21 @@ teste('CNPJ válido com os mesmos 9 primeiros dígitos do CPF NÃO casa (só CPF
   assert.strictEqual(casarCertificadosPF([emp, avulso('PESSOA', '11222333081')]).length, 2);
   assert.strictEqual(emp.cert, null);
 });
+const { marcarNaoPossui } = require('./legalizacao/naoPossui');
+teste('"Não possui": lista completa recente → procuração/certificado sem data viram Não possui; sem lista completa continuam Sem data', () => {
+  const linha = () => ({ ecac: { id: null, status: 'sem_data' }, fgts: { id: 'z', status: 'sem_data' }, cert: { id: null, tipo: 'pj', status: 'sem_data' } });
+  const a = marcarNaoPossui(linha(), { cert: true, ecac: true, fgts: true });
+  assert.deepStrictEqual([a.ecac.status, a.fgts.status, a.cert.status], ['nao_possui', 'nao_possui', 'nao_possui']);
+  const b = marcarNaoPossui(linha(), { cert: false, ecac: true, fgts: false });
+  assert.deepStrictEqual([b.ecac.status, b.fgts.status, b.cert.status], ['nao_possui', 'sem_data', 'sem_data']);
+  assert.strictEqual(marcarNaoPossui(linha(), null).ecac.status, 'sem_data', 'sem flags nada muda');
+});
+teste('"Não possui" não mexe em quem tem data/andamento nem em certificado manual sem data', () => {
+  const l = marcarNaoPossui({ ecac: { status: 'ok' }, fgts: { status: 'vencido' }, cert: { id: 'm1', tipo: 'pj', status: 'sem_data' } }, { cert: true, ecac: true, fgts: true });
+  assert.deepStrictEqual([l.ecac.status, l.fgts.status, l.cert.status], ['ok', 'vencido', 'sem_data']);
+  const pf = marcarNaoPossui({ cert: { id: null, tipo: 'pf', status: 'sem_data' } }, { cert: true });
+  assert.strictEqual(pf.cert.status, 'sem_data', 'só o PJ');
+});
 const { importarCertificados } = require('./legalizacao/importarCertificados');
 const bancoFalso = ({ clientes = [], existentes = [] }) => {
   const chamadas = [];
