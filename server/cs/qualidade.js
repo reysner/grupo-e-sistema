@@ -260,7 +260,7 @@ function rotaAbertaGestorAnalista(metodo, caminho) {
   const m = String(metodo || '').toUpperCase();
   const c = String(caminho || '').split('?')[0].replace(/\/+$/, '') || '/';
   const p = c.split('/');   // '' + segmentos
-  if (m === 'GET') return ['/opcoes', '/empresas', '/tempos', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/analista/ocorrencias', '/sucesso/ocorrencias', '/pendencias'].includes(c) || (p.length === 3 && p[1] === 'anexo');
+  if (m === 'GET') return ['/opcoes', '/empresas', '/tempos', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/analista/ocorrencias', '/sucesso/ocorrencias', '/pendencias', '/versao'].includes(c) || (p.length === 3 && p[1] === 'anexo');
   if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir', 'excluir', 'mensagem', 'resposta-final'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && ['encerrar', 'apontar', 'responder'].includes(p[4]));
   if (m === 'PUT') return p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && p[4] === 'tratativa';
   return false;
@@ -934,6 +934,20 @@ router.get('/pendencias', async (req, res) => {
       gestor: verGestor ? rows.filter((r) => ocorrenciaNoEscopo(esc, r) && (r.etapa === 'registrada' || r.ultimo === 'dialogo_final')).length : null,
     });
   } catch (e) { console.error('[qualidade] GET /pendencias falhou:', e); res.status(500).json({ error: 'Erro ao ler as pendências.' }); }
+});
+/**
+ * "Versão" leve das ocorrências: quantidade + última alteração + último movimento do histórico. O painel pergunta a cada 10 s e só redesenha a tela quando muda
+ * (ocorrência nova, observação, validação, encerramento…), sem precisar apertar F5. Uma consulta de agregados; resposta de poucos bytes.
+ */
+router.get('/versao', async (req, res) => {
+  try {
+    await garantirSchema();
+    const { rows } = await pool.query(`SELECT
+        (SELECT COUNT(*) FROM cs_qualidade_registros WHERE origem IN ('modulo', 'filha'))::text AS n,
+        (SELECT COALESCE(MAX(atualizado_em), 'epoch'::timestamptz) FROM cs_qualidade_registros WHERE origem IN ('modulo', 'filha'))::text AS a,
+        (SELECT COALESCE(MAX(em), 'epoch'::timestamptz) FROM cs_qualidade_historico)::text AS h`);
+    res.json({ v: rows[0].n + '|' + rows[0].a + '|' + rows[0].h });
+  } catch (e) { console.error('[qualidade] GET /versao falhou:', e); res.status(500).json({ error: 'Erro ao ler a versão.' }); }
 });
 router.get('/avisos', async (req, res) => {
   try {

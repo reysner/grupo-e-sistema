@@ -129,7 +129,7 @@
   /** Esquece tudo o que era da pessoa anterior (dados, filtros, telas e janelas): quem entrar em seguida na mesma aba não vê nada dela. */
   function limparEstadoDaSessao() {
     ['g', 's', 'a', 'eu', 'ac', 'qAnalistas', 'qResumo', 'qOpcoes', 'ficha', 'honorario', 'anual', 'atend', 'motivosChurn', 'fichaGrupoAberta', 'entidadesAnalise', 'tpAberto', 'tpF',
-      'filtroQ', 'filtroAtend', 'filtroAnual', 'qPesoAberto', 'fechamento', 'mesFechamento', 'avisosIniciados', 'qRecentes'].forEach(function (k) { delete estado[k]; });
+      'filtroQ', 'filtroAtend', 'filtroAnual', 'qPesoAberto', 'fechamento', 'mesFechamento', 'avisosIniciados', 'qRecentes', 'versaoQ', 'sondaMudancas'].forEach(function (k) { delete estado[k]; });
     estado.dados = null; estado.churnLivre = null;
     try {
       Array.prototype.forEach.call(document.querySelectorAll('.gp-section'), function (s) { s.innerHTML = ''; });
@@ -142,7 +142,7 @@
     var rt = ls(K_REFRESH), tk = ls(K_TOKEN);
     if (!silencioso && rt && tk) fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ refreshToken: rt }) }).catch(function () {});
     ls(K_TOKEN, null); ls(K_REFRESH, null); ls(K_USER, null);
-    clearTimeout(avisoTimer); clearTimeout(pendTimer); avisosDesde = null;
+    clearTimeout(avisoTimer); clearTimeout(pendTimer); clearTimeout(mudTimer); avisosDesde = null;
     limparEstadoDaSessao();
     mostrarLogin(silencioso ? 'Sua sessão expirou. Entre de novo.' : '');
   }
@@ -174,6 +174,72 @@
       } else avisosDesde = null;
     } catch (e) { /* o aviso nunca derruba a página */ }
     avisoTimer = setTimeout(sondarAvisos, 60 * 1000);
+  }
+  // ── Atualização automática (a cada 10 s) ───────────────────────────────────────────────────────
+  // Pergunta a "versão" das ocorrências (rota leve); quando muda (alguém registrou, observou, validou, encerrou…), redesenha a tela aberta e os selos, sem F5.
+  // Nunca atropela quem está escrevendo: com formulário preenchido, em foco ou janela aberta, adia e mostra o aviso "Há novidades" com o botão Atualizar.
+  var mudTimer = null, MUDANCAS_MS = 10 * 1000;
+  function usuarioDigitando() {
+    try {
+      if (document.querySelector('.qa-overlay')) return true;
+      var ativo = document.activeElement, ehCampoForm = function (e) { return e && e.id && /^(oc|ao|gt|so|qa)-/.test(e.id); };
+      if (ativo && /^(INPUT|TEXTAREA|SELECT)$/.test(ativo.tagName) && ehCampoForm(ativo)) return true;
+      return Array.prototype.some.call(document.querySelectorAll('textarea[id], input[id]'), function (e) {
+        if (!ehCampoForm(e) || e.offsetParent === null || /^(button|checkbox|radio|submit)$/.test(e.type)) return false;
+        return e.type === 'file' ? !!(e.files && e.files.length) : !!e.value;
+      });
+    } catch (e) { return false; }
+  }
+  function avisoNovidades(mostrar, aoAtualizar) {
+    var el = $('cs-novidades');
+    if (!mostrar) { if (el && el.parentNode) el.parentNode.removeChild(el); return; }
+    if (!el) {
+      el = document.createElement('div'); el.id = 'cs-novidades';
+      el.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:2147483000;background:#1a4233;color:#fff;padding:10px 16px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.3);font:600 13px/1.4 system-ui,sans-serif;display:flex;gap:12px;align-items:center';
+      el.innerHTML = '<span>Há novidades no painel. Termine o que está escrevendo ou</span><button type="button" id="cs-novidades-ok" style="border:0;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer">Atualizar agora</button>';
+      document.body.appendChild(el);
+    }
+    var bt = $('cs-novidades-ok'); if (bt) bt.onclick = function () { avisoNovidades(false); if (aoAtualizar) aoAtualizar(); };
+  }
+  async function atualizarTelaAberta() {
+    estado.qResumo = null;
+    sondarPendencias();
+    var s = estado.secao;
+    if (s === 'consideracoes') { if (estado.dados) desenharQualidadeMod(); else desenharQualidadeModLimitado(); }
+    else if (s === 'gestor') { estado.g = null; desenharGestor(); }
+    else if (s === 'analista') { estado.a = null; desenharAnalista(); }
+    else if (s === 'sucesso') { estado.s = null; desenharSucesso(); }
+    // ficha da empresa aberta: atualiza só as listas de ocorrências (o formulário de baixo não é mexido)
+    if ($('qa-ocorrencias') && estado.ficha && estado.ficha.cliente) {
+      try {
+        var cli = estado.ficha.cliente, l = await api('/api/cs/painel/qualidade/cliente/' + encodeURIComponent(cli.id));
+        var recarrega = function () { estado.qResumo = null; montarConsideracoes(cli); };
+        $('qa-ocorrencias').innerHTML = listaOcorrenciasQ(l.registros); ligarAcoesOcorrenciaQ('#qa-ocorrencias', recarrega);
+        var lst = document.querySelector('#qa-secao .qa-lista'); if (lst) lst.innerHTML = listaRegistrosQ(l.registros);
+      } catch (e) { /* tenta de novo na próxima mudança */ }
+    }
+  }
+  async function sondarMudancas() {
+    clearTimeout(mudTimer);
+    try {
+      if (!document.hidden && ls(K_TOKEN)) {
+        var j = await api('/api/cs/painel/qualidade/versao');
+        if (j && j.v) {
+          if (estado.versaoQ == null) estado.versaoQ = j.v;   // 1ª leitura: só marca o ponto de partida
+          else if (j.v !== estado.versaoQ) {
+            if (usuarioDigitando()) avisoNovidades(true, function () { estado.versaoQ = j.v; atualizarTelaAberta(); });
+            else { estado.versaoQ = j.v; avisoNovidades(false); await atualizarTelaAberta(); }
+          }
+        }
+      }
+    } catch (e) { /* a atualização automática nunca derruba a página */ }
+    mudTimer = setTimeout(sondarMudancas, MUDANCAS_MS);
+  }
+  function iniciarSondaMudancas() {
+    if (estado.sondaMudancas) return;
+    estado.sondaMudancas = true;
+    clearTimeout(mudTimer); mudTimer = setTimeout(sondarMudancas, 1500);
+    try { document.addEventListener('visibilitychange', function () { if (!document.hidden && estado.sondaMudancas) { clearTimeout(mudTimer); mudTimer = setTimeout(sondarMudancas, 300); } }); } catch (e) { /* sem tela (testes) */ }
   }
   function iniciarAvisosCs() {
     if (estado.avisosIniciados || !window.Avisos) return;
@@ -224,7 +290,7 @@
       pintarBotaoValores();
       estado.churnLivre = null;
       desenharTudo();
-      iniciarAvisosCs();
+      iniciarAvisosCs(); iniciarSondaMudancas();
     } catch (e) {
       ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'risco', 'churn', 'categorias', 'qualidade'].forEach(function (s) { $('sec-' + s).innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; });
     }
@@ -1948,7 +2014,8 @@
     var emp = null, itens = [], idx = -1, tmr = null;
     if (opc.empresa && opc.empresa.id) {   // ficha da empresa: a empresa já vem escolhida e travada
       emp = { id: opc.empresa.id, nome: opc.empresa.nome, cnpj: opc.empresa.cnpj || '' };
-      campo.value = emp.nome; campo.readOnly = true; sel.hidden = false; sel.textContent = '✔ ' + emp.nome + (emp.cnpj ? ' · ' + emp.cnpj : '');
+      campo.value = emp.nome; campo.hidden = true; sel.hidden = false;   // na ficha já se está dentro da empresa: fica só o texto verde, sem o campo repetido
+       sel.textContent = '✔ ' + emp.nome + (emp.cnpj ? ' · ' + emp.cnpj : '');
     }
     det.addEventListener('input', function () { $('oc-cont').textContent = det.value.length + '/' + (o.max_detalhe || 1500); });
     var desenhaLista = function () {
@@ -2373,7 +2440,7 @@
       if (p.analista) desenharAnalista();
       if (estado.eu && estado.eu.sucesso) desenharSucesso();
       irPara(estado.secao);
-      iniciarAvisosCs();
+      iniciarAvisosCs(); iniciarSondaMudancas();
     } catch (e) { $('sec-consideracoes').innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; }
   }
 

@@ -141,6 +141,7 @@ teste('lista branca do gestor/analista: registrar, ver as próprias, perfil, ges
   ok('GET', '/empresas?q=ab'); ok('POST', '/ocorrencias'); ok('POST', '/ocorrencias/uuid-1/anexo'); ok('POST', '/gestor/ocorrencias/uuid-1/abrir'); ok('PUT', '/gestor/ocorrencias/uuid-1/tratativa');
   ['/resumo', '/tipos', '/ocorrencias', '/cliente/123', '/analista/7', '/vinculo/1'].forEach((c) => no('GET', c));
   ['/analista/ocorrencias', '/sucesso/ocorrencias'].forEach((c) => ok('GET', c));
+  ok('GET', '/versao');   // atualização automática (a cada 10 s): vale para quem é só gestor ou só analista também
   ['/analista/ocorrencias/u1/nota', '/analista/ocorrencias/u1/encerrar', '/gestor/ocorrencias/u1/validar', '/gestor/ocorrencias/u1/devolver', '/sucesso/ocorrencias/u1/encerrar'].forEach((c) => ok('POST', c));
   ok('POST', '/gestor/ocorrencias/u1/excluir'); no('GET', '/gestor/ocorrencias/u1/excluir'); no('DELETE', '/gestor/ocorrencias/u1');
   ok('GET', '/pendencias'); no('POST', '/pendencias');
