@@ -141,6 +141,11 @@ app.get('/legalizacao/regras', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'legalizacao-regras.html'));
 });
 
+// ── Como funciona o SLA do atendimento (sem login, como /gamificacao/regras) ──
+app.get('/cs/sla', (req, res) => {
+  res.sendFile(path.join(PUBLIC, 'cs-regras-sla.html'));
+});
+
 // ── Painel do Sucesso do Cliente (login próprio, contas do Grupo-E; reunião semanal das lideranças) ──
 app.get('/cs', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'cs-painel.html'));

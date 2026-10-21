@@ -235,6 +235,14 @@ const semLixo = (e, nome) => {
     assert.deepStrictEqual(C.t.filtrarEmailsPessoal(E, '', true, '2026-10-01', '2026-10-01').map((c) => c.cnpj), ['3'], 'só sem resposta dentro do período');
     assert.strictEqual(C.t.filtrarEmailsPessoal(E, 'beta', false, '', '').length, 1);
   });
+  await teste('cs: Meus atendimentos mostra o ticket e a justificativa do SLA; Prioridades mostra ticket e etapa que estourou', () => {
+    const at = C.t.htmlAtendPessoal({ atendimentos: { vinculado: true, total: 1, janela_dias: 180, sla_vermelho: 1, notas_baixas: 0, media_nota: null,
+      lista: [{ abertura: '2026-10-10T12:00:00Z', zappy_id: 46296, cliente_nome: 'ACME', departamento: 'Financeiro', nota_avaliacao: null, pior_status: 'vermelho', motivo: 'Aceite: 48 min úteis (prazo 15 min)' }] } });
+    assert.ok(at.includes('#46296') && at.includes('Aceite: 48 min úteis (prazo 15 min)') && at.includes('Justificativa do SLA') && at.includes('>Ticket<'));
+    const pri = C.t.htmlPrioridadesPessoal({ prioridades: [{ nivel: 'media', titulo: 'SLA vermelho no atendimento', detalhe: 'ACME · 2026-10-10', ticket: '46296', motivo: 'Departamento: 1 h 35 min úteis (prazo 30 min)' }], atendimentos: {}, emails: {} });
+    assert.ok(pri.includes('Ticket #46296') && pri.includes('Departamento: 1 h 35 min úteis (prazo 30 min)'));
+    assert.ok(!/undefined|null/.test(pri));
+  });
   await teste('cs: ocorrência aberta pela ficha leva o selo "CS - Plano de Ação"; a da Qualidade não', () => {
     assert.ok(C.t.seloPlanoCS({ plano_cs: true }).includes('CS - Plano de Ação'));
     assert.strictEqual(C.t.seloPlanoCS({ plano_cs: false }), '');

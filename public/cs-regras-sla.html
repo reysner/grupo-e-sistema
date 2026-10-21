@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Como o SLA do atendimento é calculado no painel do Sucesso do Cliente do Grupo-E: prazos, cores e o que não conta contra o analista." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Grupo-E" />
+  <meta property="og:locale" content="pt_BR" />
+  <meta property="og:title" content="Como funciona o SLA | Sucesso do Cliente" />
+  <meta property="og:description" content="Prazos de aceite, transferência, departamento e promessas; o que faz o SLA ficar vermelho." />
+  <meta name="twitter:card" content="summary" />
+  <title>Como funciona o SLA | Sucesso do Cliente</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet" />
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    :root{
+      --green:#1a4233;--green-light:#2a6e4a;--green-pale:#e8f4ef;
+      --gold:#f5c518;--gold-dark:#c9a000;
+      --gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;
+      --gray-400:#94a3b8;--gray-600:#475569;--gray-800:#1e293b;
+      --good-bg:#e6f7ee;--good-fg:#1d8a4e;
+      --warn-bg:#fff6dd;--warn-fg:#a3790b;
+      --bad-bg:#fdecec;--bad-fg:#c0362c;
+      --white:#fff;--radius:16px;
+      --shadow:0 4px 24px rgba(0,0,0,.08);
+    }
+    body{font-family:'Inter',sans-serif;background:linear-gradient(180deg,#fdf6e3 0%,#fff 100%);color:var(--gray-800);min-height:100vh}
+    .header{background:var(--green);padding:24px 20px 44px;text-align:center;position:relative;overflow:hidden}
+    .header::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 20% 20%,rgba(245,197,24,.15) 0%,transparent 50%),radial-gradient(circle at 80% 80%,rgba(245,197,24,.1) 0%,transparent 50%)}
+    .header-inner{position:relative;z-index:1;max-width:680px;margin:0 auto}
+    .back-link{display:inline-flex;align-items:center;gap:6px;color:rgba(255,255,255,.75);font-size:17px;font-weight:600;text-decoration:none;margin-bottom:16px}
+    .back-link:hover{color:#fff}
+    h1{font-family:'Plus Jakarta Sans',sans-serif;font-size:36px;font-weight:800;color:var(--white);letter-spacing:-.5px;margin-bottom:10px}
+    .tagline{color:rgba(255,255,255,.7);font-size:19px;max-width:640px;margin:0 auto;line-height:1.6}
+    .badge{display:inline-flex;align-items:center;gap:7px;background:rgba(245,197,24,.15);border:1px solid rgba(245,197,24,.35);border-radius:999px;padding:7px 16px;margin-top:16px;font-size:13.5px;font-weight:600;color:var(--gold)}
+    .container{max-width:680px;margin:-24px auto 0;padding:0 16px 60px;position:relative;z-index:2}
+    .stage-head{display:flex;align-items:flex-start;gap:12px;margin:40px 0 16px}
+    .stage-head:first-of-type{margin-top:28px}
+    .stage-num{background:var(--green);color:#fff;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;flex-shrink:0}
+    .stage-head h2{font-family:'Plus Jakarta Sans',sans-serif;font-size:24px;font-weight:800;color:var(--green)}
+    .stage-head p{font-size:17px;color:var(--gray-400);margin-top:3px}
+    .card{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px 24px;margin-bottom:16px}
+    .card-title{display:flex;align-items:center;gap:9px;font-size:21px;font-weight:800;color:var(--gray-800);margin-bottom:12px}
+    .card-note{font-size:17px;color:var(--gray-600);margin:0 0 12px;line-height:1.6}
+    .card-foot{font-size:15.5px;color:var(--gray-400);font-style:italic;margin-top:12px;line-height:1.6}
+    .rowline{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--gray-100);font-size:18px}
+    .rowline:first-of-type{border-top:none}
+    .rowline small{display:block;font-size:14.5px;color:var(--gray-400);margin-top:2px;line-height:1.45}
+    .pill{flex-shrink:0;font-size:14px;font-weight:800;padding:4px 12px;border-radius:999px;white-space:nowrap}
+    .pill.good{background:var(--good-bg);color:var(--good-fg)}
+    .pill.warn{background:var(--warn-bg);color:var(--warn-fg)}
+    .pill.bad{background:var(--bad-bg);color:var(--bad-fg)}
+    .faixas{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+    .info-note{display:flex;gap:9px;align-items:flex-start;background:var(--green-pale);color:var(--green);border-radius:8px;padding:12px 14px;font-size:16px;line-height:1.6;margin-top:12px}
+    .rule-banner{background:var(--green);color:#fff;border-radius:var(--radius);padding:24px 26px;margin:20px 0 12px}
+    .rule-banner .label{font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;opacity:.75;margin-bottom:8px}
+    .rule-banner .formula{font-size:21px;font-weight:800;margin-bottom:8px;line-height:1.4}
+    .rule-banner .cap{font-size:17px;opacity:.88;line-height:1.6}
+    .rule-banner .cap b{color:var(--gold)}
+    table.exp{width:100%;border-collapse:collapse;font-size:17px;margin-top:4px}
+    table.exp td{padding:9px 0;border-top:1px solid var(--gray-100)}
+    table.exp tr:first-child td{border-top:none}
+    table.exp td:last-child{text-align:right;font-weight:700;color:var(--green)}
+    .footer-msg{text-align:center;padding:26px 16px 0;color:var(--gray-400);font-size:17px;line-height:1.6}
+    .footer-msg a{color:var(--green-light);font-weight:700;text-decoration:none}
+    @media(max-width:480px){h1{font-size:24px}.card{padding:15px 16px}.rowline{font-size:16.5px}}
+    @media(min-width:900px){.header-inner,.container{max-width:960px}}
+    @media(min-width:1200px){.header-inner,.container{max-width:1100px}h1{font-size:40px}}
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-inner">
+      <a href="/cs" class="back-link">← Voltar para o painel</a>
+      <h1>📋 Como funciona o SLA</h1>
+      <div class="tagline">O SLA mede quanto tempo o escritório levou para responder o cliente em cada etapa do atendimento. Passou do prazo, a cor muda, e o painel mostra qual etapa estourou.</div>
+      <div class="badge">⏱️ Conta só em horas úteis, sem almoço, fins de semana e feriados</div>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <div class="rule-banner">
+      <div class="label">A regra geral</div>
+      <div class="formula">Verde até o prazo. Amarelo até o dobro do prazo. Vermelho acima do dobro.</div>
+      <div class="cap">Cada etapa tem o seu prazo. O atendimento mostra a cor da <b>pior etapa que está em andamento</b>. Um atendimento já encerrado costuma ficar sem cor, porque nada mais está correndo.</div>
+    </div>
+
+    <div class="stage-head">
+      <span class="stage-num">1</span>
+      <div><h2>Horário útil</h2><p>O relógio só anda dentro do expediente</p></div>
+    </div>
+    <div class="card">
+      <table class="exp">
+        <tr><td>Segunda a quinta</td><td>7h30 às 11h · 13h às 17h30</td></tr>
+        <tr><td>Sexta</td><td>8h às 11h · 13h às 17h</td></tr>
+        <tr><td>Sábado, domingo e feriados</td><td>o relógio não anda</td></tr>
+      </table>
+      <div class="info-note">ℹ️ Um cliente que escreve às 17h20 de uma segunda-feira só volta a "contar" às 7h30 de terça: os dez minutos que faltavam para as 17h30 contam, a noite não.</div>
+    </div>
+
+    <div class="stage-head">
+      <span class="stage-num">2</span>
+      <div><h2>As etapas e os prazos</h2><p>Cada uma começa e termina num momento do atendimento</p></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🟢 Aceite</div>
+      <div class="card-note">Da primeira mensagem do cliente até alguém da recepção aceitar o atendimento.</div>
+      <div class="faixas"><span class="pill good">Verde até 15 min</span><span class="pill warn">Amarelo até 30 min</span><span class="pill bad">Vermelho acima de 30 min</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🔁 Transferência</div>
+      <div class="card-note">Do aceite até o atendimento ser transferido para o setor certo.</div>
+      <div class="faixas"><span class="pill good">Verde até 15 min</span><span class="pill warn">Amarelo até 30 min</span><span class="pill bad">Vermelho acima de 30 min</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🏢 Departamento</div>
+      <div class="card-note">Da chegada ao setor até o analista responder pela primeira vez.</div>
+      <div class="faixas"><span class="pill good">Verde até 30 min</span><span class="pill warn">Amarelo até 60 min</span><span class="pill bad">Vermelho acima de 60 min</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">⏳ P. Transferir (promessa de transferir)</div>
+      <div class="card-note">Quem aceitou respondeu dizendo que ia transferir (por exemplo, "vou te direcionar") e o atendimento ficou parado, sem transferir nem encerrar.</div>
+      <div class="faixas"><span class="pill good">Verde até 15 min</span><span class="pill warn">Amarelo até 30 min</span><span class="pill bad">Vermelho acima de 30 min</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🛠️ P. Resolver (promessa de resolver)</div>
+      <div class="card-note">Quem aceitou respondeu e não falou em transferir, então fica entendido que vai resolver por conta própria. Aqui o prazo é maior, mas há duas formas de ficar vermelho:</div>
+      <div class="rowline"><div>Silêncio com o cliente<small>passou de 2 horas úteis desde a promessa sem retorno</small></div><span class="pill bad">Vermelho acima de 2 h</span></div>
+      <div class="rowline"><div>Resposta lenta dentro do prazo<small>o cliente escreveu nesse meio tempo e a resposta a essa mensagem passou de 30 minutos úteis</small></div><span class="pill bad">Vermelho acima de 30 min</span></div>
+      <div class="card-foot">Dentro das 2 horas, uma demora pontual não fica escondida atrás do prazo geral.</div>
+    </div>
+
+    <div class="stage-head">
+      <span class="stage-num">3</span>
+      <div><h2>O que não conta contra o analista</h2><p>Situações em que a demora não é do escritório</p></div>
+    </div>
+    <div class="card">
+      <div class="rowline"><div>Atendimento aberto pelo próprio escritório<small>contato proativo (por exemplo, cobrança de pendência): ninguém estava esperando aceite</small></div></div>
+      <div class="rowline"><div>Bola com o cliente<small>quando o escritório já respondeu pedindo algo (comprovante, confirmação) e aguarda o cliente, o tempo parado não é culpa do analista</small></div></div>
+      <div class="rowline"><div>Cliente falou por último<small>o relógio reinicia a partir da mensagem do cliente; só conta o tempo depois que a vez voltou ao escritório</small></div></div>
+      <div class="rowline"><div>Atendimento encerrado com a pesquisa de satisfação<small>quando o escritório pede a nota (de 1 a 5) e o cliente responde, o atendimento terminou ali. O que o analista escrever depois é um novo contato proativo e não conta como atraso do atendimento anterior; se o cliente voltar a escrever, passa a valer a espera dele</small></div></div>
+      <div class="rowline"><div>Transferência sem registro no Zappy<small>quando a recepção avisa que vai transferir e logo depois um atendente responde assinando a mensagem ("Nome:"), vale como transferência feita naquele momento</small></div></div>
+      <div class="rowline"><div>Aceite sem o clique no Zappy<small>quando ninguém clicou em "aceitar", vale como aceite a primeira resposta do escritório (ou o encerramento)</small></div></div>
+    </div>
+
+    <div class="stage-head">
+      <span class="stage-num">4</span>
+      <div><h2>Onde aparece e o que acontece depois</h2><p>Do alerta à revisão</p></div>
+    </div>
+    <div class="card">
+      <div class="rowline"><div>Meus atendimentos<small>cada atendimento mostra a cor do SLA e a justificativa: qual etapa estourou e em quanto tempo</small></div></div>
+      <div class="rowline"><div>Prioridades<small>os atendimentos em vermelho dos últimos 30 dias entram na fila "Para agir primeiro", com a etapa e o tempo ao lado</small></div></div>
+      <div class="rowline"><div>Revisão da Gamificação<small>o vermelho é a detecção automática. A liderança revisa os casos e pode tirar do cálculo da nota os que não eram culpa do analista (cliente que demorou, interação robótica, contato que não é cliente de verdade)</small></div></div>
+      <div class="info-note">ℹ️ Nenhum desconto vira definitivo sozinho: o sistema detecta e sinaliza, e quem decide é sempre uma pessoa.</div>
+    </div>
+
+    <div class="footer-msg">Ficou com dúvida sobre um atendimento específico? Fale com a liderança do Sucesso do Cliente.<br><a href="/cs">← Voltar para o painel</a></div>
+  </div>
+
+</body>
+</html>

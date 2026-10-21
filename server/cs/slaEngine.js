@@ -1214,14 +1214,52 @@ function ultimaMsgAntes(mensagens, remetente, antes) {
  * @param {Date}   agora   instante de referência (default: new Date()) — para relógios ainda correndo
  * @returns {object} { relogios: [...], radar: {...}|null }
  */
+/** A mensagem tem a assinatura de um atendente ("*Kelen:* ...")? A recepção e o robô respondem sem assinatura. */
+const ASSINATURA = /^\s*\*[^*\n]{2,60}:\*/;
+const temAssinatura = (texto) => ASSINATURA.test(String(texto || ''));
+
+/**
+ * O ticket terminou quando o cliente respondeu a pesquisa de satisfação (só o número de 1 a 5, depois de o escritório pedir "uma nota entre 1 a 5").
+ * Nem sempre o Zappy grava o evento de encerramento (ticket #50038: encerrado e avaliado em 15/10, sem evento, o relógio corria até hoje).
+ * Mensagens do escritório depois disso são contato proativo, não pendência do atendimento anterior. Devolve { t: Date } ou null.
+ */
+function acharFechamentoPorPesquisa(mensagens) {
+  const ord = ordenarPorHora(mensagens || []);
+  let achado = null;
+  ord.forEach((m, i) => {
+    if (m.remetente !== 'cliente' || !/^\s*[1-5]\s*$/.test(String(m.texto || ''))) return;
+    const pediu = ord.slice(0, i).some((x) => x.remetente === 'escritorio' && /\bnota\b/i.test(String(x.texto || '')) && /1\s*a\s*5|avaliar/i.test(String(x.texto || '')));
+    if (pediu) achado = { t: new Date(m.hora) };
+  });
+  return achado;
+}
+
+/**
+ * Transferência que o Zappy não registrou: a recepção responde SEM assinatura dizendo que vai transferir ("um instante, vou transferir") e logo
+ * depois um atendente responde COM assinatura. Vale como transferência a hora dessa primeira mensagem assinada. Sem sinal claro, devolve null.
+ */
+function transferenciaImplicita(mensagens, tAceite) {
+  if (!tAceite) return null;
+  const esc = ordenarPorHora(mensagens || []).filter((m) => m.remetente === 'escritorio' && new Date(m.hora) >= tAceite);
+  const promessa = esc[0];
+  if (!promessa || temAssinatura(promessa.texto) || !pareceIntencaoTransferir(promessa.texto)) return null;
+  const assumiu = esc.find((m) => new Date(m.hora) > new Date(promessa.hora) && temAssinatura(m.texto));
+  return assumiu ? new Date(assumiu.hora) : null;
+}
+
 function calcularSLA(ticket, agora = new Date()) {
   const eventos = ticket.eventos || [];
-  const mensagens = ticket.mensagens || [];
+  const todasMensagens = ticket.mensagens || [];
 
   const tAbertura      = primeiroEvento(eventos, 'abertura');
   const tAceite        = primeiroEvento(eventos, 'aceite');
-  const tTransferencia = primeiroEvento(eventos, 'transferencia');
-  const tEncerramento  = primeiroEvento(eventos, 'encerramento');
+  const tEncerramentoEvento = primeiroEvento(eventos, 'encerramento');
+  const fechPesq = tEncerramentoEvento ? null : acharFechamentoPorPesquisa(todasMensagens);
+  const fechadoPelaPesquisa = !!fechPesq;
+  // os relógios do atendimento valem até o fechamento; o que o escritório escreve depois é contato proativo e não conta contra o analista
+  const mensagens = fechadoPelaPesquisa ? todasMensagens.filter((m) => new Date(m.hora) <= fechPesq.t) : todasMensagens;
+  const tEncerramento = tEncerramentoEvento || (fechPesq ? fechPesq.t : null);
+  const tTransferencia = primeiroEvento(eventos, 'transferencia') || transferenciaImplicita(mensagens, tAceite);
 
   const primeiraMsgCliente = primeiraMsg(mensagens, 'cliente');
   const primeiraMsgEscritorio = primeiraMsg(mensagens, 'escritorio');
@@ -1354,9 +1392,10 @@ function calcularSLA(ticket, agora = new Date()) {
   // "De quem é a vez" no momento presente: se a última mensagem for do cliente
   // e o ticket não estiver encerrado, o cliente está aguardando -> relógio vivo.
   let vezCliente = null;
-  if (!tEncerramento && mensagens.length) {
-    const ult = ordenarPorHora(mensagens)[mensagens.length - 1];
-    if (ult.remetente === 'cliente') {
+  const mensagensVez = fechadoPelaPesquisa ? todasMensagens : mensagens;
+  if ((!tEncerramento || fechadoPelaPesquisa) && mensagensVez.length) {
+    const ult = ordenarPorHora(mensagensVez)[mensagensVez.length - 1];
+    if (ult.remetente === 'cliente' && (!fechadoPelaPesquisa || new Date(ult.hora) > fechPesq.t)) {
       const min = T.minutosUteis(new Date(ult.hora), agora);
       vezCliente = montar('vez_cliente', new Date(ult.hora), agora, min, true);
     }

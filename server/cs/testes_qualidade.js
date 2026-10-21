@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { podeReabrirEncerrada, matrizAceitaVinculoReaberto, analistaFixoPresente, TIPO_PLANO, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { justificativaSla, podeReabrirEncerrada, matrizAceitaVinculoReaberto, analistaFixoPresente, TIPO_PLANO, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -532,6 +532,21 @@ teste('perfil Usuário que é analista só vê e age no que é seu: "ver todos" 
     .forEach((t) => assert.ok(fonte.includes(t), 'usa a regra: ' + t));
   const semPodeEquipe = fonte.split(/\r?\n/).filter((l) => !l.startsWith('const podeEquipe')).join(' ');
   assert.ok(!semPodeEquipe.includes('PAPEIS.includes(req.user.role)') && !semPodeEquipe.includes('PAPEIS.includes(user.role)'), 'nenhuma rota do analista decide "ver todos" só pelo perfil');
+});
+teste('SLA vermelho traz a justificativa (etapa, minutos úteis e prazo) e o número do ticket nas Prioridades', () => {
+  const sla = (tipo, min, lim) => ({ radar: { tipo, minutos_uteis: min, limite: lim, status: 'vermelho' } });
+  assert.strictEqual(justificativaSla(sla('aceite', 48, 15)), 'Aceite: 48 min úteis (prazo 15 min)');
+  assert.strictEqual(justificativaSla(sla('transferencia', 31, 15)), 'Transferência: 31 min úteis (prazo 15 min)');
+  assert.strictEqual(justificativaSla(sla('departamento', 95, 30)), 'Departamento: 1 h 35 min úteis (prazo 30 min)');
+  assert.strictEqual(justificativaSla(sla('promessa', 40, 15)), 'P. Transferir: 40 min úteis (prazo 15 min)');
+  assert.strictEqual(justificativaSla(sla('promessa_resolucao', 190, 120)), 'P. Resolver: 3 h 10 min úteis (prazo 2 h)');
+  assert.ok(justificativaSla(sla('promessa_resolucao', 50, 120)).includes('demorou mais de 30 min'), 'vermelho dentro das 2 h = resposta lenta ao cliente');
+  assert.strictEqual(justificativaSla(JSON.stringify(sla('aceite', 20, 15))), 'Aceite: 20 min úteis (prazo 15 min)', 'aceita o SLA como texto JSON');
+  assert.strictEqual(justificativaSla(null), '');
+  assert.strictEqual(justificativaSla({ radar: null }), '');
+  const p = montarPrioridades({ slaVermelho: [{ id: 'x', zappy_id: 46296, cliente_nome: 'ACME', abertura: '2026-10-20T15:00:00Z', sla: sla('aceite', 48, 15) }] }, '2026-10-21');
+  assert.strictEqual(p[0].ticket, '46296');
+  assert.strictEqual(p[0].motivo, 'Aceite: 48 min úteis (prazo 15 min)');
 });
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);

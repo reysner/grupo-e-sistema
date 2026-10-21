@@ -2107,7 +2107,7 @@
   }
   function htmlPrioridadesPessoal(d) {
     var lista = (d.prioridades || []).map(function (x) {
-      return '<div class="linha-item"><span class="q">' + (x.nivel === 'alta' ? '🔴' : '🟠') + '</span><span class="r" style="flex:0 0 260px">' + esc(x.titulo) + '</span><span class="x">' + esc(x.detalhe) + '</span></div>';
+      return '<div class="linha-item"><span class="q">' + (x.nivel === 'alta' ? '🔴' : '🟠') + '</span><span class="r" style="flex:0 0 260px">' + esc(x.titulo) + '</span><span class="x" style="flex:1">' + (x.ticket ? '<strong>Ticket #' + esc(x.ticket) + '</strong> · ' : '') + esc(x.detalhe) + '</span>' + (x.motivo ? '<span class="x" style="flex:0 0 330px;color:#b91c1c;font-weight:600" title="Etapa do SLA que estourou">' + esc(x.motivo) + '</span>' : '') + '</div>';
     }).join('') || '<div class="linha-item"><span class="x">Nada urgente agora. Bom trabalho!</span></div>';
     var a = d.atendimentos || {}, e = d.emails || {};
     return '<div class="gp-kpi-row">' + kpi('#b91c1c', 'Itens urgentes', (d.prioridades || []).length, 'ocorrências, e-mails e atendimentos') +
@@ -2133,14 +2133,14 @@
     var r = filtrado ? resumoAtendPessoal(lista) : { total: a.total, sla_vermelho: a.sla_vermelho, notas_baixas: a.notas_baixas, media_nota: a.media_nota };
     var linhas = lista.map(function (t) {
       var cor = { vermelho: '#dc2626', amarelo: '#d97706', verde: '#10b981' }[t.pior_status] || '#9ca3af';
-      return '<tr><td>' + data(diaBrasilia(t.abertura)) + '</td><td>' + esc(t.cliente_nome || t.empresa_texto || '—') + '</td><td>' + esc(t.departamento || '—') + '</td><td class="c">' + (t.nota_avaliacao != null ? t.nota_avaliacao : '—') + '</td>' +
-        '<td class="c"><span class="pill" style="color:' + cor + ';border-color:' + cor + '55;background:' + cor + '14">' + esc(t.pior_status || '—') + '</span></td></tr>';
+      return '<tr><td>' + data(diaBrasilia(t.abertura)) + '</td><td class="c">' + (t.zappy_id != null ? '#' + esc(String(t.zappy_id)) : '—') + '</td><td>' + esc(t.cliente_nome || t.empresa_texto || '—') + '</td><td>' + esc(t.departamento || '—') + '</td><td class="c">' + (t.nota_avaliacao != null ? t.nota_avaliacao : '—') + '</td>' +
+        '<td class="c"><span class="pill" style="color:' + cor + ';border-color:' + cor + '55;background:' + cor + '14">' + esc(t.pior_status || '—') + '</span></td><td>' + (t.motivo ? '<span style="color:' + cor + ';font-weight:600">' + esc(t.motivo) + '</span>' : '') + '</td></tr>';
     }).join('');
     var sub = filtrado ? 'no período filtrado' : 'últimos ' + a.janela_dias + ' dias';
     return '<div class="gp-kpi-row">' + kpi('#0f766e', 'Atendimentos', r.total, sub) + kpi('#dc2626', 'SLA vermelho', r.sla_vermelho, 'antes da revisão da Gamificação') +
       kpi('#b45309', 'Notas baixas', r.notas_baixas, 'nota 1 ou 2') + kpi('#2563eb', 'Nota média', r.media_nota == null ? '—' : String(r.media_nota).replace('.', ','), 'avaliação do cliente') + '</div>' +
       '<div class="card"><div class="card-sub">' + (filtrado ? lista.length + ' atendimento(s) no período' + (f.de ? ' de ' + data(f.de) : '') + (f.ate ? ' até ' + data(f.ate) : '') + '.' : 'Seus ' + lista.length + ' atendimentos mais recentes.') + '</div>' +
-      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Data</th><th>Empresa</th><th>Setor</th><th class="c">Nota</th><th class="c">SLA</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhum atendimento ' + (filtrado ? 'neste período.' : 'no período.') + '</div>') + '</div>';
+      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Data</th><th class="c">Ticket</th><th>Empresa</th><th>Setor</th><th class="c">Nota</th><th class="c">SLA</th><th>Justificativa do SLA</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhum atendimento ' + (filtrado ? 'neste período.' : 'no período.') + '</div>') + '</div>';
   }
   function htmlAtendPessoal(d) {
     var a = d.atendimentos || {};
@@ -2618,6 +2618,11 @@
       if (['consideracoes', 'gestor', 'analista', 'sucesso'].concat(SEC_MINHA_AREA).indexOf(estado.secao) < 0 || (estado.secao === 'gestor' && !p.gestor) || (estado.secao === 'analista' && !p.analista) || (estado.secao === 'sucesso' && !sucessoOk)) estado.secao = p.gestor ? 'gestor' : 'consideracoes';
     } else if ((estado.secao === 'gestor' && !p.gestor) || (estado.secao === 'analista' && !p.analista)) estado.secao = 'visao';
     if (secaoLiberada(estado.secao) === false) estado.secao = secaoInicialCs();   // a seção aberta não é mais da pessoa
+    // quem é só analista vê "Portal do Analista" no topo do menu (sem o subtítulo da reunião das lideranças); os demais seguem com o título do painel
+    var soAnalista = !!(p.analista && !p.completo && !p.gestor && !(estado.eu && estado.eu.sucesso));
+    var tit = document.querySelector('.gp-sidebar-title'), subt = document.querySelector('.gp-sidebar-sub');
+    if (tit) tit.textContent = soAnalista ? 'Portal do Analista' : 'Painel do Sucesso do Cliente';
+    if (subt) subt.style.display = soAnalista ? 'none' : '';
     var barra = document.querySelector('.gp-sidebar'); if (barra) barra.classList.remove('gp-aguarda-perfil');   // o menu só aparece quando já se sabe o que a pessoa pode ver
   }
   async function iniciarLimitado() {

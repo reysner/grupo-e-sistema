@@ -133,6 +133,42 @@ checa('Aceite = AMARELO (25, entre 15 e 30)', nTipo.aceite.status, 'amarelo');
 checa('Aceite em_curso = true', nTipo.aceite.em_curso, true);
 checa('Radar aponta o ACEITE', nSla.radar.tipo, 'aceite');
 
+
+// ── TICKET #50038 (Kelen): contato proativo e promessa de transferir não podem contar contra o analista ──
+console.log('\n── #50038: fechamento pela pesquisa e transferência implícita ──');
+const B = (d, hhmmss) => new Date(d + 'T' + hhmmss + '-03:00').toISOString();
+const t50038 = {
+  id: 50038,
+  eventos: [{ tipo: 'abertura', hora: B('2026-10-15', '14:42:03') }, { tipo: 'aceite', hora: B('2026-10-15', '14:44:50') }],   // sem transferência e sem encerramento gravados
+  mensagens: [
+    { hora: B('2026-10-15', '14:42:05'), remetente: 'cliente', texto: 'Oi Kelen' },
+    { hora: B('2026-10-15', '14:43:07'), remetente: 'cliente', texto: 'Kelen pode somar as guias da previdência pra mim ? Por favor' },
+    { hora: B('2026-10-15', '14:45:22'), remetente: 'escritorio', texto: 'boa tarde!! um instante q vou transferir' },
+    { hora: B('2026-10-15', '14:45:47'), remetente: 'escritorio', texto: '*Kelen:* Oi Boa tarde' },
+    { hora: B('2026-10-15', '14:49:15'), remetente: 'escritorio', texto: '*Kelen:* sim só um minuto' },
+    { hora: B('2026-10-15', '16:49:16'), remetente: 'escritorio', texto: '*Kelen:* Maria Antonia estou encerrando nosso atendimento precisando é só chamar' },
+    { hora: B('2026-10-15', '16:49:26'), remetente: 'escritorio', texto: 'Por favor, informe *uma nota* entre *1 a 5* para *avaliar o atendimento*' },
+    { hora: B('2026-10-15', '16:54:26'), remetente: 'cliente', texto: '5' },
+    { hora: B('2026-10-20', '14:58:27'), remetente: 'escritorio', texto: '*Kelen:* Boa tarde Maria Antonia deu certo fazer o pagamento das guias que te enviei' },
+  ],
+};
+const r50038 = calcularSLA(t50038, new Date(B('2026-10-21', '13:28:00')));
+const relogioDe = (r, tipo) => r.relogios.find((x) => x.tipo === tipo);
+checa('#50038: sem relógio em curso, então não fica vermelho', r50038.radar, null);
+checa('#50038: não existe "promessa de transferir" correndo (a recepção passou o atendimento a um atendente assinado)', !!relogioDe(r50038, 'promessa'), false);
+checa('#50038: transferência e departamento verdes', [relogioDe(r50038, 'transferencia').status, relogioDe(r50038, 'departamento').status], ['verde', 'verde']);
+
+// o cliente volta a escrever depois da pesquisa: ele passa a esperar resposta (vez do cliente), sem acusar o atendimento antigo
+const voltou = JSON.parse(JSON.stringify(t50038));
+voltou.mensagens.push({ hora: B('2026-10-20', '15:30:00'), remetente: 'cliente', texto: 'Preciso de ajuda com outra guia, pode me ajudar?' });
+const rVoltou = calcularSLA(voltou, new Date(B('2026-10-21', '13:28:00')));
+checa('cliente voltou a escrever depois da pesquisa: só a vez do cliente corre', rVoltou.radar && rVoltou.radar.tipo, 'vez_cliente');
+
+// "5" que NÃO responde a uma pesquisa (ninguém pediu nota) não encerra nada
+const semPesquisa = { id: 1, eventos: [{ tipo: 'abertura', hora: B('2026-10-15', '14:00:00') }, { tipo: 'aceite', hora: B('2026-10-15', '14:02:00') }],
+  mensagens: [{ hora: B('2026-10-15', '14:00:00'), remetente: 'cliente', texto: 'Quantas guias eu tenho?' }, { hora: B('2026-10-15', '14:03:00'), remetente: 'escritorio', texto: 'um instante vou transferir' }, { hora: B('2026-10-15', '14:10:00'), remetente: 'cliente', texto: '5' }] };
+const rSemPesquisa = calcularSLA(semPesquisa, new Date(B('2026-10-16', '10:00:00')));
+checa('"5" solto, sem pedido de nota, não fecha o atendimento (a promessa de transferir segue valendo)', !!relogioDe(rSemPesquisa, 'promessa'), true);
 console.log('\n═══════════════════════════════════════════════════════════════');
 console.log(` RESULTADO: ${ok} passaram · ${falhou} falharam`);
 console.log('═══════════════════════════════════════════════════════════════\n');

@@ -384,6 +384,26 @@ function mesmoNome(a, b) {
  *  - cliente com e-mail sem resposta (alta a partir de 3 e-mails, média abaixo);
  *  - atendimento com SLA vermelho nos últimos 30 dias (média).
  */
+/** "Aceite: 48 min úteis (prazo 15 min)" — a etapa que deixou o atendimento no vermelho/amarelo, a partir do campo sla do ticket (radar = pior relógio em curso). */
+const ETAPA_SLA = { aceite: 'Aceite', transferencia: 'Transferência', departamento: 'Departamento', promessa: 'P. Transferir', promessa_resolucao: 'P. Resolver', vez_cliente: 'Vez do cliente' };
+function minutosTexto(m) {
+  m = Math.round(Number(m) || 0);
+  if (m < 60) return m + ' min';
+  const h = Math.floor(m / 60), r = m % 60;
+  return h + ' h' + (r ? ' ' + r + ' min' : '');
+}
+function justificativaSla(sla) {
+  let o = sla;
+  if (typeof o === 'string') { try { o = JSON.parse(o); } catch (e) { o = null; } }
+  const r = o && o.radar;
+  if (!r || !r.tipo) return '';
+  const etapa = ETAPA_SLA[r.tipo] || r.tipo;
+  const min = Number(r.minutos_uteis) || 0, lim = Number(r.limite) || 0;
+  if (r.tipo === 'promessa_resolucao' && lim && min <= lim) return etapa + ': a resposta ao cliente demorou mais de 30 min úteis (prazo 30 min)';
+  if (!lim) return etapa + ': ' + minutosTexto(min) + ' úteis';
+  return etapa + ': ' + minutosTexto(min) + ' úteis (prazo ' + minutosTexto(lim) + ')';
+}
+
 function montarPrioridades(ent, hoje) {
   const h = hoje || hojeBrasilia(), lim = somarDias(h, 3);
   const out = [];
@@ -397,7 +417,7 @@ function montarPrioridades(ent, hoje) {
     out.push({ tipo: 'email', nivel: c.sem >= 3 ? 'alta' : 'media', titulo: c.sem + ' e-mail(s) sem resposta', detalhe: c.nome || c.cnpj, ref: c.cnpj, ordem: c.sem >= 3 ? 0.5 : 2 });
   });
   (ent.slaVermelho || []).forEach((t) => {
-    out.push({ tipo: 'sla', nivel: 'media', titulo: 'SLA vermelho no atendimento', detalhe: (t.cliente_nome || t.empresa_texto || 'Cliente') + ' · ' + String(t.abertura || '').slice(0, 10), ref: t.id, ordem: 3 });
+    out.push({ tipo: 'sla', nivel: 'media', titulo: 'SLA vermelho no atendimento', detalhe: (t.cliente_nome || t.empresa_texto || 'Cliente') + ' · ' + String(t.abertura || '').slice(0, 10), ticket: t.zappy_id != null ? String(t.zappy_id) : null, motivo: t.motivo || justificativaSla(t.sla), ref: t.id, ordem: 3 });
   });
   return out.sort((a, b) => a.ordem - b.ordem || String(a.detalhe).localeCompare(String(b.detalhe)));
 }
@@ -1863,12 +1883,12 @@ async function painelPessoal(req, res) {
     if (colab && colab.zappy_user_id) {
       try {
         const t = (await pool.query(
-          `SELECT t.id, t.abertura, t.departamento, t.nota_avaliacao, t.pior_status, t.empresa_texto, c.nome_empresa AS cliente_nome
+          `SELECT t.id, t.zappy_id, t.sla, t.abertura, t.departamento, t.nota_avaliacao, t.pior_status, t.empresa_texto, c.nome_empresa AS cliente_nome
              FROM cs_tickets t
              LEFT JOIN cs_vinculos v ON v.id = t.vinculo_id AND v.tipo = 'cliente'
              LEFT JOIN clientes c ON c.id::text = v.cliente_id
             WHERE t.analista_id = $1 AND t.abertura >= NOW() - INTERVAL '180 days'
-            ORDER BY t.abertura DESC LIMIT 600`, [String(colab.zappy_user_id)])).rows;
+            ORDER BY t.abertura DESC LIMIT 600`, [String(colab.zappy_user_id)])).rows.map((x) => { const { sla, ...resto } = x; return Object.assign(resto, { motivo: x.pior_status === 'vermelho' || x.pior_status === 'amarelo' ? justificativaSla(sla) : '' }); });
         const notas = t.filter((x) => x.nota_avaliacao != null).map((x) => Number(x.nota_avaliacao));
         const por = {};
         t.forEach((x) => { const s = segundaDe(new Date(x.abertura).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })); por[s] = (por[s] || 0) + 1; });
@@ -2006,4 +2026,4 @@ async function rodarAlertasPrazo() {
   });
 }
 
-module.exports = { podeReabrirEncerrada, matrizAceitaVinculoReaberto, rodarAlertasPrazo, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, analistaFixoPresente, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { justificativaSla, podeReabrirEncerrada, matrizAceitaVinculoReaberto, rodarAlertasPrazo, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, analistaFixoPresente, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
