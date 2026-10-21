@@ -21,7 +21,7 @@ const PUBLIC = path.join(__dirname, '..', 'public');
 // Headers de segurança básicos
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');   // só o próprio site pode embutir páginas (ranking da Gamificação dentro do /cs)
   res.setHeader('X-XSS-Protection', '1; mode=block');
   next();
 });
@@ -98,7 +98,9 @@ app.get('/pesquisa', (req, res) => {
 });
 
 // ── Página pública da gamificação (sem login) ─────────────────────────────────
-app.get('/gamificacao', (req, res) => {
+// 21/10/2026 (pedido do Reysner): tudo passa a ficar no /cs. O endereço antigo leva para lá; o ranking em si é a mesma página, embutida no menu Gamificação do /cs.
+app.get('/gamificacao', (req, res) => res.redirect(302, '/cs?aba=gamificacao'));
+app.get('/gamificacao/ranking', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'gamificacao.html'));
 });
 
@@ -114,9 +116,8 @@ app.get('/contabil', (req, res) => {
 });
 
 // ── Minha Nota — self-service da Gamificação, role 'colaborador' (login próprio) ──
-app.get('/minha-nota', (req, res) => {
-  res.sendFile(path.join(PUBLIC, 'minha-nota.html'));
-});
+// 21/10/2026: todo colaborador passa a ser analista e usa o /cs (menu Minha área). O endereço antigo leva para lá (minha-nota.html fica guardada).
+app.get('/minha-nota', (req, res) => res.redirect(302, '/cs?aba=minhanota'));
 
 // ── Minhas tratativas (Qualidade): o analista vê e trata as considerações registradas para ele (login próprio) ──
 // Desligado em 17/10/2026: o portal antigo foi substituído pelo Portal do Analista, dentro do /cs (quem ainda tiver o endereço antigo é levado para lá).

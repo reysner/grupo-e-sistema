@@ -18,12 +18,14 @@ teste('sem configuração segue o perfil de sempre: equipe vê indicadores, Qual
   const eq = A.modulosPadrao({ equipe: true });
   assert.ok(A.DADOS.every((c) => eq.includes(c)) && eq.includes('qualidade') && eq.includes('sucesso'));
   assert.ok(!eq.includes('gestor') && !eq.includes('analista'), 'portais do gestor e do analista dependem do perfil');
-  assert.deepStrictEqual(A.modulosPadrao({ gestor: true }), ['qualidade', 'gestor']);
+  const ord = (l) => A.CODIGOS.filter((c) => l.includes(c));   // na ordem do catálogo
+  assert.deepStrictEqual(A.modulosPadrao({ gestor: true }), ord(['qualidade', 'gestor', 'gamificacao']));
+  assert.ok(A.modulosPadrao({ equipe: true }).includes('gamificacao') && A.modulosPadrao({}).includes('gamificacao'), 'o ranking da Gamificação é de todos');
   const MINHA = ['minha_nota', 'meus_atendimentos', 'meus_emails', 'minha_evolucao', 'minhas_prioridades'];
-  assert.deepStrictEqual(A.modulosPadrao({ analista: true }), ['qualidade', 'analista'].concat(MINHA), 'analista: o portal e a Minha área (nota, atendimentos, e-mails, evolução, prioridades)');
+  assert.deepStrictEqual(A.modulosPadrao({ analista: true }), ord(['qualidade', 'analista', 'gamificacao'].concat(MINHA)), 'analista: o portal e a Minha área (nota, atendimentos, e-mails, evolução, prioridades)');
   assert.ok(!A.modulosPadrao({ gestor: true }).some((c) => MINHA.includes(c)) && !A.modulosPadrao({ equipe: true }).some((c) => MINHA.includes(c)), 'só analista recebe a Minha área por padrão');
   assert.ok(MINHA.every((c) => A.CODIGOS.includes(c) && A.CATALOGO.find((m) => m.codigo === c).grupo === 'Minha área (analista)'), 'estão no catálogo (dá para liberar ou tirar por pessoa em Acessos)');
-  assert.deepStrictEqual(A.modulosPadrao({ gestor: true, sucesso: true }), ['qualidade', 'gestor', 'sucesso']);
+  assert.deepStrictEqual(A.modulosPadrao({ gestor: true, sucesso: true }), ord(['qualidade', 'gestor', 'sucesso', 'gamificacao']));
   assert.deepStrictEqual(A.modulosPadrao({ equipe: true, gestor: true, analista: true }).filter((c) => ['gestor', 'analista'].includes(c)), ['gestor', 'analista']);
 });
 

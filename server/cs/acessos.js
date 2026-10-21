@@ -35,18 +35,20 @@ const CATALOGO = [
   { codigo: 'meus_emails', secao: 'meusemails', rotulo: 'Meus e-mails', grupo: 'Minha área (analista)' },
   { codigo: 'minha_evolucao', secao: 'minhaevolucao', rotulo: 'Evolução semanal', grupo: 'Minha área (analista)' },
   { codigo: 'minhas_prioridades', secao: 'minhasprior', rotulo: 'Prioridades', grupo: 'Minha área (analista)' },
+  // Ranking da Gamificação (Liga do Atendimento): era a página pública /gamificacao; agora é um item do menu, liberado a todos por padrão.
+  { codigo: 'gamificacao', secao: 'gamificacao', rotulo: 'Gamificação (ranking)', grupo: 'Minha área (analista)' },
 ];
 const MINHA_AREA = ['minha_nota', 'meus_atendimentos', 'meus_emails', 'minha_evolucao', 'minhas_prioridades'];
 const ACESSOS = { codigo: 'acessos', secao: 'acessos', rotulo: 'Acessos', grupo: 'Administração' };   // só administrador; não é configurável
 const CODIGOS = CATALOGO.map((m) => m.codigo);
 const DADOS = CATALOGO.filter((m) => m.dados).map((m) => m.codigo);
-const SO_PORTAIS = ['qualidade', 'gestor', 'analista', 'sucesso'].concat(MINHA_AREA);
+const SO_PORTAIS = ['qualidade', 'gestor', 'analista', 'sucesso', 'gamificacao'].concat(MINHA_AREA);
 
 /** Os módulos que a pessoa teria sem configuração: administrador tudo; equipe do painel os indicadores + Qualidade + Sucesso do Cliente; os demais, só o que o perfil dá. */
 function modulosPadrao(p) {
   p = p || {};
   if (p.admin) return CODIGOS.concat(['acessos']);
-  const m = ['qualidade'];
+  const m = ['qualidade', 'gamificacao'];   // o ranking da Gamificação é de todos (antes era uma página pública)
   if (p.equipe) DADOS.forEach((c) => m.push(c)), m.push('sucesso');
   else if (p.sucesso) m.push('sucesso');
   if (p.gestor) m.push('gestor');

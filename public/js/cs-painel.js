@@ -34,6 +34,7 @@
     meusatend: ['Meus atendimentos', 'Seus atendimentos do Zappy dos últimos 180 dias: nota do cliente e situação do SLA.'],
     meusemails: ['Meus e-mails', 'Os e-mails de clientes que chegaram para você e os que ainda estão sem resposta.'],
     minhaevolucao: ['Evolução semanal', 'Suas últimas 12 semanas: atendimentos, ocorrências recebidas e ocorrências concluídas.'],
+    gamificacao: ['Gamificação', 'O ranking da Liga do Atendimento: a nota de cada analista no mês. As regras de pontuação estão no link dentro da página.'],
     minhasprior: ['Prioridades', 'O que merece a sua atenção primeiro: ocorrências vencidas ou perto do prazo, e-mails sem resposta e atendimentos com SLA vermelho.'],
   };
 
@@ -122,7 +123,7 @@
       var r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: $('inp-email').value.trim(), password: $('inp-senha').value }) });
       var j = await r.json().catch(function () { return {}; });
       if (!r.ok) { mostrarLogin(j.error || 'Não foi possível entrar.'); return; }
-      if (['administrador', 'usuario'].indexOf(j.user.role) < 0 && !j.user.acesso_cs && !j.user.acesso_gestor && !j.user.acesso_qualidade) { mostrarLogin('Este painel é da equipe do Sucesso do Cliente. Peça acesso à administração.'); return; }
+      if (['administrador', 'usuario'].indexOf(j.user.role) < 0 && !j.user.acesso_cs && !j.user.acesso_gestor && !j.user.acesso_qualidade && !j.user.acesso_minha_nota) { mostrarLogin('Este painel é da equipe do Sucesso do Cliente. Peça acesso à administração.'); return; }
       ls(K_TOKEN, j.token); ls(K_REFRESH, j.refreshToken); ls(K_USER, JSON.stringify(j.user));
       $('inp-senha').value = '';
       limparEstadoDaSessao();   // nada da pessoa que usou esta aba antes
@@ -332,6 +333,7 @@
     if (sec === 'analista' && (!estado.a || !estado.a.dados) && perfilCs().analista) desenharAnalista();
     if (sec === 'sucesso' && (!estado.s || !estado.s.dados)) desenharSucesso();
     if (SEC_PESSOAIS.indexOf(sec) >= 0) desenharPessoal(sec);
+    if (sec === 'gamificacao') montarGamificacao();
     if (sec === 'acessos' && (!estado.ac || !estado.ac.dados)) desenharAcessos();
     var ativa = $('sec-' + sec); if (ativa) ativa.scrollTop = 0;
     if (sec === 'consideracoes' && estado.dados && !estado.qResumo) desenharQualidadeMod();   // recarrega depois de um registro novo
@@ -2169,6 +2171,11 @@
       corpo.innerHTML = '<div class="vazio">' + esc(e.status === 403 ? 'Seu login não tem a marca "Minha Nota". Peça à liderança para marcar em Usuários.' : e.message) + '</div>';
     }
   }
+  /** Ranking da Gamificação dentro do /cs: a mesma página pública de sempre, embutida (o link /gamificacao agora leva para cá). */
+  function montarGamificacao() {
+    var alvo = $('sec-gamificacao'); if (!alvo || alvo.querySelector('iframe')) return;
+    alvo.innerHTML = '<iframe src="/gamificacao/ranking" title="Ranking da Gamificação" style="width:100%;height:calc(100vh - 130px);min-height:620px;border:1px solid var(--border);border-radius:12px;background:#fff"></iframe>';
+  }
   async function desenharPessoal(sec) {
     var alvo = $('sec-' + sec); if (!alvo) return;
     alvo.innerHTML = '<div class="vazio">Carregando…</div>';
@@ -2188,7 +2195,7 @@
   }
 
   // ── ACESSOS: quem vê o quê no painel (só administrador) ─────────────────────────────────────────
-  var ICONE_MOD = { visao: '🏠', inteligente: '🧠', anual: '📅', atendimento: '🎧', permanencia: '🎯', churn: '📉', categorias: '🏅', qualidade_dados: '🔎', qualidade: '✅', gestor: '🧭', analista: '🧑‍💼', sucesso: '🤝', minha_nota: '🏆', meus_atendimentos: '🎧', meus_emails: '📧', minha_evolucao: '📈', minhas_prioridades: '🚨' };
+  var ICONE_MOD = { visao: '🏠', inteligente: '🧠', anual: '📅', atendimento: '🎧', permanencia: '🎯', churn: '📉', categorias: '🏅', qualidade_dados: '🔎', qualidade: '✅', gestor: '🧭', analista: '🧑‍💼', sucesso: '🤝', minha_nota: '🏆', meus_atendimentos: '🎧', meus_emails: '📧', minha_evolucao: '📈', minhas_prioridades: '🚨', gamificacao: '🏅' };
   var MOD_INDICADORES = ['visao', 'inteligente', 'anual', 'atendimento', 'permanencia', 'churn', 'categorias', 'qualidade_dados'];
   var PERFIS_RAPIDOS = [
     { id: 'equipe', rotulo: 'Equipe completa', modulos: MOD_INDICADORES.concat(['qualidade', 'sucesso']) },
@@ -2501,9 +2508,10 @@
     return { completo: adm || u.role === 'usuario' || !!u.acesso_cs, admin: adm, gestor: adm || !!u.acesso_gestor, analista: adm || !!u.acesso_qualidade };
   }
   // Módulos liberados (Acessos): o servidor devolve em /qualidade/eu o que a pessoa vê; quem não foi configurado segue o padrão do perfil.
-  var SEC_MODULO = { visao: 'visao', analise: 'inteligente', anual: 'anual', atendimento: 'atendimento', consideracoes: 'qualidade', gestor: 'gestor', analista: 'analista', sucesso: 'sucesso', risco: 'permanencia', churn: 'churn', categorias: 'categorias', qualidade: 'qualidade_dados', acessos: 'acessos', minhanota: 'minha_nota', meusatend: 'meus_atendimentos', meusemails: 'meus_emails', minhaevolucao: 'minha_evolucao', minhasprior: 'minhas_prioridades' };
-  var ORDEM_SECOES = ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'gestor', 'analista', 'sucesso', 'minhanota', 'meusatend', 'meusemails', 'minhaevolucao', 'minhasprior', 'risco', 'churn', 'categorias', 'qualidade', 'acessos'];
-  var SEC_PESSOAIS = ['minhanota', 'meusatend', 'meusemails', 'minhaevolucao', 'minhasprior'];   // Minha área do analista (vieram do portal antigo /qualidade)
+  var SEC_MODULO = { visao: 'visao', analise: 'inteligente', anual: 'anual', atendimento: 'atendimento', consideracoes: 'qualidade', gestor: 'gestor', analista: 'analista', sucesso: 'sucesso', risco: 'permanencia', churn: 'churn', categorias: 'categorias', qualidade: 'qualidade_dados', acessos: 'acessos', minhanota: 'minha_nota', meusatend: 'meus_atendimentos', meusemails: 'meus_emails', minhaevolucao: 'minha_evolucao', minhasprior: 'minhas_prioridades', gamificacao: 'gamificacao' };
+  var ORDEM_SECOES = ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'gestor', 'analista', 'sucesso', 'minhanota', 'meusatend', 'meusemails', 'minhaevolucao', 'minhasprior', 'gamificacao', 'risco', 'churn', 'categorias', 'qualidade', 'acessos'];
+  var SEC_PESSOAIS = ['minhanota', 'meusatend', 'meusemails', 'minhaevolucao', 'minhasprior'];
+  var SEC_MINHA_AREA = SEC_PESSOAIS.concat(['gamificacao']);   // + o ranking da Gamificação (embutido, não é pessoal)   // Minha área do analista (vieram do portal antigo /qualidade)
   function modulosCs() { return estado.eu && Array.isArray(estado.eu.modulos) ? estado.eu.modulos : null; }
   /** true/false conforme os módulos da pessoa; null quando ainda não se sabe (cai nas regras de sempre). */
   function secaoLiberada(sec) { var m = modulosCs(); return m ? m.indexOf(SEC_MODULO[sec]) >= 0 : null; }
@@ -2518,14 +2526,14 @@
     Array.prototype.forEach.call(document.querySelectorAll('.gp-nav-item'), function (b) {
       var sec = b.getAttribute('data-sec');
       var lib = secaoLiberada(sec);
-      var ok = SEC_PESSOAIS.indexOf(sec) >= 0 ? lib === true : lib !== null ? lib : sec === 'acessos' ? p.admin : p.completo ? (sec === 'gestor' ? p.gestor : sec === 'analista' ? p.analista : true) : (sec === 'consideracoes' || (sec === 'gestor' && p.gestor) || (sec === 'analista' && p.analista) || (sec === 'sucesso' && !!(estado.eu && estado.eu.sucesso)));
+      var ok = SEC_MINHA_AREA.indexOf(sec) >= 0 ? lib === true : lib !== null ? lib : sec === 'acessos' ? p.admin : p.completo ? (sec === 'gestor' ? p.gestor : sec === 'analista' ? p.analista : true) : (sec === 'consideracoes' || (sec === 'gestor' && p.gestor) || (sec === 'analista' && p.analista) || (sec === 'sucesso' && !!(estado.eu && estado.eu.sucesso)));
       b.style.display = ok ? '' : 'none';
     });
-    Array.prototype.forEach.call(document.querySelectorAll('.gp-nav-divider'), function (d) { var tipoDiv = d.getAttribute('data-div'); d.style.display = (tipoDiv === 'adm' ? p.admin : tipoDiv === 'minha' ? SEC_PESSOAIS.some(function (s) { return secaoLiberada(s) === true; }) : p.completo) ? '' : 'none'; });
+    Array.prototype.forEach.call(document.querySelectorAll('.gp-nav-divider'), function (d) { var tipoDiv = d.getAttribute('data-div'); d.style.display = (tipoDiv === 'adm' ? p.admin : tipoDiv === 'minha' ? SEC_MINHA_AREA.some(function (s) { return secaoLiberada(s) === true; }) : p.completo) ? '' : 'none'; });
     if (!p.completo) {
       ['btn-csv', 'btn-pdf', 'btn-valores', 'btn-atualizar', 'filtro-periodo'].forEach(function (id) { var e = $(id); if (e) e.style.display = 'none'; });
       var sucessoOk = !!(estado.eu && estado.eu.sucesso);
-      if (['consideracoes', 'gestor', 'analista', 'sucesso'].concat(SEC_PESSOAIS).indexOf(estado.secao) < 0 || (estado.secao === 'gestor' && !p.gestor) || (estado.secao === 'analista' && !p.analista) || (estado.secao === 'sucesso' && !sucessoOk)) estado.secao = p.gestor ? 'gestor' : 'consideracoes';
+      if (['consideracoes', 'gestor', 'analista', 'sucesso'].concat(SEC_MINHA_AREA).indexOf(estado.secao) < 0 || (estado.secao === 'gestor' && !p.gestor) || (estado.secao === 'analista' && !p.analista) || (estado.secao === 'sucesso' && !sucessoOk)) estado.secao = p.gestor ? 'gestor' : 'consideracoes';
     } else if ((estado.secao === 'gestor' && !p.gestor) || (estado.secao === 'analista' && !p.analista)) estado.secao = 'visao';
     if (secaoLiberada(estado.secao) === false) estado.secao = secaoInicialCs();   // a seção aberta não é mais da pessoa
     var barra = document.querySelector('.gp-sidebar'); if (barra) barra.classList.remove('gp-aguarda-perfil');   // o menu só aparece quando já se sabe o que a pessoa pode ver

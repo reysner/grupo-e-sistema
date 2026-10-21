@@ -8217,7 +8217,8 @@ const Gamificacao = (() => {
   }
 
   async function abrirRelatorioTemporada() {
-    if (!confirm('Isso vai atualizar as notas dos meses ABERTOS da temporada (recalculando com os dados mais recentes de cada um) — meses fechados (pódio já definido) não são tocados — e só depois montar o relatório completo pra apresentação. Pode levar um minuto ou dois. Continuar?')) return;
+    const mesSync = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
+    if (!confirm('Isso vai sincronizar as notas só de ' + _mesLabel(mesSync) + ' (igual ao botão "Sincronizar Notas Agora") — os meses anteriores NÃO são atualizados — e em seguida montar o relatório da temporada. Continuar?')) return;
 
     const win = window.open('', '_blank');
     if (!win) { App.Toast.err('Permita popups para gerar o relatório.'); return; }
@@ -8251,17 +8252,18 @@ const Gamificacao = (() => {
       // corrigir Julho nota a nota de novo. Por isso o backend
       // (executarAutoPreencher) já recusa gravar em mês fechado sozinho;
       // aqui só evita a chamada à toa e mostra a mensagem certa no status.
+      // 21/10/2026 (pedido do Reysner): o relatório NÃO atualiza mais os meses
+      // anteriores — só sincroniza o mês de referência (o mesmo do botão
+      // "Sincronizar Notas Agora") e lê o resto como já está gravado.
       const mesesFechados = await _buscarMesesFechados();
-      for (let i = 0; i < meses.length; i++) {
-        if (mesesFechados.includes(meses[i])) {
-          setStatus(_mesLabel(meses[i]) + ' está fechado (pódio já definido) — pulando sincronização...');
-          continue;
-        }
-        setStatus('Atualizando ' + _mesLabel(meses[i]) + ' (' + (i + 1) + ' de ' + meses.length + ')...');
+      if (mesesFechados.includes(mesSync)) {
+        setStatus(_mesLabel(mesSync) + ' está fechado (pódio já definido) — não sincronizei, só li o que está gravado...');
+      } else {
+        setStatus('Sincronizando as notas de ' + _mesLabel(mesSync) + '...');
         await fetch('/api/data/gam/notas/auto-preencher', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-          body: JSON.stringify({ mes: meses[i], dryRun: false })
+          body: JSON.stringify({ mes: mesSync, dryRun: false })
         }).catch(() => {});
       }
 

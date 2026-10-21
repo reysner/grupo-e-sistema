@@ -617,7 +617,7 @@ router.use(require('./auditoria').middleware());   // anota nos Logs de atividad
 function soQualidadeGeral(req, res, next) {
   if (podeEquipe(req.user)) return next();
   const u = req.user || {};
-  if ((u.acessoGestor || u.acessoQualidade) && rotaAbertaGestorAnalista(req.method, req.path)) return next();
+  if ((u.acessoGestor || u.acessoQualidade || u.acessoMinhaNota) && rotaAbertaGestorAnalista(req.method, req.path)) return next();
   return res.status(403).json({ error: 'Acesso restrito à equipe do Sucesso do Cliente.' });
 }
 router.use(requireAuth, soQualidadeGeral);
@@ -1068,9 +1068,9 @@ router.get('/eu', async (req, res) => {
     const g = (await pool.query('SELECT departamento, papel FROM cs_qualidade_gestores WHERE user_id = $1', [String(req.user.id)])).rows;
     const an = await analistaDoLogin(req.user).catch(() => null);
     res.json({ nome: req.user.name, papel: req.user.role, completo: podeEquipe(req.user), gestor: g.length > 0, departamentos: g.map((x) => x.departamento), papeis: g.map((x) => x.papel),
-      analista: !!(req.user.acessoQualidade || an), analista_id: an ? an.id : null,
+      analista: !!(req.user.acessoQualidade || req.user.acessoMinhaNota || an), analista_id: an ? an.id : null,
       final: g.some((x) => x.papel === 'final'), sucesso: g.some((x) => x.departamento === 'Sucesso' || x.papel === 'final'),
-      modulos: acessos.modulosEfetivos({ admin: req.user.role === 'administrador', equipe: podeEquipe(req.user), gestor: g.length > 0 || !!req.user.acessoGestor, analista: !!(req.user.acessoQualidade || an), sucesso: g.some((x) => x.departamento === 'Sucesso' || x.papel === 'final') }, await acessos.lerConfig(req.user.id)),
+      modulos: acessos.modulosEfetivos({ admin: req.user.role === 'administrador', equipe: podeEquipe(req.user), gestor: g.length > 0 || !!req.user.acessoGestor, analista: !!(req.user.acessoQualidade || req.user.acessoMinhaNota || an), sucesso: g.some((x) => x.departamento === 'Sucesso' || x.papel === 'final') }, await acessos.lerConfig(req.user.id)),
       modulos_definidos: Array.isArray(await acessos.lerConfig(req.user.id)) });
   } catch (e) { console.error('[qualidade] GET /eu falhou:', e); res.status(500).json({ error: 'Erro ao ler o perfil.' }); }
 });

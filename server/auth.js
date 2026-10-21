@@ -91,7 +91,7 @@ function requireAuth(req, res, next) {
     const isQualidadeRoute = rotaCompleta.startsWith('/api/qualidade/') && !!payload.acesso_qualidade;
     // Módulo Qualidade dentro do /cs (17/10/2026): gestor (cadastrado em Gerenciar gestores) e analista (acesso_qualidade) só CHEGAM às rotas de Qualidade;
     // o que cada um alcança lá dentro é decidido pela própria rota (lista branca em server/cs/qualidade.js).
-    const isCsQualidadeRoute = rotaCompleta.startsWith('/api/cs/painel/qualidade') && !!(payload.acesso_gestor || payload.acesso_qualidade);
+    const isCsQualidadeRoute = rotaCompleta.startsWith('/api/cs/painel/qualidade') && !!(payload.acesso_gestor || payload.acesso_qualidade || payload.acesso_minha_nota);   // Minha Nota = analista no /cs (todo colaborador é analista)
     // Push do navegador: cada pessoa cadastra o próprio aparelho, seja qual for o perfil (a rota só mexe nos aparelhos dela).
     const isPushRoute = rotaCompleta.startsWith('/api/push/');
     // Minha Nota (28/08/2026, self-service da Gamificação): rotas
