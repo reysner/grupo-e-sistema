@@ -8238,10 +8238,6 @@ const Gamificacao = (() => {
       const base = await baseRes.json();
       const meses = [...(base.meses || [])].sort(); // ascendente (mais antigo primeiro)
       if (!meses.length) { setStatus('Nenhum mês com nota lançada ainda — nada pra colocar no relatório.'); return; }
-      if (base.mostrarConsolidado === false) {
-        setStatus('O card "Consolidado Geral" está desligado (botão "👁️ Consolidado Geral" no topo da tela de Gamificação). Ligue ele primeiro — é dele que sai o campeão da temporada — e gere de novo.');
-        return;
-      }
 
       // 1) Atualiza o banco: recalcula e GRAVA (dryRun:false) cada mês da
       // temporada antes de montar qualquer número do relatório — EXCETO os
@@ -8276,7 +8272,14 @@ const Gamificacao = (() => {
         const r = await fetch('/api/public/gamificacao?mes=' + mes, { cache: 'no-store' });
         porMes[mes] = r.ok ? await r.json() : { ranking: [], consolidado: [], mediaGeral: null };
       }
-      const consolidado = porMes[meses[meses.length - 1]].consolidado || [];
+      // Com o card "Consolidado Geral" oculto na página pública, a rota pública não manda o
+      // consolidado — o relatório (só de administrador) busca direto na rota de admin, sem ligar o card.
+      let consolidado = porMes[meses[meses.length - 1]].consolidado || [];
+      if (base.mostrarConsolidado === false || !consolidado.length) {
+        const rc = await fetch('/api/data/gam/consolidado', { headers: { Authorization: 'Bearer ' + token }, cache: 'no-store' });
+        if (rc.ok) consolidado = (await rc.json()).data || [];
+      }
+      if (!consolidado.length) { setStatus('Não consegui ler o Consolidado Geral da temporada. Feche esta aba e tente de novo.'); return; }
 
       setStatus('Montando o documento...');
       _montarRelatorioTemporada(win, meses, porMes, consolidado, base.inicioGamificacao);
