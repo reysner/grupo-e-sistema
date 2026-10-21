@@ -1360,13 +1360,15 @@ const App = (() => {
             (u.name||'').toLowerCase().includes(busca) ||
             (u.email||'').toLowerCase().includes(busca))
         : Admin._users;
-      const ROLE_LABEL = { administrador: 'Administrador', usuario: 'Usuário', contabil: 'Contábil', colaborador: 'Colaborador' };
+      const ROLE_LABEL = { administrador: 'Administrador', usuario: 'Usuário', contabil: 'Contábil', colaborador: 'Acessos marcados' };
+      // sem perfil + Minha área marcada = analista (não existe mais o perfil "Colaborador" na tela)
+      const rotuloPerfil = (u) => (u.role === 'colaborador' && u.acesso_minha_nota ? 'Analista' : (ROLE_LABEL[u.role] || u.role));
       document.getElementById('users-tbody').innerHTML = users.map(u => {
         const ativo = u.ativo !== false;
         return `<tr style="${!ativo?'opacity:.55':''}">
           <td style="font-weight:600">${u.name}</td>
           <td style="font-size:12px;color:var(--gray-500)">${u.email}</td>
-          <td><span class="role-pill ${u.role==='administrador'?'admin':'user'}">${ROLE_LABEL[u.role] || u.role}</span>${u.acesso_minha_nota ? ' <span title="Também acessa Minha Nota" style="font-size:12px">🏆</span>' : ''}${u.acesso_legalizacao ? ' <span title="Também acessa Legalização" style="font-size:12px">📋</span>' : ''}${u.acesso_cs ? ' <span title="Acessa o Painel CS (/cs)" style="font-size:12px">🎯</span>' : ''}${u.acesso_financeiro ? ' <span title="Acessa o Financeiro (/financeiro)" style="font-size:12px">💰</span>' : ''}${u.acesso_qualidade ? ' <span title="Acessa Minhas tratativas (/qualidade)" style="font-size:12px">✅</span>' : ''}${u.acesso_financeiro_sv ? ' <span title="Acessa o Financeiro sem valores em R$" style="font-size:12px">🔒</span>' : ''}${u.role==='contabil' && (u.regimes_atendidos||[]).length ? '<div style="font-size:10.5px;color:var(--gray-400);margin-top:2px">' + u.regimes_atendidos.join(' · ') + '</div>' : ''}</td>
+          <td><span class="role-pill ${u.role==='administrador'?'admin':'user'}">${rotuloPerfil(u)}</span>${u.acesso_minha_nota && u.role !== 'colaborador' ? ' <span title="Também acessa Minha área" style="font-size:12px">🧑‍💼</span>' : ''}${u.acesso_legalizacao ? ' <span title="Também acessa Legalização" style="font-size:12px">📋</span>' : ''}${u.acesso_cs ? ' <span title="Acessa o Painel CS (/cs)" style="font-size:12px">🎯</span>' : ''}${u.acesso_financeiro ? ' <span title="Acessa o Financeiro (/financeiro)" style="font-size:12px">💰</span>' : ''}${u.acesso_qualidade ? ' <span title="Acessa Minhas tratativas (/qualidade)" style="font-size:12px">✅</span>' : ''}${u.acesso_financeiro_sv ? ' <span title="Acessa o Financeiro sem valores em R$" style="font-size:12px">🔒</span>' : ''}${u.role==='contabil' && (u.regimes_atendidos||[]).length ? '<div style="font-size:10.5px;color:var(--gray-400);margin-top:2px">' + u.regimes_atendidos.join(' · ') + '</div>' : ''}</td>
           <td><span style="background:${ativo?'#f0fff4':'#fff5f5'};color:${ativo?'#38a169':'#e53e3e'};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${ativo?'Ativo':'Inativo'}</span></td>
           <td style="white-space:nowrap;display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn btn-ghost btn-sm" onclick="App.Admin.openEditProfile('${u.id}','${u.name}','${u.email}','${u.role}',${!!u.acesso_minha_nota},${!!u.acesso_legalizacao},'${(u.regimes_atendidos||[]).join(',')}',${!!u.acesso_cs},${!!u.acesso_financeiro},${!!u.acesso_qualidade},${!!u.acesso_financeiro_sv})">✏️ Editar</button>
@@ -1445,7 +1447,7 @@ const App = (() => {
     /** Acessos adicionais em chips (cada um liga uma tela; somam-se ao perfil). Prefixo 'm' = Adicionar, 'eu' = Editar. */
     _acessosHtml(p, v) {
       const lista = [
-        ['minha-nota', '🏆', 'Minha Nota', 'Gamificação: a própria nota do mês'],
+        ['minha-nota', '🧑‍💼', 'Minha área', 'Área do analista no painel /cs: Portal do Analista, Qualidade, Minha nota, Meus atendimentos, Meus e-mails, Evolução semanal, Prioridades e Gamificação. Cada pessoa vê só o que é dela'],
         ['legalizacao', '📋', 'Legalização', 'Alvarás, certificados e solicitar inativação de cliente'],
         ['qualidade', '✅', 'Qualidade', 'Minhas tratativas (/qualidade): o analista vê e trata os registros dele'],
         ['cs', '🎯', 'Sucesso do Cliente', 'Painel /cs (e também o Financeiro, sem valores em R$)'],
@@ -6873,13 +6875,13 @@ const Gamificacao = (() => {
       '<div style="display:flex;gap:8px">' +
         '<input id="gam-novo-nome" type="text" placeholder="Nome do colaborador" style="flex:1;padding:8px 12px;border:1px solid var(--gray-200);border-radius:8px" />' +
         '<button class="btn btn-success btn-sm" onclick="Gamificacao.adicionarColaborador()">+ Adicionar</button>' +
-        '<button class="btn btn-ghost btn-sm" title="Cria login (Perfil = Minha Nota) pra quem ainda não tem, em lote" onclick="Gamificacao.abrirCriarLoginsEmLote()">👥 Criar logins em lote</button>' +
+        '<button class="btn btn-ghost btn-sm" title="Cria login (acesso Minha área) pra quem ainda não tem, em lote" onclick="Gamificacao.abrirCriarLoginsEmLote()">👥 Criar logins em lote</button>' +
       '</div>' +
       '<div id="gam-colab-list" style="max-height:min(60vh,520px);overflow-y:auto">' + _renderColabList() + '</div>' +
     '</div>', null, { wide: true });
   }
 
-  // ── Criar logins em lote (Perfil = Minha Nota) pra colaboradores sem login ─
+  // ── Criar logins em lote (acesso Minha área) pra analistas sem login ─
   async function abrirCriarLoginsEmLote() {
     App.Modal.open('Criar logins em lote', '<div style="display:grid;gap:14px">' +
       '<p style="font-size:13px;color:var(--gray-500)">Pra cada colaborador ativo sem login vinculado, tenta o e-mail padrão <code>nome@escritorial.com.br</code>: se já existir esse login, só liga o acesso a Minha Nota nele (sem mexer em mais nada); se não existir, cria um login novo com Perfil "Colaborador" (só Minha Nota) e a senha abaixo.</p>' +
@@ -6906,7 +6908,7 @@ const Gamificacao = (() => {
       resultados.map(r => `<tr>` +
         `<td>${r.nome}</td>` +
         `<td style="font-family:monospace;font-size:12px">${r.email}</td>` +
-        `<td>${r.acao === 'criar_novo' ? '🆕 Cria login novo (perfil Colaborador)' : '🔗 Vincula login já existente (perfil ' + (r.role_atual || '—') + (r.ja_tinha_acesso ? ', já tinha Minha Nota' : ', vai ganhar acesso a Minha Nota') + ')'}</td>` +
+        `<td>${r.acao === 'criar_novo' ? '🆕 Cria login novo (acesso Minha área)' : '🔗 Vincula login já existente (perfil ' + (r.role_atual || '—') + (r.ja_tinha_acesso ? ', já tinha Minha Nota' : ', vai ganhar acesso a Minha Nota') + ')'}</td>` +
       `</tr>`).join('') + '</tbody></table></div>' +
       '<p style="font-size:12px;color:var(--gray-400);margin-top:8px">' + resultados.length + ' colaborador(es) no total.</p>';
   }

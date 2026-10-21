@@ -102,7 +102,7 @@
     if (!window.MenuUsuario || !$('menu-usuario')) return;
     window.MenuUsuario.montar({
       alvo: $('menu-usuario'), usuario: u, chamar: chamarApi,
-      rotulos: { colaborador: 'Colaborador' },
+      rotulos: { colaborador: 'Analista' },
       aoSair: function () { sair(false); },
       aoAtualizar: function (novo) { var atual = {}; try { atual = JSON.parse(ls(K_USER) || '{}') || {}; } catch (e) { atual = {}; } ls(K_USER, JSON.stringify(Object.assign(atual, { name: novo.name, email: novo.email }))); }
     });
