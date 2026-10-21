@@ -1864,7 +1864,7 @@ async function painelPessoal(req, res) {
         const semanas = []; const ini = segundaDe(hoje);
         for (let i = 11; i >= 0; i--) { const s = somarDias(ini, -7 * i); semanas.push({ semana: s, n: por[s] || 0 }); }
         atend = Object.assign(atend, {
-          lista: t.slice(0, 300), semanas, total: t.length,
+          lista: t, semanas, total: t.length,
           sla_vermelho: t.filter((x) => x.pior_status === 'vermelho').length, notas_baixas: t.filter((x) => x.nota_avaliacao != null && x.nota_avaliacao <= 2).length,
           media_nota: notas.length ? Math.round(notas.reduce((s, n) => s + n, 0) / notas.length * 100) / 100 : null,
         });

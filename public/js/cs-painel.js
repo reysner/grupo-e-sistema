@@ -2115,27 +2115,64 @@
       kpi('#b45309', 'E-mails sem resposta', e.lido_em ? e.sem_resposta : '—', e.lido_em ? 'de ' + e.recebidos + ' recebidos' : 'leitura ainda não carregada') + '</div>' +
       '<div class="card"><div class="card-title">Para agir primeiro</div><div class="card-sub">Ordenado do mais urgente para o menos urgente.</div>' + lista + '</div>';
   }
+  // Filtros da Minha área (pedido do Reysner, 21/10/2026): Meus atendimentos filtra por período (De / Até); Meus e-mails por empresa e "só sem resposta"
+  // (a leitura de e-mails guarda só o total dos 180 dias por cliente, sem data de cada mensagem, então período não se aplica a ela).
+  function diaBrasilia(iso) { if (!iso) return ''; var d = new Date(iso); return isNaN(d.getTime()) ? String(iso).slice(0, 10) : d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); }
+  function somarDiasIso(iso, n) { var d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function filtrarAtendPessoal(lista, de, ate) {
+    return (lista || []).filter(function (t) { var dia = diaBrasilia(t.abertura); return (!de || dia >= de) && (!ate || dia <= ate); });
+  }
+  function resumoAtendPessoal(lista) {
+    var notas = lista.filter(function (t) { return t.nota_avaliacao != null; }).map(function (t) { return Number(t.nota_avaliacao); });
+    return { total: lista.length, sla_vermelho: lista.filter(function (t) { return t.pior_status === 'vermelho'; }).length, notas_baixas: notas.filter(function (n) { return n <= 2; }).length,
+      media_nota: notas.length ? Math.round(notas.reduce(function (x, n) { return x + n; }, 0) / notas.length * 100) / 100 : null };
+  }
+  function corpoAtendPessoal(d, f) {
+    var a = d.atendimentos || {}, filtrado = !!(f.de || f.ate);
+    var lista = filtrado ? filtrarAtendPessoal(a.lista, f.de, f.ate) : (a.lista || []);
+    var r = filtrado ? resumoAtendPessoal(lista) : { total: a.total, sla_vermelho: a.sla_vermelho, notas_baixas: a.notas_baixas, media_nota: a.media_nota };
+    var linhas = lista.map(function (t) {
+      var cor = { vermelho: '#dc2626', amarelo: '#d97706', verde: '#10b981' }[t.pior_status] || '#9ca3af';
+      return '<tr><td>' + data(diaBrasilia(t.abertura)) + '</td><td>' + esc(t.cliente_nome || t.empresa_texto || '—') + '</td><td>' + esc(t.departamento || '—') + '</td><td class="c">' + (t.nota_avaliacao != null ? t.nota_avaliacao : '—') + '</td>' +
+        '<td class="c"><span class="pill" style="color:' + cor + ';border-color:' + cor + '55;background:' + cor + '14">' + esc(t.pior_status || '—') + '</span></td></tr>';
+    }).join('');
+    var sub = filtrado ? 'no período filtrado' : 'últimos ' + a.janela_dias + ' dias';
+    return '<div class="gp-kpi-row">' + kpi('#0f766e', 'Atendimentos', r.total, sub) + kpi('#dc2626', 'SLA vermelho', r.sla_vermelho, 'antes da revisão da Gamificação') +
+      kpi('#b45309', 'Notas baixas', r.notas_baixas, 'nota 1 ou 2') + kpi('#2563eb', 'Nota média', r.media_nota == null ? '—' : String(r.media_nota).replace('.', ','), 'avaliação do cliente') + '</div>' +
+      '<div class="card"><div class="card-sub">' + (filtrado ? lista.length + ' atendimento(s) no período' + (f.de ? ' de ' + data(f.de) : '') + (f.ate ? ' até ' + data(f.ate) : '') + '.' : 'Seus ' + lista.length + ' atendimentos mais recentes.') + '</div>' +
+      (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Data</th><th>Empresa</th><th>Setor</th><th class="c">Nota</th><th class="c">SLA</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhum atendimento ' + (filtrado ? 'neste período.' : 'no período.') + '</div>') + '</div>';
+  }
   function htmlAtendPessoal(d) {
     var a = d.atendimentos || {};
     if (!a.vinculado) return '<div class="card"><div class="vazio">Seu login ainda não está ligado a um usuário do Zappy. A liderança faz esse vínculo em Gamificação › Colaboradores.</div></div>';
-    var linhas = (a.lista || []).map(function (t) {
-      var cor = { vermelho: '#dc2626', amarelo: '#d97706', verde: '#10b981' }[t.pior_status] || '#9ca3af';
-      return '<tr><td>' + data(String(t.abertura || '').slice(0, 10)) + '</td><td>' + esc(t.cliente_nome || t.empresa_texto || '—') + '</td><td>' + esc(t.departamento || '—') + '</td><td class="c">' + (t.nota_avaliacao != null ? t.nota_avaliacao : '—') + '</td>' +
-        '<td class="c"><span class="pill" style="color:' + cor + ';border-color:' + cor + '55;background:' + cor + '14">' + esc(t.pior_status || '—') + '</span></td></tr>';
-    }).join('');
-    return '<div class="gp-kpi-row">' + kpi('#0f766e', 'Atendimentos', a.total, 'últimos ' + a.janela_dias + ' dias') + kpi('#dc2626', 'SLA vermelho', a.sla_vermelho, 'antes da revisão da Gamificação') +
-      kpi('#b45309', 'Notas baixas', a.notas_baixas, 'nota 1 ou 2') + kpi('#2563eb', 'Nota média', a.media_nota == null ? '—' : String(a.media_nota).replace('.', ','), 'avaliação do cliente') + '</div>' +
-      '<div class="card"><div class="card-sub">Seus ' + (a.lista || []).length + ' atendimentos mais recentes.</div>' +
-      ((a.lista || []).length ? '<div class="table-wrap"><table><thead><tr><th>Data</th><th>Empresa</th><th>Setor</th><th class="c">Nota</th><th class="c">SLA</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhum atendimento no período.</div>') + '</div>';
+    var f = (estado.pessoal && estado.pessoal.fAtend) || { de: '', ate: '' };
+    var bt = function (dias, rot) { return '<button type="button" class="gp-footer-btn" data-pe-dias="' + dias + '" style="width:auto">' + rot + '</button>'; };
+    return '<div class="filter-group" style="margin-bottom:12px;flex-wrap:wrap"><span class="filter-label">De</span><input class="gp-input" type="date" id="pe-de" value="' + esc(f.de || '') + '">' +
+      '<span class="filter-label">Até</span><input class="gp-input" type="date" id="pe-ate" value="' + esc(f.ate || '') + '">' + bt(7, '7 dias') + bt(30, '30 dias') + bt(90, '90 dias') + bt(0, 'Todo o período') + '</div>' +
+      '<div id="pe-res-atend">' + corpoAtendPessoal(d, f) + '</div>';
+  }
+  function semAcentoPessoal(t) { return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+  function filtrarEmailsPessoal(clientes, busca, soSem) {
+    var b = semAcentoPessoal(busca).trim();
+    return (clientes || []).filter(function (c) { return (!soSem || c.sem > 0) && (!b || semAcentoPessoal(c.nome || c.cnpj).indexOf(b) >= 0); });
+  }
+  function corpoEmailsPessoal(d, f) {
+    var e = d.emails || {}, filtrado = !!(f.busca || f.soSem);
+    var lista = filtrado ? filtrarEmailsPessoal(e.clientes, f.busca, f.soSem) : (e.clientes || []);
+    var recebidos = filtrado ? lista.reduce(function (x, c) { return x + c.recebidos; }, 0) : e.recebidos, sem = filtrado ? lista.reduce(function (x, c) { return x + c.sem; }, 0) : e.sem_resposta;
+    var linhas = lista.map(function (c) { return '<tr><td>' + esc(c.nome || c.cnpj) + '</td><td class="c">' + c.recebidos + '</td><td class="c">' + (c.sem ? '<strong style="color:#dc2626">' + c.sem + '</strong>' : '0') + '</td></tr>'; }).join('');
+    return '<div class="gp-kpi-row">' + kpi('#b45309', 'E-mails recebidos', recebidos, filtrado ? 'nas empresas filtradas' : 'últimos ' + (e.janela_dias || 180) + ' dias') + kpi('#b91c1c', 'Sem resposta', sem, 'ninguém do escritório respondeu depois') +
+      kpi('#256050', 'Clientes', lista.length, filtrado ? 'no filtro' : 'que escreveram para você') + '</div>' +
+      '<div class="card">' + (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Recebidos</th><th class="c">Sem resposta</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">' + (filtrado ? 'Nenhuma empresa neste filtro.' : 'Nenhum e-mail de cliente para você na leitura.') + '</div>') + '</div>';
   }
   function htmlEmailsPessoal(d) {
     var e = d.emails || {};
     if (!e.lido_em) return '<div class="card"><div class="vazio">A leitura de e-mails ainda não foi carregada.</div></div>';
-    var linhas = (e.clientes || []).map(function (c) { return '<tr><td>' + esc(c.nome || c.cnpj) + '</td><td class="c">' + c.recebidos + '</td><td class="c">' + (c.sem ? '<strong style="color:#dc2626">' + c.sem + '</strong>' : '0') + '</td></tr>'; }).join('');
-    return '<div class="gp-kpi-row">' + kpi('#b45309', 'E-mails recebidos', e.recebidos, 'últimos ' + (e.janela_dias || 180) + ' dias') + kpi('#b91c1c', 'Sem resposta', e.sem_resposta, 'ninguém do escritório respondeu depois') +
-      kpi('#256050', 'Clientes', (e.clientes || []).length, 'que escreveram para você') + '</div>' +
-      '<div class="nota">Só entram contatos ligados a uma empresa. A resposta de qualquer pessoa do escritório encerra a espera. Leitura de ' + esc(new Date(e.lido_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })) + '.</div>' +
-      '<div class="card">' + ((e.clientes || []).length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Recebidos</th><th class="c">Sem resposta</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhum e-mail de cliente para você na leitura.</div>') + '</div>';
+    var f = (estado.pessoal && estado.pessoal.fEmails) || { busca: '', soSem: false };
+    return '<div class="filter-group" style="margin-bottom:12px;flex-wrap:wrap"><span class="filter-label">Empresa</span><input class="gp-input" id="pe-busca" placeholder="Nome ou CNPJ" value="' + esc(f.busca || '') + '">' +
+      '<label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="pe-sosem"' + (f.soSem ? ' checked' : '') + '> Só com e-mail sem resposta</label></div>' +
+      '<div class="nota">Só entram contatos ligados a uma empresa. A resposta de qualquer pessoa do escritório encerra a espera. Leitura de ' + esc(new Date(e.lido_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })) + '. Os números são o total dos últimos ' + (e.janela_dias || 180) + ' dias por empresa: a leitura não guarda a data de cada e-mail, por isso aqui não há filtro por período.</div>' +
+      '<div id="pe-res-emails">' + corpoEmailsPessoal(d, f) + '</div>';
   }
   function htmlEvolucaoPessoal(d) {
     var ev = d.evolucao || [];
@@ -2176,6 +2213,24 @@
     var alvo = $('sec-gamificacao'); if (!alvo || alvo.querySelector('iframe')) return;
     alvo.innerHTML = '<iframe src="/gamificacao/ranking" title="Ranking da Gamificação" style="width:100%;height:calc(100vh - 130px);min-height:620px;border:1px solid var(--border);border-radius:12px;background:#fff"></iframe>';
   }
+  function ligarFiltrosPessoal(sec, d) {
+    var s = estado.pessoal;
+    if (sec === 'meusatend' && $('pe-de')) {
+      var repintar = function () { var r = $('pe-res-atend'); if (r) r.innerHTML = corpoAtendPessoal(d, s.fAtend); };
+      var ler = function () { s.fAtend = { de: $('pe-de').value, ate: $('pe-ate').value }; repintar(); };
+      $('pe-de').addEventListener('change', ler); $('pe-ate').addEventListener('change', ler);
+      Array.prototype.forEach.call(document.querySelectorAll('[data-pe-dias]'), function (b) {
+        b.addEventListener('click', function () {
+          var n = parseInt(b.getAttribute('data-pe-dias'), 10), hoje = hojeIsoLocal();
+          $('pe-de').value = n ? somarDiasIso(hoje, -(n - 1)) : ''; $('pe-ate').value = n ? hoje : ''; ler();
+        });
+      });
+    }
+    if (sec === 'meusemails' && $('pe-busca')) {
+      var repEm = function () { s.fEmails = { busca: $('pe-busca').value, soSem: $('pe-sosem').checked }; var r = $('pe-res-emails'); if (r) r.innerHTML = corpoEmailsPessoal(d, s.fEmails); };
+      $('pe-busca').addEventListener('input', repEm); $('pe-sosem').addEventListener('change', repEm);
+    }
+  }
   async function desenharPessoal(sec) {
     var alvo = $('sec-' + sec); if (!alvo) return;
     alvo.innerHTML = '<div class="vazio">Carregando…</div>';
@@ -2190,6 +2245,7 @@
         (sec === 'minhanota' ? htmlNotaPessoal() : sec === 'meusatend' ? htmlAtendPessoal(d) : sec === 'meusemails' ? htmlEmailsPessoal(d) : sec === 'minhaevolucao' ? htmlEvolucaoPessoal(d) : htmlPrioridadesPessoal(d));
       alvo.innerHTML = verComo + corpo;
       var sel = $('pe-analista'); if (sel) sel.addEventListener('change', function () { estado.pessoal.analista = sel.value; estado.pessoal.dados = null; desenharPessoal(sec); });
+      ligarFiltrosPessoal(sec, d);
       var bn = $('nota-ver'); if (bn) { bn.addEventListener('click', carregarNotaPessoal); if (d.analista) carregarNotaPessoal(); }
     } catch (e) { alvo.innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; }
   }
@@ -2963,7 +3019,7 @@
         '<td class="c">' + celPrazo(r) + '</td><td class="c">' + pillEtapaQ(r.etapa) + (r.situacao === 'vencido' ? '<div><span class="pill" style="color:#b91c1c;border-color:#b91c1c55;background:#b91c1c14">vencida</span></div>' : '') + '</td>' +
         '<td class="c" style="white-space:nowrap"><button type="button" class="gp-footer-btn" data-aabrir="' + esc(r.id) + '" style="width:auto">' + acao + '</button></td></tr>';
     }).join('');
-    return '<div class="qa-obs" style="margin-bottom:14px">ℹ Trâmite: o gestor do departamento analisa a ocorrência, cria a tratativa e abre para você. <strong>Sua tratativa será validada pelo seu gestor.</strong> Depois da nota que você deixar, a ocorrência é direcionada ao <strong>Sucesso do Cliente</strong>, que faz a devolutiva ao cliente.</div>' +
+    return '<div class="qa-obs" style="margin-bottom:14px">ℹ Trâmite: o gestor do departamento analisa a ocorrência, cria o plano de ação e abre para você. <strong>Sua tratativa será validada pelo seu gestor.</strong> Depois da nota que você deixar, caso seu gestor entenda solucionado, deixará uma nota e a ocorrência será direcionada ao <strong>Sucesso do Cliente</strong>, que faz a devolutiva ao cliente.</div>' +
       '<div class="gp-kpi-row">' +
         kpi('#7c3aed', 'Com ' + (d.todos ? 'os analistas' : 'você'), c.com_analista, 'para tratar') +
         kpi('#0e7490', 'Em validação', c.validacao_gestor, 'com o gestor') +
