@@ -520,6 +520,7 @@ teste('Minha área do analista: rota /analista/meu-painel liberada ao analista e
   const fonte = require('fs').readFileSync(require('path').join(__dirname, 'qualidade.js'), 'utf8');
   assert.strictEqual(rotaAbertaGestorAnalista('GET', '/analista/meu-painel'), true);
   assert.strictEqual(rotaAbertaGestorAnalista('POST', '/analista/meu-painel'), false, 'só leitura');
+  assert.ok(fonte.includes("req.params.id === 'ocorrencias' || req.params.id === 'meu-painel'"), 'a rota /analista/:id deixa passar /analista/meu-painel (antes devolvia "Analista não encontrado")');
   assert.ok(fonte.includes("router.get('/analista/meu-painel', painelPessoal)") && fonte.includes("routerAnalista.get('/painel', painelPessoal)"), 'mesma lógica nas duas rotas');
   assert.ok(/r\.origem IN \('modulo', 'filha'\) AND r\.status <> 'cancelado' AND r\.etapa NOT IN \('registrada', 'tratativa_definida'\)\s+AND \(r\.analista_id = \$1 OR EXISTS/.test(fonte), 'prioridades e evolução vêm das ocorrências em que a pessoa é responsável');
 });

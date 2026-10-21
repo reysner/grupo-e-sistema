@@ -799,7 +799,7 @@ router.get('/resumo', async (req, res) => {
 });
 
 router.get('/analista/:id', async (req, res, next) => {
-  if (req.params.id === 'ocorrencias') return next();   // é a rota do Portal do Analista (mais abaixo), não o id de um analista
+  if (req.params.id === 'ocorrencias' || req.params.id === 'meu-painel') return next();   // são rotas do Portal do Analista e da Minha área (mais abaixo), não o id de um analista
   try {
     await garantirSchema();
     const a = await pool.query('SELECT id, nome, ativo, user_id FROM analistas WHERE id::text = $1', [String(req.params.id)]);

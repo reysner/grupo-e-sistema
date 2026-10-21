@@ -8284,9 +8284,32 @@ const Gamificacao = (() => {
       setStatus('Montando o documento...');
       _montarRelatorioTemporada(win, meses, porMes, consolidado, base.inicioGamificacao);
       // junto com o relatório, baixa a apresentação (PowerPoint) do ranking — falha dela não derruba o relatório
-      const avisoNaAba = (txt, cor) => { try { win.document.body.insertAdjacentHTML('afterbegin', '<div style="position:fixed;top:12px;right:12px;z-index:99;background:' + cor + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Arial,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25)" class="nao-imprimir">' + txt + '</div>'); } catch (_) {} };
-      try { await _baixarApresentacaoTemporada(meses, porMes, consolidado); App.Toast.ok('Apresentação (PowerPoint) baixada.'); avisoNaAba('Apresentação (PowerPoint) baixada na sua pasta de downloads.', '#1a4233'); }
-      catch (e) { console.error('[gam] apresentação da temporada falhou:', e); App.Toast.err('O relatório abriu, mas não consegui gerar o PowerPoint: ' + (e.message || e)); avisoNaAba('Não consegui gerar o PowerPoint: ' + (e.message || e), '#b91c1c'); }
+      // o aviso e o botão ficam na aba do relatório (é nela que a pessoa está olhando); o download também sai sozinho
+      const avisoNaAba = (txt, cor, botaoUrl, nomeArq) => {
+        try {
+          const d = win.document, caixa = d.createElement('div');
+          caixa.className = 'nao-imprimir';
+          caixa.style.cssText = 'position:fixed;top:12px;right:12px;z-index:99;background:' + cor + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Arial,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);display:flex;gap:12px;align-items:center';
+          const t = d.createElement('span'); t.textContent = txt; caixa.appendChild(t);
+          if (botaoUrl) {
+            const b = d.createElement('a'); b.href = botaoUrl; b.download = nomeArq; b.textContent = '⬇ Baixar PowerPoint';
+            b.style.cssText = 'background:#f5c518;color:#1a4233;padding:6px 12px;border-radius:8px;text-decoration:none;font-weight:800';
+            caixa.appendChild(b);
+          }
+          d.body.appendChild(caixa);
+        } catch (_) {}
+      };
+      try {
+        const { blob, nome } = await _baixarApresentacaoTemporada(meses, porMes, consolidado);
+        const urlPpt = URL.createObjectURL(blob);
+        avisoNaAba('Apresentação (PowerPoint) pronta.', '#1a4233', urlPpt, nome);
+        try { const a = win.document.createElement('a'); a.href = urlPpt; a.download = nome; win.document.body.appendChild(a); a.click(); a.remove(); } catch (_) {}
+        App.Toast.ok('Apresentação (PowerPoint) gerada.');
+      } catch (e) {
+        console.error('[gam] apresentação da temporada falhou:', e);
+        App.Toast.err('O relatório abriu, mas não consegui gerar o PowerPoint: ' + (e.message || e));
+        avisoNaAba('Não consegui gerar o PowerPoint: ' + (e.message || e), '#b91c1c');
+      }
     } catch (e) {
       console.error('[gam] relatório da temporada falhou:', e);
       setStatus('Erro ao gerar o relatório: ' + (e.message || e) + '. Feche esta aba e tente de novo.');
@@ -8476,7 +8499,8 @@ const Gamificacao = (() => {
     texto(s, 'Agradecemos a participação de todos neste projeto. Cada nota e cada atendimento ajudam a potencializar o nosso desenvolvimento e o nosso crescimento, com uma experiência cada vez melhor para o cliente e um atendimento mais assertivo.', 60, 308, 720, 150, 26, PALE, false, 'left', 'Segoe UI', 'top');
     texto(s, 'Liga do Atendimento  |  Grupo E', 60, 480, 700, 26, 16, OURO, true, 'left');
 
-    await pres.writeFile({ fileName: 'Ranking Liga do Atendimento - Temporada ' + meses[meses.length - 1].slice(0, 4) + '.pptx' });
+    // devolve o arquivo (blob) para quem chamou baixar: o download automático pode ser barrado pelo navegador, então o relatório também ganha um botão
+    return { blob: await pres.write({ outputType: 'blob' }), nome: 'Ranking Liga do Atendimento - Temporada ' + meses[meses.length - 1].slice(0, 4) + '.pptx' };
   }
 
   function _montarRelatorioTemporada(win, meses, porMes, consolidado, inicioGamificacao) {

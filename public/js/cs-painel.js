@@ -2509,7 +2509,7 @@
   }
   // Módulos liberados (Acessos): o servidor devolve em /qualidade/eu o que a pessoa vê; quem não foi configurado segue o padrão do perfil.
   var SEC_MODULO = { visao: 'visao', analise: 'inteligente', anual: 'anual', atendimento: 'atendimento', consideracoes: 'qualidade', gestor: 'gestor', analista: 'analista', sucesso: 'sucesso', risco: 'permanencia', churn: 'churn', categorias: 'categorias', qualidade: 'qualidade_dados', acessos: 'acessos', minhanota: 'minha_nota', meusatend: 'meus_atendimentos', meusemails: 'meus_emails', minhaevolucao: 'minha_evolucao', minhasprior: 'minhas_prioridades', gamificacao: 'gamificacao' };
-  var ORDEM_SECOES = ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'gestor', 'analista', 'sucesso', 'minhanota', 'meusatend', 'meusemails', 'minhaevolucao', 'minhasprior', 'gamificacao', 'risco', 'churn', 'categorias', 'qualidade', 'acessos'];
+  var ORDEM_SECOES = ['visao', 'analise', 'anual', 'atendimento', 'analista', 'consideracoes', 'minhasprior', 'gestor', 'sucesso', 'minhanota', 'meusatend', 'meusemails', 'minhaevolucao', 'gamificacao', 'risco', 'churn', 'categorias', 'qualidade', 'acessos'];
   var SEC_PESSOAIS = ['minhanota', 'meusatend', 'meusemails', 'minhaevolucao', 'minhasprior'];
   var SEC_MINHA_AREA = SEC_PESSOAIS.concat(['gamificacao']);   // + o ranking da Gamificação (embutido, não é pessoal)   // Minha área do analista (vieram do portal antigo /qualidade)
   function modulosCs() { return estado.eu && Array.isArray(estado.eu.modulos) ? estado.eu.modulos : null; }
