@@ -8216,6 +8216,40 @@ const Gamificacao = (() => {
     return nomesc[parseInt(m)] + '/' + ano.slice(2);
   }
 
+  // Só a apresentação (PowerPoint), sem sincronizar notas e sem abrir o relatório: lê o ranking e o Consolidado Geral como estão agora.
+  async function baixarApresentacaoTemporada(btn) {
+    const texto = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Gerando…'; }
+    try {
+      const token = _tk();
+      const baseRes = await fetch('/api/public/gamificacao', { cache: 'no-store' });
+      if (!baseRes.ok) throw new Error('Não consegui ler o ranking público.');
+      const base = await baseRes.json();
+      const meses = [...(base.meses || [])].sort();
+      if (!meses.length) { App.Toast.err('Nenhum mês com nota lançada ainda.'); return; }
+      const porMes = {};
+      for (const mes of meses) {
+        const r = await fetch('/api/public/gamificacao?mes=' + mes, { cache: 'no-store' });
+        porMes[mes] = r.ok ? await r.json() : { ranking: [], consolidado: [], mediaGeral: null };
+      }
+      let consolidado = porMes[meses[meses.length - 1]].consolidado || [];
+      if (base.mostrarConsolidado === false || !consolidado.length) {
+        const rc = await fetch('/api/data/gam/consolidado', { headers: { Authorization: 'Bearer ' + token }, cache: 'no-store' });
+        if (rc.ok) consolidado = (await rc.json()).data || [];
+      }
+      if (!consolidado.length) throw new Error('Não consegui ler o Consolidado Geral da temporada.');
+      const { blob, nome } = await _baixarApresentacaoTemporada(meses, porMes, consolidado);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+      App.Toast.ok('Apresentação (PowerPoint) gerada.');
+    } catch (e) {
+      console.error('[gam] apresentação da temporada falhou:', e);
+      App.Toast.err('Não consegui gerar o PowerPoint: ' + (e.message || e));
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = texto; }
+    }
+  }
+
   async function abrirRelatorioTemporada() {
     const mesSync = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
     if (!confirm('Isso vai sincronizar as notas só de ' + _mesLabel(mesSync) + ' (igual ao botão "Sincronizar Notas Agora") — os meses anteriores NÃO são atualizados — e em seguida montar o relatório da temporada e baixar a apresentação (PowerPoint) do ranking. Continuar?')) return;
@@ -8303,7 +8337,7 @@ const Gamificacao = (() => {
         const { blob, nome } = await _baixarApresentacaoTemporada(meses, porMes, consolidado);
         const urlPpt = URL.createObjectURL(blob);
         avisoNaAba('Apresentação (PowerPoint) pronta.', '#1a4233', urlPpt, nome);
-        try { const a = win.document.createElement('a'); a.href = urlPpt; a.download = nome; win.document.body.appendChild(a); a.click(); a.remove(); } catch (_) {}
+        try { const a = document.createElement('a'); a.href = urlPpt; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); } catch (_) {}
         App.Toast.ok('Apresentação (PowerPoint) gerada.');
       } catch (e) {
         console.error('[gam] apresentação da temporada falhou:', e);
@@ -8622,7 +8656,7 @@ const Gamificacao = (() => {
       .capa .publico{font-size:12px;color:#cfd8d3;max-width:420px;line-height:1.7}
       .capa .publico b{color:#fff}
       .capa .metodo{font-size:12px;color:#fff;max-width:420px;line-height:1.7;margin-top:14px}
-      .capa .gerado{position:absolute;bottom:2.2cm;font-size:10.5px;color:#8ea597}
+      .capa .gerado{margin-top:34px;font-size:10.5px;color:#a9bdb1}   /* no fim da capa, depois da última linha (antes ficava solto em cima do texto) */
       /* Pódio */
       .podio{display:flex;gap:14px;justify-content:center;margin:18px 0 26px}
       .podio-card{flex:1;max-width:190px;background:#f7fafc;border-radius:12px;padding:20px 14px;text-align:center;border:1px solid #e2e8f0}
@@ -8866,7 +8900,7 @@ const Gamificacao = (() => {
     vincularLogin, salvarVinculoLogin,
     abrirCriarLoginsEmLote, confirmarCriarLoginsEmLote,
     abrirMapaQualificacao, salvarMapaQualificacao,
-    abrirAutoPreencher, confirmarAutoPreencher, sincronizarNotasAgora, abrirRelatorioTemporada, limparTravasNotaFinal, abrirFecharMes,
+    abrirAutoPreencher, confirmarAutoPreencher, sincronizarNotasAgora, abrirRelatorioTemporada, baixarApresentacaoTemporada, limparTravasNotaFinal, abrirFecharMes,
     abrirRevisaoNotas, marcarRevisao, _trocarStatusRevisao, reatribuirRevisao,
     abrirRevisaoVelocidade, marcarRevisaoVelocidade, _trocarStatusRevisaoVelocidade, reatribuirRevisaoVelocidade,
     abrirRevisaoAceite, marcarRevisaoAceite, _trocarStatusRevisaoAceite, reatribuirRevisaoAceite,

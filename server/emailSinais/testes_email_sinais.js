@@ -1,7 +1,7 @@
 'use strict';
 // Rodar: node server/emailSinais/testes_email_sinais.js  (lógica pura, sem rede e sem banco)
 const assert = require('assert');
-const { enderecos, dominiosDeCliente, normalizarMensagem, sinaisPorContato, consolidar, naoIdentificados, atendimentoPorContato, consolidarAtendimento,
+const { enderecos, dominiosDeCliente, normalizarMensagem, sinaisPorContato, consolidar, naoIdentificados, atendimentoPorContato, consolidarAtendimento, diaBrasilia,
   aprenderContatos, mesclarAprendidos, mapaComAprendidos, lerIgnorados, dominioIgnorado } = require('./calculo');
 
 let ok = 0;
@@ -224,8 +224,9 @@ teste('histórico: conta e-mails por destinatário interno e marca os sem respos
   assert.strictEqual(c.length, 1);
   assert.strictEqual(c[0].recebidos, 3);
   assert.strictEqual(c[0].semResposta, 2);
-  assert.deepStrictEqual(c[0].porDest['dptofiscal@escritorial.com.br'], { recebidos: 2, sem: 1 });
-  assert.deepStrictEqual(c[0].porDest['bruno@escritorial.com.br'], { recebidos: 2, sem: 1 });
+  const soTotais = (x) => ({ recebidos: x.recebidos, sem: x.sem });
+  assert.deepStrictEqual(soTotais(c[0].porDest['dptofiscal@escritorial.com.br']), { recebidos: 2, sem: 1 });
+  assert.deepStrictEqual(soTotais(c[0].porDest['bruno@escritorial.com.br']), { recebidos: 2, sem: 1 });
   const por = consolidarAtendimento(c);
   assert.deepStrictEqual([por[0].cnpj, por[0].recebidos, por[0].sem_resposta], ['11111111000111', 3, 2]);
 });
@@ -244,7 +245,7 @@ teste('histórico: contato ligado a duas empresas vai para "compartilhados" e n�
   const por = Object.fromEntries(consolidarAtendimento(c).map((x) => [x.cnpj, x]));
   assert.deepStrictEqual([por['11111111000111'].recebidos, por['11111111000111'].compartilhados_recebidos, por['11111111000111'].compartilhados_sem], [1, 1, 1]);
   assert.deepStrictEqual([por['33333333000133'].recebidos, por['33333333000133'].compartilhados_recebidos], [0, 1]);
-  assert.deepStrictEqual(por['33333333000133'].compartilhados_destinatarios['cs@escritorial.com.br'], { recebidos: 1, sem: 1 });   // a relação por destinatário também vale para os compartilhados
+  assert.deepStrictEqual(por['33333333000133'].compartilhados_destinatarios['cs@escritorial.com.br'].sem, 1);   // a relação por destinatário também vale para os compartilhados
 });
 teste('histórico: contato sem empresa não entra; resolvido pelo Zappy zera a espera mas mantém os recebidos', () => {
   assert.strictEqual(atendimentoPorContato([recPara('fulano@desconhecido.com', 50, ['cs@escritorial.com.br'])], ctxAt).length, 0);
@@ -254,5 +255,23 @@ teste('histórico: contato sem empresa não entra; resolvido pelo Zappy zera a e
   assert.deepStrictEqual([por[0].recebidos, por[0].sem_resposta, por[0].destinatarios['cs@escritorial.com.br'].sem], [1, 0, 0]);
 });
 
+teste('histórico por dia: cada destinatário guarda [recebidos, sem resposta] por dia de Brasília, e o dia some quando já foi atendido pelo Zappy', () => {
+  const m = [
+    recPara('joao@padaria.com.br', 100, ['bruno@escritorial.com.br']),
+    env('joao@padaria.com.br', 90),
+    recPara('joao@padaria.com.br', 30, ['bruno@escritorial.com.br'], { tamanho: 50000 }),
+  ];
+  const c = atendimentoPorContato(m, ctxAt);
+  const dias = c[0].porDest['bruno@escritorial.com.br'].dias;
+  const soma = (campo) => Object.keys(dias).reduce((t, k) => t + dias[k][campo], 0);
+  assert.strictEqual(soma(0), c[0].porDest['bruno@escritorial.com.br'].recebidos, 'os dias somam o total de recebidos');
+  assert.strictEqual(soma(1), c[0].porDest['bruno@escritorial.com.br'].sem, 'e o total de sem resposta');
+  Object.keys(dias).forEach((k) => assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(k)));
+  assert.strictEqual(diaBrasilia(Date.UTC(2026, 9, 12, 2, 30)), '2026-10-11', '02h30 UTC é 23h30 do dia anterior em Brasília');
+  const resolvido = c.map((x) => Object.assign({}, x, { resolvidoZappy: true }));
+  const por = consolidarAtendimento(resolvido)[0].destinatarios['bruno@escritorial.com.br'];
+  assert.strictEqual(Object.keys(por.dias).reduce((t, k) => t + por.dias[k][1], 0), 0, 'atendido pelo Zappy: nenhum dia fica "sem resposta"');
+  assert.strictEqual(Object.keys(por.dias).reduce((t, k) => t + por.dias[k][0], 0), por.recebidos);
+});
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);

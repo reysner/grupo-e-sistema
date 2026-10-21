@@ -260,8 +260,9 @@ function clientesParaEnvio(porCliente, nomesDiretorio) {
     Object.keys(dest || {}).forEach((a) => {
       const grupo = GRUPOS.has(a);
       const nome = grupo ? a : (nomesDiretorio[a] || a);
-      const r = (por[nome] = por[nome] || { nome, grupo, recebidos: 0, sem: 0 });
+      const r = (por[nome] = por[nome] || { nome, grupo, recebidos: 0, sem: 0, dias: {} });
       r.recebidos += dest[a].recebidos; r.sem += dest[a].sem;
+      Object.keys(dest[a].dias || {}).forEach((dia) => { const d = (r.dias[dia] = r.dias[dia] || [0, 0]); d[0] += dest[a].dias[dia][0]; d[1] += dest[a].dias[dia][1]; });
     });
     return Object.values(por).sort((x, y) => y.recebidos - x.recebidos);
   };

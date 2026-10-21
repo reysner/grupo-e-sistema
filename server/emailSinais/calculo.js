@@ -245,6 +245,9 @@ function naoIdentificados(contatos, minHoras) {
  * Só contatos LIGADOS a empresa entram. Nenhum endereço do cliente sai daqui; os endereços internos devem ser trocados por nomes
  * por quem chama.
  */
+/** Dia (AAAA-MM-DD) de uma data em milissegundos, no horário de Brasília. */
+function diaBrasilia(t) { return new Date(t).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); }
+
 function atendimentoPorContato(msgs, ctx) {
   const agora = ctx.agora || Date.now();
   const corte = (ctx.minHoras == null ? 4 : ctx.minHoras) * 3600000;
@@ -275,8 +278,12 @@ function atendimentoPorContato(msgs, ctx) {
     const sem = emails.filter((e) => e.t > ultimoEnvio && agora - e.t >= corte && !(encerra && e === ultimo));
     const porDest = {};
     emails.forEach((e) => {
-      const abre = sem.indexOf(e) >= 0;
-      e.dest.forEach((a) => { const r = (porDest[a] = porDest[a] || { recebidos: 0, sem: 0 }); r.recebidos++; if (abre) r.sem++; });
+      const abre = sem.indexOf(e) >= 0, dia = diaBrasilia(e.t);
+      e.dest.forEach((a) => {
+        const r = (porDest[a] = porDest[a] || { recebidos: 0, sem: 0, dias: {} });
+        r.recebidos++; if (abre) r.sem++;
+        const d = (r.dias[dia] = r.dias[dia] || [0, 0]); d[0]++; if (abre) d[1]++;   // por dia: [recebidos, sem resposta] (filtro de período da Minha área)
+      });
     });
     out.push({ cnpjs: Array.from(cnpjs), recebidos: emails.length, semResposta: sem.length, porDest,
       aguardando: sem.indexOf(ultimo) >= 0, horas: Math.max(0, (agora - ultimo.t) / 3600000), ultimaT: ultimo.t });
@@ -289,6 +296,14 @@ function atendimentoPorContato(msgs, ctx) {
  * Só contatos ligados a UMA empresa entram nos totais e nos destinatários. Contato ligado a várias empresas (sócio, contador, familiar)
  * não permite saber de qual empresa é o e-mail: vai para os campos compartilhados_*, para não inflar a conta de cada uma.
  */
+/** Soma os dias de "origem" em "destino" ({ 'AAAA-MM-DD': [recebidos, sem] }); com resolvido (já atendido pelo Zappy) os "sem resposta" não entram. */
+function somarDias(destino, origem, resolvido) {
+  Object.keys(origem || {}).forEach((dia) => {
+    const d = (destino[dia] = destino[dia] || [0, 0]);
+    d[0] += origem[dia][0]; if (!resolvido) d[1] += origem[dia][1];
+  });
+}
+
 function consolidarAtendimento(contatos) {
   const por = {};
   (contatos || []).forEach((s) => {
@@ -298,22 +313,24 @@ function consolidarAtendimento(contatos) {
       if (s.cnpjs.length > 1) {
         r.compartilhados_recebidos += s.recebidos; if (!resolvido) r.compartilhados_sem += s.semResposta;
         Object.keys(s.porDest).forEach((a) => {
-          const d = (r.compartilhados_destinatarios[a] = r.compartilhados_destinatarios[a] || { recebidos: 0, sem: 0 });
+          const d = (r.compartilhados_destinatarios[a] = r.compartilhados_destinatarios[a] || { recebidos: 0, sem: 0, dias: {} });
           d.recebidos += s.porDest[a].recebidos;
           if (!resolvido) d.sem += s.porDest[a].sem;
+          somarDias(d.dias, s.porDest[a].dias, resolvido);
         });
         return;
       }
       r.recebidos += s.recebidos;
       if (!resolvido) r.sem_resposta += s.semResposta;
       Object.keys(s.porDest).forEach((a) => {
-        const d = (r.destinatarios[a] = r.destinatarios[a] || { recebidos: 0, sem: 0 });
+        const d = (r.destinatarios[a] = r.destinatarios[a] || { recebidos: 0, sem: 0, dias: {} });
         d.recebidos += s.porDest[a].recebidos;
         if (!resolvido) d.sem += s.porDest[a].sem;
+        somarDias(d.dias, s.porDest[a].dias, resolvido);
       });
     });
   });
   return Object.values(por);
 }
 
-module.exports = { enderecos, dominio, dominiosDeCliente, normalizarMensagem, sinaisPorContato, consolidar, naoIdentificados, atendimentoPorContato, consolidarAtendimento, aprenderContatos, mesclarAprendidos, mapaComAprendidos, lerIgnorados, dominioIgnorado, LIVRES, LIMITE_CURTA, JANELA_COPIA_MS };
+module.exports = { enderecos, dominio, dominiosDeCliente, normalizarMensagem, sinaisPorContato, consolidar, naoIdentificados, atendimentoPorContato, consolidarAtendimento, diaBrasilia, aprenderContatos, mesclarAprendidos, mapaComAprendidos, lerIgnorados, dominioIgnorado, LIVRES, LIMITE_CURTA, JANELA_COPIA_MS };

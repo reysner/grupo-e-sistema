@@ -52,5 +52,11 @@ teste('histórico 180 dias: aceita nomes e endereços do escritório; endereço 
   assert.strictEqual(validarAtendimento(null).clientes.length, 0);
 });
 
+teste('histórico 180 dias: guarda os dias [recebidos, sem] de cada destinatário e descarta chave que não é data', () => {
+  const v = validarAtendimento({ clientes: [{ cnpj: '11222333000181', recebidos: 3, sem_resposta: 1, destinatarios: [
+    { nome: 'Guilherme', recebidos: 3, sem: 1, dias: { '2026-10-01': [2, 0], '2026-10-15': [1, 1], 'joao@padaria.com.br': [9, 9], 'x': [1, 1], '2026-10-16': 'texto' } }] }] });
+  assert.deepStrictEqual(v.clientes[0].destinatarios[0].dias, { '2026-10-01': [2, 0], '2026-10-15': [1, 1] });
+  assert.deepStrictEqual(validarAtendimento({ clientes: [{ cnpj: '11222333000181', destinatarios: [{ nome: 'Ana', recebidos: 1, sem: 0 }] }] }).clientes[0].destinatarios[0].dias, {}, 'leitura antiga, sem dias');
+});
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);

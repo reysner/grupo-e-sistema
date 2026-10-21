@@ -65,7 +65,11 @@ function validarAtendimento(corpo) {
     const limpar = (lista) => (Array.isArray(lista) ? lista : []).slice(0, 60).map((d) => {
       const nome = texto(d && d.nome, 80).trim();
       if (!nome || (/@/.test(nome) && !enderecoInterno(nome))) return null;     // endereço de fora do escritório nunca entra
-      return { nome, grupo: !!d.grupo, recebidos: int(d.recebidos), sem: int(d.sem) };
+      const dias = {};   // por dia (AAAA-MM-DD): [recebidos, sem resposta]; só datas e números
+      if (d && d.dias && typeof d.dias === 'object') {
+        Object.keys(d.dias).slice(0, 400).forEach((k) => { const v = d.dias[k]; if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Array.isArray(v)) dias[k] = [int(v[0]), int(v[1])]; });
+      }
+      return { nome, grupo: !!d.grupo, recebidos: int(d.recebidos), sem: int(d.sem), dias };
     }).filter(Boolean);
     clientes.push({ cnpj, recebidos: int(c.recebidos), sem_resposta: int(c.sem_resposta), comp_recebidos: int(c.compartilhados_recebidos), comp_sem: int(c.compartilhados_sem), destinatarios: limpar(c.destinatarios), comp_destinatarios: limpar(c.compartilhados_destinatarios) });
   });

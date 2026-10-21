@@ -2152,26 +2152,45 @@
       '<div id="pe-res-atend">' + corpoAtendPessoal(d, f) + '</div>';
   }
   function semAcentoPessoal(t) { return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
-  function filtrarEmailsPessoal(clientes, busca, soSem) {
-    var b = semAcentoPessoal(busca).trim();
-    return (clientes || []).filter(function (c) { return (!soSem || c.sem > 0) && (!b || semAcentoPessoal(c.nome || c.cnpj).indexOf(b) >= 0); });
+  /** Recebidos e sem resposta de uma empresa dentro do período (De / Até, dia de Brasília). Sem datas na leitura (leitura antiga): devolve null. */
+  function emailsNoPeriodo(c, de, ate) {
+    if (!c.dias) return null;
+    var r = 0, sem = 0;
+    Object.keys(c.dias).forEach(function (dia) { if ((!de || dia >= de) && (!ate || dia <= ate)) { r += c.dias[dia][0]; sem += c.dias[dia][1]; } });
+    return { recebidos: r, sem: sem };
+  }
+  function filtrarEmailsPessoal(clientes, busca, soSem, de, ate) {
+    var b = semAcentoPessoal(busca).trim(), porData = !!(de || ate);
+    return (clientes || []).map(function (c) {
+      if (!porData) return c;
+      var p = emailsNoPeriodo(c, de, ate);
+      return p ? Object.assign({}, c, { recebidos: p.recebidos, sem: p.sem }) : c;
+    }).filter(function (c) {
+      if (porData && c.dias && c.recebidos === 0) return false;   // sem e-mail no período
+      return (!soSem || c.sem > 0) && (!b || semAcentoPessoal(c.nome || c.cnpj).indexOf(b) >= 0);
+    });
   }
   function corpoEmailsPessoal(d, f) {
-    var e = d.emails || {}, filtrado = !!(f.busca || f.soSem);
-    var lista = filtrado ? filtrarEmailsPessoal(e.clientes, f.busca, f.soSem) : (e.clientes || []);
+    var e = d.emails || {}, porData = !!(f.de || f.ate), filtrado = !!(f.busca || f.soSem || porData);
+    var lista = filtrado ? filtrarEmailsPessoal(e.clientes, f.busca, f.soSem, f.de, f.ate) : (e.clientes || []);
+    var semDatas = porData && (e.clientes || []).some(function (c) { return !c.dias; });
     var recebidos = filtrado ? lista.reduce(function (x, c) { return x + c.recebidos; }, 0) : e.recebidos, sem = filtrado ? lista.reduce(function (x, c) { return x + c.sem; }, 0) : e.sem_resposta;
     var linhas = lista.map(function (c) { return '<tr><td>' + esc(c.nome || c.cnpj) + '</td><td class="c">' + c.recebidos + '</td><td class="c">' + (c.sem ? '<strong style="color:#dc2626">' + c.sem + '</strong>' : '0') + '</td></tr>'; }).join('');
-    return '<div class="gp-kpi-row">' + kpi('#b45309', 'E-mails recebidos', recebidos, filtrado ? 'nas empresas filtradas' : 'últimos ' + (e.janela_dias || 180) + ' dias') + kpi('#b91c1c', 'Sem resposta', sem, 'ninguém do escritório respondeu depois') +
+    return (semDatas ? '<div class="nota" style="margin-bottom:10px">A leitura de e-mails atual ainda não traz a data de cada mensagem, então o período não é aplicado a ela. A próxima leitura (toda segunda-feira, 8h30) já vem com as datas.</div>' : '') +
+      '<div class="gp-kpi-row">' + kpi('#b45309', 'E-mails recebidos', recebidos, filtrado ? (porData ? 'no período filtrado' : 'nas empresas filtradas') : 'últimos ' + (e.janela_dias || 180) + ' dias') + kpi('#b91c1c', 'Sem resposta', sem, 'ninguém do escritório respondeu depois') +
       kpi('#256050', 'Clientes', lista.length, filtrado ? 'no filtro' : 'que escreveram para você') + '</div>' +
       '<div class="card">' + (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Recebidos</th><th class="c">Sem resposta</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">' + (filtrado ? 'Nenhuma empresa neste filtro.' : 'Nenhum e-mail de cliente para você na leitura.') + '</div>') + '</div>';
   }
   function htmlEmailsPessoal(d) {
     var e = d.emails || {};
     if (!e.lido_em) return '<div class="card"><div class="vazio">A leitura de e-mails ainda não foi carregada.</div></div>';
-    var f = (estado.pessoal && estado.pessoal.fEmails) || { busca: '', soSem: false };
-    return '<div class="filter-group" style="margin-bottom:12px;flex-wrap:wrap"><span class="filter-label">Empresa</span><input class="gp-input" id="pe-busca" placeholder="Nome ou CNPJ" value="' + esc(f.busca || '') + '">' +
+    var f = (estado.pessoal && estado.pessoal.fEmails) || { busca: '', soSem: false, de: '', ate: '' };
+    var bt = function (dias, rot) { return '<button type="button" class="gp-footer-btn" data-pe-edias="' + dias + '" style="width:auto">' + rot + '</button>'; };
+    return '<div class="filter-group" style="margin-bottom:12px;flex-wrap:wrap"><span class="filter-label">De</span><input class="gp-input" type="date" id="pe-ede" value="' + esc(f.de || '') + '">' +
+      '<span class="filter-label">Até</span><input class="gp-input" type="date" id="pe-eate" value="' + esc(f.ate || '') + '">' + bt(7, '7 dias') + bt(30, '30 dias') + bt(90, '90 dias') + bt(0, 'Todo o período') + '</div>' +
+      '<div class="filter-group" style="margin-bottom:12px;flex-wrap:wrap"><span class="filter-label">Empresa</span><input class="gp-input" id="pe-busca" placeholder="Nome ou CNPJ" value="' + esc(f.busca || '') + '">' +
       '<label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="pe-sosem"' + (f.soSem ? ' checked' : '') + '> Só com e-mail sem resposta</label></div>' +
-      '<div class="nota">Só entram contatos ligados a uma empresa. A resposta de qualquer pessoa do escritório encerra a espera. Leitura de ' + esc(new Date(e.lido_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })) + '. Os números são o total dos últimos ' + (e.janela_dias || 180) + ' dias por empresa: a leitura não guarda a data de cada e-mail, por isso aqui não há filtro por período.</div>' +
+      '<div class="nota">Só entram contatos ligados a uma empresa. A resposta de qualquer pessoa do escritório encerra a espera. Leitura de ' + esc(new Date(e.lido_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })) + '. Sem filtro de data, os números são o total dos últimos ' + (e.janela_dias || 180) + ' dias.</div>' +
       '<div id="pe-res-emails">' + corpoEmailsPessoal(d, f) + '</div>';
   }
   function htmlEvolucaoPessoal(d) {
@@ -2227,8 +2246,15 @@
       });
     }
     if (sec === 'meusemails' && $('pe-busca')) {
-      var repEm = function () { s.fEmails = { busca: $('pe-busca').value, soSem: $('pe-sosem').checked }; var r = $('pe-res-emails'); if (r) r.innerHTML = corpoEmailsPessoal(d, s.fEmails); };
+      var repEm = function () { s.fEmails = { busca: $('pe-busca').value, soSem: $('pe-sosem').checked, de: $('pe-ede').value, ate: $('pe-eate').value }; var r = $('pe-res-emails'); if (r) r.innerHTML = corpoEmailsPessoal(d, s.fEmails); };
       $('pe-busca').addEventListener('input', repEm); $('pe-sosem').addEventListener('change', repEm);
+      $('pe-ede').addEventListener('change', repEm); $('pe-eate').addEventListener('change', repEm);
+      Array.prototype.forEach.call(document.querySelectorAll('[data-pe-edias]'), function (b) {
+        b.addEventListener('click', function () {
+          var n = parseInt(b.getAttribute('data-pe-edias'), 10), hoje = hojeIsoLocal();
+          $('pe-ede').value = n ? somarDiasIso(hoje, -(n - 1)) : ''; $('pe-eate').value = n ? hoje : ''; repEm();
+        });
+      });
     }
   }
   async function desenharPessoal(sec) {

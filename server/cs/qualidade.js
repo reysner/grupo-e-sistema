@@ -1892,7 +1892,7 @@ async function painelPessoal(req, res) {
       const meus = [];
       rows.forEach((r) => {
         (r.destinatarios || []).forEach((d) => {
-          if (!d.grupo && mesmoNome(d.nome, analista.nome)) meus.push({ cnpj: r.cnpj, nome: r.nome, recebidos: d.recebidos, sem: d.sem });
+          if (!d.grupo && mesmoNome(d.nome, analista.nome)) meus.push({ cnpj: r.cnpj, nome: r.nome, recebidos: d.recebidos, sem: d.sem, dias: d.dias || null });
         });
       });
       meus.sort((a, b) => b.sem - a.sem || b.recebidos - a.recebidos);
