@@ -8380,12 +8380,37 @@ const Gamificacao = (() => {
     });
   }
 
+  // Imagem do servidor em base64 (para dentro do PowerPoint); null se não carregar (então vale o emoji).
+  function _imagemBase64(url) {
+    return fetch(url).then((r) => (r.ok ? r.blob() : null)).then((b) => (b ? new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).replace(/^data:/, '')); fr.onerror = () => ok(null); fr.readAsDataURL(b); }) : null)).catch(() => null);
+  }
+
+  // A biblioteca não cria transições: depois de pronto, abre o .pptx (é um zip) e põe uma transição em cada slide
+  // (fade suave; zoom na revelação de cada ganhador e no pódio final; fade lento no agradecimento).
+  async function _comTransicoes(blob, especiais) {
+    if (!window.JSZip) await _carregarScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
+    const zip = await window.JSZip.loadAsync(blob);
+    const nomes = Object.keys(zip.files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n));
+    for (const n of nomes) {
+      const num = parseInt(n.match(/slide(\d+)\.xml$/)[1], 10);
+      let xml = await zip.file(n).async('string');
+      if (xml.indexOf('<p:transition') >= 0) continue;
+      const efeito = especiais.zoom.has(num) ? '<p:transition spd="slow"><p:zoom dir="in"/></p:transition>'
+        : especiais.lento.has(num) ? '<p:transition spd="slow"><p:fade/></p:transition>' : '<p:transition spd="med"><p:fade/></p:transition>';
+      zip.file(n, xml.replace('</p:sld>', efeito + '</p:sld>'));
+    }
+    return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+  }
+
   async function _baixarApresentacaoTemporada(meses, porMes, consolidado) {
     if (!window.PptxGenJS) {
       try { await _carregarScript('https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js'); }
       catch (e) { await _carregarScript('https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.bundle.js'); }
     }
     const logo = await _logoRecortada();
+    const fotos = { alexa: await _imagemBase64('/img/premio-alexa.png'), fryer: await _imagemBase64('/img/premio-airfryer.png'), tv: await _imagemBase64('/img/premio-smarttv.png') };
+    const especiais = { zoom: new Set(), lento: new Set() };
+    let nSlide = 0;
     const pres = new window.PptxGenJS();
     pres.layout = 'LAYOUT_WIDE';            // 13,33" x 7,5" = 960 x 540 pt
     const u = (pt) => pt / 72;             // as medidas abaixo estão em pontos
@@ -8396,7 +8421,12 @@ const Gamificacao = (() => {
     const rank = consolidado;
     const emoji = { alexa: '🔊', fryer: '🍟', tv: '📺', taca: '🏆' };
 
-    const slide = (fundo) => { const s = pres.addSlide(); s.background = { color: fundo }; return s; };
+    const slide = (fundo) => { nSlide++; const s = pres.addSlide(); s.background = { color: fundo }; return s; };
+    // desenho do produto (ilustração) ou, se não carregar, o emoji de antes
+    const produto = (s, chave, l, t, w, tamEmoji) => {
+      if (fotos[chave]) s.addImage({ data: fotos[chave], x: u(l), y: u(t), w: u(w), h: u(w) });
+      else texto(s, emoji[chave], l, t, w, w, tamEmoji, VERDE, false, 'center', 'Segoe UI Emoji');
+    };
     const forma = (s, tipo, l, t, w, h, cor, transp, raio) => s.addShape(tipo, {
       x: u(l), y: u(t), w: u(w), h: u(h), fill: { color: cor, transparency: transp || 0 }, line: { type: 'none' },
       rectRadius: raio ? u(raio) : undefined
@@ -8438,11 +8468,11 @@ const Gamificacao = (() => {
     logoImg(s, 40, 28, 92, true);
     texto(s, 'O que está em jogo', 160, 26, 700, 50, 38, VERDE, true, 'left', 'Segoe UI Black');
     texto(s, 'Os três primeiros do Consolidado Geral da temporada levam para casa:', 160, 78, 760, 30, 18, TEXTO, false, 'left');
-    [['3º lugar', 'Alexa', emoji.alexa, BRONZE], ['2º lugar', 'Air Fryer', emoji.fryer, PRATA], ['1º lugar', 'Smart TV', emoji.tv, OURO]].forEach((p, i) => {
+    [['3º lugar', 'Alexa', 'alexa', BRONZE], ['2º lugar', 'Air Fryer', 'fryer', PRATA], ['1º lugar', 'Smart TV', 'tv', OURO]].forEach((p, i) => {
       const x = 60 + i * 288;
       cartao(s, x, 140, 264, 320, VERDE, 24);
-      circulo(s, x + 62, 160, 140, 140, p[3]);
-      texto(s, p[2], x + 62, 160, 140, 140, 64, VERDE, false, 'center', 'Segoe UI Emoji');
+      circulo(s, x + 47, 152, 170, 170, p[3]);
+      produto(s, p[2], x + 47, 152, 170, 76);
       texto(s, p[0], x, 322, 264, 30, 20, p[3], true);
       texto(s, p[1], x, 354, 264, 60, 40, BRANCO, true, 'center', 'Segoe UI Black');
     });
@@ -8488,7 +8518,7 @@ const Gamificacao = (() => {
     }
 
     // 5. Pódio de trás para frente: para cada prêmio, um slide de suspense e outro com o nome
-    [[3, 'Alexa', emoji.alexa, BRONZE], [2, 'Air Fryer', emoji.fryer, PRATA], [1, 'Smart TV', emoji.tv, OURO]].forEach((p, idx) => {
+    [[3, 'Alexa', 'alexa', BRONZE], [2, 'Air Fryer', 'fryer', PRATA], [1, 'Smart TV', 'tv', OURO]].forEach((p, idx) => {
       const o = rank[p[0] - 1]; if (!o) return;
       for (let rev = 0; rev < 2; rev++) {
         s = slide(VERDE); decoracaoEscura(s); confete(s, idx + 1 + rev * 5);
@@ -8496,7 +8526,8 @@ const Gamificacao = (() => {
         texto(s, p[0] + 'º LUGAR', 160, 34, 600, 40, 26, OURO, true, 'left');
         texto(s, 'Quem leva a ' + p[1] + '?', 160, 74, 700, 40, 30, BRANCO, true, 'left', 'Segoe UI Black');
         circulo(s, 70, 170, 250, 250, p[3]);
-        texto(s, p[2], 70, 170, 250, 250, 120, VERDE, false, 'center', 'Segoe UI Emoji');
+        produto(s, p[2], 50, 150, 290, 120);
+        if (rev === 1) especiais.zoom.add(nSlide);
         texto(s, p[1], 60, 432, 270, 50, 32, BRANCO, true, 'center', 'Segoe UI Black');
         if (rev === 0) {
           texto(s, '?', 370, 190, 530, 220, 150, OURO, true, 'center', 'Segoe UI Black');
@@ -8511,7 +8542,7 @@ const Gamificacao = (() => {
 
     // 6. Pódio final
     if (rank.length >= 3) {
-      s = slide(VERDE); decoracaoEscura(s); confete(s, 11);
+      s = slide(VERDE); decoracaoEscura(s); confete(s, 11); especiais.zoom.add(nSlide);
       logoImg(s, 40, 28, 92);
       texto(s, 'Parabéns aos campeões da temporada!', 160, 30, 780, 50, 36, BRANCO, true, 'left', 'Segoe UI Black');
       [[2, 130, 170, PRATA, 'Air Fryer'], [1, 370, 235, OURO, 'Smart TV'], [3, 610, 125, BRONZE, 'Alexa']].forEach((p) => {
@@ -8528,13 +8559,14 @@ const Gamificacao = (() => {
     // 7. Agradecimento
     s = slide(VERDE);
     circulo(s, 600, -160, 560, 560, VERDE2, 55); circulo(s, -140, 330, 420, 420, VERDE_ESC, 40); circulo(s, 760, 400, 300, 300, OURO, 82);
+    especiais.lento.add(nSlide);
     logoImg(s, 60, 50, 190);
     texto(s, 'Obrigado!', 60, 190, 840, 100, 72, BRANCO, true, 'left', 'Segoe UI Black');
     texto(s, 'Agradecemos a participação de todos neste projeto. Cada nota e cada atendimento ajudam a potencializar o nosso desenvolvimento e o nosso crescimento, com uma experiência cada vez melhor para o cliente e um atendimento mais assertivo.', 60, 308, 720, 150, 26, PALE, false, 'left', 'Segoe UI', 'top');
     texto(s, 'Liga do Atendimento  |  Grupo E', 60, 480, 700, 26, 16, OURO, true, 'left');
 
     // devolve o arquivo (blob) para quem chamou baixar: o download automático pode ser barrado pelo navegador, então o relatório também ganha um botão
-    return { blob: await pres.write({ outputType: 'blob' }), nome: 'Ranking Liga do Atendimento - Temporada ' + meses[meses.length - 1].slice(0, 4) + '.pptx' };
+    return { blob: await _comTransicoes(await pres.write({ outputType: 'blob' }), especiais), nome: 'Ranking Liga do Atendimento - Temporada ' + meses[meses.length - 1].slice(0, 4) + '.pptx' };
   }
 
   function _montarRelatorioTemporada(win, meses, porMes, consolidado, inicioGamificacao) {
