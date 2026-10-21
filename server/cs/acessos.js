@@ -98,6 +98,19 @@ const temModuloDePortal = (modulos) => (modulos || []).some((c) => SO_PORTAIS.in
 
 // ── banco ───────────────────────────────────────────────────────────────────────────
 let schemaPronto = null;
+/** 21/10/2026: quem já tinha lista de módulos gravada (Acessos) e é analista não ganhava os módulos novos (Minha área e Gamificação), porque lista gravada vence o padrão.
+ *  Uma única vez, soma esses módulos às listas que têm o portal do analista; depois disso valem as escolhas feitas em Acessos. */
+async function migrarMinhaArea() {
+  await pool.query('CREATE TABLE IF NOT EXISTS cs_acessos_migracoes (nome TEXT PRIMARY KEY, feita_em TIMESTAMPTZ NOT NULL DEFAULT NOW())');
+  const marca = await pool.query("INSERT INTO cs_acessos_migracoes (nome) VALUES ('minha_area_analista') ON CONFLICT (nome) DO NOTHING RETURNING nome");
+  if (!marca.rows.length) return;
+  const novos = MINHA_AREA.concat(['gamificacao']);
+  await pool.query(
+    "UPDATE cs_acessos SET modulos = modulos || $1::jsonb, atualizado_em = NOW() WHERE modulos @> '[\"analista\"]'::jsonb AND NOT (modulos ?| $2::text[])",
+    [JSON.stringify(novos), novos]);
+  cache.clear();
+}
+
 function garantirSchema() {
   if (!schemaPronto) {
     schemaPronto = pool.query(`CREATE TABLE IF NOT EXISTS cs_acessos (
@@ -105,7 +118,7 @@ function garantirSchema() {
       modulos JSONB NOT NULL,
       atualizado_por TEXT,
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )`).catch((e) => { schemaPronto = null; throw e; });
+    )`).then(migrarMinhaArea).catch((e) => { schemaPronto = null; throw e; });
   }
   return schemaPronto;
 }

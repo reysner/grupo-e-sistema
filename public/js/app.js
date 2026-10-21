@@ -8284,8 +8284,9 @@ const Gamificacao = (() => {
       setStatus('Montando o documento...');
       _montarRelatorioTemporada(win, meses, porMes, consolidado, base.inicioGamificacao);
       // junto com o relatório, baixa a apresentação (PowerPoint) do ranking — falha dela não derruba o relatório
-      try { await _baixarApresentacaoTemporada(meses, porMes, consolidado); App.Toast.ok('Apresentação (PowerPoint) baixada.'); }
-      catch (e) { console.error('[gam] apresentação da temporada falhou:', e); App.Toast.err('O relatório abriu, mas não consegui gerar o PowerPoint: ' + (e.message || e)); }
+      const avisoNaAba = (txt, cor) => { try { win.document.body.insertAdjacentHTML('afterbegin', '<div style="position:fixed;top:12px;right:12px;z-index:99;background:' + cor + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Arial,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25)" class="nao-imprimir">' + txt + '</div>'); } catch (_) {} };
+      try { await _baixarApresentacaoTemporada(meses, porMes, consolidado); App.Toast.ok('Apresentação (PowerPoint) baixada.'); avisoNaAba('Apresentação (PowerPoint) baixada na sua pasta de downloads.', '#1a4233'); }
+      catch (e) { console.error('[gam] apresentação da temporada falhou:', e); App.Toast.err('O relatório abriu, mas não consegui gerar o PowerPoint: ' + (e.message || e)); avisoNaAba('Não consegui gerar o PowerPoint: ' + (e.message || e), '#b91c1c'); }
     } catch (e) {
       console.error('[gam] relatório da temporada falhou:', e);
       setStatus('Erro ao gerar o relatório: ' + (e.message || e) + '. Feche esta aba e tente de novo.');
@@ -8323,7 +8324,10 @@ const Gamificacao = (() => {
   }
 
   async function _baixarApresentacaoTemporada(meses, porMes, consolidado) {
-    if (!window.PptxGenJS) await _carregarScript('https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js');
+    if (!window.PptxGenJS) {
+      try { await _carregarScript('https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js'); }
+      catch (e) { await _carregarScript('https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.bundle.js'); }
+    }
     const logo = await _logoRecortada();
     const pres = new window.PptxGenJS();
     pres.layout = 'LAYOUT_WIDE';            // 13,33" x 7,5" = 960 x 540 pt
@@ -8586,13 +8590,14 @@ const Gamificacao = (() => {
       td.vazio{color:#cbd5e1;text-align:center}
       .rodape{font-size:9.5px;color:#94a3b8;margin-top:24px;border-top:1px solid #e2e8f0;padding-top:10px}
       /* Capa */
-      .capa{page-break-before:avoid;background:#1a4233;color:#fff;min-height:24.5cm;margin:-1.6cm;padding:3.5cm 2.5cm;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+      .capa{page-break-before:avoid;background:#1a4233;color:#fff;min-height:24.5cm;margin:-1.6cm -1.6cm 0;padding:3.5cm 2.5cm;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
       .capa .troféu{font-size:64px;margin-bottom:18px}
       .capa h1{color:#fff;font-size:32px;margin-bottom:6px}
       .capa .subtitulo{font-size:17px;color:#d4c88a;margin-bottom:36px}
       .capa .periodo{font-size:14px;background:rgba(255,255,255,.1);padding:10px 22px;border-radius:30px;margin-bottom:44px}
       .capa .publico{font-size:12px;color:#cfd8d3;max-width:420px;line-height:1.7}
       .capa .publico b{color:#fff}
+      .capa .metodo{font-size:12px;color:#fff;max-width:420px;line-height:1.7;margin-top:14px}
       .capa .gerado{position:absolute;bottom:2.2cm;font-size:10.5px;color:#8ea597}
       /* Pódio */
       .podio{display:flex;gap:14px;justify-content:center;margin:18px 0 26px}
@@ -8617,7 +8622,7 @@ const Gamificacao = (() => {
       .perfil-medalha{font-size:22px}
       .perfil-header .perfil-nota{margin-left:auto;font-size:20px;font-weight:800;color:#1a4233}
       .perfil-linha{font-size:11.5px;margin:4px 0;color:#334155}
-      @media print{body{margin:0}}
+      @media print{body{margin:0}.nao-imprimir{display:none}}
     </style></head><body>
 
     <section class="capa">
@@ -8626,12 +8631,12 @@ const Gamificacao = (() => {
       <div class="subtitulo">Relatório da Temporada</div>
       <div class="periodo">${periodo}</div>
       <div class="publico">Apresentação para <b>CEO, Diretoria, Coordenação, Supervisão e Equipe</b> — retrospectiva completa da gamificação do Sucesso do Cliente desde o início do jogo.</div>
+      <div class="metodo">Nota consolidada = média simples da nota final de cada mês da temporada (com o ajuste de peso mínimo), do primeiro mês do jogo até hoje. Quem não teve avaliação num mês entra com a menor nota final daquele mês, pra não sumir da conta.</div>
       <div class="gerado">Gerado em ${hoje} • Grupo-E</div>
     </section>
 
     <section>
       <h2>🏆 Campeã(o) da Temporada</h2>
-      <p class="sub">Nota consolidada = média simples da nota final de cada mês da temporada (com o ajuste de peso mínimo), do primeiro mês do jogo até hoje. Quem não teve avaliação num mês entra com a menor nota final daquele mês, pra não sumir da conta.</p>
       <div class="podio">${podioHtml}</div>
       <div class="numeros">
         <div class="numero-card"><div class="valor">${meses.length}</div><div class="rotulo">meses de temporada</div></div>
@@ -8686,7 +8691,7 @@ const Gamificacao = (() => {
 
     <section>
       <h2>🔍 Transparência do processo</h2>
-      <p style="font-size:12px;line-height:1.7">Nenhum ponto ou desconto vira definitivo sozinho: toda nota abaixo de 5 e todo ajuste de comportamento (velocidade, aceite, encerramento, abandono) passam por revisão manual de um gestor antes de contar pra valer — o sistema só detecta e sinaliza, quem decide é sempre uma pessoa. Casos considerados indevidos (interação robótica, contato que não é cliente de verdade, desconto que não refletia a realidade do atendimento) são retirados do cálculo daquele mês. Dúvidas sobre como a nota de alguém específico foi calculada podem ser conferidas ticket a ticket em "Relatório de Descontos".</p>
+      <p style="font-size:12px;line-height:1.7">Nenhum ponto ou desconto vira definitivo sozinho: toda nota abaixo de 5 e todo ajuste de comportamento (velocidade, aceite, encerramento, abandono) passam por revisão manual de um gestor antes de contar pra valer — o sistema só detecta e sinaliza, quem decide é sempre uma pessoa. Casos considerados indevidos (interação robótica, contato que não é cliente de verdade, desconto que não refletia a realidade do atendimento) são retirados do cálculo daquele mês.</p>
       <p class="rodape">Liga do Atendimento — Grupo-E — Relatório da Temporada gerado automaticamente em ${hoje}, com os dados de ${periodo} recém-sincronizados do Zappy.</p>
     </section>
 

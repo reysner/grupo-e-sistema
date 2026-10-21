@@ -166,5 +166,13 @@ teste('backup: leva Qualidade, analistas, gestores, acessos e logs; fica de fora
   assert.ok(cfg.includes('vapid') && cfg.includes('secret') && cfg.includes('private'), 'chaves privadas ficam de fora');
 });
 
+teste('migração única: analista com lista gravada ganha Minha área e Gamificação (e só uma vez, para não desfazer escolhas feitas em Acessos)', () => {
+  const fonte = require('fs').readFileSync(require('path').join(__dirname, 'acessos.js'), 'utf8');
+  assert.ok(fonte.includes('.then(migrarMinhaArea)'), 'roda ao preparar a tabela');
+  assert.ok(fonte.includes("ON CONFLICT (nome) DO NOTHING RETURNING nome") && fonte.includes('if (!marca.rows.length) return;'), 'marca de migração feita: só roda uma vez');
+  assert.ok(/modulos @> '\[\\"analista\\"\]'::jsonb/.test(fonte) && fonte.includes('NOT (modulos ?| $2::text[])'), 'só quem tem o portal do analista e ainda não tem nenhum dos módulos novos');
+  const MINHA = ['minha_nota', 'meus_atendimentos', 'meus_emails', 'minha_evolucao', 'minhas_prioridades', 'gamificacao'];
+  assert.ok(MINHA.every((c) => A.CODIGOS.includes(c)));
+});
 console.log(`\n${ok} testes passaram.`);
 setTimeout(() => process.exit(0), 50);
