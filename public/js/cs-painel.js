@@ -30,6 +30,11 @@
     gestor: ['Portal do Gestor', 'As ocorrências do seu departamento: analise, crie a tratativa (plano de ação, responsável e prazo) e abra para o analista. A validação do que o analista tratou volta para cá.'],
     analista: ['Portal do Analista', 'As ocorrências que o seu gestor abriu para você. Sua tratativa será validada pelo seu gestor; depois da nota que você deixar, a ocorrência segue para o Sucesso do Cliente, que faz a devolutiva ao cliente.'],
     qualidade: ['Qualidade dos Dados', 'De onde vem cada indicador e o que ainda está sem dado.'],
+    minhanota: ['Minha nota', 'A composição da sua nota da Gamificação no mês: nota base dos atendimentos avaliados e os bônus e descontos.'],
+    meusatend: ['Meus atendimentos', 'Seus atendimentos do Zappy dos últimos 180 dias: nota do cliente e situação do SLA.'],
+    meusemails: ['Meus e-mails', 'Os e-mails de clientes que chegaram para você e os que ainda estão sem resposta.'],
+    minhaevolucao: ['Evolução semanal', 'Suas últimas 12 semanas: atendimentos, ocorrências recebidas e ocorrências concluídas.'],
+    minhasprior: ['Prioridades', 'O que merece a sua atenção primeiro: ocorrências vencidas ou perto do prazo, e-mails sem resposta e atendimentos com SLA vermelho.'],
   };
 
   var estado = { dados: null, periodoChave: 'ultimos_12_meses', churnLivre: null, secao: 'visao', graficos: {}, filtroRisco: { busca: '', nivel: 'AltoMedio', cat: '', term: '', soAtend: false, todos: false }, abaChurn: 'transferida', catSel: '', filtroAnalise: { busca: '', soGrupos: false, tipo: '', pag: 1 }, abertosAnalise: {} };
@@ -129,7 +134,7 @@
   /** Esquece tudo o que era da pessoa anterior (dados, filtros, telas e janelas): quem entrar em seguida na mesma aba não vê nada dela. */
   function limparEstadoDaSessao() {
     ['g', 's', 'a', 'eu', 'ac', 'qAnalistas', 'qResumo', 'qOpcoes', 'ficha', 'honorario', 'anual', 'atend', 'motivosChurn', 'fichaGrupoAberta', 'entidadesAnalise', 'tpAberto', 'tpF',
-      'filtroQ', 'filtroAtend', 'filtroAnual', 'qPesoAberto', 'fechamento', 'mesFechamento', 'avisosIniciados', 'qRecentes', 'versaoQ', 'sondaMudancas'].forEach(function (k) { delete estado[k]; });
+      'filtroQ', 'filtroAtend', 'filtroAnual', 'qPesoAberto', 'fechamento', 'mesFechamento', 'avisosIniciados', 'qRecentes', 'versaoQ', 'sondaMudancas', 'pessoal'].forEach(function (k) { delete estado[k]; });
     estado.dados = null; estado.churnLivre = null;
     try {
       Array.prototype.forEach.call(document.querySelectorAll('.gp-section'), function (s) { s.innerHTML = ''; });
@@ -326,6 +331,7 @@
     if (sec === 'gestor' && estado.g && !estado.g.dados) desenharGestor();
     if (sec === 'analista' && (!estado.a || !estado.a.dados) && perfilCs().analista) desenharAnalista();
     if (sec === 'sucesso' && (!estado.s || !estado.s.dados)) desenharSucesso();
+    if (SEC_PESSOAIS.indexOf(sec) >= 0) desenharPessoal(sec);
     if (sec === 'acessos' && (!estado.ac || !estado.ac.dados)) desenharAcessos();
     var ativa = $('sec-' + sec); if (ativa) ativa.scrollTop = 0;
     if (sec === 'consideracoes' && estado.dados && !estado.qResumo) desenharQualidadeMod();   // recarrega depois de um registro novo
@@ -2085,13 +2091,110 @@
     if (!raiz && $('oc-assunto').focus) $('oc-assunto').focus();
   }
 
+  // ── MINHA ÁREA (analista): Minha nota, Meus atendimentos, Meus e-mails, Evolução semanal e Prioridades ─────────────────────────
+  // Vieram do portal antigo /qualidade (agora tudo fica aqui, no mesmo menu). Cada tela mostra só os dados da própria pessoa (login ligado a um analista);
+  // administrador e usuário podem escolher "Ver como" outro analista. Quem vê cada tela é definido em Acessos.
+  function mesAtualIso() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+  function ehLiderPessoal() { var u = usuarioCs() || {}; return u.role === 'administrador' || u.role === 'usuario'; }
+  async function carregarPessoal(forcar) {
+    var s = estado.pessoal = estado.pessoal || { dados: null, analista: '' };
+    if (s.dados && !forcar) return s.dados;
+    s.dados = await api('/api/cs/painel/qualidade/analista/meu-painel' + (s.analista ? '?analista=' + encodeURIComponent(s.analista) : ''));
+    var b = $('badge-minhasprior'); if (b) b.textContent = ((s.dados && s.dados.prioridades) || []).length || '';
+    return s.dados;
+  }
+  function htmlPrioridadesPessoal(d) {
+    var lista = (d.prioridades || []).map(function (x) {
+      return '<div class="linha-item"><span class="q">' + (x.nivel === 'alta' ? '🔴' : '🟠') + '</span><span class="r" style="flex:0 0 260px">' + esc(x.titulo) + '</span><span class="x">' + esc(x.detalhe) + '</span></div>';
+    }).join('') || '<div class="linha-item"><span class="x">Nada urgente agora. Bom trabalho!</span></div>';
+    var a = d.atendimentos || {}, e = d.emails || {};
+    return '<div class="gp-kpi-row">' + kpi('#b91c1c', 'Itens urgentes', (d.prioridades || []).length, 'ocorrências, e-mails e atendimentos') +
+      kpi('#0f766e', 'Atendimentos', a.vinculado ? a.total : '—', a.vinculado ? 'últimos ' + a.janela_dias + ' dias' : 'login sem vínculo com o Zappy') +
+      kpi('#b45309', 'E-mails sem resposta', e.lido_em ? e.sem_resposta : '—', e.lido_em ? 'de ' + e.recebidos + ' recebidos' : 'leitura ainda não carregada') + '</div>' +
+      '<div class="card"><div class="card-title">Para agir primeiro</div><div class="card-sub">Ordenado do mais urgente para o menos urgente.</div>' + lista + '</div>';
+  }
+  function htmlAtendPessoal(d) {
+    var a = d.atendimentos || {};
+    if (!a.vinculado) return '<div class="card"><div class="vazio">Seu login ainda não está ligado a um usuário do Zappy. A liderança faz esse vínculo em Gamificação › Colaboradores.</div></div>';
+    var linhas = (a.lista || []).map(function (t) {
+      var cor = { vermelho: '#dc2626', amarelo: '#d97706', verde: '#10b981' }[t.pior_status] || '#9ca3af';
+      return '<tr><td>' + data(String(t.abertura || '').slice(0, 10)) + '</td><td>' + esc(t.cliente_nome || t.empresa_texto || '—') + '</td><td>' + esc(t.departamento || '—') + '</td><td class="c">' + (t.nota_avaliacao != null ? t.nota_avaliacao : '—') + '</td>' +
+        '<td class="c"><span class="pill" style="color:' + cor + ';border-color:' + cor + '55;background:' + cor + '14">' + esc(t.pior_status || '—') + '</span></td></tr>';
+    }).join('');
+    return '<div class="gp-kpi-row">' + kpi('#0f766e', 'Atendimentos', a.total, 'últimos ' + a.janela_dias + ' dias') + kpi('#dc2626', 'SLA vermelho', a.sla_vermelho, 'antes da revisão da Gamificação') +
+      kpi('#b45309', 'Notas baixas', a.notas_baixas, 'nota 1 ou 2') + kpi('#2563eb', 'Nota média', a.media_nota == null ? '—' : String(a.media_nota).replace('.', ','), 'avaliação do cliente') + '</div>' +
+      '<div class="card"><div class="card-sub">Seus ' + (a.lista || []).length + ' atendimentos mais recentes.</div>' +
+      ((a.lista || []).length ? '<div class="table-wrap"><table><thead><tr><th>Data</th><th>Empresa</th><th>Setor</th><th class="c">Nota</th><th class="c">SLA</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhum atendimento no período.</div>') + '</div>';
+  }
+  function htmlEmailsPessoal(d) {
+    var e = d.emails || {};
+    if (!e.lido_em) return '<div class="card"><div class="vazio">A leitura de e-mails ainda não foi carregada.</div></div>';
+    var linhas = (e.clientes || []).map(function (c) { return '<tr><td>' + esc(c.nome || c.cnpj) + '</td><td class="c">' + c.recebidos + '</td><td class="c">' + (c.sem ? '<strong style="color:#dc2626">' + c.sem + '</strong>' : '0') + '</td></tr>'; }).join('');
+    return '<div class="gp-kpi-row">' + kpi('#b45309', 'E-mails recebidos', e.recebidos, 'últimos ' + (e.janela_dias || 180) + ' dias') + kpi('#b91c1c', 'Sem resposta', e.sem_resposta, 'ninguém do escritório respondeu depois') +
+      kpi('#256050', 'Clientes', (e.clientes || []).length, 'que escreveram para você') + '</div>' +
+      '<div class="nota">Só entram contatos ligados a uma empresa. A resposta de qualquer pessoa do escritório encerra a espera. Leitura de ' + esc(new Date(e.lido_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })) + '.</div>' +
+      '<div class="card">' + ((e.clientes || []).length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Recebidos</th><th class="c">Sem resposta</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhum e-mail de cliente para você na leitura.</div>') + '</div>';
+  }
+  function htmlEvolucaoPessoal(d) {
+    var ev = d.evolucao || [];
+    var max = Math.max.apply(null, ev.map(function (x) { return Math.max(x.atendimentos, x.lancadas, x.resolvidas); }).concat([1]));
+    var barra = function (v, cor) { return '<div style="display:flex;gap:6px;align-items:center"><div style="height:8px;border-radius:4px;background:' + cor + ';width:' + Math.max(2, Math.round(v / max * 100)) + 'px"></div>' + v + '</div>'; };
+    return '<div class="card"><div class="table-wrap"><table><thead><tr><th>Semana (segunda-feira)</th><th>Atendimentos</th><th>Ocorrências recebidas</th><th>Ocorrências concluídas</th></tr></thead><tbody>' +
+      ev.slice().reverse().map(function (x) { return '<tr><td>' + data(x.semana) + '</td><td>' + barra(x.atendimentos, '#0f766e') + '</td><td>' + barra(x.lancadas, '#b45309') + '</td><td>' + barra(x.resolvidas, '#166534') + '</td></tr>'; }).join('') +
+      '</tbody></table></div></div>';
+  }
+  function linhaCompPessoal(rot, n) {
+    n = Number(n || 0); var cor = n > 0 ? '#166534' : n < 0 ? '#b91c1c' : '#6b7280';
+    return '<div class="linha-item"><span class="r" style="flex:1">' + rot + '</span><span style="font-weight:700;color:' + cor + '">' + (n > 0 ? '+' : '') + n.toFixed(2) + '</span></div>';
+  }
+  function htmlNotaPessoal() {
+    return '<div class="card"><div class="filter-group" style="margin-bottom:12px"><span class="filter-label">Mês</span><input class="gp-input" type="month" id="nota-mes" value="' + mesAtualIso() + '">' +
+      '<button type="button" class="gp-footer-btn" id="nota-ver" style="width:auto">Ver minha nota</button></div><div id="nota-corpo"><div class="vazio">Escolha um mês e clique em "Ver minha nota".</div></div></div>';
+  }
+  async function carregarNotaPessoal() {
+    var campo = $('nota-mes'), corpo = $('nota-corpo'); if (!campo || !corpo) return;
+    corpo.innerHTML = '<div class="vazio">Carregando…</div>';
+    try {
+      var c = await api('/api/data/gam/minha-composicao?mes=' + campo.value);
+      if (c.semDados || c.mediaBase === undefined) { corpo.innerHTML = '<div class="vazio">' + esc(c.mensagem || 'Sem nota calculada nesse mês ainda.') + '</div>'; return; }
+      corpo.innerHTML = '<div class="blocos"><div class="bloco"><div class="t">Nota final do mês</div><div class="v">' + Number(c.media_individual).toFixed(2) + '</div><div class="d">capada em 5</div></div>' +
+        '<div class="bloco"><div class="t">Atendimentos avaliados</div><div class="v">' + c.avaliacoes + '</div><div class="d">avaliados pelo cliente no mês</div></div></div>' +
+        '<div class="ficha-sec">Composição</div>' +
+        '<div class="linha-item"><span class="r" style="flex:1">Nota base (média dos atendimentos)</span><span style="font-weight:700">' + Number(c.mediaBase).toFixed(2) + '</span></div>' +
+        linhaCompPessoal('Bônus/desconto de velocidade (média)', c.bonusTransferencia) +
+        (c.bonusAceite !== undefined ? linhaCompPessoal('Bônus/desconto de aceite do aguardando (média)', c.bonusAceite) : '') +
+        linhaCompPessoal('Bônus/desconto de /Finalizar + reabertura (média)', c.bonusFinalizar) +
+        (c.bonusAbandono !== undefined ? linhaCompPessoal('Desconto de abandono de atendimento (média)', c.bonusAbandono) : '');
+    } catch (e) {
+      corpo.innerHTML = '<div class="vazio">' + esc(e.status === 403 ? 'Seu login não tem a marca "Minha Nota". Peça à liderança para marcar em Usuários.' : e.message) + '</div>';
+    }
+  }
+  async function desenharPessoal(sec) {
+    var alvo = $('sec-' + sec); if (!alvo) return;
+    alvo.innerHTML = '<div class="vazio">Carregando…</div>';
+    try {
+      var lider = ehLiderPessoal(); if (lider) await carregarOpcoesQ();
+      var d = await carregarPessoal(false), s = estado.pessoal;
+      var verComo = lider ? '<div class="filter-group" style="margin-bottom:12px"><span class="filter-label">Ver como</span><select class="gp-select" id="pe-analista"><option value="">Eu (meu login)</option>' +
+        (estado.qAnalistas || []).map(function (a) { return '<option value="' + esc(a.id) + '"' + (String(s.analista) === String(a.id) ? ' selected' : '') + '>' + esc(a.nome) + '</option>'; }).join('') + '</select></div>' : '';
+      var corpo;
+      if (!d.analista) corpo = '<div class="card"><div class="vazio">' + esc(d.aviso || 'Seu login ainda não está ligado a um analista da lista. Peça à liderança para ligar (Qualidade › Gerenciar analistas).') + '</div></div>';
+      else corpo = '<div class="cinza" style="margin-bottom:8px">Analista: <strong>' + esc(d.analista.nome) + '</strong></div>' +
+        (sec === 'minhanota' ? htmlNotaPessoal() : sec === 'meusatend' ? htmlAtendPessoal(d) : sec === 'meusemails' ? htmlEmailsPessoal(d) : sec === 'minhaevolucao' ? htmlEvolucaoPessoal(d) : htmlPrioridadesPessoal(d));
+      alvo.innerHTML = verComo + corpo;
+      var sel = $('pe-analista'); if (sel) sel.addEventListener('change', function () { estado.pessoal.analista = sel.value; estado.pessoal.dados = null; desenharPessoal(sec); });
+      var bn = $('nota-ver'); if (bn) { bn.addEventListener('click', carregarNotaPessoal); if (d.analista) carregarNotaPessoal(); }
+    } catch (e) { alvo.innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; }
+  }
+
   // ── ACESSOS: quem vê o quê no painel (só administrador) ─────────────────────────────────────────
-  var ICONE_MOD = { visao: '🏠', inteligente: '🧠', anual: '📅', atendimento: '🎧', permanencia: '🎯', churn: '📉', categorias: '🏅', qualidade_dados: '🔎', qualidade: '✅', gestor: '🧭', analista: '🧑‍💼', sucesso: '🤝' };
+  var ICONE_MOD = { visao: '🏠', inteligente: '🧠', anual: '📅', atendimento: '🎧', permanencia: '🎯', churn: '📉', categorias: '🏅', qualidade_dados: '🔎', qualidade: '✅', gestor: '🧭', analista: '🧑‍💼', sucesso: '🤝', minha_nota: '🏆', meus_atendimentos: '🎧', meus_emails: '📧', minha_evolucao: '📈', minhas_prioridades: '🚨' };
   var MOD_INDICADORES = ['visao', 'inteligente', 'anual', 'atendimento', 'permanencia', 'churn', 'categorias', 'qualidade_dados'];
   var PERFIS_RAPIDOS = [
     { id: 'equipe', rotulo: 'Equipe completa', modulos: MOD_INDICADORES.concat(['qualidade', 'sucesso']) },
     { id: 'indicadores', rotulo: 'Só indicadores', modulos: MOD_INDICADORES.slice() },
     { id: 'portais', rotulo: 'Só Qualidade e portais', modulos: ['qualidade', 'gestor', 'analista', 'sucesso'] },
+    { id: 'analista', rotulo: 'Analista (portal + minha área)', modulos: ['qualidade', 'analista', 'minha_nota', 'meus_atendimentos', 'meus_emails', 'minha_evolucao', 'minhas_prioridades'] },
     { id: 'nada', rotulo: 'Sem acesso a nada', modulos: [] }
   ];
   var CADASTROS_AC = [
@@ -2398,8 +2501,9 @@
     return { completo: adm || u.role === 'usuario' || !!u.acesso_cs, admin: adm, gestor: adm || !!u.acesso_gestor, analista: adm || !!u.acesso_qualidade };
   }
   // Módulos liberados (Acessos): o servidor devolve em /qualidade/eu o que a pessoa vê; quem não foi configurado segue o padrão do perfil.
-  var SEC_MODULO = { visao: 'visao', analise: 'inteligente', anual: 'anual', atendimento: 'atendimento', consideracoes: 'qualidade', gestor: 'gestor', analista: 'analista', sucesso: 'sucesso', risco: 'permanencia', churn: 'churn', categorias: 'categorias', qualidade: 'qualidade_dados', acessos: 'acessos' };
-  var ORDEM_SECOES = ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'gestor', 'analista', 'sucesso', 'risco', 'churn', 'categorias', 'qualidade', 'acessos'];
+  var SEC_MODULO = { visao: 'visao', analise: 'inteligente', anual: 'anual', atendimento: 'atendimento', consideracoes: 'qualidade', gestor: 'gestor', analista: 'analista', sucesso: 'sucesso', risco: 'permanencia', churn: 'churn', categorias: 'categorias', qualidade: 'qualidade_dados', acessos: 'acessos', minhanota: 'minha_nota', meusatend: 'meus_atendimentos', meusemails: 'meus_emails', minhaevolucao: 'minha_evolucao', minhasprior: 'minhas_prioridades' };
+  var ORDEM_SECOES = ['visao', 'analise', 'anual', 'atendimento', 'consideracoes', 'gestor', 'analista', 'sucesso', 'minhanota', 'meusatend', 'meusemails', 'minhaevolucao', 'minhasprior', 'risco', 'churn', 'categorias', 'qualidade', 'acessos'];
+  var SEC_PESSOAIS = ['minhanota', 'meusatend', 'meusemails', 'minhaevolucao', 'minhasprior'];   // Minha área do analista (vieram do portal antigo /qualidade)
   function modulosCs() { return estado.eu && Array.isArray(estado.eu.modulos) ? estado.eu.modulos : null; }
   /** true/false conforme os módulos da pessoa; null quando ainda não se sabe (cai nas regras de sempre). */
   function secaoLiberada(sec) { var m = modulosCs(); return m ? m.indexOf(SEC_MODULO[sec]) >= 0 : null; }
@@ -2414,14 +2518,14 @@
     Array.prototype.forEach.call(document.querySelectorAll('.gp-nav-item'), function (b) {
       var sec = b.getAttribute('data-sec');
       var lib = secaoLiberada(sec);
-      var ok = lib !== null ? lib : sec === 'acessos' ? p.admin : p.completo ? (sec === 'gestor' ? p.gestor : sec === 'analista' ? p.analista : true) : (sec === 'consideracoes' || (sec === 'gestor' && p.gestor) || (sec === 'analista' && p.analista) || (sec === 'sucesso' && !!(estado.eu && estado.eu.sucesso)));
+      var ok = SEC_PESSOAIS.indexOf(sec) >= 0 ? lib === true : lib !== null ? lib : sec === 'acessos' ? p.admin : p.completo ? (sec === 'gestor' ? p.gestor : sec === 'analista' ? p.analista : true) : (sec === 'consideracoes' || (sec === 'gestor' && p.gestor) || (sec === 'analista' && p.analista) || (sec === 'sucesso' && !!(estado.eu && estado.eu.sucesso)));
       b.style.display = ok ? '' : 'none';
     });
-    Array.prototype.forEach.call(document.querySelectorAll('.gp-nav-divider'), function (d) { d.style.display = (d.getAttribute('data-div') === 'adm' ? p.admin : p.completo) ? '' : 'none'; });
+    Array.prototype.forEach.call(document.querySelectorAll('.gp-nav-divider'), function (d) { var tipoDiv = d.getAttribute('data-div'); d.style.display = (tipoDiv === 'adm' ? p.admin : tipoDiv === 'minha' ? SEC_PESSOAIS.some(function (s) { return secaoLiberada(s) === true; }) : p.completo) ? '' : 'none'; });
     if (!p.completo) {
       ['btn-csv', 'btn-pdf', 'btn-valores', 'btn-atualizar', 'filtro-periodo'].forEach(function (id) { var e = $(id); if (e) e.style.display = 'none'; });
       var sucessoOk = !!(estado.eu && estado.eu.sucesso);
-      if (['consideracoes', 'gestor', 'analista', 'sucesso'].indexOf(estado.secao) < 0 || (estado.secao === 'gestor' && !p.gestor) || (estado.secao === 'analista' && !p.analista) || (estado.secao === 'sucesso' && !sucessoOk)) estado.secao = p.gestor ? 'gestor' : 'consideracoes';
+      if (['consideracoes', 'gestor', 'analista', 'sucesso'].concat(SEC_PESSOAIS).indexOf(estado.secao) < 0 || (estado.secao === 'gestor' && !p.gestor) || (estado.secao === 'analista' && !p.analista) || (estado.secao === 'sucesso' && !sucessoOk)) estado.secao = p.gestor ? 'gestor' : 'consideracoes';
     } else if ((estado.secao === 'gestor' && !p.gestor) || (estado.secao === 'analista' && !p.analista)) estado.secao = 'visao';
     if (secaoLiberada(estado.secao) === false) estado.secao = secaoInicialCs();   // a seção aberta não é mais da pessoa
     var barra = document.querySelector('.gp-sidebar'); if (barra) barra.classList.remove('gp-aguarda-perfil');   // o menu só aparece quando já se sabe o que a pessoa pode ver

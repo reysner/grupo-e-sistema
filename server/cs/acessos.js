@@ -29,11 +29,18 @@ const CATALOGO = [
   { codigo: 'gestor', secao: 'gestor', rotulo: 'Portal do Gestor', grupo: 'Qualidade e portais' },
   { codigo: 'analista', secao: 'analista', rotulo: 'Portal do Analista', grupo: 'Qualidade e portais' },
   { codigo: 'sucesso', secao: 'sucesso', rotulo: 'Portal do Sucesso do Cliente', grupo: 'Qualidade e portais' },
+  // Minha área (analista): vieram do portal antigo /qualidade. Todo analista tem por padrão; cada tela mostra só os dados da própria pessoa.
+  { codigo: 'minha_nota', secao: 'minhanota', rotulo: 'Minha nota', grupo: 'Minha área (analista)' },
+  { codigo: 'meus_atendimentos', secao: 'meusatend', rotulo: 'Meus atendimentos', grupo: 'Minha área (analista)' },
+  { codigo: 'meus_emails', secao: 'meusemails', rotulo: 'Meus e-mails', grupo: 'Minha área (analista)' },
+  { codigo: 'minha_evolucao', secao: 'minhaevolucao', rotulo: 'Evolução semanal', grupo: 'Minha área (analista)' },
+  { codigo: 'minhas_prioridades', secao: 'minhasprior', rotulo: 'Prioridades', grupo: 'Minha área (analista)' },
 ];
+const MINHA_AREA = ['minha_nota', 'meus_atendimentos', 'meus_emails', 'minha_evolucao', 'minhas_prioridades'];
 const ACESSOS = { codigo: 'acessos', secao: 'acessos', rotulo: 'Acessos', grupo: 'Administração' };   // só administrador; não é configurável
 const CODIGOS = CATALOGO.map((m) => m.codigo);
 const DADOS = CATALOGO.filter((m) => m.dados).map((m) => m.codigo);
-const SO_PORTAIS = ['qualidade', 'gestor', 'analista', 'sucesso'];
+const SO_PORTAIS = ['qualidade', 'gestor', 'analista', 'sucesso'].concat(MINHA_AREA);
 
 /** Os módulos que a pessoa teria sem configuração: administrador tudo; equipe do painel os indicadores + Qualidade + Sucesso do Cliente; os demais, só o que o perfil dá. */
 function modulosPadrao(p) {
@@ -43,7 +50,7 @@ function modulosPadrao(p) {
   if (p.equipe) DADOS.forEach((c) => m.push(c)), m.push('sucesso');
   else if (p.sucesso) m.push('sucesso');
   if (p.gestor) m.push('gestor');
-  if (p.analista) m.push('analista');
+  if (p.analista) m.push('analista', ...MINHA_AREA);   // analista: o portal e a Minha área (nota, atendimentos, e-mails, evolução, prioridades)
   return CODIGOS.filter((c) => m.includes(c));
 }
 

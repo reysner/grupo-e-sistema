@@ -260,7 +260,7 @@ function rotaAbertaGestorAnalista(metodo, caminho) {
   const m = String(metodo || '').toUpperCase();
   const c = String(caminho || '').split('?')[0].replace(/\/+$/, '') || '/';
   const p = c.split('/');   // '' + segmentos
-  if (m === 'GET') return ['/opcoes', '/empresas', '/tempos', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/analista/ocorrencias', '/sucesso/ocorrencias', '/pendencias', '/versao'].includes(c) || (p.length === 3 && p[1] === 'anexo');
+  if (m === 'GET') return ['/opcoes', '/empresas', '/tempos', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/analista/ocorrencias', '/sucesso/ocorrencias', '/pendencias', '/versao', '/analista/meu-painel'].includes(c) || (p.length === 3 && p[1] === 'anexo');
   if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir', 'excluir', 'mensagem', 'resposta-final'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && ['encerrar', 'apontar', 'responder'].includes(p[4]));
   if (m === 'PUT') return p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && p[4] === 'tratativa';
   return false;
@@ -1824,15 +1824,27 @@ async function identidade(user, analistaId) {
   return { analista, colab };
 }
 
-routerAnalista.get('/painel', async (req, res) => {
+/** Painel pessoal do analista (Minha área: atendimentos do Zappy, e-mails, evolução semanal e prioridades). Vale para o login da pessoa; administrador/usuário pode pedir outro analista com ?analista=. */
+async function painelPessoal(req, res) {
   try {
     await garantirSchema();
     const hoje = hojeBrasilia();
     const { analista, colab } = await identidade(req.user, req.query.analista);
     if (!analista) return res.json({ analista: null, aviso: 'Seu login ainda não está ligado a um analista da lista. Peça à liderança para ligar (Qualidade > seu nome > Login).' });
 
-    const regs = (await pool.query(`SELECT ${COLUNAS} ${DE} WHERE r.analista_id = $1 AND r.origem <> 'modulo' AND r.status <> 'cancelado' ORDER BY r.prazo ASC LIMIT 300`, [String(analista.id)])).rows;
-    const registros = await anexarNotas(comSituacao(regs));
+    // ocorrências (módulo e vinculadas) em que a pessoa é responsável: base das Prioridades e da Evolução (o plano de ação antigo da ficha não entra)
+    const regs = (await pool.query(
+      `SELECT r.id, r.cliente_nome, r.tipo, r.etapa, to_char(r.prazo, 'YYYY-MM-DD') AS prazo, r.criado_em, r.liberada_em, r.encerrada_em, r.analista_em,
+              EXISTS (SELECT 1 FROM cs_qualidade_resp x WHERE x.registro_id = r.id AND x.analista_id = $1 AND x.encerrado_em IS NOT NULL) AS minha_parte_encerrada
+         FROM cs_qualidade_registros r
+        WHERE r.origem IN ('modulo', 'filha') AND r.status <> 'cancelado' AND r.etapa NOT IN ('registrada', 'tratativa_definida')
+          AND (r.analista_id = $1 OR EXISTS (SELECT 1 FROM cs_qualidade_resp x WHERE x.registro_id = r.id AND x.analista_id = $1))
+        ORDER BY r.prazo ASC NULLS LAST LIMIT 300`, [String(analista.id)])).rows;
+    const registros = regs.map((r) => ({
+      id: r.id, cliente_nome: r.cliente_nome, tipo: r.tipo, prazo: r.prazo, criado_em: r.liberada_em || r.criado_em,
+      resolvido_em: r.minha_parte_encerrada ? (r.analista_em || r.encerrada_em) : r.encerrada_em,
+      status: r.etapa === 'com_analista' && !r.minha_parte_encerrada ? 'em_tratamento' : 'resolvido',
+    }));
 
     // Atendimentos do Zappy (180 dias) do analista, pelo usuário do Zappy ligado na Gamificação
     let atend = { vinculado: !!(colab && colab.zappy_user_id), colaborador: colab ? colab.nome : null, janela_dias: 180, lista: [], semanas: [], total: 0, sla_vermelho: 0, notas_baixas: 0, media_nota: null };
@@ -1888,7 +1900,9 @@ routerAnalista.get('/painel', async (req, res) => {
     const prioridades = montarPrioridades({ registros, emails: emails.clientes, slaVermelho: slaVermelho30 }, hoje);
     res.json({ hoje, analista: { id: analista.id, nome: analista.nome }, registros, atendimentos: atend, emails, evolucao: evol, prioridades });
   } catch (e) { console.error('[qualidade] GET /painel falhou:', e); res.status(500).json({ error: 'Erro ao montar o seu painel.' }); }
-});
+}
+routerAnalista.get('/painel', painelPessoal);
+router.get('/analista/meu-painel', painelPessoal);
 
 routerAnalista.get('/minhas', async (req, res) => {
   try {
