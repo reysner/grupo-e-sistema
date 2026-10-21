@@ -329,6 +329,7 @@
     $('subtitulo').textContent = TITULOS[sec][1];
     $('filtro-periodo').style.display = (sec === 'visao' || sec === 'churn') ? 'flex' : 'none';
     pintarBotaoValores();   // some nos portais do Gestor e do Analista
+    var como = document.querySelector('.gp-como'); if (como) como.style.display = sec === 'analista' ? '' : 'none';   // "Como funciona" (SLA) só no Portal do Analista
     if (sec === 'gestor' && estado.g && !estado.g.dados) desenharGestor();
     if (sec === 'analista' && (!estado.a || !estado.a.dados) && perfilCs().analista) desenharAnalista();
     if (sec === 'sucesso' && (!estado.s || !estado.s.dados)) desenharSucesso();
