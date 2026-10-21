@@ -1214,7 +1214,7 @@ router.post('/gestor/ocorrencias/:id/abrir', async (req, res) => {
 router.get('/analista/ocorrencias', async (req, res) => {
   try {
     await garantirSchema();
-    const adm = PAPEIS.includes(req.user.role);
+    const adm = await veTodosAnalistas(req.user);
     let analista = null;
     if (adm && req.query.analista) analista = (await pool.query('SELECT id, nome FROM analistas WHERE id::text = $1', [String(req.query.analista)])).rows[0] || null;
     else if (!adm) analista = await analistaDoLogin(req.user);
@@ -1223,7 +1223,7 @@ router.get('/analista/ocorrencias', async (req, res) => {
     const { rows } = await pool.query(
       `SELECT ${COLUNAS} ${DE} WHERE r.origem IN ('modulo', 'filha') AND r.status <> 'cancelado' AND r.etapa NOT IN ('registrada', 'tratativa_definida')${analista ? ' AND (r.analista_id = $1 OR EXISTS (SELECT 1 FROM cs_qualidade_resp x WHERE x.registro_id = r.id AND x.analista_id = $1))' : ''}
         ORDER BY (r.etapa = 'encerrada') ASC, r.prazo ASC NULLS LAST LIMIT 300`, vals);
-    const lider = PAPEIS.includes(req.user.role), meuId = analista ? String(analista.id) : null;
+    const lider = adm, meuId = analista ? String(analista.id) : null;
     const mascarar = (lista) => lista.map((r) => mascararParaAnalista(r, meuId, lider));
     res.json({
       analista: analista ? { id: analista.id, nome: analista.nome } : null, todos: !analista, admin: adm,
@@ -1274,7 +1274,7 @@ router.post('/analista/ocorrencias/:id/encerrar', async (req, res) => {
     if (!t.ok) return res.status(409).json({ error: t.erro });
     // o administrador age em nome de um responsável: o pedido (analista_id) ou o primeiro que ainda não encerrou
     let pedido = req.body && req.body.analista_id ? String(req.body.analista_id) : null;
-    if (!pedido && PAPEIS.includes(req.user.role)) {
+    if (!pedido && (await veTodosAnalistas(req.user))) {
       const pend = (await pool.query('SELECT analista_id FROM cs_qualidade_resp WHERE registro_id = $1 AND encerrado_em IS NULL ORDER BY analista_id', [reg.id])).rows[0];
       if (pend) pedido = String(pend.analista_id);
     }
@@ -1805,15 +1805,25 @@ async function analistaDoLogin(user) {
   return todos.rows.find((a) => semAcento(a.nome) === semAcento(completo)) || null;
 }
 
+/** Quem vê e age por TODOS os analistas (Portal do Analista, "Ver como", agir em nome de): o administrador e quem tem o perfil Usuário (liderança) SEM ser analista.
+ *  Quem tem o login ligado a um analista só vê e age no que é seu, qualquer que seja o perfil (21/10/2026: o Bruno, perfil Usuário e analista, via as ocorrências de todos). */
+async function veTodosAnalistas(user) {
+  if (!user) return false;
+  if (user.role === 'administrador') return true;
+  if (user.role !== 'usuario') return false;
+  return !(await analistaDoLogin(user).catch(() => null));
+}
+
 /** Quem é o analista (lista de Qualidade) e o colaborador da Gamificação (Zappy) deste login; administrador ou usuário podem pedir outro analista. */
 async function identidade(user, analistaId) {
   let analista = null;
-  if (analistaId && PAPEIS.includes(user.role)) {
+  const verOutro = !!analistaId && (await veTodosAnalistas(user));
+  if (verOutro) {
     const a = await pool.query('SELECT id, nome, ativo, user_id FROM analistas WHERE id::text = $1', [String(analistaId)]);
     analista = a.rows[0] || null;
   } else analista = await analistaDoLogin(user);
   let colab = null;
-  const donoLogin = analista && !(analistaId && PAPEIS.includes(user.role)) ? user.id : (analista && analista.user_id) || null;
+  const donoLogin = analista && !verOutro ? user.id : (analista && analista.user_id) || null;
   try {
     if (donoLogin) colab = ((await pool.query('SELECT nome, zappy_user_id FROM gam_colaboradores WHERE user_id = $1', [String(donoLogin)])).rows[0]) || null;
     if (!colab && analista) {
@@ -1830,7 +1840,8 @@ async function painelPessoal(req, res) {
     await garantirSchema();
     const hoje = hojeBrasilia();
     const { analista, colab } = await identidade(req.user, req.query.analista);
-    if (!analista) return res.json({ analista: null, aviso: 'Seu login ainda não está ligado a um analista da lista. Peça à liderança para ligar (Qualidade > seu nome > Login).' });
+    const verTodos = await veTodosAnalistas(req.user);
+    if (!analista) return res.json({ analista: null, ver_todos: verTodos, aviso: 'Seu login ainda não está ligado a um analista da lista. Peça à liderança para ligar (Qualidade > seu nome > Login).' });
 
     // ocorrências (módulo e vinculadas) em que a pessoa é responsável: base das Prioridades e da Evolução (o plano de ação antigo da ficha não entra)
     const regs = (await pool.query(
@@ -1898,7 +1909,7 @@ async function painelPessoal(req, res) {
     for (let i = 11; i >= 0; i--) { const s = somarDias(ini, -7 * i); evol.push({ semana: s, lancadas: lancadas[s] || 0, resolvidas: resolvidas[s] || 0, atendimentos: (atend.semanas.find((x) => x.semana === s) || {}).n || 0 }); }
 
     const prioridades = montarPrioridades({ registros, emails: emails.clientes, slaVermelho: slaVermelho30 }, hoje);
-    res.json({ hoje, analista: { id: analista.id, nome: analista.nome }, registros, atendimentos: atend, emails, evolucao: evol, prioridades });
+    res.json({ hoje, ver_todos: verTodos, analista: { id: analista.id, nome: analista.nome }, registros, atendimentos: atend, emails, evolucao: evol, prioridades });
   } catch (e) { console.error('[qualidade] GET /painel falhou:', e); res.status(500).json({ error: 'Erro ao montar o seu painel.' }); }
 }
 routerAnalista.get('/painel', painelPessoal);
@@ -1908,7 +1919,7 @@ routerAnalista.get('/minhas', async (req, res) => {
   try {
     await garantirSchema();
     let analista = null;
-    const verTodos = PAPEIS.includes(req.user.role);
+    const verTodos = await veTodosAnalistas(req.user);
     if (req.query.analista && verTodos) {
       const a = await pool.query('SELECT id, nome, ativo FROM analistas WHERE id::text = $1', [String(req.query.analista)]);
       analista = a.rows[0] || null;
@@ -1924,13 +1935,13 @@ routerAnalista.get('/minhas', async (req, res) => {
  * Devolve { ok, analistaNome, por } ou { ok:false, status, erro }.
  */
 /** O registro que volta para quem agiu: a liderança vê tudo; o analista recebe com a máscara do sigilo (empresa oculta, reclamado, origem da vinculada). */
-function registroParaQuemAgiu(user, ag, registro) { return PAPEIS.includes(user.role) ? registro : mascararParaAnalista(registro, ag.analistaId, false); }
+function registroParaQuemAgiu(user, ag, registro) { return ag.lider ? registro : mascararParaAnalista(registro, ag.analistaId, false); }
 async function autorizaAgir(user, reg, analistaPedido) {
   const ids = await idsRespDe(reg.id, reg.analista_id);
-  if (PAPEIS.includes(user.role)) {
+  if (await veTodosAnalistas(user)) {
     const alvo = analistaPedido && ids.includes(String(analistaPedido)) ? String(analistaPedido) : (ids[0] || String(reg.analista_id));
     const a = (await pool.query('SELECT nome FROM analistas WHERE id::text = $1', [alvo])).rows[0];
-    return { ok: true, analistaId: alvo, analistaNome: a ? a.nome : 'o analista', por: (user.name || 'Liderança') + (a ? ' (em nome de ' + a.nome + ')' : '') };
+    return { ok: true, lider: true, analistaId: alvo, analistaNome: a ? a.nome : 'o analista', por: (user.name || 'Liderança') + (a ? ' (em nome de ' + a.nome + ')' : '') };
   }
   const analista = await analistaDoLogin(user);
   if (!analista) return { ok: false, status: 403, erro: 'Seu login não está ligado a um analista.' };

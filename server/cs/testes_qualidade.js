@@ -524,5 +524,14 @@ teste('Minha área do analista: rota /analista/meu-painel liberada ao analista e
   assert.ok(fonte.includes("router.get('/analista/meu-painel', painelPessoal)") && fonte.includes("routerAnalista.get('/painel', painelPessoal)"), 'mesma lógica nas duas rotas');
   assert.ok(/r\.origem IN \('modulo', 'filha'\) AND r\.status <> 'cancelado' AND r\.etapa NOT IN \('registrada', 'tratativa_definida'\)\s+AND \(r\.analista_id = \$1 OR EXISTS/.test(fonte), 'prioridades e evolução vêm das ocorrências em que a pessoa é responsável');
 });
+teste('perfil Usuário que é analista só vê e age no que é seu: "ver todos" é do administrador e da liderança sem login de analista', () => {
+  const fonte = require('fs').readFileSync(require('path').join(__dirname, 'qualidade.js'), 'utf8');
+  const corpo = fonte.slice(fonte.indexOf('async function veTodosAnalistas(user)'), fonte.indexOf('async function identidade('));
+  assert.ok(corpo.includes("user.role === 'administrador'") && corpo.includes("user.role !== 'usuario'") && corpo.includes('!(await analistaDoLogin(user)'), 'regra: administrador sim; usuário só se não for analista; os demais não');
+  ['const adm = await veTodosAnalistas(req.user);', 'const verTodos = await veTodosAnalistas(req.user);', 'if (await veTodosAnalistas(user)) {', 'const verOutro = !!analistaId && (await veTodosAnalistas(user));']
+    .forEach((t) => assert.ok(fonte.includes(t), 'usa a regra: ' + t));
+  const semPodeEquipe = fonte.split(/\r?\n/).filter((l) => !l.startsWith('const podeEquipe')).join(' ');
+  assert.ok(!semPodeEquipe.includes('PAPEIS.includes(req.user.role)') && !semPodeEquipe.includes('PAPEIS.includes(user.role)'), 'nenhuma rota do analista decide "ver todos" só pelo perfil');
+});
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);

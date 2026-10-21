@@ -2235,8 +2235,8 @@
     var alvo = $('sec-' + sec); if (!alvo) return;
     alvo.innerHTML = '<div class="vazio">Carregando…</div>';
     try {
-      var lider = ehLiderPessoal(); if (lider) await carregarOpcoesQ();
       var d = await carregarPessoal(false), s = estado.pessoal;
+      var lider = !!d.ver_todos; if (lider) await carregarOpcoesQ();   // "Ver como" só para quem vê todos (administrador e liderança que não é analista)
       var verComo = lider ? '<div class="filter-group" style="margin-bottom:12px"><span class="filter-label">Ver como</span><select class="gp-select" id="pe-analista"><option value="">Eu (meu login)</option>' +
         (estado.qAnalistas || []).map(function (a) { return '<option value="' + esc(a.id) + '"' + (String(s.analista) === String(a.id) ? ' selected' : '') + '>' + esc(a.nome) + '</option>'; }).join('') + '</select></div>' : '';
       var corpo;
