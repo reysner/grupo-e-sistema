@@ -8218,7 +8218,7 @@ const Gamificacao = (() => {
 
   async function abrirRelatorioTemporada() {
     const mesSync = document.getElementById('gam-mes-lanc')?.value || _mesAtual();
-    if (!confirm('Isso vai sincronizar as notas só de ' + _mesLabel(mesSync) + ' (igual ao botão "Sincronizar Notas Agora") — os meses anteriores NÃO são atualizados — e em seguida montar o relatório da temporada. Continuar?')) return;
+    if (!confirm('Isso vai sincronizar as notas só de ' + _mesLabel(mesSync) + ' (igual ao botão "Sincronizar Notas Agora") — os meses anteriores NÃO são atualizados — e em seguida montar o relatório da temporada e baixar a apresentação (PowerPoint) do ranking. Continuar?')) return;
 
     const win = window.open('', '_blank');
     if (!win) { App.Toast.err('Permita popups para gerar o relatório.'); return; }
@@ -8283,10 +8283,196 @@ const Gamificacao = (() => {
 
       setStatus('Montando o documento...');
       _montarRelatorioTemporada(win, meses, porMes, consolidado, base.inicioGamificacao);
+      // junto com o relatório, baixa a apresentação (PowerPoint) do ranking — falha dela não derruba o relatório
+      try { await _baixarApresentacaoTemporada(meses, porMes, consolidado); App.Toast.ok('Apresentação (PowerPoint) baixada.'); }
+      catch (e) { console.error('[gam] apresentação da temporada falhou:', e); App.Toast.err('O relatório abriu, mas não consegui gerar o PowerPoint: ' + (e.message || e)); }
     } catch (e) {
       console.error('[gam] relatório da temporada falhou:', e);
       setStatus('Erro ao gerar o relatório: ' + (e.message || e) + '. Feche esta aba e tente de novo.');
     }
+  }
+
+  // ── Apresentação (PowerPoint) da temporada — gerada junto com o Relatório da Temporada
+  // (pedido do Reysner, 21/10/2026): capa, prêmios, campeões de cada mês, do 10º ao 4º e o pódio
+  // contado de trás para frente (3º Alexa, 2º Air Fryer, 1º Smart TV; cada ganhador tem um slide
+  // de suspense e outro com o nome), pódio final e agradecimento. Usa o MESMO consolidado do
+  // relatório (4 casas), então não depende de ninguém montar nada à mão. Biblioteca pptxgenjs
+  // carregada só na hora de usar.
+  function _carregarScript(url) {
+    return new Promise((ok, erro) => {
+      const s = document.createElement('script');
+      s.src = url; s.onload = ok; s.onerror = () => erro(new Error('Não consegui carregar ' + url));
+      document.head.appendChild(s);
+    });
+  }
+
+  // O PNG da logo tem uma tela grande quase toda transparente; recorta só o desenho.
+  function _logoRecortada() {
+    return new Promise((ok) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const c = document.createElement('canvas'); c.width = 1128; c.height = 688;
+          c.getContext('2d').drawImage(img, 396, 196, 1128, 688, 0, 0, 1128, 688);
+          ok(c.toDataURL('image/png').replace(/^data:/, ''));
+        } catch (e) { ok(null); }
+      };
+      img.onerror = () => ok(null);
+      img.src = '/img/logo-grupo-e.png';
+    });
+  }
+
+  async function _baixarApresentacaoTemporada(meses, porMes, consolidado) {
+    if (!window.PptxGenJS) await _carregarScript('https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js');
+    const logo = await _logoRecortada();
+    const pres = new window.PptxGenJS();
+    pres.layout = 'LAYOUT_WIDE';            // 13,33" x 7,5" = 960 x 540 pt
+    const u = (pt) => pt / 72;             // as medidas abaixo estão em pontos
+    const VERDE = '1A4233', VERDE2 = '2A6E4A', VERDE_ESC = '12302A', PALE = 'E8F4EF';
+    const OURO = 'F5C518', PRATA = 'C4CCD6', BRONZE = 'CD7F32', BRANCO = 'FFFFFF', TEXTO = '1E293B';
+    const nota = (v) => String(v).replace('.', ',');
+    const dataHoje = new Date().toLocaleDateString('pt-BR');
+    const rank = consolidado;
+    const emoji = { alexa: '🔊', fryer: '🍟', tv: '📺', taca: '🏆' };
+
+    const slide = (fundo) => { const s = pres.addSlide(); s.background = { color: fundo }; return s; };
+    const forma = (s, tipo, l, t, w, h, cor, transp, raio) => s.addShape(tipo, {
+      x: u(l), y: u(t), w: u(w), h: u(h), fill: { color: cor, transparency: transp || 0 }, line: { type: 'none' },
+      rectRadius: raio ? u(raio) : undefined
+    });
+    const circulo = (s, l, t, w, h, cor, transp) => forma(s, pres.ShapeType.ellipse, l, t, w, h, cor, transp);
+    const cartao = (s, l, t, w, h, cor, raio, transp) => forma(s, pres.ShapeType.roundRect, l, t, w, h, cor, transp, raio);
+    const texto = (s, txt, l, t, w, h, tam, cor, neg, alin, fonte, valign) => s.addText(txt, {
+      x: u(l), y: u(t), w: u(w), h: u(h), fontSize: tam, color: cor, bold: neg !== false,
+      align: alin || 'center', valign: valign || 'middle', fontFace: fonte || 'Segoe UI', margin: 0, fit: 'none'
+    });
+    const logoImg = (s, l, t, w, fundoClaro) => {
+      if (!logo) return;
+      if (fundoClaro) cartao(s, l - 8, t - 8, w + 16, w / 1.64 + 16, VERDE, 10);
+      s.addImage({ data: logo, x: u(l), y: u(t), w: u(w), h: u(w / 1.64) });
+    };
+    const confete = (s, semente) => {
+      let x = semente * 9301 + 49297;
+      const rnd = () => { x = (x * 9301 + 49297) % 233280; return x / 233280; };
+      const cores = [OURO, BRANCO, VERDE2, 'C9A000'];
+      for (let i = 0; i < 26; i++) {
+        const d = 6 + rnd() * 10;
+        circulo(s, 10 + rnd() * 930, 10 + rnd() * 510, d, d, cores[Math.floor(rnd() * 4)], 40 + Math.floor(rnd() * 40));
+      }
+    };
+    const decoracaoEscura = (s) => { circulo(s, 560, -180, 600, 600, VERDE2, 60); circulo(s, -140, 300, 440, 440, VERDE_ESC, 40); };
+    const rodape = (s, txt, cor) => texto(s, txt, 40, 506, 880, 20, 11, cor, false);
+
+    // 1. Capa
+    let s = slide(VERDE);
+    circulo(s, 640, -140, 520, 520, VERDE2, 55); circulo(s, -120, 330, 420, 420, VERDE_ESC, 40); circulo(s, 700, 420, 260, 260, OURO, 82);
+    logoImg(s, 60, 44, 190);
+    texto(s, 'LIGA DO ATENDIMENTO', 60, 190, 700, 30, 18, OURO, true, 'left');
+    texto(s, 'Ranking da Temporada ' + meses[meses.length - 1].slice(0, 4), 60, 226, 860, 100, 54, BRANCO, true, 'left', 'Segoe UI Black');
+    texto(s, 'Quem vai levar a Smart TV, a Air Fryer e a Alexa?', 60, 362, 780, 70, 28, PALE, false, 'left');
+    texto(s, _mesLabel(meses[0]) + ' a ' + _mesLabel(meses[meses.length - 1]) + '  |  nota dos clientes, avaliada todo mês', 60, 468, 800, 24, 15, OURO, false, 'left');
+
+    // 2. Prêmios
+    s = slide(PALE);
+    logoImg(s, 40, 28, 92, true);
+    texto(s, 'O que está em jogo', 160, 26, 700, 50, 38, VERDE, true, 'left', 'Segoe UI Black');
+    texto(s, 'Os três primeiros do Consolidado Geral da temporada levam para casa:', 160, 78, 760, 30, 18, TEXTO, false, 'left');
+    [['3º lugar', 'Alexa', emoji.alexa, BRONZE], ['2º lugar', 'Air Fryer', emoji.fryer, PRATA], ['1º lugar', 'Smart TV', emoji.tv, OURO]].forEach((p, i) => {
+      const x = 60 + i * 288;
+      cartao(s, x, 140, 264, 320, VERDE, 24);
+      circulo(s, x + 62, 160, 140, 140, p[3]);
+      texto(s, p[2], x + 62, 160, 140, 140, 64, VERDE, false, 'center', 'Segoe UI Emoji');
+      texto(s, p[0], x, 322, 264, 30, 20, p[3], true);
+      texto(s, p[1], x, 354, 264, 60, 40, BRANCO, true, 'center', 'Segoe UI Black');
+    });
+    rodape(s, 'Consolidado Geral = média das notas finais de cada mês da temporada.', VERDE);
+
+    // 3. Campeão de cada mês (até 6 por slide, 2 linhas de 3)
+    const campeoes = meses.map((m) => ({ mes: m, c: (porMes[m].ranking || [])[0] })).filter((x) => x.c);
+    const titulos = {}; campeoes.forEach((x) => { titulos[x.c.nome] = (titulos[x.c.nome] || 0) + 1; });
+    const maisTitulos = Object.keys(titulos).filter((n) => titulos[n] > 1);
+    for (let ini = 0; ini < campeoes.length; ini += 6) {
+      s = slide(VERDE);
+      circulo(s, -160, -160, 420, 420, VERDE2, 55);
+      logoImg(s, 828, 24, 92);
+      texto(s, 'Quem brilhou em cada mês', 50, 30, 760, 50, 38, BRANCO, true, 'left', 'Segoe UI Black');
+      texto(s, 'O 1º lugar do ranking mensal, de ' + _mesLabel(meses[0]).split('/')[0].toLowerCase() + ' a ' + _mesLabel(meses[meses.length - 1]).split('/')[0].toLowerCase(), 50, 82, 760, 28, 18, OURO, false, 'left');
+      campeoes.slice(ini, ini + 6).forEach((x, i) => {
+        const cx = 50 + (i % 3) * 292, cy = 140 + Math.floor(i / 3) * 175;
+        cartao(s, cx, cy, 272, 155, VERDE_ESC, 24);
+        texto(s, _mesLabel(x.mes).split('/')[0].toUpperCase(), cx + 20, cy + 16, 180, 22, 15, OURO, true, 'left');
+        texto(s, emoji.taca, cx + 214, cy + 14, 40, 40, 26, OURO, false, 'center', 'Segoe UI Emoji');
+        texto(s, x.c.nome, cx + 20, cy + 42, 232, 56, 38, BRANCO, true, 'left', 'Segoe UI Black');
+        texto(s, 'Nota ' + nota(x.c.media), cx + 20, cy + 106, 232, 26, 18, PALE, false, 'left');
+      });
+      if (maisTitulos.length) rodape(s, maisTitulos.map((n) => n + ' foi campeão(ã) do mês ' + titulos[n] + ' vezes').join(' · ') + '.', PALE);
+    }
+
+    // 4. Do 10º ao 4º (de trás para frente)
+    const ate = Math.min(10, rank.length);
+    if (ate >= 4) {
+      s = slide(PALE);
+      logoImg(s, 40, 28, 92, true);
+      texto(s, 'Quase lá: do ' + ate + 'º ao 4º lugar', 160, 26, 760, 50, 36, VERDE, true, 'left', 'Segoe UI Black');
+      texto(s, 'Quem vem logo atrás do pódio, na contagem de trás para frente', 160, 78, 760, 28, 18, TEXTO, false, 'left');
+      for (let i = 0, pos = ate; pos >= 4; pos--, i++) {
+        const y = 126 + i * 52;
+        cartao(s, 60, y, 840, 44, BRANCO, 14);
+        circulo(s, 70, y + 5, 34, 34, VERDE);
+        texto(s, String(pos), 70, y + 5, 34, 34, 15, BRANCO, true);
+        texto(s, rank[pos - 1].nome, 124, y, 420, 44, 22, VERDE, true, 'left');
+        texto(s, 'Nota ' + nota(rank[pos - 1].media_geral), 620, y, 260, 44, 18, TEXTO, false, 'right');
+      }
+      rodape(s, 'E agora, o pódio...', VERDE);
+    }
+
+    // 5. Pódio de trás para frente: para cada prêmio, um slide de suspense e outro com o nome
+    [[3, 'Alexa', emoji.alexa, BRONZE], [2, 'Air Fryer', emoji.fryer, PRATA], [1, 'Smart TV', emoji.tv, OURO]].forEach((p, idx) => {
+      const o = rank[p[0] - 1]; if (!o) return;
+      for (let rev = 0; rev < 2; rev++) {
+        s = slide(VERDE); decoracaoEscura(s); confete(s, idx + 1 + rev * 5);
+        logoImg(s, 40, 28, 92);
+        texto(s, p[0] + 'º LUGAR', 160, 34, 600, 40, 26, OURO, true, 'left');
+        texto(s, 'Quem leva a ' + p[1] + '?', 160, 74, 700, 40, 30, BRANCO, true, 'left', 'Segoe UI Black');
+        circulo(s, 70, 170, 250, 250, p[3]);
+        texto(s, p[2], 70, 170, 250, 250, 120, VERDE, false, 'center', 'Segoe UI Emoji');
+        texto(s, p[1], 60, 432, 270, 50, 32, BRANCO, true, 'center', 'Segoe UI Black');
+        if (rev === 0) {
+          texto(s, '?', 370, 190, 530, 220, 150, OURO, true, 'center', 'Segoe UI Black');
+        } else {
+          cartao(s, 370, 190, 530, 220, BRANCO, 24);
+          texto(s, o.nome, 390, 205, 490, 110, 66, VERDE, true, 'center', 'Segoe UI Black');
+          texto(s, 'Nota ' + nota(o.media_geral), 390, 322, 490, 36, 24, VERDE2, true);
+          texto(s, 'Parabéns, ' + o.nome + '!', 390, 362, 490, 32, 20, TEXTO, false);
+        }
+      }
+    });
+
+    // 6. Pódio final
+    if (rank.length >= 3) {
+      s = slide(VERDE); decoracaoEscura(s); confete(s, 11);
+      logoImg(s, 40, 28, 92);
+      texto(s, 'Parabéns aos campeões da temporada!', 160, 30, 780, 50, 36, BRANCO, true, 'left', 'Segoe UI Black');
+      [[2, 130, 170, PRATA, 'Air Fryer'], [1, 370, 235, OURO, 'Smart TV'], [3, 610, 125, BRONZE, 'Alexa']].forEach((p) => {
+        const o = rank[p[0] - 1], topo = 470 - p[2];
+        cartao(s, p[1], topo, 220, p[2], p[3], 12);
+        texto(s, p[0] + 'º', p[1], topo + 8, 220, 50, 38, VERDE, true, 'center', 'Segoe UI Black');
+        texto(s, p[4], p[1], topo + 58, 220, 28, 18, VERDE, true);
+        texto(s, o.nome, p[1] - 30, topo - 96, 280, 56, 36, BRANCO, true, 'center', 'Segoe UI Black');
+        texto(s, nota(o.media_geral), p[1] - 30, topo - 42, 280, 30, 20, OURO, true);
+      });
+      rodape(s, 'Posição em ' + dataHoje + ' no Consolidado Geral (média das notas mensais, ' + _mesLabel(meses[0]) + ' a ' + _mesLabel(meses[meses.length - 1]) + ').', PALE);
+    }
+
+    // 7. Agradecimento
+    s = slide(VERDE);
+    circulo(s, 600, -160, 560, 560, VERDE2, 55); circulo(s, -140, 330, 420, 420, VERDE_ESC, 40); circulo(s, 760, 400, 300, 300, OURO, 82);
+    logoImg(s, 60, 50, 190);
+    texto(s, 'Obrigado!', 60, 190, 840, 100, 72, BRANCO, true, 'left', 'Segoe UI Black');
+    texto(s, 'Agradecemos a participação de todos neste projeto. Cada nota e cada atendimento ajudam a potencializar o nosso desenvolvimento e o nosso crescimento, com uma experiência cada vez melhor para o cliente e um atendimento mais assertivo.', 60, 308, 720, 150, 26, PALE, false, 'left', 'Segoe UI', 'top');
+    texto(s, 'Liga do Atendimento  |  Grupo E', 60, 480, 700, 26, 16, OURO, true, 'left');
+
+    await pres.writeFile({ fileName: 'Ranking Liga do Atendimento - Temporada ' + meses[meses.length - 1].slice(0, 4) + '.pptx' });
   }
 
   function _montarRelatorioTemporada(win, meses, porMes, consolidado, inicioGamificacao) {
