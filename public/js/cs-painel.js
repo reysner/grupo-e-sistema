@@ -3063,6 +3063,44 @@
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Aberta em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Assunto e plano</th>' + (d.todos ? '<th>Analista</th>' : '') + '<th class="c">Prazo</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
           : '<div class="vazio">Nenhuma ocorrência aberta para ' + (d.todos ? 'este filtro' : 'você') + ' por enquanto.</div>') + '</div>';
   }
+  // ── Resumo da semana no topo do Portal do Analista (21/10/2026): o que pede atenção, de relance, com atalhos para os detalhes ──
+  function segundaIso(iso) { var d = new Date(iso + 'T12:00:00'); return somarDiasIso(iso, -((d.getDay() + 6) % 7)); }
+  function resumoSemanaPessoal(d) {
+    var hoje = d.hoje || hojeIsoLocal(), seg = segundaIso(hoje), sete = somarDiasIso(hoje, -6);
+    var lista = (d.atendimentos && d.atendimentos.lista) || [], pri = d.prioridades || [];
+    return {
+      vinculado: !!(d.atendimentos && d.atendimentos.vinculado),
+      atendSemana: lista.filter(function (t) { return diaBrasilia(t.abertura) >= seg; }).length,
+      slaVermelho7: lista.filter(function (t) { return diaBrasilia(t.abertura) >= sete && t.pior_status === 'vermelho'; }).length,
+      tratVencidas: pri.filter(function (x) { return x.tipo === 'tratativa' && x.nivel === 'alta'; }).length,
+      tratPerto: pri.filter(function (x) { return x.tipo === 'tratativa' && x.nivel === 'media'; }).length,
+      emailsSem: d.emails && d.emails.lido_em ? d.emails.sem_resposta : null
+    };
+  }
+  function htmlResumoSemana(d, nota) {
+    var r = resumoSemanaPessoal(d);
+    var temNota = nota && !nota.semDados && nota.mediaBase !== undefined;
+    var atalho = function (sec, rot) { return '<button type="button" class="gp-footer-btn" data-pa-ir="' + sec + '" style="width:auto">' + rot + '</button>'; };
+    return '<div class="card" style="margin-bottom:14px"><div class="card-title">Minha semana</div><div class="card-sub">O que pede a sua atenção, de relance. Use os atalhos para abrir os detalhes.</div>' +
+      '<div class="gp-kpi-row" style="margin-top:10px">' +
+        kpi('#b91c1c', 'Ocorrências vencidas', r.tratVencidas, r.tratPerto + ' perto do prazo') +
+        kpi('#0f766e', 'Atendimentos na semana', r.vinculado ? r.atendSemana : '—', r.vinculado ? 'desde segunda-feira' : 'login sem vínculo com o Zappy') +
+        kpi('#dc2626', 'SLA vermelho (7 dias)', r.vinculado ? r.slaVermelho7 : '—', 'antes da revisão') +
+        kpi('#b45309', 'E-mails sem resposta', r.emailsSem == null ? '—' : r.emailsSem, r.emailsSem == null ? 'leitura ainda não carregada' : 'nos últimos 180 dias') +
+        kpi('#256050', 'Nota do mês', temNota ? Number(nota.media_individual).toFixed(2).replace('.', ',') : '—', temNota ? nota.avaliacoes + ' avaliados' : 'sem nota calculada ainda') +
+      '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' + atalho('minhasprior', '🚨 Prioridades') + atalho('meusatend', '🎧 Meus atendimentos') + atalho('meusemails', '📧 Meus e-mails') + atalho('minhanota', '🏆 Minha nota') + '</div></div>';
+  }
+  async function preencherResumoSemana() {
+    var alvo = $('pa-resumo'); if (!alvo) return;
+    try {
+      var d = await carregarPessoal(false); if (!d || !d.analista) return;
+      var nota = null; try { nota = await api('/api/data/gam/minha-composicao?mes=' + mesAtualIso()); } catch (e) { nota = null; }
+      var alvo2 = $('pa-resumo'); if (!alvo2) return;
+      alvo2.innerHTML = htmlResumoSemana(d, nota);
+      Array.prototype.forEach.call(alvo2.querySelectorAll('[data-pa-ir]'), function (b) { b.addEventListener('click', function () { irPara(b.getAttribute('data-pa-ir')); }); });
+    } catch (e) { alvo.innerHTML = ''; }   // o resumo é um extra: sem ele a tela segue normal
+  }
   async function desenharAnalista() {
     var alvo = $('sec-analista'); if (!alvo) return;
     if (!estado.a) estado.a = { dados: null, f: { analista: '', etapa: '', busca: '' } };
@@ -3076,7 +3114,9 @@
       } catch (e) { alvo.innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; return; }
     }
     var ba = $('badge-analista'); if (ba) ba.textContent = contagemEtapasGestor(a.dados.registros).com_analista || '';
-    alvo.innerHTML = htmlAnalista(a.dados, a.f);
+    var comResumo = !!(a.dados.analista && !a.dados.todos && !a.dados.admin);   // só na visão do próprio analista
+    alvo.innerHTML = (comResumo ? '<div id="pa-resumo"></div>' : '') + htmlAnalista(a.dados, a.f);
+    if (comResumo) preencherResumoSemana();
     var liga = function (id, prop, evento, refaz) { var e = $(id); if (e) e.addEventListener(evento || 'change', function () { a.f[prop] = e.value; var pos = e.selectionStart; if (refaz) a.dados = null; desenharAnalista(); if (prop === 'busca') { var n = $('a-busca'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { /* sem seleção */ } } } }); };
     liga('a-analista', 'analista', 'change', true); liga('a-etapa', 'etapa'); liga('a-busca', 'busca', 'input');
     ligarFiltrosExtraQ('a', a.f, desenharAnalista);
