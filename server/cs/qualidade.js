@@ -1234,19 +1234,32 @@ router.post('/gestor/ocorrencias/:id/abrir', async (req, res) => {
 router.get('/analista/ocorrencias', async (req, res) => {
   try {
     await garantirSchema();
-    const adm = await veTodosAnalistas(req.user);
+    const esc = await escopoAnalistas(req.user);
+    const verOutros = esc.modo !== 'proprio';
+    const agirEmNome = await veTodosAnalistas(req.user);
+    const pedido = req.query.analista ? String(req.query.analista) : '';
     let analista = null;
-    if (adm && req.query.analista) analista = (await pool.query('SELECT id, nome FROM analistas WHERE id::text = $1', [String(req.query.analista)])).rows[0] || null;
-    else if (!adm) analista = await analistaDoLogin(req.user);
-    if (!adm && !analista) return res.status(403).json({ error: 'Seu login não está ligado a um analista. A administração liga em Qualidade > Gerenciar analistas.' });
-    const vals = analista ? [String(analista.id)] : [];
+    if (verOutros && pedido === 'eu') analista = esc.proprio ? { id: esc.proprio.id, nome: esc.proprio.nome } : null;   // "Só eu"
+    else if (verOutros && pedido) {
+      if (esc.modo === 'equipe' && !esc.ids.has(pedido)) return res.status(403).json({ error: 'Esse analista não é da sua equipe.' });
+      analista = (await pool.query('SELECT id, nome FROM analistas WHERE id::text = $1', [pedido])).rows[0] || null;
+    } else if (!verOutros) analista = esc.proprio ? { id: esc.proprio.id, nome: esc.proprio.nome } : null;
+    if (!verOutros && !analista) return res.status(403).json({ error: 'Seu login não está ligado a um analista. A administração liga em Qualidade > Gerenciar analistas.' });
+    const equipeIds = esc.modo === 'equipe' && !analista ? Array.from(esc.ids) : null;   // sem analista escolhido, a gestora vê a equipe toda
+    const vals = analista ? [String(analista.id)] : equipeIds ? [equipeIds] : [];
+    const filtro = analista ? ' AND (r.analista_id = $1 OR EXISTS (SELECT 1 FROM cs_qualidade_resp x WHERE x.registro_id = r.id AND x.analista_id = $1))'
+      : equipeIds ? ' AND (r.analista_id = ANY($1::text[]) OR EXISTS (SELECT 1 FROM cs_qualidade_resp x WHERE x.registro_id = r.id AND x.analista_id = ANY($1::text[])))' : '';
     const { rows } = await pool.query(
-      `SELECT ${COLUNAS} ${DE} WHERE r.origem IN ('modulo', 'filha') AND r.status <> 'cancelado' AND r.etapa NOT IN ('registrada', 'tratativa_definida')${analista ? ' AND (r.analista_id = $1 OR EXISTS (SELECT 1 FROM cs_qualidade_resp x WHERE x.registro_id = r.id AND x.analista_id = $1))' : ''}
+      `SELECT ${COLUNAS} ${DE} WHERE r.origem IN ('modulo', 'filha') AND r.status <> 'cancelado' AND r.etapa NOT IN ('registrada', 'tratativa_definida')${filtro}
         ORDER BY (r.etapa = 'encerrada') ASC, r.prazo ASC NULLS LAST LIMIT 300`, vals);
-    const lider = adm, meuId = analista ? String(analista.id) : null;
+    const lider = verOutros, meuId = analista ? String(analista.id) : null;
     const mascarar = (lista) => lista.map((r) => mascararParaAnalista(r, meuId, lider));
+    const visiveis = !verOutros ? [] : (esc.modo === 'equipe'
+      ? (esc.analistas || []).filter((a) => esc.ids.has(String(a.id)))
+      : (await pool.query('SELECT id, nome, ativo FROM analistas ORDER BY nome')).rows).map((a) => ({ id: a.id, nome: a.nome })).sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
     res.json({
-      analista: analista ? { id: analista.id, nome: analista.nome } : null, todos: !analista, admin: adm,
+      analista: analista ? { id: analista.id, nome: analista.nome } : null, todos: !analista, admin: verOutros,
+      modo: esc.modo, agir_em_nome: agirEmNome, eu_analista: esc.proprio ? String(esc.proprio.id) : null, analistas_visiveis: visiveis,
       registros: mascarar(await completar(rows)),
     });
   } catch (e) { console.error('[qualidade] GET /analista/ocorrencias falhou:', e); res.status(500).json({ error: 'Erro ao ler as ocorrências do analista.' }); }
@@ -1834,6 +1847,32 @@ async function veTodosAnalistas(user) {
   return !(await analistaDoLogin(user).catch(() => null));
 }
 
+/**
+ * Quem o Portal do Analista mostra (21/10/2026): administrador e diretoria (papel diretor ou final) veem todos os analistas; o(a) gestor(a) vê só a EQUIPE do departamento que gere
+ * (os analistas que atendem esse departamento, mais ele(a) mesmo(a) se for analista); usuário de perfil Usuário sem login de analista segue vendo todos; o resto vê só o que é seu.
+ * Devolve { modo: 'todos' | 'equipe' | 'proprio', ids: Set de analistas (na equipe) }.
+ */
+const mesmoDepto = (a, b) => semAcento(a) === semAcento(b);
+function modoEscopoAnalistas(user, papeisGestor, analistaProprio, analistas) {
+  if (user && user.role === 'administrador') return { modo: 'todos' };
+  const papeis = papeisGestor || [];
+  if (papeis.some((g) => g.papel === 'diretor' || g.papel === 'final')) return { modo: 'todos' };
+  if (papeis.length) {
+    const deptos = papeis.map((g) => g.departamento);
+    const ids = new Set((analistas || []).filter((a) => a.ativo !== false && (a.departamentos || []).some((d) => deptos.some((x) => mesmoDepto(d, x)))).map((a) => String(a.id)));
+    if (analistaProprio) ids.add(String(analistaProprio.id));
+    return { modo: 'equipe', ids };
+  }
+  if (user && user.role === 'usuario' && !analistaProprio) return { modo: 'todos' };
+  return { modo: 'proprio' };
+}
+async function escopoAnalistas(user) {
+  const papeis = (await pool.query('SELECT departamento, papel FROM cs_qualidade_gestores WHERE user_id = $1', [String(user.id)])).rows;
+  const proprio = await analistaDoLogin(user).catch(() => null);
+  const analistas = papeis.length ? (await pool.query('SELECT id, nome, ativo, departamentos FROM analistas')).rows : [];
+  return Object.assign(modoEscopoAnalistas(user, papeis, proprio, analistas), { proprio, analistas });
+}
+
 /** Quem é o analista (lista de Qualidade) e o colaborador da Gamificação (Zappy) deste login; administrador ou usuário podem pedir outro analista. */
 async function identidade(user, analistaId) {
   let analista = null;
@@ -2026,4 +2065,4 @@ async function rodarAlertasPrazo() {
   });
 }
 
-module.exports = { justificativaSla, podeReabrirEncerrada, matrizAceitaVinculoReaberto, rodarAlertasPrazo, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, analistaFixoPresente, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { modoEscopoAnalistas, justificativaSla, podeReabrirEncerrada, matrizAceitaVinculoReaberto, rodarAlertasPrazo, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, analistaFixoPresente, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };

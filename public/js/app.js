@@ -1533,8 +1533,54 @@ const App = (() => {
           '<div style="font-size:11px;color:var(--gray-400);margin-bottom:6px">Quando um cliente é dado como baixa/saída no Acessórias, o ticket abre sozinho pro Contábil marcado no regime dele. Ninguém marcado = todos os Contábeis são avisados.</div>' +
           REGIMES_TICKET.map(r => '<label style="display:flex;align-items:center;gap:8px;padding:2px 0;cursor:pointer"><input type="checkbox" value="' + r + '" class="eu-regime-check" style="width:auto"' + (regimesMarcados.includes(r)?' checked':'') + '> <span style="font-size:13px">' + r + '</span></label>').join('') +
         '</div>' +
+        '<div class="field" id="eu-gestor-wrap" style="background:#f8fafc;border-radius:8px;padding:10px 14px"><label style="margin:0 0 4px">Gestor(a) de departamento</label>' +
+          '<div style="font-size:11px;color:var(--gray-400);margin-bottom:6px">Quem é gestor(a), diretor(a) ou gestor(a) final de cada departamento. O Portal do Gestor e o que o Portal do Analista mostra (a equipe de cada gestor(a)) seguem este cadastro. A mudança vale na hora, sem precisar salvar o usuário.</div>' +
+          '<div id="eu-gestor-lista" data-uid="' + id + '"><span style="font-size:13px;color:var(--gray-400)">Carregando…</span></div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center"><select id="eu-g-dep" style="flex:1;min-width:150px"></select>' +
+            '<select id="eu-g-papel"><option value="gestor">Gestor(a)</option><option value="diretor">Diretor(a)</option><option value="final">Gestor(a) final</option></select>' +
+            '<button type="button" class="btn btn-ghost btn-sm" onclick="App.Admin.gestorAdicionar(\'' + id + '\')">Adicionar</button></div></div>' +
         '<button class="btn btn-primary" data-id="' + id + '" onclick="App.Admin.saveEdit(this.dataset.id)">Salvar</button>' +
       '</div>', null, { noFooter: true });
+      App.Admin.gestorCarregar(id);
+    },
+
+    // ── Gestor(a) de departamento (Editar usuário): usa o mesmo cadastro de Gerenciar gestores do painel /cs ──
+    _PAPEL_GESTOR: { gestor: 'Gestor(a)', diretor: 'Diretor(a)', final: 'Gestor(a) final' },
+    async gestorCarregar(userId) {
+      const lista = document.getElementById('eu-gestor-lista'), sel = document.getElementById('eu-g-dep');
+      if (!lista) return;
+      try {
+        const res = await API.get('/api/cs/painel/qualidade/gestores');
+        const j = res && res.ok ? await res.json() : null;
+        if (!j) { lista.innerHTML = '<span style="font-size:13px;color:var(--gray-400)">Não consegui ler o cadastro de gestores.</span>'; return; }
+        const deps = j.departamentos || [];
+        if (sel) sel.innerHTML = deps.map(d => '<option value="' + d.codigo + '">' + d.rotulo + '</option>').join('');
+        const meus = [];
+        deps.forEach(d => (d.gestores || []).forEach(g => { if (String(g.user_id) === String(userId)) meus.push({ id: g.id, depto: d.codigo, rotulo: d.rotulo, papel: g.papel }); }));
+        lista.innerHTML = meus.length ? meus.map(m =>
+          '<div style="display:flex;gap:8px;align-items:center;padding:3px 0"><span style="flex:1;font-size:14px;font-weight:600">' + m.rotulo + '</span>' +
+          '<select onchange="App.Admin.gestorTrocarPapel(\'' + userId + '\',\'' + m.depto + '\',this.value)">' +
+            Object.entries(App.Admin._PAPEL_GESTOR).map(([k, v]) => '<option value="' + k + '"' + (m.papel === k ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>' +
+          '<button type="button" class="btn btn-ghost btn-sm" onclick="App.Admin.gestorRemover(\'' + userId + '\',' + m.id + ')">Remover</button></div>'
+        ).join('') : '<span style="font-size:13px;color:var(--gray-400)">Não é gestor(a) de nenhum departamento.</span>';
+      } catch (e) { lista.innerHTML = '<span style="font-size:13px;color:var(--gray-400)">Erro ao ler o cadastro de gestores.</span>'; }
+    },
+    async gestorAdicionar(userId) {
+      const departamento = document.getElementById('eu-g-dep')?.value, papel = document.getElementById('eu-g-papel')?.value || 'gestor';
+      if (!departamento) { App.Toast.err('Escolha o departamento.'); return; }
+      const res = await API.post('/api/cs/painel/qualidade/gestores', { user_id: userId, departamento, papel });
+      if (res && res.ok) { App.Toast.ok('Gestor(a) cadastrado(a).'); App.Admin.gestorCarregar(userId); }
+      else { const d = res ? await res.json().catch(() => ({})) : {}; App.Toast.err(d.error || 'Erro ao cadastrar.'); }
+    },
+    async gestorTrocarPapel(userId, departamento, papel) {
+      const res = await API.post('/api/cs/painel/qualidade/gestores', { user_id: userId, departamento, papel });
+      if (res && res.ok) App.Toast.ok('Papel atualizado.'); else App.Toast.err('Erro ao atualizar o papel.');
+      App.Admin.gestorCarregar(userId);
+    },
+    async gestorRemover(userId, id) {
+      if (!confirm('Retirar esta pessoa como gestor(a) deste departamento?')) return;
+      const res = await API.delete('/api/cs/painel/qualidade/gestores/' + id);
+      if (res && res.ok) { App.Toast.ok('Gestor(a) retirado(a).'); App.Admin.gestorCarregar(userId); } else App.Toast.err('Erro ao retirar.');
     },
 
     async saveEdit(id) {

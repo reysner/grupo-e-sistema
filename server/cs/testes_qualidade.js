@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { justificativaSla, podeReabrirEncerrada, matrizAceitaVinculoReaberto, analistaFixoPresente, TIPO_PLANO, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { modoEscopoAnalistas, justificativaSla, podeReabrirEncerrada, matrizAceitaVinculoReaberto, analistaFixoPresente, TIPO_PLANO, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -528,7 +528,7 @@ teste('perfil Usuário que é analista só vê e age no que é seu: "ver todos" 
   const fonte = require('fs').readFileSync(require('path').join(__dirname, 'qualidade.js'), 'utf8');
   const corpo = fonte.slice(fonte.indexOf('async function veTodosAnalistas(user)'), fonte.indexOf('async function identidade('));
   assert.ok(corpo.includes("user.role === 'administrador'") && corpo.includes("user.role !== 'usuario'") && corpo.includes('!(await analistaDoLogin(user)'), 'regra: administrador sim; usuário só se não for analista; os demais não');
-  ['const adm = await veTodosAnalistas(req.user);', 'const verTodos = await veTodosAnalistas(req.user);', 'if (await veTodosAnalistas(user)) {', 'const verOutro = !!analistaId && (await veTodosAnalistas(user));']
+  ['const agirEmNome = await veTodosAnalistas(req.user);', 'const verTodos = await veTodosAnalistas(req.user);', 'if (await veTodosAnalistas(user)) {', 'const verOutro = !!analistaId && (await veTodosAnalistas(user));']
     .forEach((t) => assert.ok(fonte.includes(t), 'usa a regra: ' + t));
   const semPodeEquipe = fonte.split(/\r?\n/).filter((l) => !l.startsWith('const podeEquipe')).join(' ');
   assert.ok(!semPodeEquipe.includes('PAPEIS.includes(req.user.role)') && !semPodeEquipe.includes('PAPEIS.includes(user.role)'), 'nenhuma rota do analista decide "ver todos" só pelo perfil');
@@ -547,6 +547,20 @@ teste('SLA vermelho traz a justificativa (etapa, minutos úteis e prazo) e o nú
   const p = montarPrioridades({ slaVermelho: [{ id: 'x', zappy_id: 46296, cliente_nome: 'ACME', abertura: '2026-10-20T15:00:00Z', sla: sla('aceite', 48, 15) }] }, '2026-10-21');
   assert.strictEqual(p[0].ticket, '46296');
   assert.strictEqual(p[0].motivo, 'Aceite: 48 min úteis (prazo 15 min)');
+});
+teste('Portal do Analista: administrador e diretoria veem todos; gestor(a) só a equipe do departamento (Fiscal / Contábil); analista só o próprio', () => {
+  const an = [{ id: 'a1', departamentos: ['Fiscal'] }, { id: 'a2', departamentos: ['Contábil'] }, { id: 'a3', departamentos: ['Contabil', 'Fiscal'] }, { id: 'a4', departamentos: ['Pessoal'] }, { id: 'a5', ativo: false, departamentos: ['Fiscal'] }];
+  assert.strictEqual(modoEscopoAnalistas({ role: 'administrador' }, [], null, an).modo, 'todos');
+  assert.strictEqual(modoEscopoAnalistas({ role: 'usuario' }, [{ departamento: 'Fiscal', papel: 'diretor' }], null, an).modo, 'todos', 'diretor vê todos');
+  assert.strictEqual(modoEscopoAnalistas({ role: 'usuario' }, [{ departamento: 'Sucesso', papel: 'final' }], null, an).modo, 'todos', 'gestor final vê todos');
+  const thais = modoEscopoAnalistas({ role: 'usuario' }, [{ departamento: 'Fiscal', papel: 'gestor' }], null, an);
+  assert.strictEqual(thais.modo, 'equipe');
+  assert.deepStrictEqual(Array.from(thais.ids).sort(), ['a1', 'a3'], 'Fiscal: só quem atende o Fiscal e está ativo');
+  const sueimy = modoEscopoAnalistas({ role: 'usuario' }, [{ departamento: 'Contábil', papel: 'gestor' }], { id: 'a2' }, an);
+  assert.deepStrictEqual(Array.from(sueimy.ids).sort(), ['a2', 'a3'], 'Contábil (com ou sem acento), incluindo ela mesma como analista');
+  assert.strictEqual(modoEscopoAnalistas({ role: 'usuario' }, [], null, an).modo, 'todos', 'perfil Usuário sem login de analista segue vendo todos');
+  assert.strictEqual(modoEscopoAnalistas({ role: 'usuario' }, [], { id: 'a1' }, an).modo, 'proprio', 'analista (mesmo Usuário) só o próprio');
+  assert.strictEqual(modoEscopoAnalistas({ role: 'colaborador' }, [], { id: 'a1' }, an).modo, 'proprio');
 });
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);

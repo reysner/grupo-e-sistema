@@ -3040,7 +3040,7 @@
     var regs = d.registros || [], lista = filtrarPortal(regs, f), c = contagemEtapasGestor(regs);
     var op = function (v, rot, sel) { return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(rot) + '</option>'; };
     var optE = op('', 'Todas', !f.etapa) + ['novas', 'a_vencer', 'vencidas'].map(function (e) { return op(e, ETAPA_ANALISTA_Q[e], f.etapa === e); }).join('');   // só no Portal do Analista
-    var optAn = op('', 'Todos os analistas', !f.analista) + (d.analistas || []).map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
+    var optAn = op('', d.modo === 'equipe' ? 'Toda a minha equipe' : 'Todos os analistas', !f.analista) + (d.eu_analista ? op('eu', 'Só eu', f.analista === 'eu') : '') + (d.analistas || []).map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
     var corpo = lista.map(function (r) {
       var jaEnc = (r.responsaveis || []).some(function (x) { return d.analista && String(x.analista_id) === String(d.analista.id) && x.encerrado_em; });
       var acao = r.etapa === 'com_analista' && !jaEnc ? 'Tratar' : 'Ver';
@@ -3059,7 +3059,7 @@
         kpi('#b91c1c', 'Vencidas', c.vencidas, 'prazo passou') +
       '</div>' +
       '<div class="card">' + htmlFiltrosPortalQ('a', f, regs, { optA: d.admin ? optAn : null, optE: optE, comPor: false, enxuto: true }) +
-        '<div class="card-sub">' + lista.length + ' ocorrência(s)' + (d.todos ? ' · você é administrador: vê as de todos e age em nome do analista' : (d.analista ? (d.admin ? ' · visão do analista: ' : ' · analista: ') + esc(d.analista.nome) : '')) + '</div>' +
+        '<div class="card-sub">' + lista.length + ' ocorrência(s)' + (d.todos ? (d.modo === 'equipe' ? ' · visão da sua equipe (somente leitura)' : d.agir_em_nome === false ? ' · visão da diretoria: vê as de todos (somente leitura)' : ' · você é administrador: vê as de todos e age em nome do analista') : (d.analista ? (d.admin ? ' · visão do analista: ' : ' · analista: ') + esc(d.analista.nome) : '')) + '</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Aberta em</th><th>Empresa</th><th>Tipo</th><th class="c">Prioridade</th><th>Assunto e plano</th>' + (d.todos ? '<th>Analista</th>' : '') + '<th class="c">Prazo</th><th class="c">Etapa</th><th class="c"></th></tr></thead><tbody>' + corpo + '</tbody></table></div>'
           : '<div class="vazio">Nenhuma ocorrência aberta para ' + (d.todos ? 'este filtro' : 'você') + ' por enquanto.</div>') + '</div>';
   }
@@ -3110,7 +3110,7 @@
       try {
         await carregarOpcoesQ();
         a.dados = await api('/api/cs/painel/qualidade/analista/ocorrencias' + (a.f.analista ? '?analista=' + encodeURIComponent(a.f.analista) : ''));
-        a.dados.analistas = estado.qAnalistas || [];
+        a.dados.analistas = a.dados.analistas_visiveis && a.dados.analistas_visiveis.length ? a.dados.analistas_visiveis : (a.dados.modo === 'equipe' ? [] : (estado.qAnalistas || []));
       } catch (e) { alvo.innerHTML = '<div class="card"><div class="vazio" style="color:var(--red)">' + esc(e.message) + '</div></div>'; return; }
     }
     var ba = $('badge-analista'); if (ba) ba.textContent = contagemEtapasGestor(a.dados.registros).com_analista || '';
@@ -3150,7 +3150,8 @@
   function abrirOcorrenciaAnalista(id) {
     var d = estado.a && estado.a.dados, r = ((d && d.registros) || []).filter(function (x) { return String(x.id) === String(id); })[0], soLeitura = false;
     if (!r) return;
-    var lider = perfilCs().admin, meuId = d.analista ? d.analista.id : null;
+    var lider = d.agir_em_nome !== undefined ? !!d.agir_em_nome : perfilCs().admin, meuId = d.analista ? d.analista.id : null;
+    if (d.admin && !lider && !(d.eu_analista && meuId && String(meuId) === String(d.eu_analista))) soLeitura = true;   // enxerga a ocorrência de outro analista, sem agir por ele
     var pend = (r.responsaveis || []).filter(function (x) { return !x.encerrado_em; });
     var emNome = lider ? (pend.length ? pend.map(function (x) { return x.nome; }).join(', ') : (r.analista_nome || '')) : '';
     var ov = document.createElement('div'); ov.className = 'qa-overlay'; document.body.appendChild(ov);
