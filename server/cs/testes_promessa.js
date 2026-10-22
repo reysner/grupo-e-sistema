@@ -100,7 +100,7 @@ checa('Texto vazio = NÃO é aguardando cliente', pareceAguardandoCliente(''), f
   };
   const sla = calcularSLA(ticket, T.instante(D, '13:10'));
   const porTipo = Object.fromEntries(sla.relogios.map(r => [r.tipo, r]));
-  checa('Passou de 2h sem nenhuma interação e sem pedir nada ao cliente -> vermelho', porTipo.promessa_resolucao.status, 'vermelho');
+  checa('Passou de 2h sem nenhuma interação: o prazo de 2h foi desconsiderado -> verde', porTipo.promessa_resolucao.status, 'verde');
   checa('aguardando_cliente = false (ele que deve a próxima ação)', porTipo.promessa_resolucao.aguardando_cliente, false);
 }
 

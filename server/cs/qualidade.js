@@ -399,7 +399,7 @@ function justificativaSla(sla) {
   if (!r || !r.tipo) return '';
   const etapa = ETAPA_SLA[r.tipo] || r.tipo;
   const min = Number(r.minutos_uteis) || 0, lim = Number(r.limite) || 0;
-  if (r.tipo === 'promessa_resolucao' && lim && min <= lim) return etapa + ': a resposta ao cliente demorou mais de 30 min úteis (prazo 30 min)';
+  if (r.tipo === 'promessa_resolucao') return etapa + ': a resposta ao cliente demorou mais de 30 min úteis (prazo 30 min)';   // só esta forma deixa o P. Resolver vermelho (o prazo de 2 h foi desconsiderado)
   if (!lim) return etapa + ': ' + minutosTexto(min) + ' úteis';
   return etapa + ': ' + minutosTexto(min) + ' úteis (prazo ' + minutosTexto(lim) + ')';
 }

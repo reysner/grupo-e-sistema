@@ -539,7 +539,7 @@ teste('SLA vermelho traz a justificativa (etapa, minutos úteis e prazo) e o nú
   assert.strictEqual(justificativaSla(sla('transferencia', 31, 15)), 'Transferência: 31 min úteis (prazo 15 min)');
   assert.strictEqual(justificativaSla(sla('departamento', 95, 30)), 'Departamento: 1 h 35 min úteis (prazo 30 min)');
   assert.strictEqual(justificativaSla(sla('promessa', 40, 15)), 'P. Transferir: 40 min úteis (prazo 15 min)');
-  assert.strictEqual(justificativaSla(sla('promessa_resolucao', 190, 120)), 'P. Resolver: 3 h 10 min úteis (prazo 2 h)');
+  assert.ok(justificativaSla(sla('promessa_resolucao', 190, 120)).includes('demorou mais de 30 min'), 'P. Resolver só fica vermelho por resposta lenta, mesmo com muito tempo corrido');
   assert.ok(justificativaSla(sla('promessa_resolucao', 50, 120)).includes('demorou mais de 30 min'), 'vermelho dentro das 2 h = resposta lenta ao cliente');
   assert.strictEqual(justificativaSla(JSON.stringify(sla('aceite', 20, 15))), 'Aceite: 20 min úteis (prazo 15 min)', 'aceita o SLA como texto JSON');
   assert.strictEqual(justificativaSla(null), '');

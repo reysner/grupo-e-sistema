@@ -1352,7 +1352,7 @@ function calcularSLA(ticket, agora = new Date()) {
   //   - Avisou que VAI TRANSFERIR (ex.: "vou te direcionar") e não transferiu ainda
   //     -> tipo 'promessa', prazo curto (15min, mesmo padrão da transferência real).
   //   - Não falou em transferir (interpretado como "vou resolver isso eu mesma(o)")
-  //     -> tipo 'promessa_resolucao', prazo maior (2h de silêncio é aceitável).
+  //     -> tipo 'promessa_resolucao': sem prazo de silêncio (o de 2h foi desconsiderado em 22/10/2026).
   //     MAS: mesmo dentro das 2h, se o cliente mandou mensagem nesse meio tempo e a
   //     resposta a ELA especificamente passou de 30min, já conta negativo — não dá
   //     pra esconder uma demora pontual atrás do prazo geral mais folgado.
@@ -1382,8 +1382,9 @@ function calcularSLA(ticket, agora = new Date()) {
       const aguardandoCliente = !tEncerramento && !!ultimaMsg && ultimaMsg.remetente === 'escritorio'
         && pareceAguardandoCliente(ultimaMsg.texto);
 
-      const estourouSilencio = !aguardandoCliente && min > T.LIMITES.promessa_resolucao;
-      const status = (estourouSilencio || teveTrocaLenta) ? 'vermelho' : 'verde';
+      // 22/10/2026 (pedido do Reysner): o prazo de 2 horas de silêncio foi DESCONSIDERADO. Quem prometeu resolver direto só fica vermelho quando uma
+      // resposta a uma mensagem do cliente passa de 30 min úteis (teveTrocaLenta); ticket parado sem nova mensagem do cliente não vira vermelho.
+      const status = teveTrocaLenta ? 'vermelho' : 'verde';
       relogios.push(montar('promessa_resolucao', respAposAceite, fim, min, emCurso, status, aguardandoCliente));
     }
   }
