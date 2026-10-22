@@ -7,10 +7,10 @@
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Grupo-E" />
   <meta property="og:locale" content="pt_BR" />
-  <meta property="og:title" content="Como funciona o SLA | Sucesso do Cliente" />
+  <meta property="og:title" content="Como funciona a Minha área | Sucesso do Cliente" />
   <meta property="og:description" content="Prazos de aceite, transferência, departamento e promessas; o que faz o SLA ficar vermelho." />
   <meta name="twitter:card" content="summary" />
-  <title>Como funciona o SLA | Sucesso do Cliente</title>
+  <title>Como funciona a Minha área | Sucesso do Cliente</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet" />
   <style>
@@ -63,6 +63,22 @@
     table.exp td{padding:9px 0;border-top:1px solid var(--gray-100)}
     table.exp tr:first-child td{border-top:none}
     table.exp td:last-child{text-align:right;font-weight:700;color:var(--green)}
+    html{scroll-behavior:smooth}
+    .indice{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 22px;margin:28px 0 8px}
+    .indice h2{font-family:'Plus Jakarta Sans',sans-serif;font-size:18px;color:var(--green);margin-bottom:10px}
+    .indice a{display:inline-block;margin:4px 6px 4px 0;padding:7px 13px;border-radius:999px;background:var(--green-pale);color:var(--green);font-size:15px;font-weight:700;text-decoration:none}
+    .indice a:hover{background:var(--green);color:#fff}
+    .modulo{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:24px 26px;margin:20px 0;scroll-margin-top:16px;border:2px solid transparent}
+    .modulo.foco,.modulo:target{border-color:var(--gold)}
+    .modulo h2{display:flex;align-items:center;gap:10px;font-family:'Plus Jakarta Sans',sans-serif;font-size:24px;font-weight:800;color:var(--green);margin-bottom:8px}
+    .modulo .resumo{font-size:18px;color:var(--gray-600);line-height:1.6;margin-bottom:12px}
+    .modulo h3{font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--gray-400);margin:16px 0 6px}
+    .modulo ul{margin:0 0 4px 20px;font-size:17px;line-height:1.65;color:var(--gray-800)}
+    .modulo li{margin:3px 0}
+    .modulo li b{color:var(--green)}
+    .modulo .nota{display:flex;gap:9px;align-items:flex-start;background:var(--green-pale);color:var(--green);border-radius:8px;padding:12px 14px;font-size:16px;line-height:1.6;margin-top:12px}
+    .modulo a.mais{color:var(--green-light);font-weight:700;text-decoration:none}
+    #sla{scroll-margin-top:16px}
     .footer-msg{text-align:center;padding:26px 16px 0;color:var(--gray-400);font-size:17px;line-height:1.6}
     .footer-msg a{color:var(--green-light);font-weight:700;text-decoration:none}
     @media(max-width:480px){h1{font-size:24px}.card{padding:15px 16px}.rowline{font-size:16.5px}}
@@ -75,13 +91,85 @@
   <div class="header">
     <div class="header-inner">
       <a href="/cs" class="back-link">← Voltar para o painel</a>
-      <h1>📋 Como funciona o SLA</h1>
-      <div class="tagline">O SLA mede quanto tempo o escritório levou para responder o cliente em cada etapa do atendimento. Passou do prazo, a cor muda, e o painel mostra qual etapa estourou.</div>
+      <h1>📋 Como funciona a Minha área</h1>
+      <div class="tagline">O que cada módulo da Minha área mostra e, mais abaixo, como o SLA do atendimento é calculado: prazos, cores e o que não conta contra o analista.</div>
       <div class="badge">⏱️ Conta só em horas úteis, sem almoço, fins de semana e feriados</div>
     </div>
   </div>
 
   <div class="container">
+
+    <div class="indice"><h2>Módulos da Minha área</h2><div><a href="#meusatend">🎧 Meus atendimentos</a><a href="#minhasprior">🚨 Prioridades</a><a href="#minhanota">🏆 Minha nota</a><a href="#meusemails">📧 Meus e-mails</a><a href="#minhaevolucao">📈 Evolução semanal</a><a href="#gamificacao">🏅 Gamificação</a><a href="#sla">⏱️ Como funciona o SLA</a></div></div>
+
+    <!-- ═════════ MEUS ATENDIMENTOS ═════════ -->
+    <section class="modulo" id="meusatend">
+      <h2>🎧 Meus atendimentos</h2>
+      <div class="resumo">Os seus atendimentos do Zappy dos últimos 180 dias, com a nota do cliente e a situação do SLA.</div>
+      <ul>
+        <li><b>Filtro por período:</b> De / Até, ou os atalhos de 7, 30 e 90 dias. Os números do topo acompanham o filtro.</li>
+        <li>Cada linha traz a data, o <b>número do ticket</b>, a empresa, o setor, a nota e a cor do SLA.</li>
+        <li><b>Justificativa do SLA:</b> nos atendimentos amarelos e vermelhos, a etapa que estourou e o tempo, por exemplo "Aceite: 48 min úteis (prazo 15 min)".</li>
+      </ul>
+      <div class="nota">ℹ️ Todos os prazos e exceções estão em <a class="mais" href="#sla">Como funciona o SLA</a>.</div>
+    </section>
+
+    <!-- ═════════ PRIORIDADES ═════════ -->
+    <section class="modulo" id="minhasprior">
+      <h2>🚨 Prioridades</h2>
+      <div class="resumo">O que merece a sua atenção primeiro, ordenado do mais urgente para o menos urgente.</div>
+      <ul>
+        <li><b>Ocorrências vencidas ou perto do prazo</b> (nos próximos 3 dias).</li>
+        <li><b>E-mails sem resposta</b> de clientes: com 3 ou mais por cliente a urgência é alta.</li>
+        <li><b>SLA vermelho</b> nos atendimentos dos últimos 30 dias. Cada item mostra o <b>número do ticket</b> e a <b>justificativa</b>: qual etapa estourou e em quantos minutos úteis (veja <a class="mais" href="#sla">como funciona o SLA</a>).</li>
+      </ul>
+      <div class="nota">ℹ️ O vermelho é a detecção automática. A liderança revisa na Gamificação e pode tirar do cálculo o que não foi falha sua.</div>
+    </section>
+
+    <!-- ═════════ MINHA NOTA ═════════ -->
+    <section class="modulo" id="minhanota">
+      <h2>🏆 Minha nota</h2>
+      <div class="resumo">A composição da sua nota na Gamificação no mês escolhido.</div>
+      <ul>
+        <li><b>Nota final do mês</b> (no máximo 5) e quantos atendimentos foram avaliados pelo cliente.</li>
+        <li><b>Nota base:</b> a média das avaliações dos clientes.</li>
+        <li><b>Bônus e descontos</b> (médias): velocidade, aceite do aguardando, finalizar e reabertura, abandono de atendimento.</li>
+      </ul>
+      <div class="nota">ℹ️ Nenhum desconto vira definitivo sozinho: toda nota abaixo de 5 e todo ajuste passam por revisão de uma pessoa. As regras completas estão em <a class="mais" href="/gamificacao/regras">Como funciona a pontuação</a>.</div>
+    </section>
+
+    <!-- ═════════ MEUS E-MAILS ═════════ -->
+    <section class="modulo" id="meusemails">
+      <h2>📧 Meus e-mails</h2>
+      <div class="resumo">Os e-mails de clientes que chegaram para você e os que ainda estão sem resposta.</div>
+      <ul>
+        <li>Só entram contatos <b>ligados a uma empresa</b>. A resposta de qualquer pessoa do escritório encerra a espera.</li>
+        <li><b>Filtros:</b> período (De / Até), empresa e "só com e-mail sem resposta".</li>
+        <li>A leitura roda <b>toda segunda-feira às 8h30</b>. O filtro por período vale para as leituras feitas depois que a data de cada e-mail passou a ser guardada.</li>
+      </ul>
+    </section>
+
+    <!-- ═════════ EVOLUÇÃO SEMANAL ═════════ -->
+    <section class="modulo" id="minhaevolucao">
+      <h2>📈 Evolução semanal</h2>
+      <div class="resumo">As últimas 12 semanas, de segunda a domingo, lado a lado.</div>
+      <ul>
+        <li><b>Atendimentos</b> feitos na semana.</li>
+        <li><b>Ocorrências recebidas</b> e <b>ocorrências concluídas</b>, para ver se o que chega está sendo resolvido.</li>
+      </ul>
+    </section>
+
+    <!-- ═════════ GAMIFICAÇÃO ═════════ -->
+    <section class="modulo" id="gamificacao">
+      <h2>🏅 Gamificação</h2>
+      <div class="resumo">O ranking da Liga do Atendimento: a nota de cada analista, mês a mês, e o consolidado da temporada.</div>
+      <ul>
+        <li>A nota do mês pesa a média individual pelo número de avaliações; quem ainda não tem avaliação no mês fica com a menor nota do grupo.</li>
+        <li>O <b>Consolidado Geral</b> é a média das notas finais de cada mês da temporada.</li>
+      </ul>
+      <div class="nota">ℹ️ Detalhes das regras: <a class="mais" href="/gamificacao/regras">Como funciona a pontuação</a>.</div>
+    </section>
+
+    <div class="stage-head" id="sla"><span class="stage-num">⏱</span><div><h2>Como funciona o SLA</h2><p>Mede quanto tempo o escritório levou para responder o cliente em cada etapa</p></div></div>
 
     <div class="rule-banner">
       <div class="label">A regra geral</div>
@@ -166,5 +254,12 @@
     <div class="footer-msg">Ficou com dúvida sobre um atendimento específico? Fale com a liderança do Sucesso do Cliente.<br><a href="/cs">← Voltar para o painel</a></div>
   </div>
 
+<script>
+(function () {
+  var id = (location.hash || '').replace('#', '');
+  var alvo = id ? document.getElementById(id) : null;
+  if (alvo && alvo.classList.contains('modulo')) { alvo.classList.add('foco'); setTimeout(function () { alvo.scrollIntoView({ block: 'start' }); }, 50); }
+})();
+</script>
 </body>
 </html>

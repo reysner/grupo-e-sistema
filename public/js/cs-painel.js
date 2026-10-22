@@ -328,8 +328,8 @@
     if (GUIA_SECS.indexOf(sec) < 0) { como.style.display = 'none'; return; }
     var p = perfilCs(), mods = GUIA_SECS.filter(function (x) { return secaoLiberada(x) !== false; });
     var perfil = p.admin ? 'todos' : (p.gestor ? 'gestor' : 'analista');
-    como.href = '/cs/como-funciona?perfil=' + perfil + '&modulo=' + encodeURIComponent(sec) + '&mods=' + encodeURIComponent(mods.join(','));
-    como.title = 'Como funciona este módulo';
+    if (SEC_MINHA_AREA.indexOf(sec) >= 0) { como.href = '/cs/sla#' + sec; como.title = 'Como funciona este módulo da Minha área (inclui o SLA)'; }   // Minha área: guia com o SLA
+    else { como.href = '/cs/como-funciona?perfil=' + perfil + '&modulo=' + encodeURIComponent(sec) + '&mods=' + encodeURIComponent(mods.filter(function (x) { return SEC_MINHA_AREA.indexOf(x) < 0; }).join(',')); como.title = 'Como funciona este módulo'; }
     como.style.display = '';
   }
   function irPara(sec) {
