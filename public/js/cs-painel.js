@@ -3040,7 +3040,7 @@
     var regs = d.registros || [], lista = filtrarPortal(regs, f), c = contagemEtapasGestor(regs);
     var op = function (v, rot, sel) { return '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(rot) + '</option>'; };
     var optE = op('', 'Todas', !f.etapa) + ['novas', 'a_vencer', 'vencidas'].map(function (e) { return op(e, ETAPA_ANALISTA_Q[e], f.etapa === e); }).join('');   // só no Portal do Analista
-    var optAn = op('', d.modo === 'equipe' ? 'Toda a minha equipe' : 'Todos os analistas', !f.analista) + (d.eu_analista ? op('eu', 'Só eu', f.analista === 'eu') : '') + (d.analistas || []).map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
+    var optAn = op('', d.modo === 'equipe' ? 'Toda a minha equipe' : 'Todos os analistas', !f.analista) + (d.eu_analista ? op('eu', 'Só eu', f.analista === 'eu') : '') + (d.analistas || []).filter(function (a) { return !d.eu_analista || String(a.id) !== String(d.eu_analista); }).map(function (a) { return op(a.id, a.nome, String(f.analista) === String(a.id)); }).join('');
     var corpo = lista.map(function (r) {
       var jaEnc = (r.responsaveis || []).some(function (x) { return d.analista && String(x.analista_id) === String(d.analista.id) && x.encerrado_em; });
       var acao = r.etapa === 'com_analista' && !jaEnc ? 'Tratar' : 'Ver';
