@@ -6,10 +6,11 @@ const A = require('./acessos');
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
 
-teste('administrador vê tudo (e é o único com "acessos"), mesmo que exista configuração', () => {
+teste('administrador vê tudo por padrão e é o único com "acessos"; o menu dele pode ser personalizado, sem perder "acessos"', () => {
   const todos = A.CODIGOS.concat(['acessos']);
   assert.deepStrictEqual(A.modulosEfetivos({ admin: true }, null), todos);
-  assert.deepStrictEqual(A.modulosEfetivos({ admin: true }, ['visao']), todos);
+  assert.deepStrictEqual(A.modulosEfetivos({ admin: true }, ['visao']), ['visao', 'acessos'], 'menu personalizado: só o marcado, mais "acessos"');
+  assert.deepStrictEqual(A.modulosEfetivos({ admin: true }, []), ['acessos'], 'lista vazia não tira "acessos" do administrador');
   assert.ok(!A.modulosEfetivos({ equipe: true }, null).includes('acessos'));
   assert.ok(!A.modulosEfetivos({ equipe: true }, A.CODIGOS).includes('acessos'), 'não dá para configurar "acessos"');
 });

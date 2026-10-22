@@ -388,14 +388,14 @@ const semLixo = (e, nome) => {
     const depois = C.t.htmlTratativaGestor(Object.assign({}, base, { etapa: 'devolutiva_cliente', validacao_nota: 'Tudo ok', validacao_por: 'Eduardo', validacao_em: '2026-10-20T10:00:00Z' }), []);
     assert.ok(!depois.includes('id="gv-validar"') && depois.includes('Tudo ok') && depois.includes('Guia retificada'), 'depois de validada só leitura');
   });
-  await teste('cs: Acessos — matriz pessoa × módulo: administrador travado, bolinhas com estado, etiqueta Personalizado/Padrão, filtros e busca', () => {
+  await teste('cs: Acessos — matriz pessoa × módulo: administrador também personalizável, bolinhas com estado, etiqueta Personalizado/Padrão, filtros e busca', () => {
     const cat = [{ codigo: 'visao', rotulo: 'Visão Geral', grupo: 'Indicadores da carteira' }, { codigo: 'churn', rotulo: 'Churn', grupo: 'Indicadores da carteira' }, { codigo: 'gestor', rotulo: 'Portal do Gestor', grupo: 'Qualidade e portais' }];
     const U = (id, nome, extra) => Object.assign({ id, nome, email: nome.toLowerCase() + '@x.com', papel: 'usuario', admin: false, definido: false, modulos: ['visao', 'churn'], padrao: ['visao', 'churn'], entra_padrao: true, entra_no_painel: true }, extra || {});
     const d = { catalogo: cat, usuarios: [U('1', 'Reysner Silva', { admin: true, papel: 'administrador', modulos: ['visao', 'churn', 'gestor', 'acessos'] }), U('2', 'Maria Souza', { definido: true, modulos: ['churn'] }), U('3', 'João Ágil'), U('4', 'Zé Vazio', { definido: true, modulos: [], entra_no_painel: true }), U('5', 'Sem Painel', { modulos: ['qualidade'], entra_padrao: false, entra_no_painel: false })] };
     const h = C.t.htmlMatrizAc(d, { busca: '', filtro: 'todos' });
     assert.ok(h.includes('Indicadores da carteira') && h.includes('Qualidade e portais') && h.includes('colspan="2"') && h.includes('data-col="gestor"'));
-    assert.ok(h.includes('class="ac-sw on trava"'), 'administrador: bolinhas travadas');
-    assert.ok(!h.includes('data-ac-sw="1|'), 'administrador não tem bolinha clicável');
+    assert.ok(!h.includes('class="ac-sw on trava"') && h.includes('data-ac-sw="1|gestor"'), 'administrador: o menu dele também se personaliza (bolinhas clicáveis)');
+    assert.ok(h.includes('data-ac-perfil="1"'), 'administrador também recebe o seletor de perfil rápido');
     assert.ok(h.includes('data-ac-sw="2|churn"') && h.includes('aria-pressed="true"') && h.includes('aria-pressed="false"'), 'bolinhas clicáveis com estado');
     assert.ok(h.includes('aria-label="Maria Souza — Churn: vê"') && h.includes('aria-label="Maria Souza — Visão Geral: não vê"'));
     assert.ok(h.includes('ac-tag-per">Personalizado') && h.includes('ac-tag">Padrão do perfil') && h.includes('ac-tag-adm">Administrador'));

@@ -2332,12 +2332,11 @@
     var linhas = lista.map(function (u) {
       var cels = cat.map(function (m) {
         var tem = u.modulos.indexOf(m.codigo) >= 0;
-        if (u.admin) return '<td class="ac-cel" data-col="' + esc(m.codigo) + '"><span class="ac-sw on trava" title="Administrador vê todos os módulos">✓</span></td>';
         return '<td class="ac-cel" data-col="' + esc(m.codigo) + '"><button type="button" class="ac-sw ' + (tem ? 'on' : 'off') + '" data-ac-sw="' + esc(u.id) + '|' + esc(m.codigo) + '" aria-pressed="' + (tem ? 'true' : 'false') + '" aria-label="' + esc(u.nome + ' — ' + m.rotulo + ': ' + (tem ? 'vê' : 'não vê')) + '" title="' + esc(m.rotulo) + '">' + (tem ? '✓' : '') + '</button></td>';
       }).join('');
-      var etiqueta = u.admin ? '<span class="ac-tag ac-tag-adm">Administrador</span>' : u.definido ? '<span class="ac-tag ac-tag-per">Personalizado</span>' : '<span class="ac-tag">Padrão do perfil</span>';
+      var etiqueta = u.admin ? '<span class="ac-tag ac-tag-adm">Administrador</span>' + (u.definido ? '<span class="ac-tag ac-tag-per">Menu personalizado</span>' : '') : u.definido ? '<span class="ac-tag ac-tag-per">Personalizado</span>' : '<span class="ac-tag">Padrão do perfil</span>';
       var aviso = u.admin ? '' : !u.modulos.length ? '<span class="ac-tag ac-tag-sem">Sem acesso a nada</span>' : !u.entra_no_painel ? '<span class="ac-tag ac-tag-sem">Não entra no painel</span>' : '';
-      var acoes = u.admin ? '' : '<select data-ac-perfil="' + esc(u.id) + '" aria-label="Aplicar perfil rápido a ' + esc(u.nome) + '"><option value="">Aplicar perfil…</option>' +
+      var acoes = '<select data-ac-perfil="' + esc(u.id) + '" aria-label="Aplicar perfil rápido a ' + esc(u.nome) + '"><option value="">Aplicar perfil…</option>' +
         PERFIS_RAPIDOS.map(function (p) { return '<option value="' + p.id + '">' + esc(p.rotulo) + '</option>'; }).join('') + '</select>' +
         (u.definido ? '<button type="button" class="ac-voltar" data-ac-padrao="' + esc(u.id) + '" title="Descarta o que foi marcado e volta ao padrão do perfil">↺ padrão</button>' : '');
       return '<tr data-ac-linha="' + esc(u.id) + '"><th class="ac-nome" scope="row"><span class="ac-av" style="--h:' + matizAc(u.nome) + '">' + esc(iniciaisAc(u.nome)) + '</span><span class="ac-quem" title="' + esc(u.nome) + '"><strong>' + esc(u.nome) + '</strong><small>' + esc(u.email || '') + '</small></span></th>' + cels + '<td class="ac-perfil">' + etiqueta + aviso + acoes + '</td></tr>';
@@ -2552,7 +2551,7 @@
     alvo.addEventListener('click', function (ev) {
       var t = ev.target, ach = function (sel) { return t && t.closest ? t.closest(sel) : null; };
       var sw = ach('[data-ac-sw]');
-      if (sw) { var p = sw.getAttribute('data-ac-sw').split('|'), u = achar(p[0]); if (u && !u.admin) salvar(u, alternarModuloAc(u.modulos, p[1], d.catalogo)); return; }
+      if (sw) { var p = sw.getAttribute('data-ac-sw').split('|'), u = achar(p[0]); if (u) salvar(u, alternarModuloAc(u.modulos, p[1], d.catalogo)); return; }
       var pd = ach('[data-ac-padrao]');
       if (pd) { var u2 = achar(pd.getAttribute('data-ac-padrao')); if (u2) salvar(u2, null); return; }
       var fl = ach('[data-ac-filtro]');
@@ -2573,7 +2572,7 @@
       var sel = ev.target; if (!sel || !sel.getAttribute || !sel.getAttribute('data-ac-perfil')) return;
       var perfil = PERFIS_RAPIDOS.filter(function (p) { return p.id === sel.value; })[0], u = achar(sel.getAttribute('data-ac-perfil'));
       sel.value = '';
-      if (perfil && u && !u.admin) salvar(u, perfil.modulos.slice());
+      if (perfil && u) salvar(u, perfil.modulos.slice());
     });
     var busca = $('ac-busca'); if (busca) busca.addEventListener('input', function () { f.busca = busca.value; $('ac-matriz').innerHTML = htmlMatrizAc(d, f); });
     // realce em cruz: a coluna do módulo sob o mouse acende

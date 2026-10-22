@@ -66,7 +66,9 @@ function limparModulos(m) {
 
 /** O que a pessoa vê de fato. cfg = módulos gravados (array) ou null/undefined quando não há configuração. */
 function modulosEfetivos(perfil, cfg) {
-  if (perfil && perfil.admin) return CODIGOS.concat(['acessos']);
+  // administrador: continua com acesso a todos os dados (a barreira das rotas o deixa passar), mas o MENU pode ser personalizado em Acessos (21/10/2026);
+  // "acessos" ele sempre tem. Sem configuração, vê tudo.
+  if (perfil && perfil.admin) return (Array.isArray(cfg) ? CODIGOS.filter((c) => cfg.includes(c)) : CODIGOS).concat(['acessos']);
   if (Array.isArray(cfg)) return CODIGOS.filter((c) => cfg.includes(c));
   return modulosPadrao(perfil);
 }
@@ -197,7 +199,6 @@ router.put('/:userId', async (req, res) => {
     const id = String(req.params.userId);
     const u = (await pool.query('SELECT id::text AS id, name, role FROM users WHERE id::text = $1 AND active = 1', [id])).rows[0];
     if (!u) return res.status(404).json({ error: 'Pessoa não encontrada entre os usuários ativos.' });
-    if (u.role === 'administrador') return res.status(400).json({ error: 'Administrador sempre vê todos os módulos.' });
     const lista = limparModulos(req.body ? req.body.modulos : undefined);
     if (lista === undefined) return res.status(400).json({ error: 'Informe modulos como lista (ou null para voltar ao padrão).' });
     if (lista === null) await pool.query('DELETE FROM cs_acessos WHERE user_id = $1', [id]);
