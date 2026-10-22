@@ -321,6 +321,17 @@
     irPara(estado.secao);
   }
 
+  // "Como funciona" (guia de cada módulo): aparece nos módulos do guia e abre direto no módulo, com o perfil (analista, gestor ou todos) e só os módulos que a pessoa tem
+  var GUIA_SECS = ['analista', 'consideracoes', 'minhasprior', 'minhanota', 'meusatend', 'meusemails', 'minhaevolucao', 'gamificacao', 'gestor', 'sucesso'];
+  function atualizarComoFunciona(sec) {
+    var como = document.querySelector('.gp-como'); if (!como) return;
+    if (GUIA_SECS.indexOf(sec) < 0) { como.style.display = 'none'; return; }
+    var p = perfilCs(), mods = GUIA_SECS.filter(function (x) { return secaoLiberada(x) !== false; });
+    var perfil = p.admin ? 'todos' : (p.gestor ? 'gestor' : 'analista');
+    como.href = '/cs/como-funciona?perfil=' + perfil + '&modulo=' + encodeURIComponent(sec) + '&mods=' + encodeURIComponent(mods.join(','));
+    como.title = 'Como funciona este módulo';
+    como.style.display = '';
+  }
   function irPara(sec) {
     estado.secao = sec;
     Array.prototype.forEach.call(document.querySelectorAll('.gp-nav-item'), function (b) { b.classList.toggle('active', b.getAttribute('data-sec') === sec); });
@@ -329,7 +340,7 @@
     $('subtitulo').textContent = TITULOS[sec][1];
     $('filtro-periodo').style.display = (sec === 'visao' || sec === 'churn') ? 'flex' : 'none';
     pintarBotaoValores();   // some nos portais do Gestor e do Analista
-    var como = document.querySelector('.gp-como'); if (como) como.style.display = sec === 'analista' ? '' : 'none';   // "Como funciona" (SLA) só no Portal do Analista
+    atualizarComoFunciona(sec);   // "Como funciona" do módulo aberto
     if (sec === 'gestor' && estado.g && !estado.g.dados) desenharGestor();
     if (sec === 'analista' && (!estado.a || !estado.a.dados) && perfilCs().analista) desenharAnalista();
     if (sec === 'sucesso' && (!estado.s || !estado.s.dados)) desenharSucesso();

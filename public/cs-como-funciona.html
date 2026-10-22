@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Guia de cada módulo do painel do Sucesso do Cliente do Grupo-E, para analistas e gestores." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Grupo-E" />
+  <meta property="og:locale" content="pt_BR" />
+  <meta property="og:title" content="Como funciona cada módulo | Sucesso do Cliente" />
+  <meta property="og:description" content="O que cada tela faz, como usar e o que acontece depois." />
+  <meta name="twitter:card" content="summary" />
+  <title>Como funciona cada módulo | Sucesso do Cliente</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet" />
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    :root{
+      --green:#1a4233;--green-light:#2a6e4a;--green-pale:#e8f4ef;
+      --gold:#f5c518;--gold-dark:#c9a000;
+      --gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;
+      --gray-400:#94a3b8;--gray-600:#475569;--gray-800:#1e293b;
+      --white:#fff;--radius:16px;--shadow:0 4px 24px rgba(0,0,0,.08);
+    }
+    html{scroll-behavior:smooth}
+    body{font-family:'Inter',sans-serif;background:linear-gradient(180deg,#fdf6e3 0%,#fff 100%);color:var(--gray-800);min-height:100vh}
+    .header{background:var(--green);padding:24px 20px 44px;text-align:center;position:relative;overflow:hidden}
+    .header::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 20% 20%,rgba(245,197,24,.15) 0%,transparent 50%),radial-gradient(circle at 80% 80%,rgba(245,197,24,.1) 0%,transparent 50%)}
+    .header-inner{position:relative;z-index:1;max-width:680px;margin:0 auto}
+    .back-link{display:inline-flex;align-items:center;gap:6px;color:rgba(255,255,255,.75);font-size:17px;font-weight:600;text-decoration:none;margin-bottom:16px}
+    .back-link:hover{color:#fff}
+    h1{font-family:'Plus Jakarta Sans',sans-serif;font-size:36px;font-weight:800;color:var(--white);letter-spacing:-.5px;margin-bottom:10px}
+    .tagline{color:rgba(255,255,255,.7);font-size:19px;max-width:640px;margin:0 auto;line-height:1.6}
+    .badge{display:inline-flex;align-items:center;gap:7px;background:rgba(245,197,24,.15);border:1px solid rgba(245,197,24,.35);border-radius:999px;padding:7px 16px;margin-top:16px;font-size:13.5px;font-weight:600;color:var(--gold)}
+    .container{max-width:680px;margin:-24px auto 0;padding:0 16px 60px;position:relative;z-index:2}
+    .indice{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 22px;margin:28px 0 8px}
+    .indice h2{font-family:'Plus Jakarta Sans',sans-serif;font-size:18px;color:var(--green);margin-bottom:10px}
+    .indice a{display:inline-block;margin:4px 6px 4px 0;padding:7px 13px;border-radius:999px;background:var(--green-pale);color:var(--green);font-size:15px;font-weight:700;text-decoration:none}
+    .indice a:hover{background:var(--green);color:#fff}
+    .modulo{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:24px 26px;margin:20px 0;scroll-margin-top:16px;border:2px solid transparent}
+    .modulo.foco{border-color:var(--gold)}
+    .modulo h2{display:flex;align-items:center;gap:10px;font-family:'Plus Jakarta Sans',sans-serif;font-size:24px;font-weight:800;color:var(--green);margin-bottom:8px}
+    .modulo .resumo{font-size:18px;color:var(--gray-600);line-height:1.6;margin-bottom:12px}
+    .modulo h3{font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--gray-400);margin:16px 0 6px}
+    .modulo ul{margin:0 0 4px 20px;font-size:17px;line-height:1.65;color:var(--gray-800)}
+    .modulo li{margin:3px 0}
+    .modulo li b{color:var(--green)}
+    .nota{display:flex;gap:9px;align-items:flex-start;background:var(--green-pale);color:var(--green);border-radius:8px;padding:12px 14px;font-size:16px;line-height:1.6;margin-top:12px}
+    .modulo a.mais{color:var(--green-light);font-weight:700;text-decoration:none}
+    .oculto{display:none!important}
+    .footer-msg{text-align:center;padding:26px 16px 0;color:var(--gray-400);font-size:17px;line-height:1.6}
+    .footer-msg a{color:var(--green-light);font-weight:700;text-decoration:none}
+    @media(max-width:480px){h1{font-size:24px}.modulo{padding:16px 16px}.modulo h2{font-size:20px}}
+    @media(min-width:900px){.header-inner,.container{max-width:960px}}
+    @media(min-width:1200px){.header-inner,.container{max-width:1100px}h1{font-size:40px}}
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-inner">
+      <a href="/cs" class="back-link">← Voltar para o painel</a>
+      <h1>📋 Como funciona cada módulo</h1>
+      <div class="tagline" id="tagline">O que cada tela faz, como usar e o que acontece depois.</div>
+      <div class="badge" id="badge">Guia do analista</div>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <div class="indice"><h2>Módulos</h2><div id="indice"></div></div>
+
+    <!-- ═════════ PORTAL DO ANALISTA ═════════ -->
+    <section class="modulo" id="analista" data-perfis="analista">
+      <h2>🧑‍💼 Portal do Analista</h2>
+      <div class="resumo">As ocorrências que o seu gestor abriu para você tratar. É aqui que você registra o que foi feito e envia para a validação.</div>
+      <h3>O que aparece</h3>
+      <ul>
+        <li><b>Com você:</b> ocorrências para tratar agora. <b>Em validação:</b> já enviadas, com o gestor. <b>Devolutiva ao cliente:</b> com o Sucesso do Cliente. <b>Encerradas:</b> processo finalizado. <b>Vencidas:</b> o prazo passou.</li>
+        <li><b>Minha semana</b>, no topo: vencidas, atendimentos da semana, SLA vermelho dos últimos 7 dias, e-mails sem resposta e nota do mês, com atalhos.</li>
+      </ul>
+      <h3>Como tratar uma ocorrência</h3>
+      <ul>
+        <li>Abra com <b>Tratar</b>. Leia o plano de ação que o gestor deixou, o prazo e a prioridade.</li>
+        <li><b>Observação:</b> deixa um recado ao gestor sem encerrar a sua parte. Ele recebe aviso e responde ali mesmo.</li>
+        <li><b>Finalizar:</b> é a sua nota final, e encerra a sua parte. Quando todos os responsáveis finalizam, a ocorrência vai para o seu gestor validar.</li>
+        <li>Se o gestor entender que está solucionado, deixa uma nota e a ocorrência segue para o <b>Sucesso do Cliente</b>, que faz a devolutiva ao cliente.</li>
+      </ul>
+      <div class="nota">ℹ️ Por sigilo, algumas ocorrências podem aparecer sem o nome da empresa ou de quem foi apontado.</div>
+    </section>
+
+    <section class="modulo" id="analista-gestor" data-perfis="gestor">
+      <h2>🧑‍💼 Portal do Analista (visão da equipe)</h2>
+      <div class="resumo">Para acompanhar o que está com os analistas. Você vê as ocorrências dos analistas da sua equipe, só para leitura.</div>
+      <ul>
+        <li><b>Filtro por analista:</b> "Toda a minha equipe", "Só eu" (se você também é analista) ou um analista específico.</li>
+        <li>A sua equipe são os analistas que atendem o departamento que você gere. A <b>diretoria</b> e o gestor final veem todos os analistas.</li>
+        <li><b>Somente leitura:</b> quem age pelo analista é a administração. Você acompanha as etapas, os prazos e as observações.</li>
+        <li>Para criar a tratativa, validar ou devolver, use o <a class="mais" href="#gestor">Portal do Gestor</a>.</li>
+      </ul>
+    </section>
+
+    <!-- ═════════ QUALIDADE ═════════ -->
+    <section class="modulo" id="consideracoes" data-perfis="analista gestor">
+      <h2>✅ Qualidade</h2>
+      <div class="resumo">Onde se registra uma ocorrência: um fato fora do padrão, como reclamação, insatisfação, multa ou caso grave. Não é para o atendimento do dia a dia.</div>
+      <h3>Como registrar</h3>
+      <ul>
+        <li>Preencha o <b>assunto</b>, o <b>responsável</b>, a <b>empresa</b>, o <b>tipo</b>, o <b>departamento</b>, a prioridade, o <b>prazo</b> e a descrição (até 1.500 caracteres). Dá para anexar até 5 arquivos de 10 MB.</li>
+        <li>Quem registra não precisa ser quem trata. A ocorrência vai para o <b>gestor do departamento</b> escolhido (ou para o Sucesso do Cliente, se o departamento ainda não tem gestor).</li>
+        <li><b>Minhas ocorrências:</b> a lista do que você registrou, com a etapa em que cada uma está.</li>
+      </ul>
+      <div class="nota">ℹ️ As ocorrências aparecem nos sinais de atenção da empresa e pesam no risco de perda do cliente (exceto as informativas, abertas pela ficha da empresa).</div>
+    </section>
+
+    <!-- ═════════ PRIORIDADES ═════════ -->
+    <section class="modulo" id="minhasprior" data-perfis="analista">
+      <h2>🚨 Prioridades</h2>
+      <div class="resumo">O que merece a sua atenção primeiro, ordenado do mais urgente para o menos urgente.</div>
+      <ul>
+        <li><b>Ocorrências vencidas ou perto do prazo</b> (nos próximos 3 dias).</li>
+        <li><b>E-mails sem resposta</b> de clientes: com 3 ou mais por cliente a urgência é alta.</li>
+        <li><b>SLA vermelho</b> nos atendimentos dos últimos 30 dias. Cada item mostra o <b>número do ticket</b> e a <b>justificativa</b>: qual etapa estourou e em quantos minutos úteis (veja <a class="mais" href="/cs/sla">como funciona o SLA</a>).</li>
+      </ul>
+      <div class="nota">ℹ️ O vermelho é a detecção automática. A liderança revisa na Gamificação e pode tirar do cálculo o que não foi falha sua.</div>
+    </section>
+
+    <!-- ═════════ MINHA NOTA ═════════ -->
+    <section class="modulo" id="minhanota" data-perfis="analista">
+      <h2>🏆 Minha nota</h2>
+      <div class="resumo">A composição da sua nota na Gamificação no mês escolhido.</div>
+      <ul>
+        <li><b>Nota final do mês</b> (no máximo 5) e quantos atendimentos foram avaliados pelo cliente.</li>
+        <li><b>Nota base:</b> a média das avaliações dos clientes.</li>
+        <li><b>Bônus e descontos</b> (médias): velocidade, aceite do aguardando, finalizar e reabertura, abandono de atendimento.</li>
+      </ul>
+      <div class="nota">ℹ️ Nenhum desconto vira definitivo sozinho: toda nota abaixo de 5 e todo ajuste passam por revisão de uma pessoa. As regras completas estão em <a class="mais" href="/gamificacao/regras">Como funciona a pontuação</a>.</div>
+    </section>
+
+    <!-- ═════════ MEUS ATENDIMENTOS ═════════ -->
+    <section class="modulo" id="meusatend" data-perfis="analista">
+      <h2>🎧 Meus atendimentos</h2>
+      <div class="resumo">Os seus atendimentos do Zappy dos últimos 180 dias, com a nota do cliente e a situação do SLA.</div>
+      <ul>
+        <li><b>Filtro por período:</b> De / Até, ou os atalhos de 7, 30 e 90 dias. Os números do topo acompanham o filtro.</li>
+        <li>Cada linha traz a data, o <b>número do ticket</b>, a empresa, o setor, a nota e a cor do SLA.</li>
+        <li><b>Justificativa do SLA:</b> nos atendimentos amarelos e vermelhos, a etapa que estourou e o tempo, por exemplo "Aceite: 48 min úteis (prazo 15 min)".</li>
+      </ul>
+      <div class="nota">ℹ️ Todos os prazos e exceções estão em <a class="mais" href="/cs/sla">Como funciona o SLA</a>.</div>
+    </section>
+
+    <!-- ═════════ MEUS E-MAILS ═════════ -->
+    <section class="modulo" id="meusemails" data-perfis="analista">
+      <h2>📧 Meus e-mails</h2>
+      <div class="resumo">Os e-mails de clientes que chegaram para você e os que ainda estão sem resposta.</div>
+      <ul>
+        <li>Só entram contatos <b>ligados a uma empresa</b>. A resposta de qualquer pessoa do escritório encerra a espera.</li>
+        <li><b>Filtros:</b> período (De / Até), empresa e "só com e-mail sem resposta".</li>
+        <li>A leitura roda <b>toda segunda-feira às 8h30</b>. O filtro por período vale para as leituras feitas depois que a data de cada e-mail passou a ser guardada.</li>
+      </ul>
+    </section>
+
+    <!-- ═════════ EVOLUÇÃO SEMANAL ═════════ -->
+    <section class="modulo" id="minhaevolucao" data-perfis="analista">
+      <h2>📈 Evolução semanal</h2>
+      <div class="resumo">As últimas 12 semanas, de segunda a domingo, lado a lado.</div>
+      <ul>
+        <li><b>Atendimentos</b> feitos na semana.</li>
+        <li><b>Ocorrências recebidas</b> e <b>ocorrências concluídas</b>, para ver se o que chega está sendo resolvido.</li>
+      </ul>
+    </section>
+
+    <!-- ═════════ GAMIFICAÇÃO ═════════ -->
+    <section class="modulo" id="gamificacao" data-perfis="analista">
+      <h2>🏅 Gamificação</h2>
+      <div class="resumo">O ranking da Liga do Atendimento: a nota de cada analista, mês a mês, e o consolidado da temporada.</div>
+      <ul>
+        <li>A nota do mês pesa a média individual pelo número de avaliações; quem ainda não tem avaliação no mês fica com a menor nota do grupo.</li>
+        <li>O <b>Consolidado Geral</b> é a média das notas finais de cada mês da temporada.</li>
+      </ul>
+      <div class="nota">ℹ️ Detalhes das regras: <a class="mais" href="/gamificacao/regras">Como funciona a pontuação</a>.</div>
+    </section>
+
+    <!-- ═════════ PORTAL DO GESTOR ═════════ -->
+    <section class="modulo" id="gestor" data-perfis="gestor">
+      <h2>🧭 Portal do Gestor</h2>
+      <div class="resumo">As ocorrências do seu departamento: você analisa, cria a tratativa e abre para o analista. A validação do que o analista tratou volta para você.</div>
+      <h3>O caminho de uma ocorrência</h3>
+      <ul>
+        <li><b>Aguardando análise:</b> registrada, sem tratativa. Você analisa e cria o <b>plano de ação</b>, define o <b>responsável</b> (um ou mais analistas), o <b>departamento</b> que trata e o <b>prazo</b>, que você pode ajustar.</li>
+        <li><b>Tratativa definida:</b> pronta, ainda não aberta ao analista. Ao abrir, o analista recebe o aviso.</li>
+        <li><b>Em andamento:</b> com os analistas ou nas ocorrências vinculadas (quando o caso envolve mais de um departamento).</li>
+        <li><b>Em validação:</b> o analista deixou a nota final. Você <b>valida</b> (segue para o Sucesso do Cliente) ou <b>devolve</b> com a explicação.</li>
+        <li><b>Devolutiva ao cliente:</b> com o Sucesso do Cliente, que faz o retorno ao cliente.</li>
+      </ul>
+      <div class="nota">ℹ️ Você vê as ocorrências dos departamentos que gere. A diretoria vê todos.</div>
+    </section>
+
+    <!-- ═════════ PORTAL DO SUCESSO ═════════ -->
+    <section class="modulo" id="sucesso" data-perfis="gestor">
+      <h2>🤝 Portal do Sucesso do Cliente</h2>
+      <div class="resumo">Onde se faz a devolutiva ao cliente das ocorrências já validadas pelos gestores.</div>
+      <ul>
+        <li>A <b>devolutiva</b> vem primeiro na lista: é o que está esperando retorno ao cliente.</li>
+        <li>As observações dos gestores que aguardam resposta também aparecem aqui.</li>
+        <li>Só o <b>gestor final</b> encerra o processo.</li>
+      </ul>
+    </section>
+
+    <div class="footer-msg">Prazos e cores do atendimento: <a href="/cs/sla">Como funciona o SLA</a><br><a href="/cs">← Voltar para o painel</a></div>
+  </div>
+
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var perfil = ['analista', 'gestor', 'todos'].indexOf(q.get('perfil')) >= 0 ? q.get('perfil') : 'analista';
+  var modulo = q.get('modulo') || '';
+  var mods = (q.get('mods') || '').split(',').filter(Boolean);   // módulos que a pessoa tem (vazio = todos do perfil)
+  var secs = Array.prototype.slice.call(document.querySelectorAll('.modulo'));
+  var visiveis = [];
+  secs.forEach(function (s) {
+    var perfis = (s.getAttribute('data-perfis') || '').split(' ');
+    // o administrador (perfil "todos") vê o guia do analista e o do gestor; o que se repete nos dois aparece uma vez
+    var vale = perfil === 'todos' ? true : perfis.indexOf(perfil) >= 0;
+    var chave = s.id === 'analista-gestor' ? 'analista' : s.id;
+    if (vale && mods.length && mods.indexOf(chave) < 0) vale = false;
+    if (!vale) { s.classList.add('oculto'); return; }
+    visiveis.push(s);
+  });
+  var rotulo = { analista: 'Guia do analista', gestor: 'Guia do gestor', todos: 'Guia completo' };
+  document.getElementById('badge').textContent = rotulo[perfil];
+  document.getElementById('tagline').textContent = perfil === 'gestor'
+    ? 'O que cada tela faz para quem gere um departamento: analisar, abrir ao analista e validar.'
+    : perfil === 'todos' ? 'O guia de todos os módulos, do analista e do gestor.' : 'O que cada tela faz para quem atende: tratar ocorrências, acompanhar a nota e o dia a dia.';
+  document.getElementById('indice').innerHTML = visiveis.map(function (s) {
+    return '<a href="#' + s.id + '">' + s.querySelector('h2').textContent + '</a>';
+  }).join('');
+  var alvo = document.getElementById(modulo) || (perfil === 'gestor' && modulo === 'analista' ? document.getElementById('analista-gestor') : null);
+  if (alvo && !alvo.classList.contains('oculto')) {
+    alvo.classList.add('foco');
+    setTimeout(function () { alvo.scrollIntoView({ block: 'start' }); }, 50);
+  }
+})();
+</script>
+</body>
+</html>

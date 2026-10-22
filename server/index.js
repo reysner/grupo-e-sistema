@@ -141,6 +141,11 @@ app.get('/legalizacao/regras', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'legalizacao-regras.html'));
 });
 
+// ── Guia de cada módulo do painel, para analista e gestor (sem login, como /gamificacao/regras) ──
+app.get('/cs/como-funciona', (req, res) => {
+  res.sendFile(path.join(PUBLIC, 'cs-como-funciona.html'));
+});
+
 // ── Como funciona o SLA do atendimento (sem login, como /gamificacao/regras) ──
 app.get('/cs/sla', (req, res) => {
   res.sendFile(path.join(PUBLIC, 'cs-regras-sla.html'));
