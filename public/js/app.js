@@ -7495,13 +7495,14 @@ const Gamificacao = (() => {
     const mostrarQuem = status !== 'pendente';
     const papelLabel = { transferiu: 'Transferiu', recebeu: 'Recebeu', unico: 'Único' };
     box.innerHTML = '<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table class="data-table">' +
-      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Analista</th><th>Papel</th><th>Desconto</th>' + (mostrarQuem ? '<th>Revisado por</th>' : '') + '<th></th></tr></thead><tbody>' +
+      '<thead><tr><th>Ticket</th><th>Cliente</th><th>Analista</th><th>Papel</th><th>Desconto</th><th>Justificativa do SLA</th>' + (mostrarQuem ? '<th>Revisado por</th>' : '') + '<th></th></tr></thead><tbody>' +
       data.map(r => `<tr data-id="${r.ticket_id}-${r.papel}">` +
         `<td>#${r.zappy_id}</td>` +
         `<td>${r.empresa_texto || '—'}</td>` +
         `<td>${r.analista || '—'}${_reatribuidoLabel(r.override_analista_nome)}</td>` +
         `<td>${papelLabel[r.papel] || r.papel}</td>` +
         `<td style="font-weight:700;color:#c0362c">${r.ajuste_velocidade}</td>` +
+        `<td style="font-size:12px;min-width:210px">${(r.justificativas && r.justificativas.length) ? r.justificativas.map(x => '<div>' + x + '</div>').join('') : '<span style="color:var(--gray-400)">Nenhuma etapa estourada no SLA</span>'}${r.transferido_as ? '<div style="color:var(--gray-400)">Transferido às ' + r.transferido_as + '</div>' : ''}</td>` +
         (mostrarQuem ? `<td style="font-size:11px;color:var(--gray-400)">${r.revisado_por || '—'}${r.revisado_em ? '<br>' + new Date(r.revisado_em).toLocaleDateString('pt-BR') : ''}</td>` : '') +
         `<td style="white-space:nowrap">` +
           _selectTrocarAnalistaHtml(r.ticket_id + '-' + r.papel) +

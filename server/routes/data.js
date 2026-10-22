@@ -4464,7 +4464,7 @@ router.get('/gam/tickets-revisao-velocidade', requireAdmin, async (req, res) => 
 
     const { rows } = await pool.query(
       `SELECT p.ticket_id, p.papel, p.analista, p.ajuste_velocidade, p.nota_final,
-              t.zappy_id, t.empresa_texto, t.encerramento,
+              t.zappy_id, t.empresa_texto, t.encerramento, t.transferencia, t.sla,
               vr.status AS revisao_status, vr.revisado_por, vr.revisado_em,
               vr.override_analista_id, oc.nome AS override_analista_nome
          FROM gam_tickets_pontos p
@@ -4477,7 +4477,10 @@ router.get('/gam/tickets-revisao-velocidade', requireAdmin, async (req, res) => 
         ORDER BY t.encerramento DESC NULLS LAST`,
       [mes, status]
     );
-    res.json({ data: rows });
+    // justificativa do SLA (etapas que passaram do prazo, com os horários) para quem revisa decidir sem abrir o Zappy
+    const { justificativasRelogios, horaBrasilia } = require('../cs/slaTexto');
+    const data = rows.map((r) => { const { sla, ...resto } = r; return Object.assign(resto, { justificativas: justificativasRelogios(sla), transferido_as: resto.transferencia ? horaBrasilia(resto.transferencia) : null }); });
+    res.json({ data });
   } catch (err) {
     console.error('[gam] tickets-revisao-velocidade falhou:', err);
     res.status(500).json({ error: 'Erro ao listar descontos de velocidade para revisão.' });

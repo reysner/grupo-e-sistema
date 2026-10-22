@@ -566,5 +566,16 @@ teste('Portal do Analista: administrador e diretoria veem todos; gestor(a) só a
   assert.strictEqual(modoEscopoAnalistas({ role: 'usuario' }, [], { id: 'a1' }, an).modo, 'proprio', 'analista (mesmo Usuário) só o próprio');
   assert.strictEqual(modoEscopoAnalistas({ role: 'colaborador' }, [], { id: 'a1' }, an).modo, 'proprio');
 });
+teste('revisão de velocidade: justificativa lista as etapas que passaram do prazo, com minutos úteis e horários de Brasília (caso #50310)', () => {
+  const { justificativasRelogios, horaBrasilia } = require('./slaTexto');
+  const sla = { relogios: [
+    { tipo: 'aceite', minutos_uteis: 0, limite: 15, status: 'verde', inicio: '2026-10-20T18:56:46.000Z', fim: '2026-10-20T18:56:59.000Z' },
+    { tipo: 'departamento', minutos_uteis: 31, limite: 30, status: 'amarelo', inicio: '2026-10-21T18:33:14.000Z', fim: '2026-10-21T19:04:02.000Z' }] };
+  assert.deepStrictEqual(justificativasRelogios(sla), ['Departamento: 31 min úteis (prazo 30 min), das 15:33 às 16:04']);
+  assert.deepStrictEqual(justificativasRelogios(JSON.stringify(sla)), ['Departamento: 31 min úteis (prazo 30 min), das 15:33 às 16:04'], 'aceita o SLA como texto JSON');
+  assert.deepStrictEqual(justificativasRelogios({ relogios: [{ tipo: 'aceite', minutos_uteis: 2, limite: 15, status: 'verde' }] }), []);
+  assert.deepStrictEqual(justificativasRelogios(null), []);
+  assert.strictEqual(horaBrasilia('2026-10-21T18:31:00.000Z'), '15:31');
+});
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);
