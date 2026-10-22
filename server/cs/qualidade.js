@@ -1849,17 +1849,17 @@ async function veTodosAnalistas(user) {
 
 /**
  * Quem o Portal do Analista mostra (21/10/2026): administrador e diretoria (papel diretor ou final) veem todos os analistas; o(a) gestor(a) vê só a EQUIPE do departamento que gere
- * (os analistas que atendem esse departamento, mais ele(a) mesmo(a) se for analista); usuário de perfil Usuário sem login de analista segue vendo todos; o resto vê só o que é seu.
+ * (os analistas que atendem esse departamento, mais ele(a) mesmo(a) se for analista; diretores e o gestor final não entram na equipe de ninguém); usuário de perfil Usuário sem login de analista segue vendo todos; o resto vê só o que é seu.
  * Devolve { modo: 'todos' | 'equipe' | 'proprio', ids: Set de analistas (na equipe) }.
  */
 const mesmoDepto = (a, b) => semAcento(a) === semAcento(b);
-function modoEscopoAnalistas(user, papeisGestor, analistaProprio, analistas) {
+function modoEscopoAnalistas(user, papeisGestor, analistaProprio, analistas, diretoresIds) {
   if (user && user.role === 'administrador') return { modo: 'todos' };
   const papeis = papeisGestor || [];
   if (papeis.some((g) => g.papel === 'diretor' || g.papel === 'final')) return { modo: 'todos' };
   if (papeis.length) {
     const deptos = papeis.map((g) => g.departamento);
-    const ids = new Set((analistas || []).filter((a) => a.ativo !== false && (a.departamentos || []).some((d) => deptos.some((x) => mesmoDepto(d, x)))).map((a) => String(a.id)));
+    const ids = new Set((analistas || []).filter((a) => a.ativo !== false && !(a.user_id && (diretoresIds || new Set()).has(String(a.user_id))) && (a.departamentos || []).some((d) => deptos.some((x) => mesmoDepto(d, x)))).map((a) => String(a.id)));
     if (analistaProprio) ids.add(String(analistaProprio.id));
     return { modo: 'equipe', ids };
   }
@@ -1869,8 +1869,9 @@ function modoEscopoAnalistas(user, papeisGestor, analistaProprio, analistas) {
 async function escopoAnalistas(user) {
   const papeis = (await pool.query('SELECT departamento, papel FROM cs_qualidade_gestores WHERE user_id = $1', [String(user.id)])).rows;
   const proprio = await analistaDoLogin(user).catch(() => null);
-  const analistas = papeis.length ? (await pool.query('SELECT id, nome, ativo, departamentos FROM analistas')).rows : [];
-  return Object.assign(modoEscopoAnalistas(user, papeis, proprio, analistas), { proprio, analistas });
+  const analistas = papeis.length ? (await pool.query('SELECT id, nome, ativo, user_id, departamentos FROM analistas')).rows : [];
+  const diretores = papeis.length ? new Set((await pool.query("SELECT DISTINCT user_id FROM cs_qualidade_gestores WHERE papel IN ('diretor', 'final')")).rows.map((r) => String(r.user_id))) : new Set();
+  return Object.assign(modoEscopoAnalistas(user, papeis, proprio, analistas, diretores), { proprio, analistas });
 }
 
 /** Quem é o analista (lista de Qualidade) e o colaborador da Gamificação (Zappy) deste login; administrador ou usuário podem pedir outro analista. */

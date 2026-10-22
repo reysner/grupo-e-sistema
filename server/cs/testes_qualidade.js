@@ -558,6 +558,10 @@ teste('Portal do Analista: administrador e diretoria veem todos; gestor(a) só a
   assert.deepStrictEqual(Array.from(thais.ids).sort(), ['a1', 'a3'], 'Fiscal: só quem atende o Fiscal e está ativo');
   const sueimy = modoEscopoAnalistas({ role: 'usuario' }, [{ departamento: 'Contábil', papel: 'gestor' }], { id: 'a2' }, an);
   assert.deepStrictEqual(Array.from(sueimy.ids).sort(), ['a2', 'a3'], 'Contábil (com ou sem acento), incluindo ela mesma como analista');
+  const comDiretor = an.concat([{ id: 'a6', user_id: 'u-dir', departamentos: ['Fiscal', 'Contábil'] }]);
+  const semDiretor = modoEscopoAnalistas({ role: 'usuario' }, [{ departamento: 'Fiscal', papel: 'gestor' }], null, comDiretor, new Set(['u-dir']));
+  assert.deepStrictEqual(Array.from(semDiretor.ids).sort(), ['a1', 'a3'], 'o diretor (analista de Fiscal e Contábil) não entra na equipe da gestora');
+  assert.ok(Array.from(modoEscopoAnalistas({ role: 'usuario' }, [{ departamento: 'Fiscal', papel: 'gestor' }], { id: 'a6' }, comDiretor, new Set(['u-dir'])).ids).includes('a6'), 'mas se for a própria pessoa, aparece');
   assert.strictEqual(modoEscopoAnalistas({ role: 'usuario' }, [], null, an).modo, 'todos', 'perfil Usuário sem login de analista segue vendo todos');
   assert.strictEqual(modoEscopoAnalistas({ role: 'usuario' }, [], { id: 'a1' }, an).modo, 'proprio', 'analista (mesmo Usuário) só o próprio');
   assert.strictEqual(modoEscopoAnalistas({ role: 'colaborador' }, [], { id: 'a1' }, an).modo, 'proprio');
