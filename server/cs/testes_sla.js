@@ -169,6 +169,31 @@ const semPesquisa = { id: 1, eventos: [{ tipo: 'abertura', hora: B('2026-10-15',
   mensagens: [{ hora: B('2026-10-15', '14:00:00'), remetente: 'cliente', texto: 'Quantas guias eu tenho?' }, { hora: B('2026-10-15', '14:03:00'), remetente: 'escritorio', texto: 'um instante vou transferir' }, { hora: B('2026-10-15', '14:10:00'), remetente: 'cliente', texto: '5' }] };
 const rSemPesquisa = calcularSLA(semPesquisa, new Date(B('2026-10-16', '10:00:00')));
 checa('"5" solto, sem pedido de nota, não fecha o atendimento (a promessa de transferir segue valendo)', !!relogioDe(rSemPesquisa, 'promessa'), true);
+
+// ── TICKET #50388 (Polyanna): caso em tratativa, cliente escreve depois do expediente e a resposta vem no dia seguinte ──
+console.log('\n── #50388: aviso de tratativa e resposta no dia seguinte ──');
+const B2 = (d, hhmmss) => new Date(d + 'T' + hhmmss + '-03:00').toISOString();
+const montar50388 = (avisoTexto) => ({
+  id: 50388,
+  eventos: [{ tipo: 'abertura', hora: B2('2026-10-21', '17:21:31') }, { tipo: 'aceite', hora: B2('2026-10-21', '17:25:27') }],
+  mensagens: [
+    { hora: B2('2026-10-21', '17:21:33'), remetente: 'cliente', texto: 'Polyanna, boa tarde!' },
+    { hora: B2('2026-10-21', '17:25:41'), remetente: 'escritorio', texto: '*Elma:* oi, boa tarde' },
+    { hora: B2('2026-10-21', '17:29:07'), remetente: 'cliente', texto: 'Preciso que tente dar baixa na CTPS digital' },
+    { hora: B2('2026-10-21', '17:29:44'), remetente: 'escritorio', texto: '*Polyanna:* então Rosana, a baixa que tenho acesso é o esocial' },
+    { hora: B2('2026-10-21', '17:36:22'), remetente: 'escritorio', texto: avisoTexto },
+    { hora: B2('2026-10-21', '17:37:25'), remetente: 'cliente', texto: 'Fica faltando agora somente as guias do DCTFWEB' },
+    { hora: B2('2026-10-22', '08:53:28'), remetente: 'escritorio', texto: '*Polyanna:* Bom dia, guias enviadas em 06/10' },
+  ],
+});
+const agora50388 = new Date(B2('2026-10-22', '11:00:00'));
+const comAviso = calcularSLA(montar50388('*Sua solicitação está em andamento* ⏳✨ Por se tratar de tratativa, encerraremos este atendimento por ora. Seguirei tratando e retornarei com uma atualização o mais breve possível.'), agora50388);
+checa('#50388 com o aviso de tratativa: a resposta do dia seguinte não deixa o P. Resolver vermelho', (comAviso.relogios.find((x) => x.tipo === 'promessa_resolucao') || {}).status, 'verde');
+const semAviso = calcularSLA(montar50388('*Polyanna:* Estou verificando.'), agora50388);
+checa('#50388 sem o aviso (controle): a mesma demora vira vermelho pelo prazo de 30 min', (semAviso.relogios.find((x) => x.tipo === 'promessa_resolucao') || {}).status, 'vermelho');
+const { calcularTrocas: trocas50388, avisoDeTratativa } = require('./slaEngine');
+checa('aviso de tratativa reconhecido com ou sem acento', [avisoDeTratativa('Sua solicitacao esta em andamento'), avisoDeTratativa('retornarei com uma atualização'), avisoDeTratativa('Bom dia')], [true, true, false]);
+checa('a troca depois do aviso é marcada como em tratativa', trocas50388(montar50388('Sua solicitação está em andamento').mensagens, agora50388).some((x) => x.em_tratativa === true), true);
 console.log('\n═══════════════════════════════════════════════════════════════');
 console.log(` RESULTADO: ${ok} passaram · ${falhou} falharam`);
 console.log('═══════════════════════════════════════════════════════════════\n');

@@ -1463,9 +1463,22 @@ function piorRelogio(lista) {
  */
 const LIMITE_TROCA = 30;
 
+/**
+ * O escritório avisou que o caso está em TRATATIVA ("Sua solicitação está em andamento... encerraremos este atendimento por ora... retornarei com uma atualização").
+ * Depois desse aviso o cliente sabe que o retorno vem quando houver novidade: o que ele escrever em seguida não abre um prazo de resposta de 30 min
+ * (ticket #50388: o cliente escreveu às 17h37, fora do expediente, e a analista, ainda tratando o caso, respondeu às 8h53 do dia seguinte).
+ */
+const normalizarTrat = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+function avisoDeTratativa(texto) {
+  const t = normalizarTrat(texto);
+  return t.includes('sua solicitacao esta em andamento') || t.includes('encerraremos este atendimento por ora') || t.includes('retornarei com uma atualizacao');
+}
+
 function calcularTrocas(mensagens, agora = new Date()) {
   const ordenadas = ordenarPorHora((mensagens || []).filter(m => m.remetente !== 'sistema'));
   const trocas = [];
+  const aviso = ordenadas.find((m) => m.remetente === 'escritorio' && avisoDeTratativa(m.texto));
+  const tTratativa = aviso ? new Date(aviso.hora) : null;
   for (let i = 0; i < ordenadas.length; i++) {
     const m = ordenadas[i];
     if (m.remetente !== 'cliente') continue;
@@ -1476,13 +1489,15 @@ function calcularTrocas(mensagens, agora = new Date()) {
     const emCurso = !prox;
     const fim = prox ? new Date(prox.hora) : agora;
     const minutos = T.minutosUteis(inicio, fim);
-    const status = T.statusSLA(minutos, LIMITE_TROCA);
+    const emTratativa = !!(tTratativa && inicio >= tTratativa);   // depois do aviso de tratativa não vale o prazo de 30 min
+    const status = emTratativa ? 'verde' : T.statusSLA(minutos, LIMITE_TROCA);
     trocas.push({
       inicio: inicio.toISOString(),
       fim: fim.toISOString(),
       minutos_uteis: minutos,
       status,
       em_curso: emCurso,
+      ...(emTratativa ? { em_tratativa: true } : {}),
     });
   }
   return trocas;
@@ -1490,7 +1505,7 @@ function calcularTrocas(mensagens, agora = new Date()) {
 
 module.exports = {
   calcularSLA, calcularTrocas, ROTULOS, LIMITE_TROCA,
-  pareceIntencaoTransferir, FRASES_TRANSFERENCIA,
+  avisoDeTratativa, pareceIntencaoTransferir, FRASES_TRANSFERENCIA,
   pareceAguardandoCliente, FRASES_AGUARDANDO_CLIENTE,
   detectarSinalChurn, FRASES_CHURN,
   detectarInsatisfacao, PALAVRAS_INSATISFACAO,
