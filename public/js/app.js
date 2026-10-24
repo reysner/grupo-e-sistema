@@ -8527,10 +8527,91 @@ const Gamificacao = (() => {
     });
     rodape(s, 'Consolidado Geral = média das notas finais de cada mês da temporada.', VERDE);
 
+    // 2b. O que foi cobrado (pedido do Reysner, 24/10/2026): cinco critérios da nota de cada atendimento, um slide
+    // do encerramento correto (com o exemplo) e um slide de como a nota final vira ranking. Texto enxuto de propósito.
+    let pesoMinimo = 10;
+    try { const rc = await fetch('/api/data/gam/config', { headers: { Authorization: 'Bearer ' + _tk() } }); if (rc.ok) { const dc = await rc.json(); if (dc.peso_minimo != null) pesoMinimo = dc.peso_minimo; } } catch (_) { /* fica o padrão 10 */ }
+    const cabecalhoClaro = (sl, titulo, sub) => {
+      logoImg(sl, 40, 28, 92, true);
+      texto(sl, titulo, 160, 26, 760, 50, 38, VERDE, true, 'left', 'Segoe UI Black');
+      texto(sl, sub, 160, 78, 760, 30, 18, TEXTO, false, 'left');
+    };
+
+    s = slide(PALE);
+    cabecalhoClaro(s, 'O que foi cobrado', 'Os cinco critérios da nota de cada atendimento:');
+    const criterios = [
+      ['⏱️', 'Aceite em 15 min', 'Só recepção: aceitar o cliente na fila em até 15 min úteis.', 'Passou de 15 min: −1'],
+      ['⚡', 'Resposta em 30 min', 'Responder, iniciar ou transferir em até 30 min úteis.', 'Passou de 30 min: −1'],
+      ['🚪', 'Reter atendimento', 'Todo cliente que chama recebe resposta até o fim do expediente.', 'Sem resposta no dia: −1'],
+      ['✅', 'Encerrar avisando', 'Avisar que vai finalizar e pedir a avaliação.', 'Sem aviso e cliente volta: −1'],
+      ['😊', 'Nota do cliente', 'A avaliação de 1 a 5 do cliente, para quem encerra o ticket.', 'Base da nota'],
+    ];
+    const cwc = 166, gapc = 12;
+    criterios.forEach((c, i) => {
+      const x = 40 + i * (cwc + gapc), y = 140;
+      cartao(s, x, y, cwc, 300, VERDE, 14);
+      circulo(s, x + 12, y + 14, 52, 52, OURO);
+      texto(s, c[0], x + 12, y + 14, 52, 52, 22, VERDE, false, 'center', 'Segoe UI Emoji');
+      texto(s, c[1], x + 12, y + 76, cwc - 24, 48, 15, BRANCO, true, 'left', 'Segoe UI Black', 'top');
+      texto(s, c[2], x + 12, y + 130, cwc - 24, 100, 13, PALE, false, 'left', 'Segoe UI', 'top');
+      cartao(s, x + 12, y + 300 - 54, cwc - 24, 40, OURO, 20);
+      texto(s, c[3], x + 18, y + 300 - 54, cwc - 36, 40, 11, VERDE, true);
+    });
+
+    s = slide(PALE);
+    cabecalhoClaro(s, 'Encerramento correto', 'Vale para quem encerrou o atendimento.');
+    cartao(s, 40, 132, 472, 372, VERDE, 18);
+    texto(s, 'O CLIENTE PRECISA SER AVISADO', 60, 152, 432, 18, 11, OURO, true, 'left');
+    ['Perguntar se pode ajudar em algo mais', 'Avisar que vai finalizar', 'Pedir para avaliar o atendimento'].forEach((t, k) => {
+      const y = 184 + k * 50;
+      circulo(s, 60, y, 30, 30, OURO);
+      texto(s, '✓', 60, y, 30, 30, 16, VERDE, true, 'center', 'Segoe UI Symbol');
+      texto(s, t, 102, y, 390, 30, 16, BRANCO, false, 'left');
+    });
+    cartao(s, 60, 346, 432, 138, PALE, 14);
+    s.addText('“Estou finalizando o atendimento. Fico à disposição para qualquer dúvida ou nova solicitação 😊✨”', {
+      x: u(76), y: u(356), w: u(400), h: u(118), fontSize: 15, color: VERDE, italic: true, align: 'left', valign: 'middle', fontFace: 'Segoe UI', margin: 0, fit: 'none'
+    });
+    cartao(s, 532, 132, 388, 372, OURO, 18);
+    texto(s, 'NÃO AVISOU E O CLIENTE VOLTOU A CHAMAR EM 30 MIN ÚTEIS', 556, 152, 340, 36, 11, VERDE, true, 'left', 'Segoe UI', 'top');
+    texto(s, '−1', 556, 192, 340, 100, 64, VERDE, true, 'left', 'Segoe UI Black');
+    texto(s, 'Quem avisa direito nunca é descontado.', 556, 300, 340, 22, 13, VERDE, false, 'left');
+    texto(s, 'EXEMPLO: 3 EM 20 ATENDIMENTOS', 556, 364, 340, 16, 10, VERDE, true, 'left');
+    texto(s, '(3 × −1 + 17 × 0) ÷ 20 = −0,15', 556, 386, 340, 34, 17, VERDE, true, 'left', 'Segoe UI Black');
+    texto(s, 'somado à nota final do mês', 556, 424, 340, 20, 12, VERDE, false, 'left');
+
+    s = slide(PALE);
+    cabecalhoClaro(s, 'Como a nota vira ranking', 'Nota final, desempate e consolidado:');
+    const cwr = 285, gapr = 12;
+    const cabecaR = (x, emoji, titulo) => {
+      cartao(s, x, 132, cwr, 372, VERDE, 16);
+      circulo(s, x + 14, 148, 44, 44, OURO);
+      texto(s, emoji, x + 14, 148, 44, 44, 20, VERDE, false, 'center', 'Segoe UI Emoji');
+      texto(s, titulo, x + 70, 148, cwr - 84, 44, 16, BRANCO, true, 'left', 'Segoe UI Black');
+    };
+    let xr = 40;
+    cabecaR(xr, '⚖️', 'Nota Final');
+    texto(s, 'Ajustada pela média do time, para poucos atendimentos não distorcerem a nota.', xr + 14, 212, cwr - 28, 70, 13, PALE, false, 'left', 'Segoe UI', 'top');
+    cartao(s, xr + 14, 296, cwr - 28, 110, PALE, 12);
+    texto(s, '(sua média × seus atendimentos + média do time × peso) ÷ (seus atendimentos + peso)', xr + 24, 304, cwr - 48, 94, 12, VERDE, true);
+    texto(s, 'Peso mínimo hoje: ' + nota(pesoMinimo), xr + 14, 424, cwr - 28, 22, 12, OURO, true, 'left');
+    xr = 40 + cwr + gapr;
+    cabecaR(xr, '🥇', 'Desempate');
+    ['Maior nota final', 'Mais atendimentos avaliados', 'Maior média individual', 'Ordem alfabética'].forEach((t, k) => {
+      const y = 216 + k * 66;
+      cartao(s, xr + 14, y, 44, 34, OURO, 17);
+      texto(s, (k + 1) + 'º', xr + 14, y, 44, 34, 12, VERDE, true);
+      texto(s, t, xr + 68, y, cwr - 82, 34, 13, BRANCO, true, 'left');
+    });
+    xr = 40 + 2 * (cwr + gapr);
+    cabecaR(xr, '📅', 'Consolidado');
+    texto(s, 'Média das notas finais de todos os meses do jogo, desde o início.', xr + 14, 212, cwr - 28, 70, 13, PALE, false, 'left', 'Segoe UI', 'top');
+    cartao(s, xr + 14, 296, cwr - 28, 110, PALE, 12);
+    texto(s, 'soma das notas finais ÷ número de meses do jogo', xr + 24, 304, cwr - 48, 94, 12, VERDE, true);
+    texto(s, 'Mês sem avaliação entra com a menor nota final do grupo.', xr + 14, 420, cwr - 28, 40, 12, OURO, true, 'left', 'Segoe UI', 'top');
+
     // 3. Campeão de cada mês (até 6 por slide, 2 linhas de 3)
     const campeoes = meses.map((m) => ({ mes: m, c: (porMes[m].ranking || [])[0] })).filter((x) => x.c);
-    const titulos = {}; campeoes.forEach((x) => { titulos[x.c.nome] = (titulos[x.c.nome] || 0) + 1; });
-    const maisTitulos = Object.keys(titulos).filter((n) => titulos[n] > 1);
     for (let ini = 0; ini < campeoes.length; ini += 6) {
       s = slide(VERDE);
       circulo(s, -160, -160, 420, 420, VERDE2, 55);
@@ -8545,7 +8626,6 @@ const Gamificacao = (() => {
         texto(s, x.c.nome, cx + 20, cy + 42, 232, 56, 38, BRANCO, true, 'left', 'Segoe UI Black');
         texto(s, 'Nota ' + nota(x.c.media), cx + 20, cy + 106, 232, 26, 18, PALE, false, 'left');
       });
-      if (maisTitulos.length) rodape(s, maisTitulos.map((n) => n + ' foi campeão(ã) do mês ' + titulos[n] + ' vezes').join(' · ') + '.', PALE);
     }
 
     // 4. Do 10º ao 4º (de trás para frente)
