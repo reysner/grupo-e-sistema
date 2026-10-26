@@ -38,7 +38,8 @@ function mascararBase(base) {
 }
 function mascararFicha(ficha) {
   return { ...ficha, cliente: { ...ficha.cliente, honorario: null, categoria_motivo: mascararMotivo(ficha.cliente.categoria_motivo), questor: ficha.cliente.questor ? { ...ficha.cliente.questor, faturamento: null } : null }, valores_ocultos: true,
-    financeiro: (ficha.financeiro || []).map((f) => ({ ...f, valor_aberto: null, valor_atrasado: null })) };
+    financeiro: (ficha.financeiro || []).map((f) => ({ ...f, valor_aberto: null, valor_atrasado: null })),
+    titulos: (ficha.titulos || []).map((t) => ({ ...t, valor_aberto: null, valor_doc: null })) };
 }
 
 function soEquipe(req, res, next) {
@@ -299,6 +300,11 @@ router.get('/cliente/:id', async (req, res) => {
     const financeiro = (await consultar(
       `SELECT unidade, qtd, valor_aberto::float AS valor_aberto, qtd_atrasados, valor_atrasado::float AS valor_atrasado, to_char(mais_antigo, 'YYYY-MM-DD') AS mais_antigo
          FROM financeiro_aberto WHERE regexp_replace(cnpj, '\\D', '', 'g') = $1`, [doc], 'financeiro_aberto')) || [];
+    // os títulos em aberto, um a um (lidos do Omie pela rotina do Financeiro); tolerante: sem a tabela ou sem leitura, a lista vem vazia
+    const titulos = (await consultar(
+      `SELECT unidade, to_char(vencimento, 'YYYY-MM-DD') AS venc, valor_aberto::float AS valor_aberto, valor_doc::float AS valor_doc, situacao AS sit,
+              to_char(atualizado_em AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS lido
+         FROM financeiro_titulos WHERE regexp_replace(cnpj, '\\D', '', 'g') = $1 ORDER BY vencimento ASC, unidade`, [doc], 'financeiro_titulos')) || [];
     const tickets = (await consultar(
       `SELECT t.id, t.abertura, t.departamento, t.analista, t.status, t.nota_avaliacao, t.pior_status
          FROM cs_tickets t JOIN cs_vinculos v ON v.id = t.vinculo_id
@@ -320,7 +326,7 @@ router.get('/cliente/:id', async (req, res) => {
       `SELECT mensagens_recebidas, aguardando_4h, aguardando_24h, aguardando_48h, aguardando_7d, aguardando_compartilhado, mais_antigo_h, provaveis_encerramentos FROM cs_email_sinais WHERE cnpj = $1`, [doc], 'email sinais')) || [])[0] || null;
     const emailHist = ((await consultar('SELECT recebidos, sem_resposta, destinatarios FROM cs_email_atendimento WHERE cnpj = $1', [doc], 'email atendimento')) || [])[0] || null;
 
-    const ficha = { cliente: c, proximo_passo: proximoPasso(c, { financeiro }), financeiro, tickets, insatisfacoes, sensiveis, pesquisas, entregas, emails: (emailSinais || emailHist) ? { sinais: emailSinais, historico: emailHist } : null };
+    const ficha = { cliente: c, proximo_passo: proximoPasso(c, { financeiro }), financeiro, titulos, tickets, insatisfacoes, sensiveis, pesquisas, entregas, emails: (emailSinais || emailHist) ? { sinais: emailSinais, historico: emailHist } : null };
     res.json(veValores(req.user.role) ? ficha : mascararFicha(ficha));
   } catch (err) {
     console.error('[painel] GET /cliente falhou:', err);

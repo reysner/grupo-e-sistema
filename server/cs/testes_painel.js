@@ -79,9 +79,11 @@ const token = (role, extra = {}) => auth.signAccess({ id: 'u-' + role, name: 'Te
     assert.strictEqual(m.clientes[1].categoria_motivo, 'soma do grupo "X", 3 empresas: R$ •••• (faixa R$ 500 a 999)');
     assert.strictEqual(base.clientes[0].honorario, 1250);               // não altera o cache compartilhado
     assert.ok(!JSON.stringify(m).includes('1.250') && !JSON.stringify(m).includes('2.600'));
-    const f = painel.mascararFicha({ cliente: base.clientes[0], financeiro: [{ unidade: 'U', qtd: 2, valor_aberto: 900, valor_atrasado: 450, qtd_atrasados: 1 }], tickets: [] });
+    const f = painel.mascararFicha({ cliente: base.clientes[0], financeiro: [{ unidade: 'U', qtd: 2, valor_aberto: 900, valor_atrasado: 450, qtd_atrasados: 1 }], titulos: [{ unidade: 'U', venc: '2026-03-10', valor_aberto: 450, valor_doc: 450, sit: 'A', lido: '2026-10-26' }], tickets: [] });
     assert.strictEqual(f.cliente.honorario, null);
     assert.deepStrictEqual([f.financeiro[0].valor_aberto, f.financeiro[0].valor_atrasado, f.financeiro[0].qtd_atrasados], [null, null, 1]);
+    // os títulos em aberto, um a um, chegam sem valor (vencimento e situação continuam)
+    assert.deepStrictEqual([f.titulos[0].valor_aberto, f.titulos[0].valor_doc, f.titulos[0].venc, f.titulos[0].sit], [null, null, '2026-03-10', 'A']);
   });
 
   await teste('Questor: carga validada (só CNPJ, período obrigatório) e faturamento oculto para o perfil Usuário', async () => {

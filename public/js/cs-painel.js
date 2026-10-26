@@ -1601,6 +1601,27 @@
     }).join('') + '</tbody></table></div>';
   }
 
+  /** Títulos em aberto do Financeiro, um a um (lidos do Omie): vencimento, valor em aberto, valor do título e situação; os mais antigos primeiro. */
+  function tabelaTitulosFin(titulos, resumo) {
+    var temResumo = (resumo || []).some(function (x) { return x.qtd; });
+    if (!titulos || !titulos.length) return temResumo ? '<div class="cinza" style="font-size:11px;margin-top:6px">Os títulos, um a um, ainda não foram lidos do Omie para este cliente: só os totais acima.</div>' : '';
+    var hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+    var dia = function (iso) { return Date.parse(iso + 'T12:00:00Z'); };
+    var varias = titulos.some(function (t) { return t.unidade !== titulos[0].unidade; });
+    var total = 0;
+    var linhas = titulos.map(function (t) {
+      var d = Math.round((dia(hoje) - dia(t.venc)) / 86400000), atras = d > 0, cor = atras ? '#dc2626' : '#6b7280';
+      var rot = atras ? 'Atrasado há ' + d + (d === 1 ? ' dia' : ' dias') : (d === 0 ? 'Vence hoje' : 'A vencer em ' + (-d) + (d === -1 ? ' dia' : ' dias'));
+      if (t.sit === 'P') rot += ' · pago em parte';
+      total += Number(t.valor_aberto) || 0;
+      return '<tr>' + (varias ? '<td>' + esc(t.unidade) + '</td>' : '') + '<td class="c">' + data(t.venc) + '</td><td style="text-align:right">' + reais(t.valor_aberto) + '</td><td style="text-align:right">' + reais(t.valor_doc) + '</td>' +
+        '<td class="c"><span class="pill" style="color:' + cor + ';border-color:' + cor + '55;background:' + cor + '14">' + rot + '</span></td></tr>';
+    }).join('');
+    var rodape = '<tr><td' + (varias ? ' colspan="2"' : '') + '><strong>Total em aberto (' + titulos.length + ')</strong></td><td style="text-align:right"><strong>' + reais(total) + '</strong></td><td></td><td></td></tr>';
+    return '<div class="table-wrap" style="margin-top:8px"><table><thead><tr>' + (varias ? '<th>Unidade</th>' : '') + '<th class="c">Vencimento</th><th style="text-align:right">Em aberto</th><th style="text-align:right">Valor do título</th><th class="c">Situação</th></tr></thead><tbody>' + linhas + rodape + '</tbody></table></div>' +
+      '<div class="cinza" style="font-size:11px;margin-top:4px">Lido do Omie em ' + data(titulos[0].lido) + '.</div>';
+  }
+
   /** Formulário do plano de ação: só os Departamentos em cima (sem tipo de registro); "Descreva a tratativa" ao lado do Responsável e do Prazo. */
   function formularioQ(o) {
     var respLista = (estado.qAnalistas || []).map(function (a) { return '<label class="qa-dep"><input type="checkbox" class="qa-resp-ck" value="' + esc(a.id) + '" data-nome="' + esc(a.nome) + '"> ' + esc(a.nome) + '</label>'; }).join('');
@@ -3865,6 +3886,7 @@
       return '<div class="linha-item"><span class="q"><span class="quad" style="background:' + (x.qtd_atrasados ? '#dc2626' : '#10b981') + '"></span></span><span class="r">' + esc(x.unidade) + '</span><span class="x">' +
         (x.qtd_atrasados ? x.qtd_atrasados + ' título(s) em atraso · ' + reais(x.valor_atrasado) + ' · o mais antigo vence em ' + data(x.mais_antigo) : 'em dia') + (x.qtd ? ' · ' + x.qtd + ' em aberto no total (' + reais(x.valor_aberto) + ')' : '') + '</span></div>';
     }).join('') : '<div class="linha-item"><span class="x">Sem título em aberto no Omie' + (r.termometros.financeiro == null ? ' (e sem dado do Financeiro para este CNPJ)' : '') + '.</span></div>';
+    fin += tabelaTitulosFin(f.titulos, f.financeiro);
 
     // Atendimento
     var notasBaixas = f.tickets.filter(function (t) { return t.nota_avaliacao != null && t.nota_avaliacao <= 2; }).length;
