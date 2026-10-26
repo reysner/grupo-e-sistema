@@ -6,6 +6,7 @@
  *
  * Uso: node server/questor/extrairAnual.js [--ano-inicial=2015] [--limite=N] [--simular] [--arquivo=saida.json] [--retomar=parcial.json]
  *   --simular   faz tudo, mas NÃO envia ao sistema (imprime o resumo; com --arquivo grava o resultado)
+ *   --so-dia-da-extracao  sai sem fazer nada se hoje não for o 1º dia útil a partir do dia 25 (o Agendador roda isto logo depois da mensal)
  *   --limite=N  só os N primeiros estabelecimentos (teste)
  *   --retomar   continua de um arquivo parcial (gravado a cada 25 estabelecimentos em --arquivo)
  * Período: de janeiro do ano inicial até o último mês fechado (mesma regra do dia 25 da extração mensal).
@@ -16,7 +17,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', 'legalizacao', '.env
 const fs = require('fs');
 const { Pool } = require('pg');
 const nweb = require('./nwebClient');
-const { periodoDeExtracao, hojeBrasilia } = require('./periodo');
+const { periodoDeExtracao, hojeBrasilia, diaDaExtracao } = require('./periodo');
 const { parseFaturamento, dig } = require('./faturamentoParse');
 const { agregarPorAno, mesesEsperados, parseAtivos, parseOptantes, funcionariosDoAno, rotuloRegime, regimeDaReceita } = require('./anual');
 
@@ -80,8 +81,14 @@ async function main() {
     if (!doc.corpo) throw new Error('o arquivo não tem a leitura completa (corpo); rode a extração até o fim.');
     return enviar(doc.corpo);
   }
+  const hoje = hojeBrasilia();
+  // Agendador: roda junto da extração mensal (rodarMensal.cmd), só no 1º dia útil a partir do dia 25.
+  if (process.argv.includes('--so-dia-da-extracao') && hoje.dia !== diaDaExtracao(hoje.ano, hoje.mes)) {
+    console.log(`hoje não é o dia da extração (neste mês é dia ${diaDaExtracao(hoje.ano, hoje.mes)}) — nada a fazer.`);
+    return;
+  }
   const versao = await nweb.testarNweb();
-  const p = periodoDeExtracao(hojeBrasilia());
+  const p = periodoDeExtracao(hoje);
   const competIni = `01/${ANO_INICIAL}`, competFim = p.competFim, fim = p.fim;   // fim 'AAAA-MM'
   console.log(`nWeb ok (Questor ${versao}) | período: ${competIni} a ${competFim} (${mesesEsperados(ANO_INICIAL, fim)} meses)`);
 

@@ -4,11 +4,13 @@
  * (Folha), por CNPJ dos clientes ATIVOS do Grupo-E. Roda NUM COMPUTADOR COM A VPN conectada (a Render não alcança o Questor) e envia só
  * totais ao sistema (POST /api/cs/questor, token de sincronização). Nunca lê nem grava nome/CPF/PIS de funcionário.
  *
- * Quando: no dia 25 ou no 1º dia útil depois (o faturamento só fica lançado logo após o dia 20). Antes disto deve rodar o processo
- * "Gerar Totais por Natureza" (grava no Questor; autorização permanente do Reysner, 09/10/2026) — ver gerarTotais.js.
+ * Quando: às 09:00 do 1º dia útil a partir do dia 25 (o faturamento só fica lançado logo após o dia 20; tarefa GrupoE-Questor-Mensal-dia25,
+ * rodarMensal.cmd), período = 12 meses até o mês anterior. Antes disto deveria rodar o processo "Gerar Totais por Natureza" (grava no
+ * Questor; autorização permanente do Reysner, 09/10/2026) — ainda não automatizado.
  *
- * Uso: node server/questor/extrair.js [--simular] [--hoje=AAAA-MM-DD] [--arquivo=saida.json]
+ * Uso: node server/questor/extrair.js [--simular] [--hoje=AAAA-MM-DD] [--arquivo=saida.json] [--so-dia-da-extracao]
  *   --simular  : faz tudo, mas NÃO envia ao sistema (imprime o resumo e, com --arquivo, grava os itens).
+ *   --so-dia-da-extracao : sai sem fazer nada se hoje não for o 1º dia útil a partir do dia 25 (usado pelo Agendador, que dispara todo dia).
  * Segredos: server/legalizacao/.env (APP_URL, token de sincronização, DATABASE_URL) — nunca imprimir.
  */
 const path = require('path');
@@ -16,15 +18,20 @@ require('dotenv').config({ path: path.join(__dirname, '..', 'legalizacao', '.env
 const fs = require('fs');
 const { Pool } = require('pg');
 const nweb = require('./nwebClient');
-const { periodoDeExtracao, hojeBrasilia } = require('./periodo');
+const { periodoDeExtracao, hojeBrasilia, diaDaExtracao } = require('./periodo');
 const { parseFaturamento, entradaValida, avisosPorEstab, dig } = require('./faturamentoParse');
 
 const arg = (n) => { const a = process.argv.find((x) => x.startsWith('--' + n + '=')); return a ? a.slice(n.length + 3) : null; };
 const simular = process.argv.includes('--simular');
 
 async function main() {
-  const versao = await nweb.testarNweb();
   const hoje = arg('hoje') ? (([a, m, d]) => ({ ano: a, mes: m, dia: d }))(arg('hoje').split('-').map(Number)) : hojeBrasilia();
+  // Agendador: a tarefa dispara todo dia às 09:00 e só segue no 1º dia útil a partir do dia 25.
+  if (process.argv.includes('--so-dia-da-extracao') && hoje.dia !== diaDaExtracao(hoje.ano, hoje.mes)) {
+    console.log(`hoje não é o dia da extração (neste mês é dia ${diaDaExtracao(hoje.ano, hoje.mes)}) — nada a fazer.`);
+    return;
+  }
+  const versao = await nweb.testarNweb();
   const p = periodoDeExtracao(hoje);
   console.log(`nWeb ok (Questor ${versao}) | período: ${p.competIni} a ${p.competFim}`);
 

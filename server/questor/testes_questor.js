@@ -1,7 +1,7 @@
 'use strict';
 // Rodar: node server/questor/testes_questor.js  (lógica pura, sem rede nem banco)
 const assert = require('assert');
-const { periodoDeExtracao } = require('./periodo');
+const { periodoDeExtracao, diaDaExtracao, feriadosNacionais } = require('./periodo');
 const { parseFaturamento, entradaValida } = require('./faturamentoParse');
 
 let ok = 0;
@@ -23,6 +23,13 @@ teste('período: virada de ano e fevereiro bissexto', () => {
   const j2 = periodoDeExtracao({ ano: 2027, mes: 1, dia: 10 });
   assert.deepStrictEqual([j2.competIni, j2.competFim], ['12/2025', '11/2026']);
   assert.strictEqual(periodoDeExtracao({ ano: 2028, mes: 3, dia: 26 }).dataFim, '29/02/2028');  // fim = fevereiro bissexto
+});
+teste('dia da extração: 1º dia útil a partir do dia 25 (pula fim de semana e feriado nacional)', () => {
+  assert.strictEqual(diaDaExtracao(2026, 10), 26);   // 25/10 domingo
+  assert.strictEqual(diaDaExtracao(2026, 11), 25);   // quarta
+  assert.strictEqual(diaDaExtracao(2026, 12), 28);   // 25/12 Natal (sex), fim de semana
+  assert.strictEqual(diaDaExtracao(2027, 9), 27);    // 25/09 sábado
+  assert.ok(feriadosNacionais(2026).has('2026-04-03') && feriadosNacionais(2026).has('2026-06-04'));  // Paixão e Corpus Christi (Páscoa 05/04/2026)
 });
 
 const CSV = [

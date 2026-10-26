@@ -1,7 +1,7 @@
 @echo off
 rem Leitura mensal do Questor para a Analise Anual do painel /cs: faturamento por ano, funcionarios por ano e regime por ano.
 rem Precisa da VPN conectada e do nWeb aberto no servidor da Voecloud. Cria sozinha o ano novo quando o ano vira.
-rem Roda do dia 26 de cada mes (o faturamento do mes anterior ja esta lancado). Saida em server\questor\logs\anual.log.
+rem Rodada MANUAL: a automatica roda pelo rodarMensal.cmd (tarefa GrupoE-Questor-Mensal-dia25), logo depois da mensal. Saida em server\questor\logs\anual.log.
 cd /d "%~dp0..\.."
 if not exist "%~dp0logs" mkdir "%~dp0logs"
 echo ===== %DATE% %TIME% ===== >> "%~dp0logs\anual.log"
