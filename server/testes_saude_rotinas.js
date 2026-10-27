@@ -115,4 +115,20 @@ teste('CertiSeguro em lote: PJ de cliente, certificado existente, avulso novo e 
   const upsertPj = pool.chamadas.find((c) => /INSERT INTO legalizacao_certificados/.test(c.sql) && c.params[0][0] === '10');
   assert.ok(upsertPj && upsertPj.params[3][0] === '2027-05-10' && upsertPj.params[1][0] === 'ACME LTDA', 'PJ vai com o nome do cadastro e a data ISO');
 });
+teste('CertiSeguro: certificado renovado (velho e novo do mesmo documento na lista) fica com a validade mais recente, em qualquer ordem', async () => {
+  const mk = () => bancoFalso({ clientes: [{ id: '10', nome_empresa: 'ACME LTDA', cnpj: '11.222.333/0001-81', doc: '11222333000181' }] });
+  for (const lista of [
+    [{ cnpj: '11222333000181', nome: 'ACME', validade: '10/05/2026' }, { cnpj: '11222333000181', nome: 'ACME', validade: '10/05/2027' }],
+    [{ cnpj: '11222333000181', nome: 'ACME', validade: '10/05/2027' }, { cnpj: '11222333000181', nome: 'ACME', validade: '10/05/2026' }],
+  ]) {
+    const pool = mk();
+    await importarCertificados(pool, lista);
+    const up = pool.chamadas.find((c) => /INSERT INTO legalizacao_certificados/.test(c.sql) && c.params[0][0] === '10');
+    assert.strictEqual(up.params[3][0], '2027-05-10');
+  }
+  const pf = bancoFalso({});
+  await importarCertificados(pf, [{ cnpj: '98765432100', nome: 'BELTRANO', validade: '03/04/2025' }, { cnpj: '98765432100', nome: 'BELTRANO', validade: '03/04/2027' }]);
+  const novo = pf.chamadas.find((c) => /INSERT INTO legalizacao_certificados/.test(c.sql));
+  assert.deepStrictEqual([novo.params[1], novo.params[2]], [['98765432100'], ['2027-04-03']]);   // um só avulso, com a validade mais recente
+});
 Promise.all(pendentes).then(() => console.log(`\n${ok} testes passaram.`));

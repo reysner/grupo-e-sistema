@@ -318,6 +318,20 @@ initDB().then(async () => {
           await rodarAtualizacaoNotasCS();
         }
       }
+      // CertiSeguro → Legalização: o servidor busca a lista 2x ao dia (07h e 13h), sem depender da estação do escritório (que só rodava às segundas e tem o IP trocado
+      // toda semana). Sem as variáveis da CertiSeguro no servidor, pula; recusa (ex.: IP não liberado) vai para o sino pela saúde das rotinas.
+      if ([7, 13].includes(agora.hora)) {
+        const chaveCert = `cert-${agora.ano}-${agora.mes}-${agora.dia}-${agora.hora}`;
+        if (!execucoesHojePorHora.has(chaveCert)) {
+          execucoesHojePorHora.add(chaveCert);
+          try {
+            const r = await require('./routes/data').rodarSincronizacaoCertiseguro();
+            console.log('[Legalização] CertiSeguro (servidor):', r.pulada ? 'pulada — ' + r.motivo : r.falhou ? 'falhou — ' + r.motivo : `${r.atualizados} atualizado(s), ${r.criados} criado(s), ${r.ignorados} ignorado(s) de ${r.total}`);
+          } catch (e) {
+            console.error('[Legalização] Falha na sincronização da CertiSeguro:', e.message);
+          }
+        }
+      }
       if (agora.hora === 8) {
         const chaveDia = `${agora.ano}-${agora.mes}-${agora.dia}`;
         if (!execucoesLegalizacaoPorDia.has(chaveDia)) {

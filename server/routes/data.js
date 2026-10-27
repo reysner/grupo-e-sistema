@@ -587,21 +587,50 @@ router.post('/legalizacao/certificados/importar-certiseguro', async (req, res) =
  * Precisa no Render: CERTISEGURO_URL, CERTISEGURO_TOKEN, CERTISEGURO_CNPJ (mesmos valores do server/legalizacao/.env). Autenticada pelo token de sincronização.
  * Se a CertiSeguro recusar o IP, a mensagem de erro traz o IP de saída do Render (é ele que deve ser cadastrado).
  */
+/** O servidor busca a lista na CertiSeguro e grava. Devolve { status, corpo } (503 = falta configurar; 502 = a CertiSeguro recusou/errou, com o motivo). */
+async function sincronizarCertiseguroNoServidor(req) {
+  const faltam = ['CERTISEGURO_URL', 'CERTISEGURO_TOKEN', 'CERTISEGURO_CNPJ'].filter((v) => !String(process.env[v] || '').trim());
+  if (faltam.length) return { status: 503, corpo: { error: 'Faltam variáveis no servidor: ' + faltam.join(', ') + '.' } };
+  const { buscarCertificadosCertiseguro } = require('../legalizacao/certiseguroSync');
+  let certificados;
+  try { certificados = await buscarCertificadosCertiseguro(); }
+  catch (e) { return { status: 502, corpo: { error: String(e.message || e).replace(/\s+/g, ' ').slice(0, 400) } }; }
+  return { status: 200, corpo: await importarCertificadosCertiseguro(certificados, req) };
+}
+
 router.post('/legalizacao/certificados/sincronizar-certiseguro', async (req, res) => {
   try {
     if (!tokenSyncOk(req, res)) return;
-    const faltam = ['CERTISEGURO_URL', 'CERTISEGURO_TOKEN', 'CERTISEGURO_CNPJ'].filter((v) => !String(process.env[v] || '').trim());
-    if (faltam.length) return res.status(503).json({ error: 'Faltam variáveis no servidor: ' + faltam.join(', ') + '.' });
-    const { buscarCertificadosCertiseguro } = require('../legalizacao/certiseguroSync');
-    let certificados;
-    try { certificados = await buscarCertificadosCertiseguro(); }
-    catch (e) { return res.status(502).json({ error: String(e.message || e).replace(/\s+/g, ' ').slice(0, 400) }); }
-    res.json(await importarCertificadosCertiseguro(certificados, req));
+    const r = await sincronizarCertiseguroNoServidor(req);
+    res.status(r.status).json(r.corpo);
   } catch (err) {
     console.error('[legalizacao] sincronizar-certiseguro falhou:', err);
     res.status(500).json({ error: err.message || 'Erro ao sincronizar certificados da CertiSeguro.' });
   }
 });
+
+/**
+ * POST /api/data/legalizacao/certificados/atualizar-agora — botão "Atualizar CertiSeguro agora" (administrador): mesma busca do servidor, na hora, sem esperar a rodada do dia.
+ * Se a CertiSeguro recusar (IP não liberado), a falha vai para o sino com o IP a cadastrar, como nas rodadas automáticas.
+ */
+router.post('/legalizacao/certificados/atualizar-agora', requireAdmin, async (req, res) => {
+  try {
+    const r = await sincronizarCertiseguroNoServidor(req);
+    if (r.status !== 200) await registrarRotinaLegalizacao('certiseguro', { total: 0, ok: 0, falhas: 1, resumo: { erro: r.corpo.error } });
+    res.status(r.status).json(r.corpo);
+  } catch (err) {
+    console.error('[legalizacao] atualizar-agora falhou:', err);
+    res.status(500).json({ error: err.message || 'Erro ao atualizar os certificados.' });
+  }
+});
+
+/** Rodada automática do servidor (2x ao dia, ver server/index.js): não depende da estação nem do IP dela. Falha vai para a saúde das rotinas (sino). */
+async function rodarSincronizacaoCertiseguro() {
+  const r = await sincronizarCertiseguroNoServidor(null);
+  if (r.status === 503) return { pulada: true, motivo: r.corpo.error };   // servidor sem as variáveis da CertiSeguro: segue só a estação
+  if (r.status !== 200) { await registrarRotinaLegalizacao('certiseguro', { total: 0, ok: 0, falhas: 1, resumo: { erro: r.corpo.error } }); return { falhou: true, motivo: r.corpo.error }; }
+  return r.corpo;
+}
 
 /**
  * POST /api/data/legalizacao/procuracoes/importar — recebe as procurações
@@ -5690,7 +5719,8 @@ const ROTINAS_LEGALIZACAO = {
   consulta_prefeituras: { nome: 'Consulta às prefeituras', horario: 'toda segunda às 08:30', horasMax: 200 },
   leitura_pastas: { nome: 'Leitura das pastas da Legalização', horario: 'toda segunda às 08:30', horasMax: 200 },
   // 19/10/2026: o IP da estação muda e a sincronização do CertiSeguro falhava sem ninguém saber; as procurações dependem de login do Reysner na segunda.
-  certiseguro: { nome: 'Sincronização dos certificados (CertiSeguro)', horario: 'toda segunda às 09:00', horasMax: 200 },
+  // 27/10/2026: passou a rodar no servidor, todo dia às 07:00 e 13:00 (a estação, às segundas 09:00, continua como reserva); sem rodada em 36 h = aviso no sino.
+  certiseguro: { nome: 'Sincronização dos certificados (CertiSeguro)', horario: 'todo dia às 07:00 e 13:00 (servidor)', horasMax: 36 },
   procuracoes_ecac: { nome: 'Procurações do e-CAC', horario: 'toda segunda, a partir das 09:30 (precisa do login com certificado)', horasMax: 200 },
   procuracoes_fgts: { nome: 'Procurações do FGTS Digital', horario: 'toda segunda, a partir das 09:30 (precisa do login com certificado)', horasMax: 200 },
 };
@@ -6539,6 +6569,7 @@ router.patch('/legalizacao/solicitacoes-desativacao/:id/rejeitar', requireAdmin,
 module.exports = router;
 module.exports.verificarNotificacoesLegalizacao = verificarNotificacoesLegalizacao;
 module.exports.rodarConsultaNoturnaAlvaras = rodarConsultaNoturnaAlvaras;
+module.exports.rodarSincronizacaoCertiseguro = rodarSincronizacaoCertiseguro;
 module.exports.checarSaudeRotinasLegalizacao = checarSaudeRotinasLegalizacao;
 
 

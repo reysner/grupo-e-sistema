@@ -20,6 +20,10 @@ async function importarCertificados(pool, lista) {
     if (!doc || !m) { ignorados++; continue; }
     itens.push({ doc, venc: `${m[3]}-${m[2]}-${m[1]}`, nome: (it.nome_amigavel || it.nome || null) });
   }
+  // Certificado renovado = a lista pode trazer o velho e o novo do mesmo documento; vale a validade MAIS RECENTE (antes valia o último da lista, e a ordem não é por data).
+  const maisRecente = new Map();
+  for (const i of itens) { const x = maisRecente.get(i.doc); if (!x || i.venc > x.venc) maisRecente.set(i.doc, { ...i, nome: i.nome || (x && x.nome) || null }); else if (!x.nome && i.nome) x.nome = i.nome; }
+  itens.length = 0; maisRecente.forEach((i) => itens.push(i));
 
   // 1) clientes ativos por CNPJ (uma consulta)
   const cnpjs = [...new Set(itens.filter((i) => i.doc.length === 14).map((i) => i.doc))];

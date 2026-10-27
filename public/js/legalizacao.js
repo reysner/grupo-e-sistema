@@ -360,7 +360,7 @@
       tipos: [['cert_pj', 'Pessoa jurídica (e-CNPJ)'], ['cert_pf', 'Pessoa física (e-CPF)']],
       linhas: function () { return docsDe(null, ['cert_pj', 'cert_pf']).sort(porNome); },
       colunas: [COL_EMPRESA, { t: 'Tipo', h: function (r) { return r.tipo === 'cert_pf' ? 'PF' : 'PJ'; }, x: function (r) { return r.tipo === 'cert_pf' ? 'PF' : 'PJ'; } }, COL_SIT, COL_VENC, COL_PRAZO, COL_OBS, COL_ACAO_CERT],
-      ajuda: 'Um certificado por cliente: PJ para empresa, PF para pessoa física.',
+      ajuda: 'Um certificado por cliente: PJ para empresa, PF para pessoa física. A lista da CertiSeguro é lida pelo servidor todo dia às 07h e às 13h.',
       vazio: 'Nenhum certificado com este filtro.',
     },
     procuracoes: {
@@ -448,6 +448,8 @@
       return '<tr>' + spec.colunas.map(function (c) { return '<td style="white-space:normal">' + (c.h ? c.h(r) : esc(c.x(r))) + '</td>'; }).join('') + '</tr>';
     }).join('');
     var topo = chave === 'qualidade' ? cartoesQualidade(f.pend) : '';
+    // Certificados: o servidor lê a CertiSeguro 2x ao dia (07h e 13h); o administrador pode puxar na hora
+    if (chave === 'certificados' && ehAdmin()) campos += '<button type="button" class="lg-acao" id="btn-certiseguro" title="Busca agora a lista na CertiSeguro e atualiza as validades (o servidor faz isso sozinho às 07h e às 13h)">🔄 Atualizar CertiSeguro agora</button>';
     $('sec-' + chave).innerHTML = topo +
       '<div class="card"><div class="filter-group" style="margin-bottom:14px">' + campos + '</div>' +
       '<div class="card-sub">' + num(lista.length) + ' registro(s). ' + esc(spec.ajuda) + '</div>' +
@@ -455,6 +457,17 @@
         : '<div class="vazio">' + esc(spec.vazio) + '</div>') + '</div>';
     var campo = { busca: 'busca', tipo: 'tipo', sit: 'sit', auto: 'auto', pend: 'pend' };
     spec.filtros.forEach(function (nome) { ligarCampo(chave, nome, campo[nome]); });
+    var bc = $('btn-certiseguro'); if (bc) bc.addEventListener('click', atualizarCertiseguro);
+  }
+  async function atualizarCertiseguro() {
+    var b = $('btn-certiseguro'); if (b) { b.disabled = true; b.textContent = 'Buscando na CertiSeguro…'; }
+    try {
+      var r = await chamarApi('/api/data/legalizacao/certificados/atualizar-agora', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      var j = await r.json().catch(function () { return {}; });
+      if (!r.ok) { alert('A CertiSeguro não atualizou: ' + String(j.error || 'erro desconhecido').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()); return; }
+      aviso('CertiSeguro atualizada: ' + j.atualizados + ' atualizado(s), ' + j.criados + ' novo(s), ' + j.ignorados + ' ignorado(s) de ' + j.total + '.');
+      await carregar();
+    } finally { var b2 = $('btn-certiseguro'); if (b2) { b2.disabled = false; b2.textContent = '🔄 Atualizar CertiSeguro agora'; } }
   }
   function ligarCampo(chave, nome, prop) {
     var el = $('f-' + chave + '-' + nome); if (!el) return;
