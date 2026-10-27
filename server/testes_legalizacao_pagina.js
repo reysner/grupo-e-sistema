@@ -135,6 +135,23 @@ teste('alvará dispensado tem situação própria: não conta como Sem data e mo
     assert.ok(el('sec-sanitario').innerHTML.includes('Res. SES/MG 8.765/2023'), 'o motivo aparece na lista');
   } finally { T.estado.linhas.length = n; }
 });
+teste('renovação já protocolada: aparece como Solicitação com o número do protocolo e o botão para informar/editar', () => {
+  const n = T.estado.linhas.length;
+  T.estado.linhas.push({ _ix: n, cliente_id: 'pr', nome_empresa: 'Protocolada Ltda', cnpj: '55555555000155', func: null, cert: null, ecac: null, fgts: null, automacao: 'automatica',
+    sanit: { id: 'sp', vencimento: iso(5), status: 'solicitacao', protocolo: '69911/2026', protocolo_em: iso(-1) + 'T10:00:00Z' } },
+  { _ix: n + 1, cliente_id: 'pq', nome_empresa: 'A Vencer Ltda', cnpj: '66666666000166', func: null, cert: null, ecac: null, fgts: null, automacao: 'automatica',
+    sanit: { id: 'sq', vencimento: iso(5), status: 'vencendo' } });
+  try {
+    T.desenharLista('sanitario');
+    const h = el('sec-sanitario').innerHTML;
+    assert.ok(h.includes('Protocolo 69911/2026'), 'a observação traz o protocolo');
+    assert.ok(h.includes('data-acao="protocolo"') && h.includes('data-tipo="sanit"'), 'botão de protocolo na lista');
+    assert.ok(h.includes('Informar protocolo'), 'quem ainda não tem protocolo vê "Informar protocolo"');
+    assert.ok(!/undefined|NaN/.test(h));
+    assert.ok(!T.docsPrioridade().some((r) => r.l.cliente_id === 'pr'), 'com protocolo aberto o alvará sai das prioridades');
+    assert.ok(T.docsPrioridade().some((r) => r.l.cliente_id === 'pq'), 'sem protocolo continua em Vencendo');
+  } finally { T.estado.linhas.length = n; }
+});
 teste('todas as seções desenham sem undefined/NaN e escapam HTML do nome', () => {
   T.desenharVisao(); T.desenharEvolucao();
   ['prioridades', 'funcionamento', 'sanitario', 'certificados', 'procuracoes', 'carteira', 'solicitacoes', 'qualidade'].forEach((s) => T.desenharLista(s));

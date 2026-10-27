@@ -303,6 +303,7 @@
   function obsDe(r) {
     var i = r.i; if (!i) return '';
     var p = [];
+    if (i.status === 'solicitacao' && i.protocolo) p.push('Protocolo ' + i.protocolo + (i.protocolo_em ? ' (informado em ' + data(String(i.protocolo_em).slice(0, 10)) + ')' : ''));
     if (i.status === 'solicitacao' && i.consulta_resumo) p.push(i.consulta_resumo);
     if (i.status === 'dispensado' && i.dispensado_motivo) p.push(i.dispensado_motivo);   // por que a prefeitura dispensou
     if (i.observacoes) p.push(i.observacoes);
@@ -320,6 +321,15 @@
       ? '<button class="lg-acao perigo" data-acao="cert-desat" data-ix="' + l._ix + '" title="Desativa o certificado: sai da lista e dos indicadores e deixa de ser cobrado">🚫 Desativar</button>'
       : '<button class="lg-acao perigo" data-acao="cert-sol" data-ix="' + l._ix + '" title="Cliente sem movimento ou que não quer renovar: avisa o administrador para desativar e parar a cobrança">📝 Não vai renovar</button>';
   }
+  /** Renovação do alvará já pedida à prefeitura (ex.: Protocolo Online) e que a consulta noturna não enxerga: informa o número do protocolo. */
+  var TIPO_API = { func: 'funcionamento', sanit: 'sanitario' };
+  function botaoProtocolo(l, tipo) {
+    var i = itemDe(l, tipo);
+    if (!l || !l.cliente_id || !i || !TIPO_API[tipo]) return '<span class="cinza">—</span>';
+    var tem = !!(i.protocolo && stDe(i) === 'solicitacao');
+    return '<button class="lg-acao" data-acao="protocolo" data-ix="' + l._ix + '" data-tipo="' + tipo + '" title="Renovação já pedida à prefeitura: informe o número do protocolo para o alvará sair de Vencendo e entrar em Solicitação">' + (tem ? '✏️ Protocolo ' + esc(i.protocolo) : '📨 Informar protocolo') + '</button>';
+  }
+  var COL_ACAO_PROT = { t: 'Ação', acao: true, h: function (r) { return botaoProtocolo(r.l, r.tipo); }, x: function () { return ''; } };
   var COL_ACAO_CERT = { t: 'Ação', acao: true, h: function (r) { return botaoCert(r.l); }, x: function () { return ''; } };
 
   var SPECS = {
@@ -334,15 +344,15 @@
     funcionamento: {
       arquivo: 'legalizacao-funcionamento', titulo: 'Legalização — Alvarás de funcionamento', filtros: ['busca', 'sit', 'auto'],
       linhas: function () { return docsDe(null, ['func']).sort(porNome); },
-      colunas: [COL_EMPRESA, COL_SIT, COL_VENC, COL_PRAZO, COL_NUM, COL_MUN, COL_OBS],
-      ajuda: 'Uma linha por cliente que tem alvará de funcionamento cadastrado.',
+      colunas: [COL_EMPRESA, COL_SIT, COL_VENC, COL_PRAZO, COL_NUM, COL_MUN, COL_OBS, COL_ACAO_PROT],
+      ajuda: 'Uma linha por cliente que tem alvará de funcionamento cadastrado. Renovação já protocolada na prefeitura? Use "Informar protocolo".',
       vazio: 'Nenhum alvará de funcionamento com este filtro.',
     },
     sanitario: {
       arquivo: 'legalizacao-sanitario', titulo: 'Legalização — Alvarás sanitários', filtros: ['busca', 'sit', 'auto'],
       linhas: function () { return docsDe(null, ['sanit']).sort(porNome); },
-      colunas: [COL_EMPRESA, COL_SIT, COL_VENC, COL_PRAZO, COL_NUM, COL_MUN, COL_OBS],
-      ajuda: 'O sanitário entra sozinho quando a consulta noturna à prefeitura encontra o documento.',
+      colunas: [COL_EMPRESA, COL_SIT, COL_VENC, COL_PRAZO, COL_NUM, COL_MUN, COL_OBS, COL_ACAO_PROT],
+      ajuda: 'O sanitário entra sozinho quando a consulta noturna à prefeitura encontra o documento. Renovação já protocolada na prefeitura? Use "Informar protocolo".',
       vazio: 'Ainda sem alvarás sanitários com este filtro. O Sanitário entra sozinho quando a consulta noturna à prefeitura encontrar.',
     },
     certificados: {
@@ -619,6 +629,7 @@
       acoes += '<button class="lg-acao" data-acao="municipio" data-ix="' + ix + '">📍 ' + (l.municipio ? 'Corrigir município' : 'Informar município') + '</button>';
       acoes += '<button class="lg-acao" data-acao="im" data-ix="' + ix + '">🏷️ ' + (l.inscricao_municipal ? 'Corrigir inscrição municipal' : 'Informar inscrição municipal') + '</button>';
     }
+    if (l.cliente_id) ['func', 'sanit'].forEach(function (t) { if (itemDe(l, t)) acoes += botaoProtocolo(l, t).replace('>📨 Informar protocolo<', '>📨 Informar protocolo (' + ROT_CURTO[t].toLowerCase() + ')<').replace('>✏️ Protocolo ', '>✏️ Protocolo (' + ROT_CURTO[t].toLowerCase() + ') '); });
     if (l.prefeitura_integrada === false && l.prefeitura_url) {
       acoes += '<a class="lg-acao" style="text-decoration:none" href="' + esc(l.prefeitura_url) + '" target="_blank" rel="noopener noreferrer">🔗 Portal da prefeitura</a>';
       if (l.prefeitura_url_sanitario) acoes += '<a class="lg-acao" style="text-decoration:none" href="' + esc(l.prefeitura_url_sanitario) + '" target="_blank" rel="noopener noreferrer">🔗 Portal do sanitário</a>';
@@ -643,6 +654,17 @@
     var j = await r.json().catch(function () { return {}; });
     if (!r.ok) { alert(j.error || 'Erro ao salvar o município.'); return; }
     aviso('Município salvo.');
+    await carregar();
+  }
+  async function informarProtocolo(ix, tipo) {
+    var l = estado.linhas[ix]; if (!l || !l.cliente_id || !TIPO_API[tipo]) return;
+    var i = itemDe(l, tipo);
+    var v = prompt('Número do protocolo da renovação já pedida à prefeitura (ex.: 69911/2026). Deixe vazio para remover o protocolo:', i && i.protocolo ? i.protocolo : '');
+    if (v === null) return;
+    var r = await chamarApi('/api/data/legalizacao/alvaras/' + encodeURIComponent(l.cliente_id) + '/' + TIPO_API[tipo] + '/protocolo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ numero: v }) });
+    var j = await r.json().catch(function () { return {}; });
+    if (!r.ok) { alert(j.error || 'Erro ao salvar o protocolo.'); return; }
+    aviso(j.protocolo ? 'Protocolo salvo: o alvará passa a ser Solicitação.' : 'Protocolo removido.');
     await carregar();
   }
   async function editarIM(ix) {
@@ -805,7 +827,7 @@
     var ac = alvo.closest && alvo.closest('[data-acao]');
     if (ac) {
       var ix = parseInt(ac.getAttribute('data-ix'), 10), a = ac.getAttribute('data-acao');
-      if (a === 'municipio') editarMunicipio(ix); else if (a === 'im') editarIM(ix); else if (a === 'inativar') abrirInativar(ix); else if (a === 'cert-sol') abrirSolicitarCert(ix); else if (a === 'cert-desat') desativarCert(ix);
+      if (a === 'municipio') editarMunicipio(ix); else if (a === 'im') editarIM(ix); else if (a === 'inativar') abrirInativar(ix); else if (a === 'cert-sol') abrirSolicitarCert(ix); else if (a === 'cert-desat') desativarCert(ix); else if (a === 'protocolo') informarProtocolo(ix, ac.getAttribute('data-tipo'));
       return;
     }
     var p = alvo.closest && alvo.closest('[data-pag]');

@@ -5361,6 +5361,12 @@ async function ensureLegalizacaoSchema() {
   // próxima renovação também, sem spam repetido enquanto a data não muda.
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS notificado_vencimento_em TIMESTAMPTZ`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS desativado_em TIMESTAMPTZ`).catch(()=>{});
+  // 27/10/2026 (pedido do Reysner): renovação já protocolada na prefeitura (ex.: Protocolo Online 69911/2026), que a consulta noturna não enxerga.
+  // O alvará vira "Solicitação" enquanto a data de vencimento continuar a mesma de quando o protocolo foi informado; chegou data nova, o protocolo deixa de valer sozinho.
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS protocolo_numero TEXT`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS protocolo_em TIMESTAMPTZ`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS protocolo_por TEXT`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS protocolo_venc_ref DATE`).catch(()=>{});
   // Fila de conferência: datas lidas por OCR do PDF da pasta ficam "a conferir" até alguém confirmar/corrigir.
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS lido_por_ocr BOOLEAN NOT NULL DEFAULT false`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS origem_arquivo TEXT`).catch(()=>{});
@@ -5515,14 +5521,15 @@ END`;
 const LEGAL_PAINEL_SQL = `
 SELECT x.cliente_id, x.nome_empresa, x.cnpj, x.codigo, x.sem_cadastro_acessorias,
   x.func_id, x.func_venc::text AS func_venc, x.func_numero, x.func_obs, x.func_cr, x.func_cd, x.func_ce::text AS func_ce,
-  ${_legalStatusSql('x.func_venc', LEGAL_DIAS_ALERTA_FUNCIONAMENTO, "WHEN x.func_cs = 'solicitacao_andamento' THEN 'solicitacao' WHEN x.func_dm IS NOT NULL AND x.func_venc IS NULL THEN 'dispensado'")} AS func_status, x.func_dm AS func_dm,
+  ${_legalStatusSql('x.func_venc', LEGAL_DIAS_ALERTA_FUNCIONAMENTO, "WHEN x.func_prot IS NOT NULL AND (x.func_venc IS NULL OR x.func_venc <= COALESCE(x.func_pref, x.func_venc)) THEN 'solicitacao' WHEN x.func_cs = 'solicitacao_andamento' THEN 'solicitacao' WHEN x.func_dm IS NOT NULL AND x.func_venc IS NULL THEN 'dispensado'")} AS func_status, x.func_dm AS func_dm,
   x.sanit_id, x.sanit_venc::text AS sanit_venc, x.sanit_numero, x.sanit_obs, x.sanit_cr, x.sanit_cd, x.sanit_ce::text AS sanit_ce,
-  ${_legalStatusSql('x.sanit_venc', LEGAL_DIAS_ALERTA_SANITARIO, "WHEN x.sanit_cs = 'solicitacao_andamento' THEN 'solicitacao' WHEN x.sanit_dm IS NOT NULL AND x.sanit_venc IS NULL THEN 'dispensado'")} AS sanit_status, x.sanit_dm AS sanit_dm,
+  ${_legalStatusSql('x.sanit_venc', LEGAL_DIAS_ALERTA_SANITARIO, "WHEN x.sanit_prot IS NOT NULL AND (x.sanit_venc IS NULL OR x.sanit_venc <= COALESCE(x.sanit_pref, x.sanit_venc)) THEN 'solicitacao' WHEN x.sanit_cs = 'solicitacao_andamento' THEN 'solicitacao' WHEN x.sanit_dm IS NOT NULL AND x.sanit_venc IS NULL THEN 'dispensado'")} AS sanit_status, x.sanit_dm AS sanit_dm,
   x.cert_id, x.cert_tipo, x.cert_venc::text AS cert_venc, x.cert_obs,
   ${_legalStatusSql('x.cert_venc', LEGAL_DIAS_ALERTA_CERTIFICADO)} AS cert_status,
   x.ecac_id, x.ecac_venc::text AS ecac_venc, x.ecac_obs,
   ${_legalStatusSql('x.ecac_venc', LEGAL_DIAS_ALERTA_PROCURACAO)} AS ecac_status,
   x.fgts_id, x.fgts_venc::text AS fgts_venc, x.fgts_obs, x.sanit_desat, x.cert_desat,
+  x.func_prot, x.func_prot_em::text AS func_prot_em, x.sanit_prot, x.sanit_prot_em::text AS sanit_prot_em,
   ${_legalStatusSql('x.fgts_venc', LEGAL_DIAS_ALERTA_PROCURACAO)} AS fgts_status
 FROM (
   SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj, c.codigo, false AS sem_cadastro_acessorias,
@@ -5533,7 +5540,9 @@ FROM (
          ce.id AS cert_id, ce.tipo AS cert_tipo, ce.data_vencimento AS cert_venc, ce.observacoes AS cert_obs,
          pe.id AS ecac_id, pe.data_vencimento AS ecac_venc, pe.observacoes AS ecac_obs,
          pg.id AS fgts_id, pg.data_vencimento AS fgts_venc, pg.observacoes AS fgts_obs,
-         (sa.desativado_em IS NOT NULL) AS sanit_desat, (ce.desativado_em IS NOT NULL) AS cert_desat
+         (sa.desativado_em IS NOT NULL) AS sanit_desat, (ce.desativado_em IS NOT NULL) AS cert_desat,
+         fa.protocolo_numero AS func_prot, fa.protocolo_venc_ref AS func_pref, fa.protocolo_em AS func_prot_em,
+         sa.protocolo_numero AS sanit_prot, sa.protocolo_venc_ref AS sanit_pref, sa.protocolo_em AS sanit_prot_em
     FROM clientes c
     LEFT JOIN legalizacao_alvaras fa ON fa.cliente_id = c.id::text AND fa.tipo = 'funcionamento'
     LEFT JOIN legalizacao_alvaras sa ON sa.cliente_id = c.id::text AND sa.tipo = 'sanitario'
@@ -5548,7 +5557,8 @@ FROM (
          ce.id, ce.tipo, ce.data_vencimento, ce.observacoes,
          NULL, NULL, NULL,
          NULL, NULL, NULL,
-         false, (ce.desativado_em IS NOT NULL)
+         false, (ce.desativado_em IS NOT NULL),
+         NULL, NULL, NULL, NULL, NULL, NULL
     FROM legalizacao_certificados ce
    WHERE ce.tipo = 'pf'
       OR (ce.tipo = 'pj' AND NOT EXISTS (SELECT 1 FROM clientes c2 WHERE c2.id::text = ce.cliente_id))
@@ -5561,6 +5571,7 @@ function legalPainelLinha(r) {
     id: r[p + '_id'], vencimento: r[p + '_venc'], numero: r[p + '_numero'], observacoes: r[p + '_obs'],
     consulta_resumo: r[p + '_cr'], consulta_data_solicitacao: r[p + '_cd'], consulta_em: r[p + '_ce'] || null, dispensado_motivo: r[p + '_dm'] || null,   // quando a consulta automática/pasta conferiu pela última vez (distingue "consultado, sem alvará" de "não consultado")
     desativado: !!r[p + '_desat'], status: r[p + '_desat'] ? 'desativado' : r[p + '_status'],
+    protocolo: r[p + '_prot'] || null, protocolo_em: r[p + '_prot_em'] || null,   // renovação já protocolada na prefeitura (informada à mão)
   });
   const procuracao = (p) => ({ id: r[p + '_id'], vencimento: r[p + '_venc'], observacoes: r[p + '_obs'], status: r[p + '_status'] });
   return {
@@ -5895,6 +5906,38 @@ router.put('/legalizacao/alvaras/:clienteId/:tipo', async (req, res) => {
 });
 
 /**
+ * POST /api/data/legalizacao/alvaras/:clienteId/:tipo/protocolo — informa (ou remove, com número vazio) o protocolo da renovação já pedida à prefeitura.
+ * Enquanto a data de vencimento continuar a mesma de quando o protocolo foi informado, o alvará aparece como "Solicitação" e não gera novo alerta de vencimento;
+ * quando chega a data nova (consulta, PDF ou edição), o protocolo deixa de valer sozinho. Mesma abertura da edição do alvará (qualquer usuário da Legalização).
+ */
+router.post('/legalizacao/alvaras/:clienteId/:tipo/protocolo', async (req, res) => {
+  try {
+    await ensureLegalizacaoSchema();
+    const { clienteId, tipo } = req.params;
+    if (!['funcionamento', 'sanitario'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
+    const bruto = String((req.body && req.body.numero) != null ? req.body.numero : '').trim();
+    if (bruto.length > 40 || /[^0-9A-Za-z.\-\/ ]/.test(bruto)) return res.status(400).json({ error: 'Protocolo inválido: use só números, letras, ponto, hífen ou barra (até 40 caracteres).' });
+    const { rows: cli } = await pool.query(`SELECT nome_empresa FROM clientes WHERE id::text = $1`, [clienteId]);
+    if (!cli.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
+    if (!bruto) {
+      await pool.query(`UPDATE legalizacao_alvaras SET protocolo_numero = NULL, protocolo_em = NULL, protocolo_por = NULL, protocolo_venc_ref = NULL, atualizado_em = NOW() WHERE cliente_id = $1 AND tipo = $2`, [clienteId, tipo]);
+      await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', `Protocolo removido do alvará (${tipo}): ${cli[0].nome_empresa}`, req);
+      return res.json({ ok: true, protocolo: null });
+    }
+    await pool.query(
+      `INSERT INTO legalizacao_alvaras (cliente_id, tipo, protocolo_numero, protocolo_em, protocolo_por, protocolo_venc_ref, criado_por)
+       VALUES ($1, $2, $3, NOW(), $4, DATE '0001-01-01', $4)
+       ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+         protocolo_numero = $3, protocolo_em = NOW(), protocolo_por = $4,
+         protocolo_venc_ref = COALESCE(legalizacao_alvaras.data_vencimento, DATE '0001-01-01'), atualizado_em = NOW()`,
+      [clienteId, tipo, bruto, req.user.name]
+    );
+    await registrarLog(req.user.id, req.user.name, 'editar', 'legalizacao', `Protocolo ${bruto} informado no alvará (${tipo}): ${cli[0].nome_empresa}`, req);
+    res.json({ ok: true, protocolo: bruto });
+  } catch (err) { console.error('[legalizacao] protocolo do alvará:', err); res.status(500).json({ error: 'Erro ao salvar o protocolo.' }); }
+});
+
+/**
  * POST /api/data/legalizacao/alvaras/:clienteId/:tipo/consultar-prefeitura
  * — roda a consulta automática no portal da prefeitura (hoje só
  * Uberlândia-MG/Ciclo7, ver ciclo7Uberlandia.js) pro CNPJ desse cliente.
@@ -6173,7 +6216,8 @@ async function verificarNotificacoesLegalizacao() {
         AND c.status = 'ativo'
         AND a.data_vencimento <= CURRENT_DATE + (CASE WHEN a.tipo = 'sanitario' THEN ${LEGAL_DIAS_ALERTA_SANITARIO} ELSE ${LEGAL_DIAS_ALERTA_FUNCIONAMENTO} END) * INTERVAL '1 day'
         AND a.notificado_vencimento_em IS NULL
-        AND a.desativado_em IS NULL`
+        AND a.desativado_em IS NULL
+        AND NOT (a.protocolo_numero IS NOT NULL AND a.data_vencimento <= COALESCE(a.protocolo_venc_ref, a.data_vencimento))`
   );
   for (const a of alvaras) {
     const tipoLabel = a.tipo === 'funcionamento' ? 'Alvará de Funcionamento' : 'Alvará Sanitário';
