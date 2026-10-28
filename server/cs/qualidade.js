@@ -261,7 +261,7 @@ function rotaAbertaGestorAnalista(metodo, caminho) {
   const c = String(caminho || '').split('?')[0].replace(/\/+$/, '') || '/';
   const p = c.split('/');   // '' + segmentos
   if (m === 'GET') return ['/opcoes', '/empresas', '/tempos', '/avisos', '/gestores', '/eu', '/analistas', '/ocorrencias/minhas', '/gestor/ocorrencias', '/analista/ocorrencias', '/sucesso/ocorrencias', '/pendencias', '/versao', '/analista/meu-painel'].includes(c) || (p.length === 3 && p[1] === 'anexo');
-  if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir', 'excluir', 'mensagem', 'resposta-final'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && ['encerrar', 'apontar', 'responder'].includes(p[4]));
+  if (m === 'POST') return c === '/ocorrencias' || (p.length === 4 && p[1] === 'ocorrencias' && p[3] === 'anexo') || (p.length === 6 && p[1] === 'ocorrencias' && p[3] === 'evento' && p[5] === 'anexo') || (p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && ['abrir', 'validar', 'devolver', 'filha', 'cancelar', 'reabrir', 'excluir', 'mensagem', 'resposta-final'].includes(p[4])) || (p.length === 5 && p[1] === 'analista' && p[2] === 'ocorrencias' && ['nota', 'encerrar'].includes(p[4])) || (p.length === 5 && p[1] === 'sucesso' && p[2] === 'ocorrencias' && ['encerrar', 'apontar', 'responder'].includes(p[4]));
   if (m === 'PUT') return p.length === 5 && p[1] === 'gestor' && p[2] === 'ocorrencias' && p[4] === 'tratativa';
   return false;
 }
@@ -438,6 +438,8 @@ function garantirSchema() {
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(), registro_id UUID NOT NULL REFERENCES cs_qualidade_registros(id) ON DELETE CASCADE,
         nome TEXT NOT NULL, mime TEXT, tamanho INT NOT NULL, dados BYTEA NOT NULL, criado_por TEXT, criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW())`))
       .then(() => pool.query('ALTER TABLE cs_qualidade_anexos ENABLE ROW LEVEL SECURITY'))
+      // arquivo que acompanha uma observação ou nota final (linha do histórico): fica ligado à fala, não à ocorrência
+      .then(() => pool.query('ALTER TABLE cs_qualidade_anexos ADD COLUMN IF NOT EXISTS historico_id BIGINT'))
       // fluxo do Portal do Gestor: etapa da ocorrência e para quem ela foi encaminhada ('gestor' do departamento, ou 'sucesso' se o departamento não tem gestor)
       .then(() => pool.query("ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS etapa TEXT NOT NULL DEFAULT 'registrada'"))
       .then(() => pool.query('ALTER TABLE cs_qualidade_registros ADD COLUMN IF NOT EXISTS fila TEXT'))
@@ -507,14 +509,26 @@ const DE = `FROM cs_qualidade_registros r LEFT JOIN analistas a ON a.id::text = 
 const APONTADO_SQL = "CASE WHEN r.origem = 'modulo' THEN COALESCE(r.analista_apontado_id, r.analista_origem_id) WHEN r.origem = 'filha' THEN NULL ELSE r.analista_id END";
 const comSituacao = (rows) => rows.map((r) => ({ ...r, situacao: situacao(r.status, r.prazo), status_rotulo: ROTULO_STATUS[r.status] }));
 
+/** Arquivos que acompanham as falas (linhas do histórico): { [historico_id]: [{ id, nome, tamanho }] }. Sem o conteúdo. */
+async function arquivosDasFalas(ids) {
+  const lista = (ids || []).filter((x) => x != null);
+  if (!lista.length) return {};
+  try {
+    const { rows } = await pool.query('SELECT id, historico_id, nome, tamanho FROM cs_qualidade_anexos WHERE historico_id = ANY($1::bigint[]) ORDER BY criado_em', [lista]);
+    const por = {}; rows.forEach((a) => { (por[String(a.historico_id)] = por[String(a.historico_id)] || []).push({ id: a.id, nome: a.nome, tamanho: a.tamanho }); });
+    return por;
+  } catch (e) { return {}; }
+}
+
 /** Anexa a cada registro a linha do tempo de notas e eventos (nota, iniciada, finalizada, devolvida, validada). */
 async function anexarNotas(lista) {
   if (!lista.length) return lista;
   try {
     const { rows } = await pool.query(
-      `SELECT registro_id, em, por, acao, texto FROM cs_qualidade_historico WHERE registro_id = ANY($1::uuid[]) AND acao IN ('nota', 'iniciada', 'finalizada', 'devolvida', 'validada', 'liberada', 'analista_encerrou', 'gestor_validou', 'encerrada', 'cancelada', 'reaberta') ORDER BY em ASC`,
+      `SELECT id, registro_id, em, por, acao, texto FROM cs_qualidade_historico WHERE registro_id = ANY($1::uuid[]) AND acao IN ('nota', 'iniciada', 'finalizada', 'devolvida', 'validada', 'liberada', 'analista_encerrou', 'gestor_validou', 'encerrada', 'cancelada', 'reaberta') ORDER BY em ASC`,
       [lista.map((r) => r.id)]);
-    const por = {}; rows.forEach((h) => { (por[h.registro_id] = por[h.registro_id] || []).push({ em: h.em, por: h.por, acao: h.acao, texto: h.texto }); });
+    const arq = await arquivosDasFalas(rows.map((h) => h.id));
+    const por = {}; rows.forEach((h) => { (por[h.registro_id] = por[h.registro_id] || []).push({ em: h.em, por: h.por, acao: h.acao, texto: h.texto, anexos: arq[String(h.id)] || [] }); });
     return lista.map((r) => ({ ...r, notas: por[r.id] || [] }));
   } catch (e) { return lista.map((r) => ({ ...r, notas: [] })); }
 }
@@ -526,18 +540,20 @@ async function anexarNotas(lista) {
 async function anexarVinculos(lista) {
   if (!lista.length) return lista;
   const ids = lista.map((r) => r.id);
-  let resp = [], filhas = [], pais = [], respF = [], notasF = [];
+  let resp = [], filhas = [], pais = [], respF = [], notasF = [], arqF = [];
   try {
     resp = (await pool.query(`SELECT x.registro_id, x.analista_id, a.nome, x.nota, x.obs, x.encerrado_em, x.encerrado_por FROM cs_qualidade_resp x LEFT JOIN analistas a ON a.id::text = x.analista_id WHERE x.registro_id = ANY($1::uuid[]) ORDER BY a.nome`, [ids])).rows;
     filhas = (await pool.query(`SELECT f.id, f.pai_id, f.assunto, f.etapa, f.departamentos, to_char(f.prazo, 'YYYY-MM-DD') AS prazo, a.nome AS analista_nome, f.validacao_nota FROM cs_qualidade_registros f LEFT JOIN analistas a ON a.id::text = f.analista_id WHERE f.pai_id = ANY($1::uuid[]) AND f.status <> 'cancelado' ORDER BY f.criado_em`, [ids])).rows;
     if (filhas.length) respF = (await pool.query(`SELECT x.registro_id, a.nome, x.nota, x.obs, x.encerrado_em FROM cs_qualidade_resp x LEFT JOIN analistas a ON a.id::text = x.analista_id WHERE x.registro_id = ANY($1::uuid[]) AND x.nota IS NOT NULL ORDER BY a.nome`, [filhas.map((f) => f.id)])).rows;
     if (filhas.length) notasF = (await pool.query("SELECT registro_id, em, por, texto FROM cs_qualidade_historico WHERE registro_id = ANY($1::uuid[]) AND acao = 'nota' ORDER BY em", [filhas.map((f) => f.id)])).rows;   // o andamento da vinculada (anotações do analista e mensagens do gestor)
+    if (filhas.length) arqF = (await pool.query(`SELECT a.id, a.nome, a.tamanho, a.criado_por, a.criado_em, h.registro_id FROM cs_qualidade_anexos a JOIN cs_qualidade_historico h ON h.id = a.historico_id WHERE h.registro_id = ANY($1::uuid[]) ORDER BY a.criado_em`, [filhas.map((f) => f.id)])).rows;   // arquivos das observações e notas finais do vínculo
     const paiIds = lista.map((r) => r.pai_id).filter(Boolean);
     if (paiIds.length) pais = (await pool.query('SELECT id, assunto, cliente_nome FROM cs_qualidade_registros WHERE id = ANY($1::uuid[])', [paiIds])).rows;
   } catch (e) { /* sem as tabelas novas ainda: segue sem os vínculos */ }
   const porResp = {}, porFilha = {};
   resp.forEach((x) => { (porResp[String(x.registro_id)] = porResp[String(x.registro_id)] || []).push({ analista_id: String(x.analista_id), nome: x.nome, nota: x.nota, obs: x.obs, encerrado_em: x.encerrado_em, encerrado_por: x.encerrado_por }); });
-  filhas.forEach((f) => { (porFilha[String(f.pai_id)] = porFilha[String(f.pai_id)] || []).push({ id: f.id, assunto: f.assunto, etapa: f.etapa, departamentos: f.departamentos, prazo: f.prazo, analista_nome: f.analista_nome, validacao_nota: f.validacao_nota || null, respostas: respF.filter((x) => String(x.registro_id) === String(f.id)).map((x) => ({ nome: x.nome, nota: x.nota, obs: x.obs })), anotacoes: notasF.filter((x) => String(x.registro_id) === String(f.id)).map((x) => ({ em: x.em, por: x.por, texto: x.texto })) }); });
+  filhas.forEach((f) => { (porFilha[String(f.pai_id)] = porFilha[String(f.pai_id)] || []).push({ id: f.id, assunto: f.assunto, etapa: f.etapa, departamentos: f.departamentos, prazo: f.prazo, analista_nome: f.analista_nome, validacao_nota: f.validacao_nota || null, respostas: respF.filter((x) => String(x.registro_id) === String(f.id)).map((x) => ({ nome: x.nome, nota: x.nota, obs: x.obs })), anotacoes: notasF.filter((x) => String(x.registro_id) === String(f.id)).map((x) => ({ em: x.em, por: x.por, texto: x.texto })),
+    arquivos: arqF.filter((x) => String(x.registro_id) === String(f.id)).map((x) => ({ id: x.id, nome: x.nome, tamanho: x.tamanho, por: x.criado_por, em: x.criado_em })) }); });
   const depois = ['validacao_gestor', 'devolutiva_cliente', 'encerrada'];
   return lista.map((r) => {
     let rs = porResp[String(r.id)] || [];
@@ -562,7 +578,7 @@ async function completar(linhas) { const base = comSituacao(linhas); return anex
 async function anexarAnexos(lista) {
   if (!lista.length) return lista;
   try {
-    const { rows } = await pool.query('SELECT id, registro_id, nome, tamanho FROM cs_qualidade_anexos WHERE registro_id = ANY($1::uuid[]) ORDER BY criado_em', [lista.map((r) => r.id)]);
+    const { rows } = await pool.query('SELECT id, registro_id, nome, tamanho FROM cs_qualidade_anexos WHERE registro_id = ANY($1::uuid[]) AND historico_id IS NULL ORDER BY criado_em', [lista.map((r) => r.id)]);   // os das observações aparecem na própria fala
     const por = {}; rows.forEach((a) => { (por[a.registro_id] = por[a.registro_id] || []).push({ id: a.id, nome: a.nome, tamanho: a.tamanho }); });
     return lista.map((r) => ({ ...r, anexos: por[r.id] || [] }));
   } catch (e) { return lista.map((r) => ({ ...r, anexos: [] })); }
@@ -602,15 +618,17 @@ async function notificarFinalizacao(reg, analistaNome, tratativa) {
   } catch (e) { console.warn('[qualidade] aviso de finalização não gravado:', e.message); }
 }
 
+/** Grava a linha do histórico e devolve o id dela (é a ela que os arquivos de uma observação ou nota final se ligam). */
 async function registrar(registroId, por, acao, txt) {
-  await pool.query('INSERT INTO cs_qualidade_historico (registro_id, por, acao, texto) VALUES ($1, $2, $3, $4)', [registroId, por || null, acao, txt || null]);
+  const r = await pool.query('INSERT INTO cs_qualidade_historico (registro_id, por, acao, texto) VALUES ($1, $2, $3, $4) RETURNING id', [registroId, por || null, acao, txt || null]);
+  return r.rows[0] ? String(r.rows[0].id) : null;
 }
-/** Como registrar(), mas ignora a mesma fala (mesmo autor, ação e texto) repetida em até 20 segundos (duplo clique). Devolve true se gravou. */
+/** Como registrar(), mas ignora a mesma fala (mesmo autor, ação e texto) repetida em até 20 segundos (duplo clique). Devolve o id da linha gravada, ou false se foi repetida. */
+const idDaFala = (v) => (v && v !== true ? String(v) : null);   // id da linha do histórico que o registrarUnico devolveu (false se foi repetida)
 async function registrarUnico(registroId, por, acao, txt) {
   const dup = await pool.query("SELECT 1 FROM cs_qualidade_historico WHERE registro_id = $1 AND por IS NOT DISTINCT FROM $2 AND acao = $3 AND texto IS NOT DISTINCT FROM $4 AND em > NOW() - INTERVAL '20 seconds' LIMIT 1", [registroId, por || null, acao, txt || null]);
   if (dup.rows.length) return false;
-  await registrar(registroId, por, acao, txt);
-  return true;
+  return (await registrar(registroId, por, acao, txt)) || true;
 }
 
 // ── Equipe do painel ─────────────────────────────────────────────────────────────
@@ -1275,7 +1293,7 @@ router.post('/analista/ocorrencias/:id/nota', async (req, res) => {
     if (t.length > MAX_ANOTACAO) return res.status(400).json({ error: 'A anotação passa de ' + MAX_ANOTACAO + ' caracteres.' });
     const novaNota = await registrarUnico(reg.id, ag.por, 'nota', t);
     if (novaNota) avisarAnotacao(req, reg, ag, t);   // sem esperar: o aviso nunca atrasa nem derruba a anotação (e não repete se foi duplo clique)
-    res.json({ registro: registroParaQuemAgiu(req.user, ag, await registroCompleto(reg.id)) });
+    res.json({ registro: registroParaQuemAgiu(req.user, ag, await registroCompleto(reg.id)), evento_id: idDaFala(novaNota) });
   } catch (e) { console.error('[qualidade] POST analista nota falhou:', e); res.status(500).json({ error: 'Erro ao guardar a nota.' }); }
 });
 
@@ -1302,9 +1320,9 @@ router.post('/analista/ocorrencias/:id/encerrar', async (req, res) => {
        ON CONFLICT (registro_id, analista_id) DO UPDATE SET nota = EXCLUDED.nota, obs = EXCLUDED.obs, encerrado_em = NOW(), encerrado_por = EXCLUDED.encerrado_por`,
       [reg.id, String(ag.analistaId), v.valores.nota, v.valores.obs, ag.por]);
     await pool.query('UPDATE cs_qualidade_registros SET analista_nota = $1, analista_obs = $2, analista_em = NOW(), analista_por = $3, tratativa = $1, atualizado_em = NOW() WHERE id = $4', [v.valores.nota, v.valores.obs, ag.por, reg.id]);
-    await registrar(reg.id, ag.por, 'analista_encerrou', textoNota(v.valores));
+    const eventoId = await registrar(reg.id, ag.por, 'analista_encerrou', textoNota(v.valores));
     const seguiu = await tentarAvancarParaValidacao(reg.id, ag.por, ag.analistaNome, req.user.id);
-    res.json({ registro: registroParaQuemAgiu(req.user, ag, await registroCompleto(reg.id)), avancou: seguiu.avancou, pendentes: seguiu.pendentes, filhas_pendentes: seguiu.filhasPendentes });
+    res.json({ evento_id: eventoId, registro: registroParaQuemAgiu(req.user, ag, await registroCompleto(reg.id)), avancou: seguiu.avancou, pendentes: seguiu.pendentes, filhas_pendentes: seguiu.filhasPendentes });
   } catch (e) { console.error('[qualidade] POST analista encerrar falhou:', e); res.status(500).json({ error: 'Erro ao encerrar a tratativa.' }); }
 });
 
@@ -1390,7 +1408,7 @@ router.post('/gestor/ocorrencias/:id/mensagem', async (req, res) => {
     const novaMsg = await registrarUnico(reg.id, req.user.name, 'nota', t);
     const empresa = reg.ocultar_empresa ? 'Empresa não informada' : (reg.cliente_nome || 'Empresa');
     if (novaMsg) avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Mensagem do gestor', texto: (req.user.name || 'O gestor') + ' — ' + empresa + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(t, 120), url: '/cs?aba=analista', tag: 'msg-' + reg.id + '-' + Date.now() }, req.user.id);
-    res.json({ registro: await registroCompleto(reg.id) });
+    res.json({ registro: await registroCompleto(reg.id), evento_id: idDaFala(novaMsg) });
   } catch (e) { console.error('[qualidade] POST mensagem falhou:', e); res.status(500).json({ error: 'Erro ao enviar a mensagem.' }); }
 });
 /** Resposta final ao Sucesso do Cliente (só na matriz). OBSERVAÇÃO: o gestor(a) fala com o Gestor final sem finalizar (ele responde pelo Portal do Sucesso do Cliente e a resposta volta aqui).
@@ -1410,7 +1428,7 @@ router.post('/gestor/ocorrencias/:id/resposta-final', async (req, res) => {
         if (texto0.length > MAX_NOTA) return res.status(400).json({ error: 'A observação passa de ' + MAX_NOTA + ' caracteres.' });
         const novaObs = await registrarUnico(reg.id, req.user.name, 'nota', texto0);
         if (novaObs) avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Observação do gestor', texto: (req.user.name || 'O gestor') + ' — ' + emp + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(texto0, 120), url: '/cs?aba=analista', tag: 'msg-' + reg.id + '-' + Date.now() }, req.user.id);
-        return res.json({ ok: true, registro: await registroCompleto(reg.id) });
+        return res.json({ ok: true, registro: await registroCompleto(reg.id), evento_id: idDaFala(novaObs) });
       }
       const vf = validarEncerramento({ nota: texto0 });
       if (!vf.ok) return res.status(400).json({ error: vf.erro });
@@ -1419,14 +1437,14 @@ router.post('/gestor/ocorrencias/:id/resposta-final', async (req, res) => {
       const upF = await pool.query(`UPDATE cs_qualidade_registros SET etapa = 'encerrada', status = $1, validacao_nota = $2, validacao_obs = NULL, validacao_em = NOW(), validacao_por = $3, validado_em = NOW(), validado_por = $3,
           encerrada_em = NOW(), encerrada_por = $3, resolvido_em = COALESCE(resolvido_em, NOW()), resolvido_por = COALESCE(resolvido_por, $3), atualizado_em = NOW() WHERE id = $4 AND etapa = $5`, [ETAPA_STATUS.encerrada, vf.valores.nota, req.user.name || null, reg.id, reg.etapa]);
       if (!upF.rowCount) return res.status(409).json({ error: JA_MUDOU });
-      await registrar(reg.id, req.user.name, 'gestor_validou', textoNota(vf.valores));
+      const eventoFin = await registrar(reg.id, req.user.name, 'gestor_validou', textoNota(vf.valores));
       if (reg.pai_id) {
         await registrar(reg.pai_id, req.user.name, 'nota', 'Ocorrência vinculada encerrada: ' + (reg.assunto || ''));
         await tentarAvancarParaValidacao(reg.pai_id, req.user.name, null, req.user.id);
       }
       avisarPush(async () => idsAn, { titulo: 'Vínculo encerrado pelo gestor', texto: emp + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(vf.valores.nota, 100), url: '/cs?aba=analista', tag: 'venc-' + reg.id }, req.user.id);
       refrescarRisco();
-      return res.json({ ok: true, finalizada: true });
+      return res.json({ ok: true, finalizada: true, evento_id: eventoFin });
     }
     if (reg.origem !== 'modulo') return res.status(400).json({ error: 'A resposta final é da ocorrência original (a matriz).' });
     if (!(await podeCancelarOuReabrir(req, reg))) return res.status(403).json({ error: 'Só o gestor do departamento, o gestor final ou a administração deixam a resposta final.' });
@@ -1720,7 +1738,7 @@ router.post('/ocorrencias/:id/anexo', express.raw({ type: () => true, limit: MAX
     const dados = Buffer.isBuffer(req.body) ? req.body : null;
     if (!dados || !dados.length) return res.status(400).json({ error: 'Arquivo vazio.' });
     if (dados.length > MAX_ANEXO) return res.status(413).json({ error: 'O arquivo passa de ' + Math.round(MAX_ANEXO / 1048576) + ' MB.' });
-    const n = (await pool.query('SELECT COUNT(*)::int AS n FROM cs_qualidade_anexos WHERE registro_id = $1', [reg.id])).rows[0].n;
+    const n = (await pool.query('SELECT COUNT(*)::int AS n FROM cs_qualidade_anexos WHERE registro_id = $1 AND historico_id IS NULL', [reg.id])).rows[0].n;
     if (n >= MAX_ANEXOS) return res.status(400).json({ error: 'No máximo ' + MAX_ANEXOS + ' arquivos por ocorrência.' });
     const nome = texto(req.query.nome, 150).replace(/[\\/:*?"<>|]/g, '_') || 'arquivo';
     const mime = texto(req.query.tipo, 100) || 'application/octet-stream';   // o arquivo sempre chega como binário; o tipo original vem em ?tipo=
@@ -1729,13 +1747,59 @@ router.post('/ocorrencias/:id/anexo', express.raw({ type: () => true, limit: MAX
   } catch (e) { console.error('[qualidade] POST anexo falhou:', e); res.status(500).json({ error: 'Erro ao guardar o anexo.' }); }
 });
 
+/** Quem pode anexar a uma fala: o autor dela (ou a administração), só nas falas que levam nota — observação, nota final do analista e do gestor — e logo depois de enviá-la. */
+const ACOES_COM_ARQUIVO = ['nota', 'analista_encerrou', 'gestor_validou'];
+const JANELA_ARQUIVO_FALA_MIN = 120;
+function podeAnexarNaFala(user, fala) {
+  if (!user || !fala || !ACOES_COM_ARQUIVO.includes(fala.acao)) return false;
+  if (user.role === 'administrador') return true;
+  const nome = String(user.name || '').trim();
+  return !!nome && String(fala.por || '').startsWith(nome);   // "Fulana" ou, quando a liderança age em nome de alguém, "Fulana (em nome de X)"
+}
+/** Arquivo de uma observação ou nota final de uma ocorrência (matriz ou vinculada). O corpo é o arquivo; o nome vai em ?nome= e o tipo em ?tipo=. Até 5 arquivos de 10 MB por fala. */
+router.post('/ocorrencias/:id/evento/:eventoId/anexo', express.raw({ type: () => true, limit: MAX_ANEXO + 1024 }), async (req, res) => {
+  try {
+    await garantirSchema();
+    if (!/^\d+$/.test(String(req.params.eventoId))) return res.status(400).json({ error: 'Fala inválida.' });
+    const fala = (await pool.query(
+      `SELECT h.id, h.registro_id, h.por, h.acao, (h.em > NOW() - ($3 || ' minutes')::interval) AS recente, r.origem
+         FROM cs_qualidade_historico h JOIN cs_qualidade_registros r ON r.id = h.registro_id WHERE h.id = $1 AND h.registro_id::text = $2`,
+      [req.params.eventoId, String(req.params.id), String(JANELA_ARQUIVO_FALA_MIN)])).rows[0];
+    if (!fala) return res.status(404).json({ error: 'Observação não encontrada.' });
+    if (!['modulo', 'filha'].includes(fala.origem)) return res.status(404).json({ error: 'Observação não encontrada.' });
+    if (!podeAnexarNaFala(req.user, fala)) return res.status(403).json({ error: 'Só quem enviou a observação anexa arquivos a ela.' });
+    if (!fala.recente) return res.status(409).json({ error: 'Os arquivos são anexados logo depois de enviar a observação. Envie uma nova observação com o arquivo.' });
+    const dados = Buffer.isBuffer(req.body) ? req.body : null;
+    if (!dados || !dados.length) return res.status(400).json({ error: 'Arquivo vazio.' });
+    if (dados.length > MAX_ANEXO) return res.status(413).json({ error: 'O arquivo passa de ' + Math.round(MAX_ANEXO / 1048576) + ' MB.' });
+    const n = (await pool.query('SELECT COUNT(*)::int AS n FROM cs_qualidade_anexos WHERE historico_id = $1', [fala.id])).rows[0].n;
+    if (n >= MAX_ANEXOS) return res.status(400).json({ error: 'No máximo ' + MAX_ANEXOS + ' arquivos por observação.' });
+    const nome = texto(req.query.nome, 150).replace(/[\\/:*?"<>|]/g, '_') || 'arquivo';
+    const mime = texto(req.query.tipo, 100) || 'application/octet-stream';
+    const ins = await pool.query('INSERT INTO cs_qualidade_anexos (registro_id, historico_id, nome, mime, tamanho, dados, criado_por) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, nome, tamanho', [fala.registro_id, fala.id, nome, mime, dados.length, dados, req.user.name || null]);
+    res.status(201).json({ anexo: ins.rows[0] });
+  } catch (e) { console.error('[qualidade] POST anexo da observação falhou:', e); res.status(500).json({ error: 'Erro ao guardar o anexo.' }); }
+});
+
+/** Arquivo de uma observação ou nota final: além de quem já vê a ocorrência, o analista responsável por ela e o gestor da ocorrência original (a vinculada pode ser de outro departamento). */
+async function podeVerArquivoDeFala(req, a) {
+  try {
+    if ((await autorizaAgir(req.user, { id: a.registro_id, analista_id: a.analista_id })).ok) return true;
+    if (a.pai_id) {
+      const pai = (await pool.query('SELECT departamentos, fila FROM cs_qualidade_registros WHERE id = $1', [a.pai_id])).rows[0];
+      if (pai && ocorrenciaNoEscopo(await escopoDaRequisicao(req), pai)) return true;
+    }
+  } catch (e) { /* sem permissão confirmada: nega */ }
+  return false;
+}
+
 /** Baixa um anexo (sempre como arquivo para salvar; nunca é aberto dentro do sistema). */
 router.get('/anexo/:anexoId', async (req, res) => {
   try {
     await garantirSchema();
-    const a = (await pool.query('SELECT a.nome, a.mime, a.dados, r.criado_por_id, r.departamentos, r.fila FROM cs_qualidade_anexos a JOIN cs_qualidade_registros r ON r.id = a.registro_id WHERE a.id::text = $1', [String(req.params.anexoId)])).rows[0];
+    const a = (await pool.query('SELECT a.nome, a.mime, a.dados, a.historico_id, a.registro_id, r.criado_por_id, r.departamentos, r.fila, r.analista_id, r.pai_id FROM cs_qualidade_anexos a JOIN cs_qualidade_registros r ON r.id = a.registro_id WHERE a.id::text = $1', [String(req.params.anexoId)])).rows[0];
     if (!a) return res.status(404).json({ error: 'Anexo não encontrado.' });
-    if (!podeEquipe(req.user) && String(a.criado_por_id) !== String(req.user.id) && !ocorrenciaNoEscopo(await escopoDaRequisicao(req), a)) return res.status(403).json({ error: 'Esse anexo não é de uma ocorrência sua nem do seu departamento.' });
+    if (!podeEquipe(req.user) && String(a.criado_por_id) !== String(req.user.id) && !ocorrenciaNoEscopo(await escopoDaRequisicao(req), a) && !(a.historico_id && (await podeVerArquivoDeFala(req, a)))) return res.status(403).json({ error: 'Esse anexo não é de uma ocorrência sua nem do seu departamento.' });
     res.set({ 'Content-Type': a.mime || 'application/octet-stream', 'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(a.nome), 'X-Content-Type-Options': 'nosniff' });
     res.send(a.dados);
   } catch (e) { console.error('[qualidade] GET anexo falhou:', e); res.status(500).json({ error: 'Erro ao baixar o anexo.' }); }
@@ -2048,4 +2112,4 @@ async function rodarAlertasPrazo() {
   });
 }
 
-module.exports = { modoEscopoAnalistas, justificativaSla, podeReabrirEncerrada, matrizAceitaVinculoReaberto, rodarAlertasPrazo, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, analistaFixoPresente, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };
+module.exports = { podeAnexarNaFala, modoEscopoAnalistas, justificativaSla, podeReabrirEncerrada, matrizAceitaVinculoReaberto, rodarAlertasPrazo, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, router, routerAnalista, validarTipo, validarOcorrencia, validarGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, analistaFixoPresente, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, PRIORIDADES, idsResponsaveis, TIPO_PLANO, TIPOS, DEPARTAMENTOS, STATUS, validarRegistro, validarMudanca, situacao, semAcento, hojeBrasilia, mesmoNome, montarPrioridades, segundaDe };

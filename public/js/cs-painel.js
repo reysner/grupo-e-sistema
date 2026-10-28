@@ -1521,7 +1521,7 @@
   function notasHtml(r) {
     var n = r.notas || []; if (!n.length) return '';
     return '<div class="qa-reg-trat">' + n.map(function (x) {
-      return '<div><strong>' + esc(ROT_ACAO_Q[x.acao] || x.acao) + '</strong> · ' + dataHora(x.em) + (x.por ? ' · ' + esc(x.por) : '') + (x.texto && ['analista_encerrou', 'gestor_validou'].indexOf(x.acao) < 0 ? ': ' + esc(x.texto) : '') + '</div>';   // a nota de quem encerra/valida aparece uma vez só, em Devolutivas
+      return '<div><strong>' + esc(ROT_ACAO_Q[x.acao] || x.acao) + '</strong> · ' + dataHora(x.em) + (x.por ? ' · ' + esc(x.por) : '') + (x.texto && ['analista_encerrou', 'gestor_validou'].indexOf(x.acao) < 0 ? ': ' + esc(x.texto) : '') + (x.anexos && x.anexos.length ? anexosQ({ anexos: x.anexos }) : '') + '</div>';   // a nota de quem encerra/valida aparece uma vez só, em Devolutivas; os arquivos ficam na própria fala
     }).join('') + '</div>';
   }
   /** Selo das ocorrências abertas pela ficha da empresa ("Considerações Sucesso do Cliente / Time Operacional (Plano de ação)"): mesmo processo da Qualidade, mas informativas (não pesam no risco). */
@@ -1908,6 +1908,35 @@
     var a = ev.target && ev.target.closest ? ev.target.closest('[data-anexo]') : null;
     if (a) { ev.preventDefault(); baixarAnexoQ(a.getAttribute('data-anexo'), a.getAttribute('data-nome')); }
   });
+  /** Arquivos que acompanham uma observação ou nota final (analista e gestor, nas ocorrências e nos vínculos): até 5 por fala, 10 MB cada. */
+  var MAX_ARQ_FALA = 5, MAX_ARQ_FALA_BYTES = 10 * 1024 * 1024;
+  function campoArquivosQ(id) {
+    return '<div class="qa-campo"><label for="' + id + '">Anexar arquivos <span class="cinza">(opcional)</span></label><input type="file" id="' + id + '" multiple><div class="cinza qa-oc-dica">Até ' + MAX_ARQ_FALA + ' arquivos de ' + Math.round(MAX_ARQ_FALA_BYTES / 1048576) + ' MB cada. Vão junto com a observação ou a nota final.</div></div>';
+  }
+  /** Confere os arquivos escolhidos ANTES de enviar o texto (para não gravar a observação e perder o anexo). Devolve a mensagem de erro, ou '' se está certo. */
+  function erroArquivosQ(input) {
+    var fs = input && input.files ? Array.prototype.slice.call(input.files) : [];
+    if (fs.length > MAX_ARQ_FALA) return 'Só é possível anexar até ' + MAX_ARQ_FALA + ' arquivos.';
+    var grande = fs.filter(function (f) { return f.size > MAX_ARQ_FALA_BYTES; })[0];
+    if (grande) return 'O arquivo "' + grande.name + '" passa de ' + Math.round(MAX_ARQ_FALA_BYTES / 1048576) + ' MB.';
+    var vazio = fs.filter(function (f) { return !f.size; })[0];
+    if (vazio) return 'O arquivo "' + vazio.name + '" está vazio.';
+    return '';
+  }
+  /** Envia os arquivos escolhidos para a fala (observação ou nota final) que acabou de ser gravada. Devolve a lista de falhas (vazia se tudo subiu). */
+  async function subirArquivosFalaQ(regId, eventoId, input) {
+    var fs = input && input.files ? Array.prototype.slice.call(input.files) : [], falhas = [];
+    if (!fs.length) return falhas;
+    if (!eventoId) return ['A observação já tinha sido enviada: os arquivos não foram anexados. Envie de novo com o arquivo.'];
+    for (var i = 0; i < fs.length; i++) {
+      try {
+        var ra = await chamarApi('/api/cs/painel/qualidade/ocorrencias/' + encodeURIComponent(regId) + '/evento/' + encodeURIComponent(eventoId) + '/anexo?nome=' + encodeURIComponent(fs[i].name) + '&tipo=' + encodeURIComponent(fs[i].type || ''), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: fs[i] });
+        if (!ra.ok) { var ja = await ra.json().catch(function () { return {}; }); falhas.push(fs[i].name + ': ' + (ja.error || 'falhou')); }
+      } catch (e) { falhas.push(fs[i].name + ': sem conexão'); }
+    }
+    return falhas;
+  }
+  function avisarFalhasArquivosQ(falhas) { if (falhas && falhas.length) window.alert('A observação foi enviada, mas nem todos os arquivos subiram:\n' + falhas.join('\n')); }
 
   /** Quadro "Como a Tratativa pesa no risco de churn": só o administrador vê; o peso de cada tipo se edita aqui e tipos novos já entram no formulário. */
   /** O resumo de como as ocorrências pesam no termômetro Ocorrências do risco (texto único, usado na janela de Tipos de registro). */
@@ -2768,6 +2797,7 @@
         (f.respostas || []).map(function (x) { return '<div class="qa-reg-trat"><strong>' + esc(x.nome || 'Analista') + ':</strong> ' + esc(x.nota) + (x.obs ? '<div class="cinza" style="margin-top:3px"><em>Observação:</em> ' + esc(x.obs) + '</div>' : '') + '</div>'; }).join('') +
         (f.validacao_nota ? '<div class="qa-reg-trat"><strong>Validação do gestor:</strong> ' + esc(f.validacao_nota) + '</div>' : '') +
         (f.anotacoes || []).map(function (a) { return '<div class="cinza" style="font-size:12px;margin-top:3px">' + dataHora(a.em) + ' · ' + esc(a.por || '—') + ': ' + esc(a.texto) + '</div>'; }).join('') +
+        ((f.arquivos || []).length ? '<div class="cinza" style="font-size:12px;margin-top:6px">Arquivos enviados no vínculo:</div>' + '<div class="qa-anexos">' + f.arquivos.map(function (x) { return '<a href="#" data-anexo="' + esc(x.id) + '" data-nome="' + esc(x.nome) + '" title="Baixar o arquivo">📎 ' + esc(x.nome) + ' <span class="cinza">(' + tamanhoTxt(x.tamanho) + (x.por ? ' · ' + esc(x.por) : '') + ')</span></a>'; }).join('') + '</div>' : '') +
         (comReabrir && f.etapa === 'encerrada' && ['devolutiva_cliente', 'encerrada', 'cancelada'].indexOf(r.etapa) < 0 ? '<button type="button" class="gp-footer-btn" data-reabrir-filha="' + esc(f.id) + '" style="width:auto;margin-top:6px" title="Use se não concordar com o parecer final do analista">Reabrir este vínculo</button>' : '') + '</div>';
     }).join('');
     return h;
@@ -3186,7 +3216,7 @@
       '<div class="ficha-sec">Observação e finalizar</div>' + quem +
       '<div class="qa-campo"><div style="display:flex;gap:18px;flex-wrap:wrap;margin:4px 0 8px"><label class="qa-dep"><input type="radio" name="ao-modo" value="obs" checked> <strong>Observação</strong> <span class="cinza">(deixa uma observação ao gestor(a), sem finalizar)</span></label>' +
       '<label class="qa-dep"><input type="radio" name="ao-modo" value="fin"> <strong>Finalizar</strong> <span class="cinza">(nota final: encerra a sua parte)</span></label></div>' +
-      '<label for="ao-texto">Sua observação ou nota final <span class="cinza" id="ao-cont">0/2000</span></label><textarea id="ao-texto" rows="4" maxlength="2000" placeholder="O gestor(a) recebe aviso e responde aqui. Ao finalizar, esta nota fica como a sua resposta."></textarea>' +
+      '<label for="ao-texto">Sua observação ou nota final <span class="cinza" id="ao-cont">0/2000</span></label><textarea id="ao-texto" rows="4" maxlength="2000" placeholder="O gestor(a) recebe aviso e responde aqui. Ao finalizar, esta nota fica como a sua resposta."></textarea>' + campoArquivosQ('ao-arq') +
       (r.origem === 'filha' ? '<div class="qa-obs" style="margin:6px 0">ℹ Ao <strong>Finalizar</strong>, esta ocorrência vinculada é concluída' + (rs.length > 1 ? ' quando todos os responsáveis tiverem finalizado' : '') + ' e ajuda a liberar a original para a resposta final do gestor(a).</div>' : '<div class="qa-obs" style="margin:6px 0">ℹ Ao <strong>Finalizar</strong>, a ocorrência vai para a validação do seu gestor' + (rs.length > 1 ? ' quando todos os responsáveis tiverem finalizado' : '') + '; depois, para o Sucesso do Cliente fazer a devolutiva ao cliente.</div>') +
       '<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><button type="button" class="gp-footer-btn" id="ao-enviar" style="width:auto">Enviar observação ao gestor(a)</button><span class="cinza" id="ao-ok" style="font-size:12px"></span></div></div>' +
       '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="ao-cancel">Fechar</button></div>' +
@@ -3213,10 +3243,17 @@
       if ($('ao-enviar').disabled) return;
       erro.textContent = ''; var fin = modo() === 'fin', t = tx.value.trim();
       if (t.length < (fin ? 5 : 3)) { erro.textContent = fin ? 'Deixe a nota do que foi feito (mínimo de 5 caracteres).' : 'Escreva a observação (mínimo de 3 caracteres).'; return; }
+      var erroArq = erroArquivosQ($('ao-arq')); if (erroArq) { erro.textContent = erroArq; return; }
       if (!fin) {   // Observação: o gestor(a) recebe aviso; a janela se atualiza na hora e o campo é limpo
         $('ao-enviar').disabled = true;
         var x1 = await postarQ(url + '/nota', { texto: t });
         if (!x1.ok) { erro.textContent = x1.j.error || 'Não foi possível enviar a observação.'; $('ao-enviar').disabled = false; return; }
+        if ($('ao-arq').files.length) {   // com arquivo: sobe junto e recarrega a ocorrência para a fala já aparecer com o anexo
+          $('ao-ok').textContent = 'Enviando os arquivos…';
+          avisarFalhasArquivosQ(await subirArquivosFalaQ(r.id, x1.j.evento_id, $('ao-arq')));
+          estado.a.dados = null; fechar(); await desenharAnalista(); abrirOcorrenciaAnalista(r.id);
+          return;
+        }
         var regs = (estado.a.dados && estado.a.dados.registros) || [], pos = -1;
         regs.forEach(function (q, i) { if (String(q.id) === String(r.id)) pos = i; });
         if (pos >= 0 && x1.j.registro) { regs[pos] = x1.j.registro; fechar(); abrirOcorrenciaAnalista(r.id); } else fechar();
@@ -3227,6 +3264,7 @@
       var b = $('ao-enviar'); b.disabled = true;
       var x = await postarQ(url + '/encerrar', { nota: t, analista_id: $('ao-quem') ? $('ao-quem').value : undefined });
       if (!x.ok) { erro.textContent = x.j.error || 'Não foi possível finalizar.'; b.disabled = false; return; }
+      if ($('ao-arq').files.length) { $('ao-ok').textContent = 'Enviando os arquivos…'; avisarFalhasArquivosQ(await subirArquivosFalaQ(r.id, x.j.evento_id, $('ao-arq'))); }
       estado.a.dados = null; fechar(); desenharAnalista();
       var j = x.j || {};
       if (!j.avancou) {
@@ -3508,7 +3546,7 @@
     if (r.origem !== 'filha' || ['com_analista', 'validacao_gestor'].indexOf(r.etapa) < 0) return '';
     return '<div class="ficha-sec">Observação e finalizar</div><div class="qa-campo"><div style="display:flex;gap:18px;flex-wrap:wrap;margin:4px 0 8px"><label class="qa-dep"><input type="radio" name="gt-vf-modo" value="obs" checked> <strong>Observação</strong> <span class="cinza">(para o analista, sem finalizar)</span></label>' +
       '<label class="qa-dep"><input type="radio" name="gt-vf-modo" value="fin"> <strong>Finalizar</strong> <span class="cinza">(nota final: encerra este vínculo)</span></label></div>' +
-      '<label for="gt-vf">Sua observação ou nota final <span class="cinza" id="gt-vf-cont">0/2000</span></label><textarea id="gt-vf" rows="4" maxlength="2000" placeholder="O analista recebe aviso e responde com uma observação. Ao finalizar, o vínculo é encerrado com esta nota."></textarea>' +
+      '<label for="gt-vf">Sua observação ou nota final <span class="cinza" id="gt-vf-cont">0/2000</span></label><textarea id="gt-vf" rows="4" maxlength="2000" placeholder="O analista recebe aviso e responde com uma observação. Ao finalizar, o vínculo é encerrado com esta nota."></textarea>' + campoArquivosQ('gt-vf-arq') +
       '<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><button type="button" class="gp-footer-btn" id="gt-vf-enviar" style="width:auto">Enviar observação ao analista</button><span class="cinza" id="gt-vf-ok" style="font-size:12px"></span></div></div>';
   }
   /** Matriz: "Observação com o analista". O gestor(a) escolhe um vínculo aberto e escreve ao analista dele; as observações do analista aparecem no andamento de cada vinculada (acima). */
@@ -3519,7 +3557,7 @@
     if (!fs.length) return titulo + '<div class="cinza" style="font-size:12px;margin:4px 0 8px">Abra uma ocorrência vinculada para conversar com o analista: as observações dele chegam aqui, no andamento de cada vinculada.</div>';
     if (!abertas.length) return titulo + '<div class="cinza" style="font-size:12px;margin:4px 0 8px">Todas as vinculadas estão encerradas (as observações dos analistas estão no andamento de cada uma, acima). Para falar com um analista de novo, abra outra vinculada.</div>';
     return titulo + '<div class="qa-campo"><label for="gt-oa-para">Para qual analista</label><select id="gt-oa-para" class="gp-select">' + abertas.map(function (f) { return '<option value="' + esc(f.id) + '">' + esc((f.analista_nome || 'Analista') + ' — ' + (f.assunto || 'vinculada')) + '</option>'; }).join('') + '</select>' +
-      '<label for="gt-oa" style="margin-top:6px">Sua observação <span class="cinza" id="gt-oa-cont">0/1000</span></label><textarea id="gt-oa" rows="3" maxlength="1000" placeholder="O analista recebe aviso, vê no vínculo dele e responde com uma observação."></textarea>' +
+      '<label for="gt-oa" style="margin-top:6px">Sua observação <span class="cinza" id="gt-oa-cont">0/1000</span></label><textarea id="gt-oa" rows="3" maxlength="1000" placeholder="O analista recebe aviso, vê no vínculo dele e responde com uma observação."></textarea>' + campoArquivosQ('gt-oa-arq') +
       '<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><button type="button" class="gp-footer-btn" id="gt-oa-enviar" style="width:auto">Enviar observação ao analista</button><span class="cinza" id="gt-oa-ok" style="font-size:12px"></span></div></div>' +
       '<div id="dlg-oa"></div>';
   }
@@ -3598,13 +3636,16 @@
         if ($('gt-oa-enviar').disabled) return;
         var okl = $('gt-oa-ok'); okl.textContent = '';
         var t = oa.value.trim(); if (t.length < 3) { okl.textContent = 'Escreva a observação (mínimo de 3 caracteres).'; return; }
+        var erroArqO = erroArquivosQ($('gt-oa-arq')); if (erroArqO) { okl.textContent = erroArqO; return; }
         var sel = $('gt-oa-para'), idF = sel.value, nomeF = sel.options[sel.selectedIndex].text;
         $('gt-oa-enviar').disabled = true;
         var x = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(idF) + '/mensagem', { texto: t });
+        if (!x.ok) { $('gt-oa-enviar').disabled = false; okl.textContent = x.j.error || 'Não foi possível enviar a observação.'; return; }
+        var nArqO = $('gt-oa-arq').files.length;
+        if (nArqO) { okl.textContent = 'Enviando os arquivos…'; avisarFalhasArquivosQ(await subirArquivosFalaQ(idF, x.j.evento_id, $('gt-oa-arq'))); }
         $('gt-oa-enviar').disabled = false;
-        if (!x.ok) { okl.textContent = x.j.error || 'Não foi possível enviar a observação.'; return; }
-        $('dlg-oa').insertAdjacentHTML('beforeend', '<div class="qa-reg-trat"><strong>Você → ' + esc(nomeF) + ' · ' + dataHora(new Date().toISOString()) + ':</strong> ' + esc(t) + '</div>');
-        oa.value = ''; $('gt-oa-cont').textContent = '0/1000'; okl.textContent = '✔ Enviada. O analista recebe aviso e responde com uma observação no vínculo dele.';
+        $('dlg-oa').insertAdjacentHTML('beforeend', '<div class="qa-reg-trat"><strong>Você → ' + esc(nomeF) + ' · ' + dataHora(new Date().toISOString()) + ':</strong> ' + esc(t) + (nArqO ? ' <span class="cinza">📎 ' + nArqO + ' arquivo' + (nArqO > 1 ? 's' : '') + '</span>' : '') + '</div>');
+        oa.value = ''; $('gt-oa-arq').value = ''; $('gt-oa-cont').textContent = '0/1000'; okl.textContent = '✔ Enviada. O analista recebe aviso e responde com uma observação no vínculo dele.';
       });
     }
     if ($('gt-vf-enviar')) {   // vínculo: Observação (ao analista) ou Finalizar (encerra o vínculo)
@@ -3617,11 +3658,15 @@
         if ($('gt-vf-enviar').disabled) return;
         var okv = $('gt-vf-ok'); okv.textContent = ''; var finV = modoVf() === 'fin';
         if (vf.value.trim().length < (finV ? 5 : 3)) { okv.textContent = finV ? 'Escreva a nota final (mínimo de 5 caracteres).' : 'Escreva a observação (mínimo de 3 caracteres).'; return; }
+        var erroArqV = erroArquivosQ($('gt-vf-arq')); if (erroArqV) { okv.textContent = erroArqV; return; }
         if (finV && !window.confirm('Finalizar este vínculo? Ele é encerrado com esta nota, mesmo que o analista ainda não tenha finalizado.')) return;
         $('gt-vf-enviar').disabled = true;
         var xv = await postarQ(urlVf, { acao: finV ? 'finalizar' : 'observacao', texto: vf.value });
         if (!xv.ok) { okv.textContent = xv.j.error || 'Não foi possível enviar.'; $('gt-vf-enviar').disabled = false; return; }
+        var temArqV = $('gt-vf-arq').files.length > 0;
+        if (temArqV) { okv.textContent = 'Enviando os arquivos…'; avisarFalhasArquivosQ(await subirArquivosFalaQ(r.id, xv.j.evento_id, $('gt-vf-arq'))); }
         if (finV) { estado.g.dados = null; fechar(); desenharGestor(); return; }
+        if (temArqV) { estado.g.dados = null; fechar(); await desenharGestor(); abrirOcorrenciaGestor(r.id); return; }   // recarrega para a observação já aparecer com o arquivo
         var regsV = (estado.g && estado.g.dados && estado.g.dados.registros) || [];
         regsV.forEach(function (q, i) { if (String(q.id) === String(r.id) && xv.j.registro) regsV[i] = xv.j.registro; });
         fechar(); abrirOcorrenciaGestor(r.id);   // a janela volta com a observação já no histórico

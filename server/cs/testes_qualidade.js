@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { modoEscopoAnalistas, justificativaSla, podeReabrirEncerrada, matrizAceitaVinculoReaberto, analistaFixoPresente, TIPO_PLANO, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { podeAnexarNaFala, modoEscopoAnalistas, justificativaSla, podeReabrirEncerrada, matrizAceitaVinculoReaberto, analistaFixoPresente, TIPO_PLANO, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -576,6 +576,38 @@ teste('revisão de velocidade: justificativa lista as etapas que passaram do pra
   assert.deepStrictEqual(justificativasRelogios({ relogios: [{ tipo: 'aceite', minutos_uteis: 2, limite: 15, status: 'verde' }] }), []);
   assert.deepStrictEqual(justificativasRelogios(null), []);
   assert.strictEqual(horaBrasilia('2026-10-21T18:31:00.000Z'), '15:31');
+});
+teste('arquivo na observação ou nota final: só o autor da fala anexa, só em falas de nota, e a rota está aberta a gestor e analista', () => {
+  const fala = (por, acao) => ({ por, acao });
+  const polyanna = { name: 'Polyanna', role: 'usuario' }, denisa = { name: 'Denisa', role: 'usuario' }, adm = { name: 'Admin', role: 'administrador' };
+  assert.strictEqual(podeAnexarNaFala(polyanna, fala('Polyanna', 'nota')), true, 'autora anexa na observação');
+  assert.strictEqual(podeAnexarNaFala(polyanna, fala('Polyanna', 'analista_encerrou')), true, 'e na nota final do analista');
+  assert.strictEqual(podeAnexarNaFala(denisa, fala('Denisa', 'gestor_validou')), true, 'gestor anexa na nota final do vínculo');
+  assert.strictEqual(podeAnexarNaFala(polyanna, fala('Denisa', 'nota')), false, 'ninguém anexa na fala de outra pessoa');
+  assert.strictEqual(podeAnexarNaFala(polyanna, fala('Polyanna', 'iniciada')), false, 'só falas que levam nota aceitam arquivo');
+  assert.strictEqual(podeAnexarNaFala(polyanna, fala('Polyanna', 'dialogo_final')), false, 'a conversa com o Gestor final não leva arquivo');
+  assert.strictEqual(podeAnexarNaFala({ name: '', role: 'usuario' }, fala('', 'nota')), false, 'sem nome não dá para provar autoria');
+  assert.strictEqual(podeAnexarNaFala(polyanna, fala('Polyannaxyz', 'nota')), true, 'prefixo do nome vale (liderança agindo em nome de alguém grava "Nome (em nome de X)")');
+  assert.strictEqual(podeAnexarNaFala(polyanna, null), false);
+  assert.strictEqual(podeAnexarNaFala(adm, fala('Outra pessoa', 'nota')), true, 'administração anexa onde precisar');
+  assert.strictEqual(rotaAbertaGestorAnalista('POST', '/ocorrencias/u1/evento/42/anexo'), true);
+  assert.strictEqual(rotaAbertaGestorAnalista('GET', '/ocorrencias/u1/evento/42/anexo'), false);
+  assert.strictEqual(rotaAbertaGestorAnalista('POST', '/ocorrencias/u1/evento/42'), false);
+  assert.strictEqual(rotaAbertaGestorAnalista('POST', '/ocorrencias/u1/outro/42/anexo'), false);
+});
+teste('arquivos das falas: a rota confere a fala, o prazo e os limites, e o que sobe fica ligado à fala (não à ocorrência)', () => {
+  const fonte = require('fs').readFileSync(require('path').join(__dirname, 'qualidade.js'), 'utf8');
+  const i = fonte.indexOf("router.post('/ocorrencias/:id/evento/:eventoId/anexo'"), j = fonte.indexOf("router.get('/anexo/:anexoId'", i);
+  assert.ok(i > 0 && j > i, 'rota de arquivo da fala existe');
+  const rota = fonte.slice(i, j);
+  assert.ok(/h\.registro_id::text = \$2/.test(rota), 'a fala tem de ser da ocorrência da URL');
+  assert.ok(rota.includes('podeAnexarNaFala(req.user, fala)') && rota.includes('fala.recente') && rota.includes('MAX_ANEXO') && rota.includes('MAX_ANEXOS'), 'autoria, janela de tempo e limites');
+  assert.ok(rota.includes('INSERT INTO cs_qualidade_anexos (registro_id, historico_id'), 'o arquivo é gravado ligado à fala');
+  assert.ok(/historico_id IS NULL/.test(fonte), 'os arquivos das falas não entram na lista nem na conta de arquivos da ocorrência');
+  ['/analista/ocorrencias/:id/nota', '/analista/ocorrencias/:id/encerrar', '/gestor/ocorrencias/:id/mensagem'].forEach((rt) => {
+    const a = fonte.indexOf("router.post('" + rt + "'"); assert.ok(a > 0, rt);
+    assert.ok(fonte.slice(a, a + 5200).includes('evento_id'), rt + ' devolve o id da fala para o anexo');
+  });
 });
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);
