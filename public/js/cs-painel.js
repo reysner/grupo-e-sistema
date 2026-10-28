@@ -563,13 +563,15 @@
         kpi('#6b7280', 'Fora do churn', p.fora_do_churn.baixas + p.fora_do_churn.outras_saidas, 'baixas e outras saídas') +
       '</div>' +
       '<div class="nota">Período de <strong>' + data(p.ini) + '</strong> a <strong>' + data(p.fim) + '</strong>. Contam como churn as saídas cujo motivo no Acessórias começa com: <strong>' + d.churn.padroes.map(esc).join('</strong>, <strong>') + '</strong>. Baixas não contam. Quando o Acessórias não informa o motivo, a situação do CNPJ na Receita ajuda a separar baixa de transferência; o que não for possível é presumido como transferência (marcado "presumida"; o administrador pode trocar para baixa). Só CNPJ.</div>' +
-      '<div class="card"><div class="card-title">Saídas do período</div><div class="card-sub">Clique na aba para ver cada tipo de saída.</div>' +
+      '<div class="card"><div class="card-title">Saídas do período</div><div class="card-sub">Clique na aba para ver cada tipo de saída.' +
+        (ehAdminPainel() && mostraMotivo ? ' <button type="button" class="gp-footer-btn" id="btn-gerenciar-lista" style="width:auto;padding:3px 10px;display:inline-flex" title="Incluir, editar ou excluir os motivos de churn da lista">Gerenciar lista</button>' : '') + '</div>' +
         '<div class="tabs" id="abas-churn">' + abas.map(function (a) { return '<button data-aba="' + a[0] + '" class="' + (estado.abaChurn === a[0] ? 'active' : '') + '">' + a[1] + ' (' + cont(a[0]) + ')</button>'; }).join('') + '</div>' +
         (lista.length ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="c">Entrada</th><th class="c">Saída</th><th class="c">Tipo</th>' + (mostraMotivo ? '<th>Motivo do churn</th>' : '') + (decide ? '<th class="c">Decisão</th>' : '') + '</tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<div class="vazio">Nenhuma saída deste tipo no período.</div>') +
       '</div>' +
       '<div class="gp-chart-card"><div class="gp-chart-title">Churn mês a mês — últimos 12 meses</div><div class="gp-chart-wrap"><canvas id="g-churn2"></canvas></div></div>';
     ligarSelectsMotivo('#sec-churn', function () { desenharChurn(); });
     var gm = $('btn-gerenciar-motivos'); if (gm) gm.addEventListener('click', function () { abrirGerenciarMotivosChurn(function () { desenharChurn(); }); });
+    var gl = $('btn-gerenciar-lista'); if (gl) gl.addEventListener('click', function () { abrirGerenciarMotivosChurn(function () { desenharChurn(); }); });
     Array.prototype.forEach.call(document.querySelectorAll('#sec-churn [data-decide]'), function (b) {
       b.addEventListener('click', function () { decidirSaida(b.getAttribute('data-id'), b.getAttribute('data-decide'), b.getAttribute('data-nome'), b.getAttribute('data-saida')); });
     });
@@ -670,7 +672,7 @@
     };
     return '<div class="card"><div class="card-title">Churn por motivo' + (tituloExtra || '') + '</div><div class="card-sub">' + contam.length + ' saída(s) que contam no churn' +
       (sem ? ' · <strong style="color:#b45309">' + sem + ' sem motivo classificado</strong>' : '') + '. O motivo é escolhido na lista da tabela de saídas.' +
-      (ehAdminPainel() ? ' <button type="button" class="gp-footer-btn" id="btn-gerenciar-motivos" style="width:auto;padding:3px 10px;display:inline-flex">Gerenciar motivos</button>' : '') + '</div>' +
+      (ehAdminPainel() ? ' <button type="button" class="gp-footer-btn" id="btn-gerenciar-motivos" style="width:auto;padding:3px 10px;display:inline-flex">Gerenciar lista</button>' : '') + '</div>' +
       (lista.length || sem ? '<div class="table-wrap"><table><thead><tr><th>Motivo</th><th class="c">Saídas</th><th class="c">%</th><th></th></tr></thead><tbody>' +
         lista.map(function (x) { return linha(esc(x.nome), x.qtd, '#dc2626aa'); }).join('') + (sem ? linha('<span class="cinza">Sem motivo classificado</span>', sem, '#9ca3af') : '') + '</tbody></table></div>'
         : '<div class="vazio">Nenhuma saída que conta no período.</div>') + '</div>';
@@ -682,11 +684,12 @@
     var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); carregarMotivosChurn(true).then(function () { if (aoFechar) aoFechar(); }); };
     var desenhar = async function () {
       var j = await api('/api/motivos-churn');
-      ov.innerHTML = '<div class="qa-modal" role="dialog" aria-label="Gerenciar motivos de churn"><div class="qa-modal-topo"><strong>Gerenciar motivos de churn</strong><button type="button" class="qa-x" id="mc-fechar" aria-label="Fechar">✕</button></div>' +
-        '<div class="cinza" style="font-size:12px;margin-bottom:10px">É a mesma lista de "Motivo do Churn" da Gestão de Clientes. Desativar tira o motivo das escolhas, mas mantém nas saídas já classificadas.</div>' +
+      ov.innerHTML = '<div class="qa-modal" role="dialog" aria-label="Gerenciar lista de motivos de churn"><div class="qa-modal-topo"><strong>Gerenciar lista de motivos de churn</strong><button type="button" class="qa-x" id="mc-fechar" aria-label="Fechar">✕</button></div>' +
+        '<div class="cinza" style="font-size:12px;margin-bottom:10px">É a mesma lista de "Motivo do Churn" da Gestão de Clientes. <b>Editar</b> muda o nome também nas saídas já classificadas. Desativar tira o motivo das escolhas, mas mantém nas saídas já classificadas. Excluir só apaga da lista.</div>' +
         '<div class="qa-modal-novo"><input id="mc-novo" type="text" maxlength="120" placeholder="Novo motivo (ex.: Churn por mudança de cidade)"><button type="button" class="gp-footer-btn" id="mc-add" style="width:auto">+ Adicionar</button></div>' +
         '<div class="qa-modal-lista">' + j.motivos.map(function (m) {
           return '<div class="qa-an-linha"><span class="' + (m.ativo ? '' : 'qa-an-inativo') + '" style="flex:1;min-width:0">' + esc(m.nome) + '</span><span class="qa-an-acoes">' +
+            '<button type="button" class="gp-footer-btn" data-medit="' + esc(m.id) + '" data-nome="' + esc(m.nome) + '" style="width:auto">Editar</button>' +
             '<button type="button" class="gp-footer-btn" data-mtog="' + esc(m.id) + '" data-ativo="' + (m.ativo ? '1' : '0') + '" style="width:auto">' + (m.ativo ? 'Desativar' : 'Reativar') + '</button>' +
             '<button type="button" class="gp-footer-btn qa-excluir" data-mdel="' + esc(m.id) + '" data-nome="' + esc(m.nome) + '" style="width:auto">Excluir</button></span></div>';
         }).join('') + '</div><div class="pop-erro" id="mc-erro" role="alert"></div></div>';
@@ -702,6 +705,16 @@
         var nome = $('mc-novo').value.replace(/\s+/g, ' ').trim();
         if (!nome) { falha('Digite o motivo.'); return; }
         if (await enviar('POST', '/api/motivos-churn', { nome: nome })) desenhar();
+      });
+      Array.prototype.forEach.call(ov.querySelectorAll('[data-medit]'), function (b) {
+        b.addEventListener('click', async function () {
+          var atual = b.getAttribute('data-nome');
+          var novo = window.prompt('Novo nome do motivo (muda também nas saídas já classificadas):', atual);
+          if (novo === null) return;
+          novo = novo.replace(/\s+/g, ' ').trim();
+          if (!novo || novo === atual) return;
+          if (await enviar('PATCH', '/api/motivos-churn/' + encodeURIComponent(b.getAttribute('data-medit')), { nome: novo })) desenhar();
+        });
       });
       Array.prototype.forEach.call(ov.querySelectorAll('[data-mtog]'), function (b) {
         b.addEventListener('click', async function () { if (await enviar('PATCH', '/api/motivos-churn/' + encodeURIComponent(b.getAttribute('data-mtog')), { ativo: b.getAttribute('data-ativo') !== '1' })) desenhar(); });
@@ -754,7 +767,7 @@
         '<div class="card"><div class="card-title">Leitura do mês</div><ul style="margin:6px 0 0 18px;line-height:1.7;font-size:13px">' + f.leitura.map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') + '</ul></div>' +
         '<div class="card"><div class="card-title">Churn por motivo no mês</div>' +
           (f.motivos.length ? '<div class="table-wrap"><table><thead><tr><th>Motivo</th><th class="c">Saídas</th><th class="c">%</th></tr></thead><tbody>' + motivos + '</tbody></table></div>' : '<div class="vazio">Nenhuma saída classificada neste mês ainda.</div>') +
-          (ehAdminPainel() ? '<div style="margin-top:10px"><button type="button" class="gp-footer-btn" id="btn-gerenciar-motivos-f" style="width:auto">Gerenciar motivos</button></div>' : '') + '</div>';
+          (ehAdminPainel() ? '<div style="margin-top:10px"><button type="button" class="gp-footer-btn" id="btn-gerenciar-motivos-f" style="width:auto">Gerenciar lista</button></div>' : '') + '</div>';
       Array.prototype.forEach.call(document.querySelectorAll('#abas-fech button'), function (b) { b.addEventListener('click', function () { desenharFechamento(b.getAttribute('data-mes')); }); });
       var g = $('btn-gerenciar-motivos-f'); if (g) g.addEventListener('click', function () { abrirGerenciarMotivosChurn(function () { desenharFechamento(f.mes); }); });
       ligarSelectsMotivo('#visao-fechamento', function () { desenharFechamento(f.mes); desenharChurn(); });

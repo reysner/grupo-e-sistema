@@ -87,7 +87,7 @@ router.use(requireAuth, soEquipe);
 
 async function motivosAtivos() {
   // a lista é a da Gestão de Clientes; se ainda não foi criada (primeira vez), o router dela semeia na primeira leitura
-  try { return (await pool.query('SELECT id, nome FROM motivos_churn WHERE ativo = TRUE ORDER BY nome')).rows; }
+  try { await require('../routes/motivos-churn').garantirTabela(); return (await pool.query('SELECT id, nome FROM motivos_churn WHERE ativo = TRUE ORDER BY nome')).rows; }
   catch (e) { return []; }
 }
 
