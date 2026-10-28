@@ -730,6 +730,7 @@ router.post('/legalizacao/procuracoes/importar', async (req, res) => {
 const PROTOCOLO_ABERTO = new Set(['T', 'L', 'E', 'I']);   // Tramitando, Parecer disponível, Retorno, Pendência (P = cancelado por falta de pagamento; Q/A/R = encerrados)
 const ehModeloAlvaraSanitario = (m) => /alvar[aá]\s+sanit[aá]rio/i.test(String(m || '')) && !/dispensa|prorroga|desarquiv/i.test(String(m || ''));
 const PROTOCOLO_AUTOMATICO = 'Protocolo Online (automático)';
+const PROTOCOLO_MAX_DIAS_PARADO = 180;
 
 async function aplicarProtocolosOnline(lista) {
   await ensureLegalizacaoSchema();
@@ -756,8 +757,12 @@ async function aplicarProtocolosOnline(lista) {
 
   // processo de alvará sanitário em andamento, o mais recente por documento (CNPJ da pessoa e, se houver, do estabelecimento)
   const porDoc = new Map();
+  let parados = 0;
   for (const i of itens) {
     if (!ehModeloAlvaraSanitario(i.modelo) || !PROTOCOLO_ABERTO.has(i.cod)) continue;
+    // "Tramitando" sem movimentação há mais de 180 dias é processo esquecido no portal (há de 2023), não renovação em andamento: não esconde o vencimento
+    const ultimoMov = Date.parse(i.ult || i.data || '');
+    if (!(ultimoMov > 0) || (Date.now() - ultimoMov) / 86400000 > PROTOCOLO_MAX_DIAS_PARADO) { parados++; continue; }
     for (const d of new Set([i.cnpj, i.cnpjEstab].filter((v) => v.length === 14))) {
       const a = porDoc.get(d); if (!a || String(i.data) > String(a.data)) porDoc.set(d, i);
     }
@@ -786,7 +791,7 @@ async function aplicarProtocolosOnline(lista) {
   const { rowCount: removidos } = await pool.query(
     `UPDATE legalizacao_alvaras SET protocolo_numero = NULL, protocolo_em = NULL, protocolo_por = NULL, protocolo_venc_ref = NULL, protocolo_info = NULL, atualizado_em = NOW()
       WHERE tipo = 'sanitario' AND protocolo_por = $1 AND cliente_id <> ALL($2::text[])`, [PROTOCOLO_AUTOMATICO, idsAbertos]);
-  const resumo = { solicitacoes: itens.length, alvaras_sanitarios_em_andamento: porDoc.size, aplicados: aplicados.length, removidos, sem_cliente_ativo: docs.length - clientes.length, fora_da_janela: foraDaJanela.length };
+  const resumo = { solicitacoes: itens.length, alvaras_sanitarios_em_andamento: porDoc.size, aplicados: aplicados.length, removidos, sem_cliente_ativo: docs.length - clientes.length, fora_da_janela: foraDaJanela.length, parados_ha_mais_de_180_dias: parados };
   await registrarRotinaLegalizacao('protocolo_online', { total: itens.length, ok: itens.length, falhas: 0, resumo });
   return { ok: true, ...resumo, empresas: aplicados.slice(0, 80) };
 }
