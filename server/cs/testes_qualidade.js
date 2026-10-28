@@ -650,5 +650,13 @@ teste('vínculo entre departamentos: o servidor segura o vínculo no gestor rece
   assert.ok(fonte.slice(d0, d1).includes('if (reg.encaminhada)'), 'não se devolve ao analista um vínculo encaminhado (ele não tem analista próprio)');
   assert.ok(fonte.includes("reg.encaminhada && reg.etapa !== 'validacao_gestor'"), 'o gestor só responde o vínculo encaminhado depois de os vínculos dele estarem encerrados');
 });
+teste('abrir vínculo: ao chamar um analista (@), o departamento que trata passa a ser o dele, só entre as opções da janela', () => {
+  const cli = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'public', 'js', 'cs-painel.js'), 'utf8');
+  const i = cli.indexOf('var escolherAnalista = function (a)'), j = cli.indexOf('ligarMencoes(obsF', i);
+  assert.ok(i > 0 && j > i, 'a escolha do analista tem função própria');
+  const f = cli.slice(i, j);
+  assert.ok(f.includes('depsAnalista(a)') && f.includes('deps.indexOf(sel.value) < 0') && f.includes('temOpcao') && f.includes('avisoDepto()'), 'muda só se o analista não é do departamento escolhido e o departamento existe na lista da janela; atualiza o aviso');
+  assert.ok(cli.includes('ligarMencoes(plano, function () { return analistasPorDepto($(\'gf-depto\').value); }, escolherAnalista)') && cli.includes('ligarMencoes(obsF, function () { return analistasPorDepto($(\'gf-depto\').value); }, escolherAnalista)'), 'vale chamando no plano de ação e na observação');
+});
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);

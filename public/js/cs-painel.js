@@ -2929,8 +2929,14 @@
     plano.addEventListener('input', function () { $('gf-cont').textContent = plano.value.length + '/1500'; });
     var obsF = $('gf-obs');
     obsF.addEventListener('input', function () { $('gf-obs-cont').textContent = obsF.value.length + '/1500'; });
-    ligarMencoes(plano, function () { return analistasPorDepto($('gf-depto').value); }, function (a) { adicionarChipResp($('gf-resp'), a); });
-    ligarMencoes(obsF, function () { return analistasPorDepto($('gf-depto').value); }, function (a) { adicionarChipResp($('gf-resp'), a); });   // @ também na observação
+    // ao chamar um analista, o "Departamento que trata" passa a ser o dele (se ele é de outro departamento): evita esquecer e abrir o vínculo no departamento errado; dá para mudar depois
+    var escolherAnalista = function (a) {
+      adicionarChipResp($('gf-resp'), a);
+      var deps = depsAnalista(a), sel = $('gf-depto'), temOpcao = function (d) { return Array.prototype.some.call(sel.options, function (o) { return o.value === d; }); };
+      if (deps.length && deps.indexOf(sel.value) < 0) { var alvo = deps.filter(temOpcao)[0]; if (alvo) { sel.value = alvo; avisoDepto(); } }
+    };
+    ligarMencoes(plano, function () { return analistasPorDepto($('gf-depto').value); }, escolherAnalista);
+    ligarMencoes(obsF, function () { return analistasPorDepto($('gf-depto').value); }, escolherAnalista);   // @ também na observação
     $('gf-ok').addEventListener('click', async function () {
       erro.textContent = '';
       var sel = marcados(), assunto = $('gf-assunto').value.trim(), prazo = $('gf-prazo').value;
