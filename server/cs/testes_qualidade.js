@@ -584,12 +584,15 @@ teste('arquivo na observação ou nota final: só o autor da fala anexa, só em 
   assert.strictEqual(podeAnexarNaFala(polyanna, fala('Polyanna', 'analista_encerrou')), true, 'e na nota final do analista');
   assert.strictEqual(podeAnexarNaFala(denisa, fala('Denisa', 'gestor_validou')), true, 'gestor anexa na nota final do vínculo');
   assert.strictEqual(podeAnexarNaFala(denisa, fala('Denisa', 'devolvida')), true, 'gestor anexa ao devolver para ajuste');
+  assert.strictEqual(podeAnexarNaFala(denisa, fala('Denisa', 'dialogo_gestor')), true, 'gestor(a) anexa na conversa com o Gestor final');
+  assert.strictEqual(podeAnexarNaFala(denisa, fala('Denisa', 'dialogo_final')), true, 'e o Gestor final na resposta');
+  assert.strictEqual(podeAnexarNaFala(polyanna, fala('Denisa', 'dialogo_final')), false, 'só quem escreveu a fala da conversa');
   assert.strictEqual(podeAnexarNaFala(denisa, fala('Denisa', 'encerrada')), true, 'gestor final anexa na devolutiva ao cliente / encerramento');
   assert.strictEqual(podeAnexarNaFala(polyanna, fala('Denisa', 'encerrada')), false, 'e só ele');
   assert.strictEqual(podeAnexarNaFala(polyanna, fala('Denisa', 'devolvida')), false, 'o analista não anexa na devolução do gestor');
   assert.strictEqual(podeAnexarNaFala(polyanna, fala('Denisa', 'nota')), false, 'ninguém anexa na fala de outra pessoa');
   assert.strictEqual(podeAnexarNaFala(polyanna, fala('Polyanna', 'iniciada')), false, 'só falas que levam nota aceitam arquivo');
-  assert.strictEqual(podeAnexarNaFala(polyanna, fala('Polyanna', 'dialogo_final')), false, 'a conversa com o Gestor final não leva arquivo');
+  assert.strictEqual(podeAnexarNaFala(polyanna, fala('Polyanna', 'liberada')), false, 'eventos do sistema (abertura, cancelamento…) não levam arquivo');
   assert.strictEqual(podeAnexarNaFala({ name: '', role: 'usuario' }, fala('', 'nota')), false, 'sem nome não dá para provar autoria');
   assert.strictEqual(podeAnexarNaFala(polyanna, fala('Polyannaxyz', 'nota')), true, 'prefixo do nome vale (liderança agindo em nome de alguém grava "Nome (em nome de X)")');
   assert.strictEqual(podeAnexarNaFala(polyanna, null), false);
@@ -612,6 +615,13 @@ teste('arquivos das falas: a rota confere a fala, o prazo e os limites, e o que 
     const a = fonte.indexOf("router.post('" + rt + "'"); assert.ok(a > 0, rt);
     assert.ok(fonte.slice(a, a + 5200).includes('evento_id'), rt + ' devolve o id da fala para o anexo');
   });
+  ['/gestor/ocorrencias/:id/resposta-final', '/sucesso/ocorrencias/:id/responder'].forEach((rt) => {
+    const a = fonte.indexOf("router.post('" + rt + "'"); assert.ok(a > 0, rt);
+    assert.ok(fonte.slice(a, a + 9000).includes('evento_id'), rt + ' devolve o id da fala para o anexo da conversa');
+  });
+  const g0 = fonte.indexOf("router.get('/anexo/:anexoId'"), g1 = fonte.indexOf('Ocorrências lançadas no módulo', g0);
+  const baixar = fonte.slice(g0, g1);
+  assert.ok(baixar.includes("/^dialogo_/.test(a.acao") && baixar.includes('!daConversa && String(a.criado_por_id)') && baixar.includes('!daConversa && (await podeVerArquivoDeFala'), 'arquivo da conversa do gestor com o Gestor final não vai ao analista nem a quem só registrou a ocorrência');
   const v0 = fonte.indexOf("router.post('/gestor/ocorrencias/:id/validar'"), v1 = fonte.indexOf("router.post('/gestor/ocorrencias/:id/devolver'");
   assert.strictEqual((fonte.slice(v0, v1).match(/evento_id/g) || []).length, 2, 'validar devolve o id da fala nos dois caminhos (vínculo e matriz)');
 });

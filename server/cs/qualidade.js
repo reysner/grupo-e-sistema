@@ -578,8 +578,9 @@ async function anexarVinculos(lista) {
 async function anexarDialogo(lista) {
   if (!lista.length) return lista;
   try {
-    const { rows } = await pool.query("SELECT registro_id, em, por, acao, texto FROM cs_qualidade_historico WHERE registro_id = ANY($1::uuid[]) AND acao IN ('dialogo_gestor', 'dialogo_final') ORDER BY em ASC", [lista.map((r) => r.id)]);
-    const por = {}; rows.forEach((h) => { (por[h.registro_id] = por[h.registro_id] || []).push({ em: h.em, por: h.por, lado: h.acao === 'dialogo_final' ? 'final' : 'gestor', texto: h.texto }); });
+    const { rows } = await pool.query("SELECT id, registro_id, em, por, acao, texto FROM cs_qualidade_historico WHERE registro_id = ANY($1::uuid[]) AND acao IN ('dialogo_gestor', 'dialogo_final') ORDER BY em ASC", [lista.map((r) => r.id)]);
+    const arq = await arquivosDasFalas(rows.map((h) => h.id));
+    const por = {}; rows.forEach((h) => { (por[h.registro_id] = por[h.registro_id] || []).push({ em: h.em, por: h.por, lado: h.acao === 'dialogo_final' ? 'final' : 'gestor', texto: h.texto, anexos: arq[String(h.id)] || [] }); });
     return lista.map((r) => ({ ...r, dialogo: por[r.id] || [] }));
   } catch (e) { return lista.map((r) => ({ ...r, dialogo: [] })); }
 }
@@ -1492,7 +1493,7 @@ router.post('/gestor/ocorrencias/:id/resposta-final', async (req, res) => {
       if (t.length > MAX_NOTA) return res.status(400).json({ error: 'A observação passa de ' + MAX_NOTA + ' caracteres.' });
       const novoDg = await registrarUnico(reg.id, req.user.name, 'dialogo_gestor', t);
       if (novoDg) avisarPush(() => idsSucesso(), { titulo: 'Observação do gestor para o Gestor final', texto: (req.user.name || 'O gestor') + ' — ' + empresa + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(t, 120), url: '/cs?aba=sucesso', tag: 'dg-' + reg.id + '-' + Date.now() }, req.user.id);
-      return res.json({ ok: true, dialogo: { em: new Date().toISOString(), por: req.user.name || null, lado: 'gestor', texto: t } });
+      return res.json({ ok: true, evento_id: idDaFala(novoDg), dialogo: { em: new Date().toISOString(), por: req.user.name || null, lado: 'gestor', texto: t, anexos: [] } });
     }
     if (!['registrada', 'tratativa_definida', 'com_analista', 'validacao_gestor'].includes(reg.etapa)) return res.status(409).json({ error: 'Esta ocorrência já está com o Gestor final.' });
     const v = validarEncerramento({ nota: req.body && req.body.texto });
@@ -1506,10 +1507,10 @@ router.post('/gestor/ocorrencias/:id/resposta-final', async (req, res) => {
         tratativa_depto = COALESCE(tratativa_depto, $4), plano_acao = COALESCE(NULLIF(plano_acao, ''), 'Resposta final do gestor'), atualizado_em = NOW()
       WHERE id = $5 AND etapa = $6`, [ETAPA_STATUS.devolutiva_cliente, v.valores.nota, req.user.name || null, (reg.departamentos || [])[0] || null, reg.id, reg.etapa]);
     if (!up.rowCount) return res.status(409).json({ error: JA_MUDOU });
-    await registrar(reg.id, req.user.name, 'gestor_validou', textoNota(v.valores));
+    const eventoRespFinal = await registrar(reg.id, req.user.name, 'gestor_validou', textoNota(v.valores));
     avisarPush(async () => [].concat(await idsSucesso(), await idsAdmins()), { titulo: 'Devolutiva ao cliente', texto: empresa + ' — ' + (reg.assunto || ''), url: '/cs?aba=sucesso', tag: 'dcli-' + reg.id }, req.user.id);
     refrescarRisco();
-    res.json({ ok: true, finalizada: true });
+    res.json({ ok: true, finalizada: true, evento_id: eventoRespFinal });
   } catch (e) { console.error('[qualidade] POST resposta-final falhou:', e); res.status(500).json({ error: 'Erro ao enviar a resposta final.' }); }
 });
 router.post('/gestor/ocorrencias/:id/cancelar', async (req, res) => {
@@ -1627,7 +1628,7 @@ router.post('/sucesso/ocorrencias/:id/responder', async (req, res) => {
     if (t.length > MAX_NOTA) return res.status(400).json({ error: 'A resposta passa de ' + MAX_NOTA + ' caracteres.' });
     const novoDf = await registrarUnico(reg.id, req.user.name, 'dialogo_final', t);
     if (novoDf) avisarPush(async () => [].concat(await idsGestoresDe(reg.departamentos), await idsAdmins()), { titulo: 'Resposta do Gestor final', texto: (req.user.name || 'O Gestor final') + ' — ' + (reg.ocultar_empresa ? 'Empresa não informada' : (reg.cliente_nome || 'Empresa')) + ' — ' + (reg.assunto || '') + ': ' + curtoTexto(t, 120), url: '/cs?aba=gestor', tag: 'df-' + reg.id + '-' + Date.now() }, req.user.id);
-    res.json({ ok: true, dialogo: { em: new Date().toISOString(), por: req.user.name || null, lado: 'final', texto: t } });
+    res.json({ ok: true, evento_id: idDaFala(novoDf), dialogo: { em: new Date().toISOString(), por: req.user.name || null, lado: 'final', texto: t, anexos: [] } });
   } catch (e) { console.error('[qualidade] POST responder falhou:', e); res.status(500).json({ error: 'Erro ao responder.' }); }
 });
 /** Corrige o analista APONTADO (o reclamado): o registro e o dashboard da Qualidade passam a apontar para quem o gestor final escolher. Só o gestor final
@@ -1783,7 +1784,7 @@ router.post('/ocorrencias/:id/anexo', express.raw({ type: () => true, limit: MAX
 });
 
 /** Quem pode anexar a uma fala: o autor dela (ou a administração), só nas falas que levam nota — observação, nota final do analista, validação e devolução do gestor, devolutiva ao cliente e encerramento do Sucesso — e logo depois de enviá-la. */
-const ACOES_COM_ARQUIVO = ['nota', 'analista_encerrou', 'gestor_validou', 'devolvida', 'encerrada'];
+const ACOES_COM_ARQUIVO = ['nota', 'analista_encerrou', 'gestor_validou', 'devolvida', 'encerrada', 'dialogo_gestor', 'dialogo_final'];   // dialogo_*: a conversa do gestor(a) com o Gestor final (nunca chega ao analista)
 const JANELA_ARQUIVO_FALA_MIN = 120;
 function podeAnexarNaFala(user, fala) {
   if (!user || !fala || !ACOES_COM_ARQUIVO.includes(fala.acao)) return false;
@@ -1832,9 +1833,12 @@ async function podeVerArquivoDeFala(req, a) {
 router.get('/anexo/:anexoId', async (req, res) => {
   try {
     await garantirSchema();
-    const a = (await pool.query('SELECT a.nome, a.mime, a.dados, a.historico_id, a.registro_id, r.criado_por_id, r.departamentos, r.fila, r.analista_id, r.pai_id FROM cs_qualidade_anexos a JOIN cs_qualidade_registros r ON r.id = a.registro_id WHERE a.id::text = $1', [String(req.params.anexoId)])).rows[0];
+    const a = (await pool.query('SELECT a.nome, a.mime, a.dados, a.historico_id, a.registro_id, h.acao, r.criado_por_id, r.departamentos, r.fila, r.analista_id, r.pai_id FROM cs_qualidade_anexos a JOIN cs_qualidade_registros r ON r.id = a.registro_id LEFT JOIN cs_qualidade_historico h ON h.id = a.historico_id WHERE a.id::text = $1', [String(req.params.anexoId)])).rows[0];
     if (!a) return res.status(404).json({ error: 'Anexo não encontrado.' });
-    if (!podeEquipe(req.user) && String(a.criado_por_id) !== String(req.user.id) && !ocorrenciaNoEscopo(await escopoDaRequisicao(req), a) && !(a.historico_id && (await podeVerArquivoDeFala(req, a)))) return res.status(403).json({ error: 'Esse anexo não é de uma ocorrência sua nem do seu departamento.' });
+    // arquivo da conversa do gestor(a) com o Gestor final: nunca vai ao analista nem a quem só registrou a ocorrência (como o texto da conversa)
+    const daConversa = /^dialogo_/.test(a.acao || '');
+    const pode = podeEquipe(req.user) || (!daConversa && String(a.criado_por_id) === String(req.user.id)) || ocorrenciaNoEscopo(await escopoDaRequisicao(req), a) || (!!a.historico_id && !daConversa && (await podeVerArquivoDeFala(req, a)));
+    if (!pode) return res.status(403).json({ error: 'Esse anexo não é de uma ocorrência sua nem do seu departamento.' });
     res.set({ 'Content-Type': a.mime || 'application/octet-stream', 'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(a.nome), 'X-Content-Type-Options': 'nosniff' });
     res.send(a.dados);
   } catch (e) { console.error('[qualidade] GET anexo falhou:', e); res.status(500).json({ error: 'Erro ao baixar o anexo.' }); }

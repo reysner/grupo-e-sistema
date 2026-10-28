@@ -1924,14 +1924,16 @@
     return '';
   }
   /** Envia os arquivos escolhidos para a fala (observação ou nota final) que acabou de ser gravada. Devolve a lista de falhas (vazia se tudo subiu). */
-  async function subirArquivosFalaQ(regId, eventoId, input) {
+  async function subirArquivosFalaQ(regId, eventoId, input, enviados) {   // enviados (opcional): recebe { id, nome, tamanho } de cada arquivo que subiu, para mostrar na hora
     var fs = input && input.files ? Array.prototype.slice.call(input.files) : [], falhas = [];
     if (!fs.length) return falhas;
     if (!eventoId) return ['A observação já tinha sido enviada: os arquivos não foram anexados. Envie de novo com o arquivo.'];
     for (var i = 0; i < fs.length; i++) {
       try {
         var ra = await chamarApi('/api/cs/painel/qualidade/ocorrencias/' + encodeURIComponent(regId) + '/evento/' + encodeURIComponent(eventoId) + '/anexo?nome=' + encodeURIComponent(fs[i].name) + '&tipo=' + encodeURIComponent(fs[i].type || ''), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: fs[i] });
-        if (!ra.ok) { var ja = await ra.json().catch(function () { return {}; }); falhas.push(fs[i].name + ': ' + (ja.error || 'falhou')); }
+        var ja = await ra.json().catch(function () { return {}; });
+        if (!ra.ok) falhas.push(fs[i].name + ': ' + (ja.error || 'falhou'));
+        else if (enviados && ja.anexo) enviados.push(ja.anexo);
       } catch (e) { falhas.push(fs[i].name + ': sem conexão'); }
     }
     return falhas;
@@ -3380,13 +3382,17 @@
       if ($('so-resp-enviar').disabled) return;
       var t = $('so-resp').value.trim(), okl = $('so-resp-ok'); okl.textContent = ''; var viaFinal = !!d.final;
       if (t.length < 3) { okl.textContent = 'Escreva a mensagem (mínimo de 3 caracteres).'; return; }
+      var erroArqS2 = erroArquivosQ($('so-resp-arq')); if (erroArqS2) { okl.textContent = erroArqS2; return; }
       $('so-resp-enviar').disabled = true;
       var x = viaFinal ? await postarQ('/api/cs/painel/qualidade/sucesso/ocorrencias/' + encodeURIComponent(r.id) + '/responder', { texto: t })
         : await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(r.id) + '/resposta-final', { acao: 'observacao', texto: t });
+      if (!x.ok) { $('so-resp-enviar').disabled = false; okl.textContent = x.j.error || 'Não foi possível enviar.'; return; }
+      var enviadosS = [];
+      if ($('so-resp-arq').files.length) { okl.textContent = 'Enviando os arquivos…'; avisarFalhasArquivosQ(await subirArquivosFalaQ(r.id, x.j.evento_id, $('so-resp-arq'), enviadosS)); }
       $('so-resp-enviar').disabled = false;
-      if (!x.ok) { okl.textContent = x.j.error || 'Não foi possível enviar.'; return; }
+      if (x.j.dialogo) x.j.dialogo.anexos = enviadosS;
       var lista = $('dlg-lista'); if (lista && x.j.dialogo) lista.insertAdjacentHTML('beforeend', linhaDialogoQ(x.j.dialogo));
-      $('so-resp').value = ''; okl.textContent = viaFinal ? '✔ Resposta enviada. O gestor(a) vê na ocorrência, no Portal do Gestor.' : '✔ Observação enviada ao Sucesso do Cliente.';
+      $('so-resp').value = ''; $('so-resp-arq').value = ''; okl.textContent = viaFinal ? '✔ Resposta enviada. O gestor(a) vê na ocorrência, no Portal do Gestor.' : '✔ Observação enviada ao Sucesso do Cliente.';
     });
     if ($('so-apontar')) $('so-apontar').addEventListener('click', async function () {
       var v = $('so-apontado').value, er = $('so-apontar-erro'); er.textContent = '';
@@ -3532,7 +3538,7 @@
   /** Uma fala da conversa entre o gestor(a) e o Gestor final. */
   function linhaDialogoQ(m) {
     var final = m.lado === 'final';
-    return '<div class="qa-reg-trat"><strong>' + (final ? 'Gestor(a) CS' : 'Gestor(a)') + (m.por ? ' (' + esc(m.por) + ')' : '') + ' · ' + dataHora(m.em) + ':</strong> ' + esc(m.texto) + '</div>';
+    return '<div class="qa-reg-trat"><strong>' + (final ? 'Gestor(a) CS' : 'Gestor(a)') + (m.por ? ' (' + esc(m.por) + ')' : '') + ' · ' + dataHora(m.em) + ':</strong> ' + esc(m.texto) + (m.anexos && m.anexos.length ? anexosQ({ anexos: m.anexos }) : '') + '</div>';
   }
   /** Matriz: "Resposta final ao Sucesso do Cliente" com duas escolhas: Observação (fala com o Gestor final sem finalizar; ele responde no Portal do Sucesso do Cliente e a resposta volta aqui)
    *  ou Finalizar (nota final: a matriz segue para o Gestor final). Só vale a escolha Finalizar com as vinculadas encerradas e nenhum analista ainda tratando. */
@@ -3547,7 +3553,7 @@
       '<div style="display:flex;gap:18px;flex-wrap:wrap;margin:4px 0 8px"><label class="qa-dep"><input type="radio" name="gt-rf-modo" value="obs" checked> <strong>Observação</strong> <span class="cinza">(com o Sucesso do Cliente, sem finalizar)</span></label>' +
       '<label class="qa-dep"' + (podeFin ? '' : ' title="' + esc(dica) + '"') + '><input type="radio" name="gt-rf-modo" value="fin"' + (podeFin ? '' : ' disabled') + '> <strong>Finalizar</strong> <span class="cinza">(' + (podeFin ? 'nota final: segue para o Sucesso do Cliente' : esc(dica)) + ')</span></label></div>';
     return '<div class="ficha-sec">Resposta final ao Sucesso do Cliente</div><div class="qa-campo">' + escolha +
-      '<label for="gt-rf">' + 'Sua observação ou nota final' + ' <span class="cinza" id="gt-rf-cont">0/2000</span></label><textarea id="gt-rf" rows="4" maxlength="2000" placeholder="O Sucesso do Cliente vê no Portal dele, pode responder, e a resposta volta para esta ocorrência."></textarea>' +
+      '<label for="gt-rf">' + 'Sua observação ou nota final' + ' <span class="cinza" id="gt-rf-cont">0/2000</span></label><textarea id="gt-rf" rows="4" maxlength="2000" placeholder="O Sucesso do Cliente vê no Portal dele, pode responder, e a resposta volta para esta ocorrência."></textarea>' + campoArquivosQ('gt-rf-arq') +
       '<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><button type="button" class="gp-footer-btn" id="gt-rf-enviar" style="width:auto">Enviar observação ao Sucesso do Cliente</button><span class="cinza" id="gt-rf-ok" style="font-size:12px"></span></div></div>' +
       '<div id="dlg-lista">' + conversa + '</div>';
   }
@@ -3558,7 +3564,7 @@
     var d = r.dialogo || [], aberta = ['encerrada', 'cancelada'].indexOf(r.etapa) < 0, escreve = aberta && (final || podeFalar);
     if (!d.length && !escreve) return '';
     return '<div class="ficha-sec">Conversa entre o Gestor(a) do departamento e o Sucesso do Cliente</div><div id="dlg-lista">' + d.map(linhaDialogoQ).join('') + '</div>' +
-      (escreve ? '<div class="qa-campo"><label for="so-resp">' + (final ? 'Responder ao Gestor(a)' : 'Deixar uma observação para o Sucesso do Cliente') + ' <span class="cinza">(' + (final ? 'a resposta volta para a ocorrência no Portal do Gestor' : 'fica na conversa, aberta até finalizar') + ')</span></label><textarea id="so-resp" rows="3" maxlength="2000"></textarea><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button type="button" class="gp-footer-btn" id="so-resp-enviar" style="width:auto">' + (final ? 'Enviar resposta' : 'Enviar observação') + '</button><span class="cinza" id="so-resp-ok" style="font-size:12px"></span></div></div>' : '');
+      (escreve ? '<div class="qa-campo"><label for="so-resp">' + (final ? 'Responder ao Gestor(a)' : 'Deixar uma observação para o Sucesso do Cliente') + ' <span class="cinza">(' + (final ? 'a resposta volta para a ocorrência no Portal do Gestor' : 'fica na conversa, aberta até finalizar') + ')</span></label><textarea id="so-resp" rows="3" maxlength="2000"></textarea>' + campoArquivosQ('so-resp-arq') + '<div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button type="button" class="gp-footer-btn" id="so-resp-enviar" style="width:auto">' + (final ? 'Enviar resposta' : 'Enviar observação') + '</button><span class="cinza" id="so-resp-ok" style="font-size:12px"></span></div></div>' : '');
   }
   /** Vínculo que veio de outro departamento: o que o gestor que recebeu precisa fazer, e quantos vínculos dele já foram encerrados. */
   function avisoEncaminhadaTexto(r) {
@@ -3646,14 +3652,18 @@
         if ($('gt-rf-enviar').disabled) return;
         var okl = $('gt-rf-ok'); okl.textContent = ''; var fin = modoRf() === 'fin';
         if (rf.value.trim().length < (fin ? 5 : 3)) { okl.textContent = fin ? 'Escreva a nota final (mínimo de 5 caracteres).' : 'Escreva a observação (mínimo de 3 caracteres).'; return; }
+        var erroArqR = erroArquivosQ($('gt-rf-arq')); if (erroArqR) { okl.textContent = erroArqR; return; }
         if (fin && !window.confirm('Finalizar? A ocorrência segue para o Sucesso do Cliente com esta nota.')) return;
         $('gt-rf-enviar').disabled = true;
         var x = await postarQ(urlRf, { acao: fin ? 'finalizar' : 'observacao', texto: rf.value });
+        if (!x.ok) { $('gt-rf-enviar').disabled = false; okl.textContent = x.j.error || 'Não foi possível enviar.'; return; }
+        var enviadosR = [];
+        if ($('gt-rf-arq').files.length) { okl.textContent = 'Enviando os arquivos…'; avisarFalhasArquivosQ(await subirArquivosFalaQ(r.id, x.j.evento_id, $('gt-rf-arq'), enviadosR)); }
         $('gt-rf-enviar').disabled = false;
-        if (!x.ok) { okl.textContent = x.j.error || 'Não foi possível enviar.'; return; }
         if (fin) { estado.g.dados = null; fechar(); desenharGestor(); return; }
+        if (x.j.dialogo) x.j.dialogo.anexos = enviadosR;
         var lista = $('dlg-lista'); if (lista && x.j.dialogo) lista.insertAdjacentHTML('beforeend', linhaDialogoQ(x.j.dialogo));
-        rf.value = ''; $('gt-rf-cont').textContent = '0/2000'; okl.textContent = '✔ Observação enviada. O Sucesso do Cliente vê no Portal dele e pode responder.';
+        rf.value = ''; $('gt-rf-arq').value = ''; $('gt-rf-cont').textContent = '0/2000'; okl.textContent = '✔ Observação enviada. O Sucesso do Cliente vê no Portal dele e pode responder.';
       });
     }
     if ($('gt-oa-enviar')) {   // Observação com o analista (no vínculo escolhido)
