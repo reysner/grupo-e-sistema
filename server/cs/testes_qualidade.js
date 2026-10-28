@@ -2,7 +2,7 @@
 // Rodar: node server/cs/testes_qualidade.js  (validação dos registros de Qualidade; sem banco)
 const assert = require('assert');
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://x:x@localhost:5432/x';
-const { podeAnexarNaFala, modoEscopoAnalistas, justificativaSla, podeReabrirEncerrada, matrizAceitaVinculoReaberto, analistaFixoPresente, TIPO_PLANO, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
+const { vinculoEntreDepartamentos, podeAnexarNaFala, modoEscopoAnalistas, justificativaSla, podeReabrirEncerrada, matrizAceitaVinculoReaberto, analistaFixoPresente, TIPO_PLANO, validarMotivo, destinoDaReabertura, mascararParaAnalista, validarFilha, prontoParaValidacao, validarDepartamentosAnalista, avisoResponsavel, nomeCompletoDoLogin, pessoasParaGestor, transicao, validarEncerramento, TRANSICOES, rotaAbertaGestorAnalista, escopoDoUsuario, ocorrenciaNoEscopo, validarTratativaGestor, ETAPA_STATUS, deveAvisar, validarGestor, destinoDaOcorrencia, textoDestino, podeAlterarPrazo, ETAPAS, validarOcorrencia, PRIORIDADES, idsResponsaveis, validarTipo, validarRegistro, validarMudanca, situacao, semAcento, TIPOS, DEPARTAMENTOS, mesmoNome, montarPrioridades, segundaDe } = require('./qualidade');
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('  ok -', nome); };
@@ -614,6 +614,30 @@ teste('arquivos das falas: a rota confere a fala, o prazo e os limites, e o que 
   });
   const v0 = fonte.indexOf("router.post('/gestor/ocorrencias/:id/validar'"), v1 = fonte.indexOf("router.post('/gestor/ocorrencias/:id/devolver'");
   assert.strictEqual((fonte.slice(v0, v1).match(/evento_id/g) || []).length, 2, 'validar devolve o id da fala nos dois caminhos (vínculo e matriz)');
+});
+teste('vínculo entre departamentos: só vai ao gestor do departamento do analista quando o gestor abre para OUTRO departamento; administração e Sucesso abrem direto', () => {
+  assert.strictEqual(vinculoEntreDepartamentos(['Pessoal'], 'Fiscal', false), true, 'gestor de Pessoal abre para analista do Fiscal: encaminha');
+  assert.strictEqual(vinculoEntreDepartamentos(['Pessoal'], 'Pessoal', false), false, 'mesmo departamento: direto para o analista, como sempre');
+  assert.strictEqual(vinculoEntreDepartamentos(['Pessoal', 'Fiscal'], 'Fiscal', false), false, 'gestor/diretor de dois departamentos: o do Fiscal é dele');
+  assert.strictEqual(vinculoEntreDepartamentos(['Pessoal'], 'Fiscal', true), false, 'administração e Sucesso do Cliente abrem direto');
+  assert.strictEqual(vinculoEntreDepartamentos([], 'Fiscal', false), true);
+  assert.strictEqual(vinculoEntreDepartamentos(['Pessoal'], '', false), false);
+});
+teste('vínculo entre departamentos: o servidor segura o vínculo no gestor receptor, deixa ele abrir o vínculo com o liderado e só devolve ao solicitante depois da resposta', () => {
+  const fonte = require('fs').readFileSync(require('path').join(__dirname, 'qualidade.js'), 'utf8');
+  const i = fonte.indexOf("router.post('/gestor/ocorrencias/:id/filha'"), j = fonte.indexOf("router.post('/gestor/ocorrencias/:id/abrir'", i);
+  const rota = fonte.slice(i, j);
+  assert.ok(rota.includes('vinculoEntreDepartamentos(esc.deptos, x.departamento, acima)') && rota.includes('esc.todos || esc.sucesso'), 'decide pelo departamento de quem abre; administração e Sucesso ficam de fora');
+  assert.ok(rota.includes('encaminhar ? null : String(x.analistas_ids[0])') && rota.includes('if (!encaminhar) for (const aid of x.analistas_ids)'), 'encaminhado: nenhum analista recebe nem vê antes do gestor abrir o dele');
+  assert.ok(rota.includes("pai.origem === 'filha' && !pai.encaminhada") && rota.includes("(pai.departamentos || []).includes(x.departamento)"), 'só o vínculo encaminhado recebe vínculo, e só com analista do próprio departamento (não encaminha de novo)');
+  assert.ok(rota.includes('idsDaFila({ fila: dest.fila, departamentos: [x.departamento] })'), 'o gestor do departamento (ou o Sucesso, se não houver gestor) é avisado');
+  const t0 = fonte.indexOf('async function tentarAvancarParaValidacao'), t1 = fonte.indexOf('async function ehGestorFinal', t0);
+  const avanco = fonte.slice(t0, t1);
+  assert.ok(avanco.indexOf("r.origem === 'filha' && r.encaminhada") > 0 && avanco.indexOf("r.origem === 'filha' && r.encaminhada") < avanco.indexOf("if (r.origem === 'filha') {"), 'o vínculo encaminhado vai à resposta do gestor antes de qualquer encerramento automático');
+  assert.ok(avanco.includes("etapa = 'validacao_gestor'") && avanco.includes('Responda ao vínculo'), 'e o gestor é avisado para responder');
+  const d0 = fonte.indexOf("router.post('/gestor/ocorrencias/:id/devolver'"), d1 = fonte.indexOf('async function podeCancelarOuReabrir', d0);
+  assert.ok(fonte.slice(d0, d1).includes('if (reg.encaminhada)'), 'não se devolve ao analista um vínculo encaminhado (ele não tem analista próprio)');
+  assert.ok(fonte.includes("reg.encaminhada && reg.etapa !== 'validacao_gestor'"), 'o gestor só responde o vínculo encaminhado depois de os vínculos dele estarem encerrados');
 });
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);
