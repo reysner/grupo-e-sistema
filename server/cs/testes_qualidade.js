@@ -583,6 +583,8 @@ teste('arquivo na observação ou nota final: só o autor da fala anexa, só em 
   assert.strictEqual(podeAnexarNaFala(polyanna, fala('Polyanna', 'nota')), true, 'autora anexa na observação');
   assert.strictEqual(podeAnexarNaFala(polyanna, fala('Polyanna', 'analista_encerrou')), true, 'e na nota final do analista');
   assert.strictEqual(podeAnexarNaFala(denisa, fala('Denisa', 'gestor_validou')), true, 'gestor anexa na nota final do vínculo');
+  assert.strictEqual(podeAnexarNaFala(denisa, fala('Denisa', 'devolvida')), true, 'gestor anexa ao devolver para ajuste');
+  assert.strictEqual(podeAnexarNaFala(polyanna, fala('Denisa', 'devolvida')), false, 'o analista não anexa na devolução do gestor');
   assert.strictEqual(podeAnexarNaFala(polyanna, fala('Denisa', 'nota')), false, 'ninguém anexa na fala de outra pessoa');
   assert.strictEqual(podeAnexarNaFala(polyanna, fala('Polyanna', 'iniciada')), false, 'só falas que levam nota aceitam arquivo');
   assert.strictEqual(podeAnexarNaFala(polyanna, fala('Polyanna', 'dialogo_final')), false, 'a conversa com o Gestor final não leva arquivo');
@@ -604,10 +606,12 @@ teste('arquivos das falas: a rota confere a fala, o prazo e os limites, e o que 
   assert.ok(rota.includes('podeAnexarNaFala(req.user, fala)') && rota.includes('fala.recente') && rota.includes('MAX_ANEXO') && rota.includes('MAX_ANEXOS'), 'autoria, janela de tempo e limites');
   assert.ok(rota.includes('INSERT INTO cs_qualidade_anexos (registro_id, historico_id'), 'o arquivo é gravado ligado à fala');
   assert.ok(/historico_id IS NULL/.test(fonte), 'os arquivos das falas não entram na lista nem na conta de arquivos da ocorrência');
-  ['/analista/ocorrencias/:id/nota', '/analista/ocorrencias/:id/encerrar', '/gestor/ocorrencias/:id/mensagem'].forEach((rt) => {
+  ['/analista/ocorrencias/:id/nota', '/analista/ocorrencias/:id/encerrar', '/gestor/ocorrencias/:id/mensagem', '/gestor/ocorrencias/:id/validar', '/gestor/ocorrencias/:id/devolver'].forEach((rt) => {
     const a = fonte.indexOf("router.post('" + rt + "'"); assert.ok(a > 0, rt);
     assert.ok(fonte.slice(a, a + 5200).includes('evento_id'), rt + ' devolve o id da fala para o anexo');
   });
+  const v0 = fonte.indexOf("router.post('/gestor/ocorrencias/:id/validar'"), v1 = fonte.indexOf("router.post('/gestor/ocorrencias/:id/devolver'");
+  assert.strictEqual((fonte.slice(v0, v1).match(/evento_id/g) || []).length, 2, 'validar devolve o id da fala nos dois caminhos (vínculo e matriz)');
 });
 console.log(`\n${ok} testes passaram.`);
 process.exit(0);

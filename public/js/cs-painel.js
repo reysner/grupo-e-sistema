@@ -3589,7 +3589,7 @@
     }
     if (!editavel && r.etapa === 'validacao_gestor') {
       return topo + htmlPlanoGestor(r) + htmlRetornos(r) +
-        '<div class="ficha-sec">' + (soVinc ? 'Resposta final da ocorrência' : 'Validar a tratativa') + '</div>' + formNotaObs('gv', soVinc ? 'Resposta final (apanhado de tudo)' : 'Nota da validação') +
+        '<div class="ficha-sec">' + (soVinc ? 'Resposta final da ocorrência' : 'Validar a tratativa') + '</div>' + formNotaObs('gv', soVinc ? 'Resposta final (apanhado de tudo)' : 'Nota da validação') + campoArquivosQ('gv-arq') +
         (r.origem === 'filha' ? '<div class="qa-obs" style="margin:6px 0">ℹ <strong>Validar</strong> encerra esta ocorrência vinculada e libera a original para seguir. <strong>Devolver</strong> volta para o analista ajustar (a nota diz o que falta).</div>' : soVinc ? '<div class="qa-obs" style="margin:6px 0">ℹ Faça o apanhado das vinculadas acima e responda: a resposta vai <strong>direto para o Gestor final do Sucesso do Cliente</strong>, que faz a devolutiva ao cliente.</div>' : '<div class="qa-obs" style="margin:6px 0">ℹ <strong>Validar</strong> envia a ocorrência ao Sucesso do Cliente, que faz a devolutiva ao cliente. <strong>Devolver</strong> volta para o analista ajustar (a nota diz o que falta).</div>') +
         '<div class="qa-oc-linha qa-g-botoes"><button type="button" class="qa-btn-cancel" id="gt-cancel" style="background:#64748b">Fechar</button><button type="button" class="qa-btn-ok" id="gv-devolver" style="background:#b45309' + (soVinc ? ';display:none' : '') + '">Devolver ao analista</button><button type="button" class="qa-btn-ok" id="gv-validar">' + (r.origem === 'filha' ? 'Validar: encerrar esta ocorrência' : soVinc ? 'Enviar a resposta final ao Gestor final' : 'Validar: enviar ao Sucesso do Cliente') + '</button></div>' +
         '<div class="pop-erro" id="gv-erro" role="alert"></div>';
@@ -3698,10 +3698,12 @@
       var decidir = async function (acao, confirmacao) {
         verro.textContent = ''; var nota = $('gv-nota').value.trim();
         if (nota.length < 5) { verro.textContent = acao === 'devolver' ? 'Diga na nota o que o analista precisa ajustar (mínimo de 5 caracteres).' : 'Deixe a nota da validação (mínimo de 5 caracteres).'; return; }
+        var erroArqV2 = erroArquivosQ($('gv-arq')); if (erroArqV2) { verro.textContent = erroArqV2; return; }
         if (!window.confirm(confirmacao)) return;
         $('gv-validar').disabled = true; $('gv-devolver').disabled = true;
         var x = await postarQ(base + '/' + acao, { nota: nota, obs: $('gv-obs').value });
         if (!x.ok) { verro.textContent = x.j.error || 'Não foi possível concluir.'; $('gv-validar').disabled = false; $('gv-devolver').disabled = false; return; }
+        if ($('gv-arq').files.length) { verro.textContent = 'Enviando os arquivos…'; avisarFalhasArquivosQ(await subirArquivosFalaQ(r.id, x.j.evento_id, $('gv-arq'))); }
         estado.g.dados = null; fechar(); desenharGestor();
       };
       $('gv-validar').addEventListener('click', function () { decidir('validar', r.origem === 'filha' ? 'Validar e encerrar esta ocorrência vinculada?' : 'Validar e enviar ao Sucesso do Cliente para a devolutiva ao cliente?'); });

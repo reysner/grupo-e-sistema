@@ -1344,12 +1344,12 @@ router.post('/gestor/ocorrencias/:id/validar', async (req, res) => {
            validado_em = NOW(), validado_por = $5, encerrada_em = NOW(), encerrada_por = $5, resolvido_em = COALESCE(resolvido_em, NOW()), atualizado_em = NOW() WHERE id = $6 AND etapa = 'validacao_gestor'`,
         [tf.para, tf.status, vf.valores.nota, vf.valores.obs, req.user.name || null, reg.id]);
     if (!upEtapa5.rowCount) return res.status(409).json({ error: JA_MUDOU });
-      await registrar(reg.id, req.user.name, 'gestor_validou', textoNota(vf.valores));
+      const eventoVal = await registrar(reg.id, req.user.name, 'gestor_validou', textoNota(vf.valores));
       if (reg.pai_id) {
         await registrar(reg.pai_id, req.user.name, 'nota', 'Ocorrência vinculada encerrada: ' + (reg.assunto || ''));
         await tentarAvancarParaValidacao(reg.pai_id, req.user.name, null, req.user.id);
       }
-      return res.json({ registro: await registroCompleto(reg.id) });
+      return res.json({ registro: await registroCompleto(reg.id), evento_id: eventoVal });
     }
     const t = transicao('gestor_validar', reg.etapa);
     if (!t.ok) return res.status(409).json({ error: t.erro });
@@ -1360,9 +1360,9 @@ router.post('/gestor/ocorrencias/:id/validar', async (req, res) => {
          validado_em = NOW(), validado_por = $5, atualizado_em = NOW() WHERE id = $6 AND etapa = 'validacao_gestor'`,
       [t.para, t.status, v.valores.nota, v.valores.obs, req.user.name || null, reg.id]);
     if (!upEtapa6.rowCount) return res.status(409).json({ error: JA_MUDOU });
-    await registrar(reg.id, req.user.name, 'gestor_validou', textoNota(v.valores));
+    const eventoValM = await registrar(reg.id, req.user.name, 'gestor_validou', textoNota(v.valores));
     avisarPush(async () => [].concat(await idsSucesso(), await idsAdmins()), { titulo: 'Devolutiva ao cliente', texto: (reg.cliente_nome || 'Empresa') + ' — ' + (reg.assunto || ''), url: '/cs?aba=sucesso', tag: 'dcli-' + reg.id }, req.user.id);
-    res.json({ registro: await registroCompleto(reg.id) });
+    res.json({ registro: await registroCompleto(reg.id), evento_id: eventoValM });
   } catch (e) { console.error('[qualidade] POST validar falhou:', e); res.status(500).json({ error: 'Erro ao validar a tratativa.' }); }
 });
 
@@ -1381,9 +1381,9 @@ router.post('/gestor/ocorrencias/:id/devolver', async (req, res) => {
     const upEtapa7 = await pool.query("UPDATE cs_qualidade_registros SET etapa = $1, status = $2, resolvido_em = NULL, resolvido_por = NULL, atualizado_em = NOW() WHERE id = $3 AND etapa = 'validacao_gestor'", [t.para, t.status, reg.id]);
     if (!upEtapa7.rowCount) return res.status(409).json({ error: JA_MUDOU });
     await pool.query('UPDATE cs_qualidade_resp SET encerrado_em = NULL WHERE registro_id = $1', [reg.id]);   // cada responsável ajusta e encerra de novo (a nota anterior continua no histórico)
-    await registrar(reg.id, req.user.name, 'devolvida', textoNota(v.valores));
+    const eventoDev = await registrar(reg.id, req.user.name, 'devolvida', textoNota(v.valores));
     avisarPush(() => idsDosResponsaveis(reg.id, reg.analista_id), { titulo: 'Tratativa devolvida pelo gestor', texto: curtoTexto(v.valores.nota, 120), url: '/cs?aba=analista', tag: 'dev-' + reg.id + '-' + Date.now() }, req.user.id);
-    res.json({ registro: await registroCompleto(reg.id) });
+    res.json({ registro: await registroCompleto(reg.id), evento_id: eventoDev });
   } catch (e) { console.error('[qualidade] POST devolver falhou:', e); res.status(500).json({ error: 'Erro ao devolver ao analista.' }); }
 });
 
@@ -1747,8 +1747,8 @@ router.post('/ocorrencias/:id/anexo', express.raw({ type: () => true, limit: MAX
   } catch (e) { console.error('[qualidade] POST anexo falhou:', e); res.status(500).json({ error: 'Erro ao guardar o anexo.' }); }
 });
 
-/** Quem pode anexar a uma fala: o autor dela (ou a administração), só nas falas que levam nota — observação, nota final do analista e do gestor — e logo depois de enviá-la. */
-const ACOES_COM_ARQUIVO = ['nota', 'analista_encerrou', 'gestor_validou'];
+/** Quem pode anexar a uma fala: o autor dela (ou a administração), só nas falas que levam nota — observação, nota final do analista, validação e devolução do gestor — e logo depois de enviá-la. */
+const ACOES_COM_ARQUIVO = ['nota', 'analista_encerrou', 'gestor_validou', 'devolvida'];
 const JANELA_ARQUIVO_FALA_MIN = 120;
 function podeAnexarNaFala(user, fala) {
   if (!user || !fala || !ACOES_COM_ARQUIVO.includes(fala.acao)) return false;
