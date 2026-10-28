@@ -3349,7 +3349,7 @@
       '<div class="cinza" style="font-size:12.5px;margin-bottom:10px">' + esc(r.cliente_nome || '') + ' · ' + pillEtapaQ(r.etapa) + '</div>' + cartaoOcorrenciaQ(r, true) + (r.plano_acao ? htmlPlanoGestor(r) : '') + htmlRetornos(r) + htmlVinculos(r) + htmlDialogoSucessoQ(r, final, podeFalarNoSucessoQ()) + htmlApontadoQ(r, final);
     if (r.etapa !== 'devolutiva_cliente') return topo + '<div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="so-cancel">Fechar</button></div>';
     if (!final) return topo + '<div class="qa-obs" style="margin:10px 0">ℹ Esta ocorrência está na devolutiva ao cliente. Faça as formalizações com o cliente; <strong>só o gestor final encerra o processo</strong>.</div><div class="qa-oc-linha qa-oc-bot" style="grid-template-columns:1fr"><button type="button" class="qa-btn-cancel" id="so-cancel">Fechar</button></div>';
-    return topo + '<div class="ficha-sec">Devolutiva ao cliente e encerramento</div>' + formNotaObs('so', 'Nota (o que foi devolvido ao cliente)') +
+    return topo + '<div class="ficha-sec">Devolutiva ao cliente e encerramento</div>' + formNotaObs('so', 'Nota (o que foi devolvido ao cliente)') + campoArquivosQ('so-arq') +
       '<div class="qa-obs" style="margin:6px 0">⚠ Ao clicar em <strong>Encerrada</strong> o processo termina de vez, para todos os departamentos.</div>' +
       '<div class="qa-oc-linha qa-oc-bot"><button type="button" class="qa-btn-cancel" id="so-cancel" style="background:#64748b">Fechar</button><button type="button" class="qa-btn-ok" id="so-encerrar">Encerrada: finalizar o processo</button></div>' +
       '<div class="pop-erro" id="so-erro" role="alert"></div>';
@@ -3387,12 +3387,14 @@
     $('so-encerrar').addEventListener('click', async function () {
       erro.textContent = ''; var nota = $('so-nota').value.trim();
       if (nota.length < 5) { erro.textContent = 'Deixe a nota da devolutiva (mínimo de 5 caracteres).'; return; }
+      var erroArqS = erroArquivosQ($('so-arq')); if (erroArqS) { erro.textContent = erroArqS; return; }
       var semApontado = r.origem === 'modulo' && (r.analista_apontado_id === '' || (r.analista_apontado_id == null && !r.analista_origem_id));
       if (semApontado && !window.confirm('Nenhum analista está apontado nesta ocorrência: ela não vai contar para nenhum analista no dashboard.\n\nEncerrar mesmo assim? (Cancele e escolha o analista em "Analista apontado".)')) return;
       if (!window.confirm('Finalizar o processo desta ocorrência de vez? Isso encerra o caso para todos os departamentos.')) return;
       var b = $('so-encerrar'); b.disabled = true;
       var x = await postarQ('/api/cs/painel/qualidade/sucesso/ocorrencias/' + encodeURIComponent(r.id) + '/encerrar', { nota: nota, obs: $('so-obs').value });
       if (!x.ok) { erro.textContent = x.j.error || 'Não foi possível encerrar.'; b.disabled = false; return; }
+      if ($('so-arq').files.length) { erro.textContent = 'Enviando os arquivos…'; avisarFalhasArquivosQ(await subirArquivosFalaQ(r.id, x.j.evento_id, $('so-arq'))); }
       estado.s.dados = null; fechar(); desenharSucesso();
     });
   }

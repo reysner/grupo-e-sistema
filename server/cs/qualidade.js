@@ -1638,10 +1638,10 @@ router.post('/sucesso/ocorrencias/:id/encerrar', async (req, res) => {
          validado_em = COALESCE(validado_em, NOW()), resolvido_em = COALESCE(resolvido_em, NOW()), atualizado_em = NOW() WHERE id = $6 AND etapa = 'devolutiva_cliente'`,
       [t.para, t.status, v.valores.nota, v.valores.obs, req.user.name || null, reg.id]);
     if (!upEtapa8.rowCount) return res.status(409).json({ error: JA_MUDOU });
-    await registrar(reg.id, req.user.name, 'encerrada', textoNota(v.valores));
+    const eventoEnc = await registrar(reg.id, req.user.name, 'encerrada', textoNota(v.valores));
     avisarPush(async () => [reg.criado_por_id], { titulo: 'Ocorrência encerrada', texto: (reg.cliente_nome || 'Empresa') + ' — ' + (reg.assunto || ''), url: '/cs?aba=consideracoes', tag: 'enc-' + reg.id }, req.user.id);
     refrescarRisco();
-    res.json({ registro: await registroCompleto(reg.id) });
+    res.json({ registro: await registroCompleto(reg.id), evento_id: eventoEnc });
   } catch (e) { console.error('[qualidade] POST sucesso encerrar falhou:', e); res.status(500).json({ error: 'Erro ao encerrar o processo.' }); }
 });
 
@@ -1747,8 +1747,8 @@ router.post('/ocorrencias/:id/anexo', express.raw({ type: () => true, limit: MAX
   } catch (e) { console.error('[qualidade] POST anexo falhou:', e); res.status(500).json({ error: 'Erro ao guardar o anexo.' }); }
 });
 
-/** Quem pode anexar a uma fala: o autor dela (ou a administração), só nas falas que levam nota — observação, nota final do analista, validação e devolução do gestor — e logo depois de enviá-la. */
-const ACOES_COM_ARQUIVO = ['nota', 'analista_encerrou', 'gestor_validou', 'devolvida'];
+/** Quem pode anexar a uma fala: o autor dela (ou a administração), só nas falas que levam nota — observação, nota final do analista, validação e devolução do gestor, devolutiva ao cliente e encerramento do Sucesso — e logo depois de enviá-la. */
+const ACOES_COM_ARQUIVO = ['nota', 'analista_encerrou', 'gestor_validou', 'devolvida', 'encerrada'];
 const JANELA_ARQUIVO_FALA_MIN = 120;
 function podeAnexarNaFala(user, fala) {
   if (!user || !fala || !ACOES_COM_ARQUIVO.includes(fala.acao)) return false;
