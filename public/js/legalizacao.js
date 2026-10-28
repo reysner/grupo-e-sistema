@@ -300,6 +300,19 @@
   var COL_SIT = { t: 'Situação', h: function (r) { return pillSt(r.st); }, x: function (r) { return ROT_ST[r.st]; } };
   var COL_VENC = { t: 'Vencimento', h: function (r) { return r.i && r.i.vencimento ? data(String(r.i.vencimento).slice(0, 10)) : '<span class="cinza">—</span>'; }, x: function (r) { return r.i && r.i.vencimento ? data(String(r.i.vencimento).slice(0, 10)) : ''; } };
   var COL_PRAZO = { t: 'Prazo', h: function (r) { return prazoHtml(r.i); }, x: function (r) { return r.i && r.i.vencimento ? prazoTxt(r.i) : ''; } };
+  /** O Protocolo Online (número + situação lida do portal) vale mais que o texto da consulta antiga: é o que a prefeitura diz hoje. */
+  function andamentoSolicitacao(i) {
+    if (i.protocolo) return 'Protocolo ' + i.protocolo + (i.protocolo_info ? ' · ' + i.protocolo_info : '');
+    return i.consulta_resumo || '';
+  }
+  /** A consulta automática grava a data em dd/mm/aaaa; o protocolo lido do portal traz "solicitado em dd/mm/aaaa" dentro do andamento. */
+  function solicitadoEm(i) {
+    var s = i.consulta_data_solicitacao ? String(i.consulta_data_solicitacao).trim() : '';
+    if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) return s.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return data(s.slice(0, 10));
+    var m = i.protocolo_info && /solicitado em (\d{2}\/\d{2}\/\d{4})/.exec(i.protocolo_info);
+    return m ? m[1] : '';
+  }
   function obsDe(r) {
     var i = r.i; if (!i) return '';
     var p = [];
@@ -390,8 +403,8 @@
       arquivo: 'legalizacao-solicitacoes', titulo: 'Legalização — Solicitações em andamento', filtros: ['busca', 'tipo', 'auto'],
       tipos: TIPOS.map(function (t) { return [t, ROT_CURTO[t]]; }),
       linhas: function () { return docsDe(function (i) { return stDe(i) === 'solicitacao'; }).sort(porNome); },
-      colunas: [COL_EMPRESA, COL_DOCNOME, COL_VENC, { t: 'Andamento', h: function (r) { return esc(r.i.consulta_resumo || '') || '<span class="cinza">sem detalhe da prefeitura</span>'; }, x: function (r) { return r.i.consulta_resumo || ''; } },
-        { t: 'Solicitado em', h: function (r) { return r.i.consulta_data_solicitacao ? data(String(r.i.consulta_data_solicitacao).slice(0, 10)) : '<span class="cinza">—</span>'; }, x: function (r) { return r.i.consulta_data_solicitacao ? data(String(r.i.consulta_data_solicitacao).slice(0, 10)) : ''; } },
+      colunas: [COL_EMPRESA, COL_DOCNOME, COL_VENC, { t: 'Andamento', h: function (r) { return esc(andamentoSolicitacao(r.i)) || '<span class="cinza">sem detalhe da prefeitura</span>'; }, x: function (r) { return andamentoSolicitacao(r.i); } },
+        { t: 'Solicitado em', h: function (r) { return solicitadoEm(r.i) || '<span class="cinza">—</span>'; }, x: function (r) { return solicitadoEm(r.i); } },
         COL_MUN],
       ajuda: 'Documentos cuja renovação já foi solicitada à prefeitura. Saem desta lista quando o novo documento é emitido.',
       vazio: 'Nenhuma renovação em andamento.',
