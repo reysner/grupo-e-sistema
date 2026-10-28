@@ -238,6 +238,22 @@ teste('histórico: resposta de qualquer endereço do escritório encerra; menos 
   const obrig = atendimentoPorContato([recPara('joao@padaria.com.br', 50, ['cs@escritorial.com.br']), env('joao@padaria.com.br', 40), recPara('joao@padaria.com.br', 30, ['cs@escritorial.com.br'], { tamanho: 3000 })], ctxAt);
   assert.strictEqual(obrig[0].semResposta, 0);
 });
+teste('histórico: resposta a OUTRO endereço da mesma empresa encerra a espera; contato de várias empresas continua só pelo endereço exato', () => {
+  const mapa3 = { 'joao@padaria.com.br': ['11111111000111'], 'socia@gmail.com': ['11111111000111'], 'contador@gmail.com': ['11111111000111', '33333333000133'], 'outra@gmail.com': ['33333333000133'] };
+  const c3 = Object.assign({}, ctxAt, { mapaEmails: mapa3, dominiosCliente: dominiosDeCliente(mapa3, internosAt) });
+  // cliente escreve do e-mail da empresa; o colega responde para a sócia (e-mail pessoal da MESMA empresa)
+  assert.strictEqual(atendimentoPorContato([recPara('joao@padaria.com.br', 50, ['cs@escritorial.com.br']), env('socia@gmail.com', 40)], c3)[0].semResposta, 0);
+  // responder para outro funcionário do mesmo domínio da empresa também vale
+  assert.strictEqual(atendimentoPorContato([recPara('joao@padaria.com.br', 50, ['cs@escritorial.com.br']), env('maria@padaria.com.br', 40)], c3)[0].semResposta, 0);
+  // resposta anterior ao e-mail não vale
+  assert.strictEqual(atendimentoPorContato([env('socia@gmail.com', 60), recPara('joao@padaria.com.br', 50, ['cs@escritorial.com.br'], { tamanho: 50000 })], c3)[0].semResposta, 1);
+  // resposta para endereço de OUTRA empresa não vale
+  assert.strictEqual(atendimentoPorContato([recPara('joao@padaria.com.br', 50, ['cs@escritorial.com.br']), env('outra@gmail.com', 40)], c3)[0].semResposta, 1);
+  // contato ligado a duas empresas: resposta a outro endereço de uma delas não encerra
+  assert.strictEqual(atendimentoPorContato([recPara('contador@gmail.com', 50, ['cs@escritorial.com.br']), env('socia@gmail.com', 40)], c3)[0].semResposta, 1);
+  // mas a resposta ao próprio endereço dele continua valendo
+  assert.strictEqual(atendimentoPorContato([recPara('contador@gmail.com', 50, ['cs@escritorial.com.br']), env('contador@gmail.com', 40)], c3)[0].semResposta, 0);
+});
 teste('histórico: contato ligado a duas empresas vai para "compartilhados" e não infla o total de nenhuma', () => {
   const m2 = Object.assign({}, mapaEmails, { 'socio@yahoo.com.br': ['11111111000111', '33333333000133'] });
   const c = atendimentoPorContato([recPara('socio@yahoo.com.br', 50, ['cs@escritorial.com.br']), recPara('joao@padaria.com.br', 20, ['cs@escritorial.com.br'])],

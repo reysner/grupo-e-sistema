@@ -239,7 +239,8 @@ function naoIdentificados(contatos, minHoras) {
  * (cópias em várias caixas viram um só), quais ficaram SEM resposta e por qual endereço INTERNO (Para/Cc) cada um entrou.
  *
  * Um e-mail está sem resposta quando o escritório não escreveu para aquele contato depois dele, em NENHUMA caixa: a resposta de
- * um colega, ou de outro endereço do mesmo grupo (dptofiscal@, cs@ etc.), encerra a espera. Ficam de fora: e-mail com menos de
+ * um colega, ou de outro endereço do mesmo grupo (dptofiscal@, cs@ etc.), encerra a espera. Para contato de uma empresa só, escrever
+ * depois para QUALQUER outro endereço da mesma empresa (sócio, outro funcionário) também encerra. Ficam de fora: e-mail com menos de
  * 4 h e o último e-mail curto, sem anexo, de quem já tinha recebido resposta (provável "obrigado").
  *
  * Só contatos LIGADOS a empresa entram. Nenhum endereço do cliente sai daqui; os endereços internos devem ser trocados por nomes
@@ -253,7 +254,17 @@ function atendimentoPorContato(msgs, ctx) {
   const corte = (ctx.minHoras == null ? 4 : ctx.minHoras) * 3600000;
   const dominios = ctx.dominiosCliente || {}, mapa = ctx.mapaEmails || {}, internos = ctx.internos || new Set(), ignorar = ctx.ignorarDominios || [];
   const enviosPara = {};
-  (msgs || []).forEach((m) => { if (m.interno) (m.para || []).forEach((a) => { (enviosPara[a] = enviosPara[a] || []).push(m.t); }); });
+  const enviosCnpj = {};   // o que o escritório escreveu para QUALQUER endereço de uma mesma empresa (só quando o endereço é de uma empresa só)
+  const cnpjsDe = (a) => { const s = new Set(); (mapa[a] || []).forEach((c) => s.add(c)); if (!s.size && dominios[dominio(a)]) dominios[dominio(a)].forEach((c) => s.add(c)); return s; };
+  (msgs || []).forEach((m) => {
+    if (!m.interno) return;
+    (m.para || []).forEach((a) => {
+      (enviosPara[a] = enviosPara[a] || []).push(m.t);
+      if (internos.has(dominio(a))) return;
+      const cs = cnpjsDe(a);
+      if (cs.size === 1) { const c = Array.from(cs)[0]; (enviosCnpj[c] = enviosCnpj[c] || []).push(m.t); }
+    });
+  });
   const porContato = {};
   (msgs || []).forEach((m) => { if (!m.interno && !m.auto && m.de && !dominioIgnorado(dominio(m.de), ignorar, dominios)) (porContato[m.de] = porContato[m.de] || []).push(m); });
   const out = [];
@@ -270,7 +281,9 @@ function atendimentoPorContato(msgs, ctx) {
       if (ult && m.t - ult.t <= JANELA_COPIA_MS) { ult.t = m.t; ult.tamanho = m.tamanho; ult.anexo = m.anexo; dest.forEach((a) => ult.dest.add(a)); }
       else emails.push({ t: m.t, dest: new Set(dest), tamanho: m.tamanho, anexo: m.anexo });
     });
-    const envios = enviosPara[de] || [];
+    // contato de uma empresa só: resposta a qualquer outro endereço da mesma empresa (sócio, outro funcionário) também encerra a espera;
+    // contato ligado a várias empresas (contador, sócio de várias) continua valendo só o endereço exato, para não dar resposta de uma empresa a outra
+    const envios = cnpjs.size === 1 ? (enviosPara[de] || []).concat(enviosCnpj[Array.from(cnpjs)[0]] || []) : (enviosPara[de] || []);
     let ultimoEnvio = -Infinity; envios.forEach((t) => { if (t > ultimoEnvio) ultimoEnvio = t; });
     const ultimo = emails[emails.length - 1];
     const jaRespondemosAntes = envios.some((t) => t < ultimo.t);
