@@ -613,7 +613,7 @@ router.post('/legalizacao/certificados/sincronizar-certiseguro', async (req, res
  * POST /api/data/legalizacao/certificados/atualizar-agora — botão "Atualizar CertiSeguro agora" (administrador): mesma busca do servidor, na hora, sem esperar a rodada do dia.
  * Se a CertiSeguro recusar (IP não liberado), a falha vai para o sino com o IP a cadastrar, como nas rodadas automáticas.
  */
-router.post('/legalizacao/certificados/atualizar-agora', requireAdmin, async (req, res) => {
+router.post('/legalizacao/certificados/atualizar-agora', requireAuth, requireAdmin, async (req, res) => {   // fica antes do router.use(requireAuth) (rotas de máquina), por isso pede a sessão aqui
   try {
     const r = await sincronizarCertiseguroNoServidor(req);
     if (r.status !== 200) await registrarRotinaLegalizacao('certiseguro', { total: 0, ok: 0, falhas: 1, resumo: { erro: r.corpo.error } });
