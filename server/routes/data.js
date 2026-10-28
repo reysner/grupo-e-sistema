@@ -721,7 +721,98 @@ router.post('/legalizacao/procuracoes/importar', async (req, res) => {
   }
 });
 
+/**
+ * Protocolo Online da Prefeitura de Uberlândia (requerimento.uberlandia.mg.gov.br): lista de solicitações da conta do escritório, lida pelo Tampermonkey no navegador
+ * (login com CPF; o servidor não entra sozinho). Aqui o que importa é o alvará SANITÁRIO: processo ainda em andamento = renovação/emissão já pedida, então o alvará vira
+ * "Solicitação" com o número do protocolo; quando o processo deixa de estar em andamento, o protocolo automático sai e vale a data que a consulta/PDF trouxer.
+ * Corpo: { solicitacoes: [{ protocolo, data, cod, situacao, descricao, pagamento, modelo, cnpj, cnpj_estab, nome, ult_alter }] }.
+ */
+const PROTOCOLO_ABERTO = new Set(['T', 'L', 'E', 'I']);   // Tramitando, Parecer disponível, Retorno, Pendência (P = cancelado por falta de pagamento; Q/A/R = encerrados)
+const ehModeloAlvaraSanitario = (m) => /alvar[aá]\s+sanit[aá]rio/i.test(String(m || '')) && !/dispensa|prorroga|desarquiv/i.test(String(m || ''));
+const PROTOCOLO_AUTOMATICO = 'Protocolo Online (automático)';
+
+async function aplicarProtocolosOnline(lista) {
+  await ensureLegalizacaoSchema();
+  await pool.query(`CREATE TABLE IF NOT EXISTS legalizacao_protocolos (
+    protocolo TEXT PRIMARY KEY, cnpj TEXT, nome TEXT, modelo TEXT, data_solicitacao DATE, situacao_cod TEXT, situacao TEXT, descricao TEXT,
+    pagamento TEXT, ultima_alteracao DATE, lido_em TIMESTAMPTZ NOT NULL DEFAULT NOW())`).catch(() => {});
+  await pool.query(`ALTER TABLE legalizacao_protocolos ENABLE ROW LEVEL SECURITY`).catch(() => {});
+  const dig = (v) => String(v || '').replace(/\D/g, '');
+  const dia = (v) => (/^\d{4}-\d{2}-\d{2}/.test(String(v || '')) ? String(v).slice(0, 10) : null);
+  const itens = (Array.isArray(lista) ? lista : []).map((x) => ({
+    protocolo: String((x && x.protocolo) || '').trim().slice(0, 40), data: dia(x && x.data), cod: String((x && x.cod) || '').slice(0, 2), situacao: String((x && x.situacao) || '').slice(0, 80),
+    descricao: String((x && x.descricao) || '').replace(/\s+/g, ' ').trim().slice(0, 300), pagamento: String((x && x.pagamento) || '').slice(0, 40), modelo: String((x && x.modelo) || '').slice(0, 160),
+    cnpj: dig(x && x.cnpj), cnpjEstab: dig(x && x.cnpj_estab), nome: String((x && x.nome) || '').slice(0, 160), ult: dia(x && x.ult_alter),
+  })).filter((x) => x.protocolo);
+  if (!itens.length) throw Object.assign(new Error('A lista de solicitações veio vazia: nada foi alterado.'), { status: 400 });
+
+  // retrato completo (auditoria): troca tudo
+  await pool.query('DELETE FROM legalizacao_protocolos');
+  await pool.query(
+    `INSERT INTO legalizacao_protocolos (protocolo, cnpj, nome, modelo, data_solicitacao, situacao_cod, situacao, descricao, pagamento, ultima_alteracao)
+     SELECT DISTINCT ON (p) p, c, n, m, d::date, sc, s, ds, pg, u::date FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[], $10::text[]) AS x(p, c, n, m, d, sc, s, ds, pg, u)`,
+    [itens.map((i) => i.protocolo), itens.map((i) => i.cnpj), itens.map((i) => i.nome), itens.map((i) => i.modelo), itens.map((i) => i.data), itens.map((i) => i.cod),
+      itens.map((i) => i.situacao), itens.map((i) => i.descricao), itens.map((i) => i.pagamento), itens.map((i) => i.ult)]);
+
+  // processo de alvará sanitário em andamento, o mais recente por documento (CNPJ da pessoa e, se houver, do estabelecimento)
+  const porDoc = new Map();
+  for (const i of itens) {
+    if (!ehModeloAlvaraSanitario(i.modelo) || !PROTOCOLO_ABERTO.has(i.cod)) continue;
+    for (const d of new Set([i.cnpj, i.cnpjEstab].filter((v) => v.length === 14))) {
+      const a = porDoc.get(d); if (!a || String(i.data) > String(a.data)) porDoc.set(d, i);
+    }
+  }
+  const docs = [...porDoc.keys()];
+  const { rows: clientes } = docs.length ? await pool.query(
+    `SELECT id::text AS id, nome_empresa, regexp_replace(cnpj, '\\D', '', 'g') AS doc FROM clientes WHERE status = 'ativo' AND regexp_replace(cnpj, '\\D', '', 'g') = ANY($1::text[])`, [docs]) : { rows: [] };
+  const aplicados = [], foraDaJanela = [];
+  const idsAbertos = [];
+  for (const c of clientes) {
+    const p = porDoc.get(c.doc);
+    const info = `${p.situacao}${p.pagamento ? ' · taxa: ' + p.pagamento.toLowerCase() : ''} · solicitado em ${p.data ? p.data.split('-').reverse().join('/') : '—'}${p.ult ? ' · movimentado em ' + p.ult.split('-').reverse().join('/') : ''}`;
+    const r = await pool.query(
+      `INSERT INTO legalizacao_alvaras (cliente_id, tipo, protocolo_numero, protocolo_em, protocolo_por, protocolo_venc_ref, protocolo_info, criado_por)
+       VALUES ($1, 'sanitario', $2, NOW(), $3, DATE '0001-01-01', $4, 'Protocolo Online')
+       ON CONFLICT (cliente_id, tipo) DO UPDATE SET
+         protocolo_em = CASE WHEN legalizacao_alvaras.protocolo_numero IS DISTINCT FROM $2 THEN NOW() ELSE legalizacao_alvaras.protocolo_em END,
+         protocolo_por = CASE WHEN legalizacao_alvaras.protocolo_numero IS DISTINCT FROM $2 THEN $3 ELSE legalizacao_alvaras.protocolo_por END,
+         protocolo_venc_ref = CASE WHEN legalizacao_alvaras.protocolo_numero IS DISTINCT FROM $2 THEN COALESCE(legalizacao_alvaras.data_vencimento, DATE '0001-01-01') ELSE legalizacao_alvaras.protocolo_venc_ref END,
+         protocolo_info = $4, protocolo_numero = $2, atualizado_em = NOW()
+       WHERE legalizacao_alvaras.data_vencimento IS NULL OR legalizacao_alvaras.data_vencimento <= CURRENT_DATE + ${LEGAL_DIAS_ALERTA_SANITARIO} * INTERVAL '1 day'
+       RETURNING id`, [c.id, p.protocolo, PROTOCOLO_AUTOMATICO, info]);
+    if (r.rowCount) { aplicados.push(`${c.nome_empresa} (${p.protocolo})`); idsAbertos.push(c.id); } else foraDaJanela.push(`${c.nome_empresa} (${p.protocolo})`);
+  }
+  // protocolo automático que não está mais em andamento (deferido, arquivado, cancelado…) sai; o manual só sai quando chega data nova ou alguém remove
+  const { rowCount: removidos } = await pool.query(
+    `UPDATE legalizacao_alvaras SET protocolo_numero = NULL, protocolo_em = NULL, protocolo_por = NULL, protocolo_venc_ref = NULL, protocolo_info = NULL, atualizado_em = NOW()
+      WHERE tipo = 'sanitario' AND protocolo_por = $1 AND cliente_id <> ALL($2::text[])`, [PROTOCOLO_AUTOMATICO, idsAbertos]);
+  const resumo = { solicitacoes: itens.length, alvaras_sanitarios_em_andamento: porDoc.size, aplicados: aplicados.length, removidos, sem_cliente_ativo: docs.length - clientes.length, fora_da_janela: foraDaJanela.length };
+  await registrarRotinaLegalizacao('protocolo_online', { total: itens.length, ok: itens.length, falhas: 0, resumo });
+  return { ok: true, ...resumo, empresas: aplicados.slice(0, 80) };
+}
+
+router.post('/legalizacao/protocolo-online', async (req, res) => {
+  try {
+    if (!tokenSyncOk(req, res)) return;
+    res.json(await aplicarProtocolosOnline(req.body && req.body.solicitacoes));
+  } catch (err) {
+    console.error('[legalizacao] protocolo-online falhou:', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Erro ao gravar os protocolos.' });
+  }
+});
+
 router.use(requireAuth);
+
+/** Mesma gravação da rota de máquina, autenticada pelo login (administrador): para rodar a leitura na hora sem o Tampermonkey. */
+router.post('/legalizacao/protocolo-online-manual', requireAdmin, async (req, res) => {
+  try {
+    res.json(await aplicarProtocolosOnline(req.body && req.body.solicitacoes));
+  } catch (err) {
+    console.error('[legalizacao] protocolo-online-manual falhou:', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Erro ao gravar os protocolos.' });
+  }
+});
+
 
 /**
  * POST /api/data/legalizacao/procuracoes/importar-manual — mesma coisa que a rota máquina-a-máquina acima, só
@@ -5396,6 +5487,7 @@ async function ensureLegalizacaoSchema() {
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS protocolo_em TIMESTAMPTZ`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS protocolo_por TEXT`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS protocolo_venc_ref DATE`).catch(()=>{});
+  await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS protocolo_info TEXT`).catch(()=>{});
   // Fila de conferência: datas lidas por OCR do PDF da pasta ficam "a conferir" até alguém confirmar/corrigir.
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS lido_por_ocr BOOLEAN NOT NULL DEFAULT false`).catch(()=>{});
   await pool.query(`ALTER TABLE legalizacao_alvaras ADD COLUMN IF NOT EXISTS origem_arquivo TEXT`).catch(()=>{});
@@ -5558,7 +5650,7 @@ SELECT x.cliente_id, x.nome_empresa, x.cnpj, x.codigo, x.sem_cadastro_acessorias
   x.ecac_id, x.ecac_venc::text AS ecac_venc, x.ecac_obs,
   ${_legalStatusSql('x.ecac_venc', LEGAL_DIAS_ALERTA_PROCURACAO)} AS ecac_status,
   x.fgts_id, x.fgts_venc::text AS fgts_venc, x.fgts_obs, x.sanit_desat, x.cert_desat,
-  x.func_prot, x.func_prot_em::text AS func_prot_em, x.sanit_prot, x.sanit_prot_em::text AS sanit_prot_em,
+  x.func_prot, x.func_prot_em::text AS func_prot_em, x.sanit_prot, x.sanit_prot_em::text AS sanit_prot_em, x.func_pinfo, x.sanit_pinfo,
   ${_legalStatusSql('x.fgts_venc', LEGAL_DIAS_ALERTA_PROCURACAO)} AS fgts_status
 FROM (
   SELECT c.id::text AS cliente_id, c.nome_empresa, c.cnpj, c.codigo, false AS sem_cadastro_acessorias,
@@ -5571,7 +5663,8 @@ FROM (
          pg.id AS fgts_id, pg.data_vencimento AS fgts_venc, pg.observacoes AS fgts_obs,
          (sa.desativado_em IS NOT NULL) AS sanit_desat, (ce.desativado_em IS NOT NULL) AS cert_desat,
          fa.protocolo_numero AS func_prot, fa.protocolo_venc_ref AS func_pref, fa.protocolo_em AS func_prot_em,
-         sa.protocolo_numero AS sanit_prot, sa.protocolo_venc_ref AS sanit_pref, sa.protocolo_em AS sanit_prot_em
+         sa.protocolo_numero AS sanit_prot, sa.protocolo_venc_ref AS sanit_pref, sa.protocolo_em AS sanit_prot_em,
+         fa.protocolo_info AS func_pinfo, sa.protocolo_info AS sanit_pinfo
     FROM clientes c
     LEFT JOIN legalizacao_alvaras fa ON fa.cliente_id = c.id::text AND fa.tipo = 'funcionamento'
     LEFT JOIN legalizacao_alvaras sa ON sa.cliente_id = c.id::text AND sa.tipo = 'sanitario'
@@ -5587,7 +5680,7 @@ FROM (
          NULL, NULL, NULL,
          NULL, NULL, NULL,
          false, (ce.desativado_em IS NOT NULL),
-         NULL, NULL, NULL, NULL, NULL, NULL
+         NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
     FROM legalizacao_certificados ce
    WHERE ce.tipo = 'pf'
       OR (ce.tipo = 'pj' AND NOT EXISTS (SELECT 1 FROM clientes c2 WHERE c2.id::text = ce.cliente_id))
@@ -5600,7 +5693,7 @@ function legalPainelLinha(r) {
     id: r[p + '_id'], vencimento: r[p + '_venc'], numero: r[p + '_numero'], observacoes: r[p + '_obs'],
     consulta_resumo: r[p + '_cr'], consulta_data_solicitacao: r[p + '_cd'], consulta_em: r[p + '_ce'] || null, dispensado_motivo: r[p + '_dm'] || null,   // quando a consulta automática/pasta conferiu pela última vez (distingue "consultado, sem alvará" de "não consultado")
     desativado: !!r[p + '_desat'], status: r[p + '_desat'] ? 'desativado' : r[p + '_status'],
-    protocolo: r[p + '_prot'] || null, protocolo_em: r[p + '_prot_em'] || null,   // renovação já protocolada na prefeitura (informada à mão)
+    protocolo: r[p + '_prot'] || null, protocolo_em: r[p + '_prot_em'] || null, protocolo_info: r[p + '_pinfo'] || null,   // renovação já protocolada na prefeitura (informada à mão)
   });
   const procuracao = (p) => ({ id: r[p + '_id'], vencimento: r[p + '_venc'], observacoes: r[p + '_obs'], status: r[p + '_status'] });
   return {
@@ -5721,6 +5814,7 @@ const ROTINAS_LEGALIZACAO = {
   // 19/10/2026: o IP da estação muda e a sincronização do CertiSeguro falhava sem ninguém saber; as procurações dependem de login do Reysner na segunda.
   // 27/10/2026: passou a rodar no servidor, todo dia às 07:00 e 13:00 (a estação, às segundas 09:00, continua como reserva); sem rodada em 36 h = aviso no sino.
   certiseguro: { nome: 'Sincronização dos certificados (CertiSeguro)', horario: 'todo dia às 07:00 e 13:00 (servidor)', horasMax: 36 },
+  protocolo_online: { nome: 'Protocolo Online da Prefeitura de Uberlândia', horario: 'toda segunda, a partir das 09:30 (precisa do login da Josiane no portal)', horasMax: 200 },
   procuracoes_ecac: { nome: 'Procurações do e-CAC', horario: 'toda segunda, a partir das 09:30 (precisa do login com certificado)', horasMax: 200 },
   procuracoes_fgts: { nome: 'Procurações do FGTS Digital', horario: 'toda segunda, a partir das 09:30 (precisa do login com certificado)', horasMax: 200 },
 };

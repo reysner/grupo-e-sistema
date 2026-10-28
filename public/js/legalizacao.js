@@ -303,7 +303,7 @@
   function obsDe(r) {
     var i = r.i; if (!i) return '';
     var p = [];
-    if (i.status === 'solicitacao' && i.protocolo) p.push('Protocolo ' + i.protocolo + (i.protocolo_em ? ' (informado em ' + data(String(i.protocolo_em).slice(0, 10)) + ')' : ''));
+    if (i.status === 'solicitacao' && i.protocolo) p.push('Protocolo ' + i.protocolo + (i.protocolo_info ? ' · ' + i.protocolo_info : (i.protocolo_em ? ' (informado em ' + data(String(i.protocolo_em).slice(0, 10)) + ')' : '')));
     if (i.status === 'solicitacao' && i.consulta_resumo) p.push(i.consulta_resumo);
     if (i.status === 'dispensado' && i.dispensado_motivo) p.push(i.dispensado_motivo);   // por que a prefeitura dispensou
     if (i.observacoes) p.push(i.observacoes);
