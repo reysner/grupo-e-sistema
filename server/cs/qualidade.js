@@ -175,10 +175,10 @@ function textoDestino(departamento, dest) {
 /**
  * Vínculo entre departamentos: quando o gestor abre um vínculo com um analista de OUTRO departamento (o que trata não é de nenhum dos departamentos dele),
  * o vínculo vai para o(a) gestor(a) do departamento do analista, que abre o vínculo com o liderado dele(a) e depois responde; só então volta ao solicitante.
- * Quem está acima dos departamentos (administração e Sucesso do Cliente) continua abrindo direto para o analista.
+ * Vale para todos (inclusive administração e Sucesso do Cliente); quem abre pode marcar "direto para o analista" para não passar pelo gestor do outro departamento.
  */
-function vinculoEntreDepartamentos(deptosDeQuemAbre, departamento, acimaDosDepartamentos) {
-  if (acimaDosDepartamentos || !departamento) return false;
+function vinculoEntreDepartamentos(deptosDeQuemAbre, departamento) {
+  if (!departamento) return false;
   return !(deptosDeQuemAbre || []).includes(departamento);
 }
 /** Quem muda o prazo de uma ocorrência: a administração ou o gestor/diretor de um dos departamentos dela. */
@@ -1192,8 +1192,11 @@ router.post('/gestor/ocorrencias/:id/filha', async (req, res) => {
     const x = v.valores;
     // quem recebeu o vínculo de outro departamento abre o vínculo com um analista do PRÓPRIO departamento (o liderado); não encaminha de novo
     if (pai.origem === 'filha' && !(pai.departamentos || []).includes(x.departamento)) return res.status(400).json({ error: 'Este vínculo veio de outro departamento: abra o vínculo com um analista do seu departamento (' + (pai.departamentos || []).map(rotuloDepto).join(', ') + ').' });
-    const acima = esc.todos || esc.sucesso;   // administração e Sucesso do Cliente abrem direto para o analista, como sempre
-    const encaminhar = pai.origem === 'modulo' && vinculoEntreDepartamentos(esc.deptos, x.departamento, acima);
+    // vale para todos; quem abre pode marcar "direto para o analista" (gestor, administração e Sucesso do Cliente) para não passar pelo gestor do outro departamento
+    const direto = !!(req.body && (req.body.direto === true || req.body.direto === 'true'));
+    if (direto && !(esc.todos || esc.sucesso || (esc.deptos || []).length)) return res.status(403).json({ error: 'Só o gestor, o Sucesso do Cliente e a administração abrem direto para o analista.' });
+    const deptosDeQuemAbre = esc.todos ? Array.from(new Set([].concat(pai.departamentos || [], esc.deptos || []))) : esc.deptos;   // a administração age pelos departamentos da ocorrência
+    const encaminhar = pai.origem === 'modulo' && !direto && vinculoEntreDepartamentos(deptosDeQuemAbre, x.departamento);
     const ans = (await pool.query('SELECT id, nome, ativo FROM analistas WHERE id::text = ANY($1::text[])', [x.analistas_ids])).rows;
     if (ans.length !== x.analistas_ids.length) return res.status(404).json({ error: 'Responsável não encontrado na lista de analistas.' });
     const inativo = ans.find((a) => !a.ativo);

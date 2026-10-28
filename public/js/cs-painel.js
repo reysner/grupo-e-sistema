@@ -2888,6 +2888,7 @@
         '<div class="qa-campo"><label for="gf-prazo">Prazo para execução <span class="req">*</span></label><input type="date" id="gf-prazo" min="' + hojeIsoLocal() + '"></div>' +
       '</div>' +
       '<div class="qa-obs" id="gf-aviso-depto" style="margin:6px 0;display:none"></div>' +
+      '<label class="qa-dep" id="gf-direto-box" style="margin:6px 0;display:none"><input type="checkbox" id="gf-direto"> Abrir <strong>direto para o analista</strong>, sem passar pelo(a) Gestor(a) do departamento <span class="cinza">(só o gestor, o Sucesso do Cliente e a administração)</span></label>' +
       '<div class="qa-campo"><label for="gf-obs">Observação <span class="cinza" id="gf-obs-cont">0/1500</span></label><textarea id="gf-obs" rows="3" maxlength="1500" placeholder="Opcional: orientação a quem vai tratar. Digite @ para chamar um analista."></textarea></div>' +
       '<label class="qa-dep" style="margin:6px 0"><input type="checkbox" id="gf-mostrar"> Mostrar a origem e o analista do registro para quem vai tratar <span class="cinza">(padrão: não; isso fica só com você)</span></label>' +
       '<div class="qa-oc-linha qa-oc-bot"><button type="button" class="qa-btn-cancel" id="gf-cancel" style="background:#64748b">Cancelar</button><button type="button" class="qa-btn-ok" id="gf-ok">Abrir ocorrência vinculada</button></div>' +
@@ -2895,20 +2896,29 @@
   }
   /** Vínculo para OUTRO departamento (o servidor decide; aqui só avisa): vai ao(à) Gestor(a) do departamento, que abre o vínculo com o liderado e responde. Administração e Sucesso do Cliente abrem direto. */
   function vinculoEntreDeptosQ(pai, depto) {
-    if (pai.origem === 'filha' || !depto || perfilCs().admin || (estado.eu && estado.eu.sucesso)) return false;
-    return ((estado.eu && estado.eu.departamentos) || []).indexOf(depto) < 0;
+    if (pai.origem === 'filha' || !depto) return false;
+    var meus = ((estado.eu && estado.eu.departamentos) || []).slice();
+    if (perfilCs().admin) meus = meus.concat(pai.departamentos || []);   // a administração age pelos departamentos da ocorrência
+    return meus.indexOf(depto) < 0;
   }
+  /** A caixa "direto para o analista" é do Portal do Gestor, da administração e do Portal do Sucesso do Cliente (o servidor confere). */
+  function podeAbrirDiretoQ() { var p = perfilCs(), eu = estado.eu || {}; return !!(p.admin || p.gestor || eu.gestor || eu.sucesso); }
+  /** Este vínculo vai ao(à) Gestor(a) do outro departamento? Só quando é para outro departamento e a caixa "direto" não está marcada. */
+  function vaiAoGestorQ(pai, depto, direto) { return vinculoEntreDeptosQ(pai, depto) && !(direto && podeAbrirDiretoQ()); }
   function abrirFilhaGestor(pai, aoCriar) {
     var ov = document.createElement('div'); ov.className = 'qa-overlay'; document.body.appendChild(ov);
     var fechar = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
     ov.innerHTML = '<div class="qa-modal qa-modal-oc" role="dialog" aria-label="Abrir ocorrência vinculada">' + htmlFilhaGestor(pai, estado.qAnalistas || []) + '</div>';
     $('gf-fechar').addEventListener('click', fechar); $('gf-cancel').addEventListener('click', fechar);
     var avisoDepto = function () {
-      var d = $('gf-depto').value, el = $('gf-aviso-depto'), entre = vinculoEntreDeptosQ(pai, d);
-      el.style.display = entre ? '' : 'none';
-      el.innerHTML = entre ? 'ℹ Este vínculo é para outro departamento (<strong>' + esc(rotuloDepto(d)) + '</strong>): ele vai ao(à) Gestor(a) desse departamento, que abre o vínculo com o analista dele(a) e <strong>responde a você</strong>. O analista que você escolher aqui fica como indicação. Quando o vínculo voltar, você faz a devolutiva ao Gestor(a) final do Sucesso do Cliente.' : '';
+      var d = $('gf-depto').value, el = $('gf-aviso-depto'), outro = vinculoEntreDeptosQ(pai, d), podeDireto = outro && podeAbrirDiretoQ(), direto = podeDireto && $('gf-direto').checked;
+      $('gf-direto-box').style.display = podeDireto ? '' : 'none';
+      el.style.display = outro ? '' : 'none';
+      el.innerHTML = !outro ? '' : direto
+        ? 'ℹ Este vínculo é para outro departamento (<strong>' + esc(rotuloDepto(d)) + '</strong>), mas vai <strong>direto para o analista</strong>, sem passar pelo(a) Gestor(a) desse departamento.'
+        : 'ℹ Este vínculo é para outro departamento (<strong>' + esc(rotuloDepto(d)) + '</strong>): ele vai ao(à) Gestor(a) desse departamento, que abre o vínculo com o analista dele(a) e <strong>responde a você</strong>. O analista que você escolher aqui fica como indicação. Quando o vínculo voltar, você faz a devolutiva ao Gestor(a) final do Sucesso do Cliente.';
     };
-    $('gf-depto').addEventListener('change', avisoDepto); avisoDepto();
+    $('gf-depto').addEventListener('change', avisoDepto); $('gf-direto').addEventListener('change', avisoDepto); avisoDepto();
     var plano = $('gf-plano'), erro = $('gf-erro');
     var ocultarEmpresa = false;   // ✕ na empresa: quem vai tratar não vê qual empresa reclamou
     var mostraEmpresa = function (oculta) { ocultarEmpresa = oculta; $('gf-empresa-chip').style.display = oculta ? 'none' : 'inline-flex'; $('gf-empresa-oculta').style.display = oculta ? 'inline' : 'none'; };
@@ -2931,12 +2941,12 @@
       if (prazo < hojeIsoLocal()) { erro.textContent = 'O prazo não pode ser uma data que já passou.'; return; }
       var nomes = sel.map(function (c) { return c.getAttribute('data-nome'); }).join(', ');
       var primeira = ['registrada', 'tratativa_definida'].indexOf(pai.etapa) >= 0 && !(pai.filhas || []).length && !(pai.responsaveis || []).filter(function (x) { return x.analista_id; }).length;
-      var entreDeptos = vinculoEntreDeptosQ(pai, $('gf-depto').value);
+      var entreDeptos = vaiAoGestorQ(pai, $('gf-depto').value, $('gf-direto').checked);
       if (!window.confirm(entreDeptos ? 'Encaminhar este vínculo ao(à) Gestor(a) de ' + rotuloDepto($('gf-depto').value) + ' (analista indicado: ' + nomes + ')?\n\nO(A) Gestor(a) abre o vínculo com o analista dele(a), responde a você e só então o vínculo volta para você.' + (primeira ? '\n\nA ocorrência principal passa a "Em andamento", conduzida pelas vinculadas.' : '')
         : 'Abrir esta ocorrência vinculada para ' + nomes + '?' + (primeira ? '\n\nA ocorrência principal passa a "Em andamento", conduzida pelas vinculadas (não vai para nenhum analista).' : ''))) return;
       var depto = $('gf-depto').value;
       var b = $('gf-ok'); b.disabled = true;
-      var x = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(pai.id) + '/filha', { assunto: assunto, plano: plano.value, analistas_ids: sel.map(function (c) { return c.getAttribute('data-chip'); }), departamento: $('gf-depto').value, prazo: prazo, obs: $('gf-obs').value, mostrar_pai: $('gf-mostrar').checked, ocultar_empresa: ocultarEmpresa });
+      var x = await postarQ('/api/cs/painel/qualidade/gestor/ocorrencias/' + encodeURIComponent(pai.id) + '/filha', { assunto: assunto, plano: plano.value, analistas_ids: sel.map(function (c) { return c.getAttribute('data-chip'); }), departamento: $('gf-depto').value, prazo: prazo, obs: $('gf-obs').value, mostrar_pai: $('gf-mostrar').checked, ocultar_empresa: ocultarEmpresa, direto: !entreDeptos && vinculoEntreDeptosQ(pai, depto) && $('gf-direto').checked });
       if (!x.ok) { erro.textContent = x.j.error || 'Não foi possível abrir a ocorrência vinculada.'; b.disabled = false; return; }
       fechar(); if (aoCriar) aoCriar({ assunto: assunto, nomes: nomes, depto: depto, prazo: prazo, original: x.j.original, encaminhada: !!x.j.encaminhada });
       estado.g.dados = null; desenharGestor();

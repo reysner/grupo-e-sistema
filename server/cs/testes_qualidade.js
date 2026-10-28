@@ -625,19 +625,20 @@ teste('arquivos das falas: a rota confere a fala, o prazo e os limites, e o que 
   const v0 = fonte.indexOf("router.post('/gestor/ocorrencias/:id/validar'"), v1 = fonte.indexOf("router.post('/gestor/ocorrencias/:id/devolver'");
   assert.strictEqual((fonte.slice(v0, v1).match(/evento_id/g) || []).length, 2, 'validar devolve o id da fala nos dois caminhos (vínculo e matriz)');
 });
-teste('vínculo entre departamentos: só vai ao gestor do departamento do analista quando o gestor abre para OUTRO departamento; administração e Sucesso abrem direto', () => {
-  assert.strictEqual(vinculoEntreDepartamentos(['Pessoal'], 'Fiscal', false), true, 'gestor de Pessoal abre para analista do Fiscal: encaminha');
-  assert.strictEqual(vinculoEntreDepartamentos(['Pessoal'], 'Pessoal', false), false, 'mesmo departamento: direto para o analista, como sempre');
-  assert.strictEqual(vinculoEntreDepartamentos(['Pessoal', 'Fiscal'], 'Fiscal', false), false, 'gestor/diretor de dois departamentos: o do Fiscal é dele');
-  assert.strictEqual(vinculoEntreDepartamentos(['Pessoal'], 'Fiscal', true), false, 'administração e Sucesso do Cliente abrem direto');
-  assert.strictEqual(vinculoEntreDepartamentos([], 'Fiscal', false), true);
-  assert.strictEqual(vinculoEntreDepartamentos(['Pessoal'], '', false), false);
+teste('vínculo entre departamentos: vale para todos e vai ao gestor do departamento do analista quando se abre para OUTRO departamento', () => {
+  assert.strictEqual(vinculoEntreDepartamentos(['Pessoal'], 'Fiscal'), true, 'gestor de Pessoal abre para analista do Fiscal: encaminha');
+  assert.strictEqual(vinculoEntreDepartamentos(['Pessoal'], 'Pessoal'), false, 'mesmo departamento: direto para o analista, como sempre');
+  assert.strictEqual(vinculoEntreDepartamentos(['Pessoal', 'Fiscal'], 'Fiscal'), false, 'gestor/diretor de dois departamentos: o do Fiscal é dele');
+  assert.strictEqual(vinculoEntreDepartamentos(['Sucesso'], 'Fiscal'), true, 'Sucesso do Cliente também encaminha (a menos que marque "direto")');
+  assert.strictEqual(vinculoEntreDepartamentos([], 'Fiscal'), true);
+  assert.strictEqual(vinculoEntreDepartamentos(['Pessoal'], ''), false);
 });
 teste('vínculo entre departamentos: o servidor segura o vínculo no gestor receptor, deixa ele abrir o vínculo com o liderado e só devolve ao solicitante depois da resposta', () => {
   const fonte = require('fs').readFileSync(require('path').join(__dirname, 'qualidade.js'), 'utf8');
   const i = fonte.indexOf("router.post('/gestor/ocorrencias/:id/filha'"), j = fonte.indexOf("router.post('/gestor/ocorrencias/:id/abrir'", i);
   const rota = fonte.slice(i, j);
-  assert.ok(rota.includes('vinculoEntreDepartamentos(esc.deptos, x.departamento, acima)') && rota.includes('esc.todos || esc.sucesso'), 'decide pelo departamento de quem abre; administração e Sucesso ficam de fora');
+  assert.ok(rota.includes('!direto && vinculoEntreDepartamentos(deptosDeQuemAbre, x.departamento)'), 'decide pelo departamento de quem abre, para todos, e só abre direto se a caixa "direto" estiver marcada');
+  assert.ok(rota.includes('if (direto && !(esc.todos || esc.sucesso || (esc.deptos || []).length))'), 'a opção de ir direto é do gestor, do Sucesso do Cliente e da administração (o servidor confere)');
   assert.ok(rota.includes('encaminhar ? null : String(x.analistas_ids[0])') && rota.includes('if (!encaminhar) for (const aid of x.analistas_ids)'), 'encaminhado: nenhum analista recebe nem vê antes do gestor abrir o dele');
   assert.ok(rota.includes("pai.origem === 'filha' && !pai.encaminhada") && rota.includes("(pai.departamentos || []).includes(x.departamento)"), 'só o vínculo encaminhado recebe vínculo, e só com analista do próprio departamento (não encaminha de novo)');
   assert.ok(rota.includes('idsDaFila({ fila: dest.fila, departamentos: [x.departamento] })'), 'o gestor do departamento (ou o Sucesso, se não houver gestor) é avisado');
