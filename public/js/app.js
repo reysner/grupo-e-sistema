@@ -6740,7 +6740,7 @@ const Gamificacao = (() => {
     tbody.innerHTML = data.map((c, i) =>
       '<tr><td style="font-weight:700;color:var(--g700)">' + (i + 1) + 'º</td>' +
       '<td style="font-weight:600">' + c.nome + '</td>' +
-      '<td>' + c.meses_avaliados + (c.meses_ferias > 0 ? ' <span style="color:var(--gray-400);font-size:11.5px" title="Mês(es) de férias/afastamento fora da média (média sem esse ajuste: ' + parseFloat(c.media_sem_ajuste).toFixed(2) + ')">+ ' + c.meses_ferias + ' de férias</span>' : '') + '</td>' +
+      '<td>' + (c.meses_avaliados + (c.meses_ferias || 0)) + (c.meses_ferias > 0 ? ' <span style="color:var(--gray-400);font-size:11.5px" title="Mês(es) de férias/afastamento valem a média dos outros meses da pessoa (média sem esse ajuste: ' + parseFloat(c.media_sem_ajuste).toFixed(2) + ')">(' + c.meses_ferias + ' de férias)</span>' : '') + '</td>' +
       '<td><span style="background:var(--g100);color:var(--g700);padding:3px 10px;border-radius:10px;font-weight:700">' + parseFloat(c.media_geral).toFixed(2) + '</span></td></tr>'
     ).join('');
   }
@@ -8799,12 +8799,12 @@ const Gamificacao = (() => {
         <div class="podio-medalha">${medalha(i)}</div>
         <div class="podio-nome">${c.nome}</div>
         <div class="podio-nota">${c.media_geral}</div>
-        <div class="podio-legenda">${c.meses_avaliados} mes(es) na temporada</div>
+        <div class="podio-legenda">${c.meses_avaliados + (c.meses_ferias || 0)} mes(es) na temporada</div>
       </div>`).join('');
 
     const rankingRows = consolidado.map((c, i) => `
       <tr class="${i < 3 ? 'destaque' : ''}"><td>${medalha(i)}</td><td>${c.nome}</td>
-        <td><b>${c.media_geral}</b></td><td>${c.meses_avaliados}${c.meses_ferias > 0 ? ' <span style="color:#94a3b8;font-size:10px">+ ' + c.meses_ferias + ' férias</span>' : ''}</td>
+        <td><b>${c.media_geral}</b></td><td>${c.meses_avaliados + (c.meses_ferias || 0)}${c.meses_ferias > 0 ? ' <span style="color:#94a3b8;font-size:10px">(' + c.meses_ferias + ' de férias †)</span>' : ''}</td>
         <td>${titulosPorNome[c.nome] || 0}</td></tr>`).join('');
 
     const campeoesMesRows = mesesInfo.map(mi => mi.campeao ? `
@@ -8831,7 +8831,7 @@ const Gamificacao = (() => {
       return `<div class="perfil">
         <div class="perfil-header"><span class="perfil-medalha">${medalha(i)}</span><h3>${c.nome}</h3><span class="perfil-nota">${c.media_geral}</span></div>
         <p class="perfil-linha"><b>Trajetória (${_mesCurto(meses[0])} → ${_mesCurto(meses[meses.length - 1])}):</b> ${linha}</p>
-        <p class="perfil-linha"><b>Meses avaliados na temporada:</b> ${c.meses_avaliados} de ${meses.length}${c.meses_ferias > 0 ? ' (' + c.meses_ferias + ' de férias, fora da média)' : ''}</p>
+        <p class="perfil-linha"><b>Meses avaliados na temporada:</b> ${c.meses_avaliados + (c.meses_ferias || 0)} de ${meses.length}${c.meses_ferias > 0 ? ' (' + c.meses_ferias + ' de férias †: vale a média dos outros meses)' : ''}</p>
         <p class="perfil-linha"><b>Vezes campeão(ã) do mês:</b> ${titulosPorNome[c.nome] || 0}</p>
         ${ev ? '<p class="perfil-linha"><b>Evolução no período:</b> ' + ev.de.nota.toFixed(4) + ' (' + _mesCurto(ev.de.mes) + ') → ' + ev.para.nota.toFixed(4) + ' (' + _mesCurto(ev.para.mes) + ') — ' + (ev.delta >= 0 ? '+' : '') + ev.delta.toFixed(4) + '</p>' : ''}
       </div>`;
