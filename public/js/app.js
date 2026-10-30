@@ -8766,12 +8766,20 @@ const Gamificacao = (() => {
         const row = (porMes[mes].ranking || []).find(r => r.nome === c.nome);
         return row ? { mes, nota: parseFloat(row.media), avaliacoes: row.avaliacoes } : null;
       });
+      // Mês de férias/afastamento (marcado em "Férias"): o relatório mostra a MÉDIA DOS OUTROS MESES da pessoa no lugar da nota real do mês
+      // (a mesma regra do Consolidado, onde esse mês fica fora da média). A nota real continua no ranking mensal.
+      const feriasC = new Set(c.ferias_meses || []);
+      if (feriasC.size) {
+        const outros = trajetoria[c.nome].filter(p => p && !feriasC.has(p.mes));
+        const media = outros.length ? outros.reduce((s, p) => s + p.nota, 0) / outros.length : null;
+        trajetoria[c.nome] = trajetoria[c.nome].map(p => (p && feriasC.has(p.mes) && media != null) ? { mes: p.mes, nota: media, avaliacoes: p.avaliacoes, ferias: true, notaReal: p.nota } : p);
+      }
     });
 
     // Maior evolução: primeiro e último mês em que a pessoa TEVE avaliação
     // de verdade (avaliacoes>0) — precisa de pelo menos 2 pontos assim.
     const evolucoes = consolidado.map(c => {
-      const pontos = trajetoria[c.nome].filter(p => p && p.avaliacoes > 0);
+      const pontos = trajetoria[c.nome].filter(p => p && p.avaliacoes > 0 && !p.ferias);   // mês de férias não serve de ponta da evolução
       if (pontos.length < 2) return null;
       const primeiro = pontos[0], ultimo = pontos[pontos.length - 1];
       return { nome: c.nome, delta: ultimo.nota - primeiro.nota, de: primeiro, para: ultimo };
@@ -8796,7 +8804,7 @@ const Gamificacao = (() => {
 
     const rankingRows = consolidado.map((c, i) => `
       <tr class="${i < 3 ? 'destaque' : ''}"><td>${medalha(i)}</td><td>${c.nome}</td>
-        <td><b>${c.media_geral}</b></td><td>${c.meses_avaliados}</td>
+        <td><b>${c.media_geral}</b></td><td>${c.meses_avaliados}${c.meses_ferias > 0 ? ' <span style="color:#94a3b8;font-size:10px">+ ' + c.meses_ferias + ' férias</span>' : ''}</td>
         <td>${titulosPorNome[c.nome] || 0}</td></tr>`).join('');
 
     const campeoesMesRows = mesesInfo.map(mi => mi.campeao ? `
@@ -8808,14 +8816,16 @@ const Gamificacao = (() => {
     const evolucaoHeader = meses.map(m => '<th>' + _mesCurto(m) + '</th>').join('');
     const evolucaoRows = consolidado.map(c => {
       const cels = trajetoria[c.nome].map(p =>
-        p ? '<td class="' + (p.avaliacoes > 0 ? '' : 'sem-aval') + '">' + p.nota.toFixed(4) + '</td>' : '<td class="vazio">—</td>'
+        !p ? '<td class="vazio">—</td>'
+          : p.ferias ? '<td class="ferias" title="Férias/afastamento: média dos outros meses (nota real do mês: ' + p.notaReal.toFixed(4) + ')">' + p.nota.toFixed(4) + ' †</td>'
+          : '<td class="' + (p.avaliacoes > 0 ? '' : 'sem-aval') + '">' + p.nota.toFixed(4) + '</td>'
       ).join('');
       return `<tr><td>${c.nome}</td>${cels}</tr>`;
     }).join('');
 
     const top3Perfis = consolidado.slice(0, 3).map((c, i) => {
       const linha = trajetoria[c.nome].map((p, idx) =>
-        (p ? p.nota.toFixed(4) + (p.avaliacoes > 0 ? '' : '*') : '—')
+        (p ? p.nota.toFixed(4) + (p.ferias ? ' †' : (p.avaliacoes > 0 ? '' : '*')) : '—')
       ).join(' → ');
       const ev = evolucoes.find(e => e.nome === c.nome);
       return `<div class="perfil">
@@ -8847,6 +8857,7 @@ const Gamificacao = (() => {
       tr:nth-child(even) td{background:#f8fafc}
       tr.destaque td{background:#fff8e1!important;font-weight:700}
       td.sem-aval{color:#94a3b8;font-style:italic}
+      td.ferias{color:#2b6cb0;font-weight:600}
       td.vazio{color:#cbd5e1;text-align:center}
       .rodape{font-size:9.5px;color:#94a3b8;margin-top:24px;border-top:1px solid #e2e8f0;padding-top:10px}
       /* Capa */
@@ -8913,7 +8924,7 @@ const Gamificacao = (() => {
         <li><b>Ajustes de comportamento</b> (velocidade de resposta/transferência, tempo de aceite do aguardando, encerramento correto e abandono de atendimento) só <b>descontam</b> em cima dessa base — sempre como <b>média mensal</b>, nunca como soma direta, pra não punir por volume.</li>
         <li><b>Peso mínimo:</b> quem tem poucas avaliações no mês tem a nota final puxada pra mais perto da média do time, pra uma amostra pequena não distorcer o ranking.</li>
         <li><b>Revisão manual:</b> todo desconto de comportamento e toda nota abaixo de 5 passam por revisão de um gestor antes de virar ponto definitivo — nada é automático de verdade até alguém confirmar.</li>
-        <li><b>Consolidado da temporada:</b> média simples da nota final de cada mês, do início do jogo até hoje.</li>
+        <li><b>Consolidado da temporada:</b> média simples da nota final de cada mês, do início do jogo até hoje.${consolidado.some(c => (c.ferias_meses || []).length) ? ' <b>Mês de férias ou afastamento</b> não entra na média de quem esteve ausente (equivale a usar a média dos outros meses dela).' : ''}</li>
       </ul>
       <p class="sub" style="margin-top:10px">Detalhamento completo, com exemplos numéricos de cada regra, disponível na página pública "Como funciona a pontuação".</p>
     </section>
@@ -8926,7 +8937,7 @@ const Gamificacao = (() => {
 
     <section>
       <h2>📈 Evolução por colaborador (nota final por mês)</h2>
-      <p class="sub">"—" = ainda não estava no time / sem nota lançada nesse mês. Nota em itálico = mês sem avaliação de cliente (entrou com a menor nota do time daquele mês, não reflete desempenho real).</p>
+      <p class="sub">"—" = ainda não estava no time / sem nota lançada nesse mês. Nota em itálico = mês sem avaliação de cliente (entrou com a menor nota do time daquele mês, não reflete desempenho real).${consolidado.some(c => (c.ferias_meses || []).length) ? ' <b>†</b> = mês de férias ou afastamento: a nota mostrada é a média dos outros meses da pessoa, a mesma usada no Consolidado (a nota real do mês fica no ranking mensal).' : ''}</p>
       <table><thead><tr><th>Colaborador</th>${evolucaoHeader}</tr></thead>
       <tbody>${evolucaoRows}</tbody></table>
     </section>

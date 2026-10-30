@@ -76,6 +76,19 @@ const notas = [
     const r = await consolidar({ colabs, notas, ferias_quebrada: true });
     assert.strictEqual(r.find((x) => x.nome === 'Kelen').media_geral, k0.media_geral);
   });
+  await teste('o consolidado diz QUAIS meses são de férias (o Relatório da Temporada mostra a média dos outros no lugar)', () => {
+    assert.deepStrictEqual(k1.ferias_meses, ['2026-07']);
+    assert.deepStrictEqual(m1.ferias_meses, []);
+    assert.deepStrictEqual(k0.ferias_meses, []);
+  });
+  await teste('Relatório da Temporada: mês de férias vira a média dos outros meses, marcado com †, e não serve de ponta da evolução', () => {
+    const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
+    const i = app.indexOf('function _montarRelatorioTemporada'), j = app.indexOf('const destaqueEvolucao', i);
+    const rel = app.slice(i, j);
+    assert.ok(rel.includes('c.ferias_meses') && rel.includes('ferias: true, notaReal: p.nota'), 'a trajetória troca a nota do mês de férias pela média dos outros');
+    assert.ok(rel.includes('!p.ferias') && rel.includes("p.ferias ? '<td class=\"ferias\""), 'não é ponta da evolução e a célula sai marcada');
+    assert.ok(app.includes('<b>†</b> = mês de férias ou afastamento'), 'a legenda explica o †');
+  });
   await teste('as rotas de férias são só do administrador', () => {
     assert.ok(/router\.post\('\/gam\/ferias', requireAdmin/.test(fonte) && /router\.delete\('\/gam\/ferias', requireAdmin/.test(fonte));
   });

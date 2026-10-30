@@ -3106,6 +3106,7 @@ async function calcularConsolidadoGamificacao(pesoMinimo) {
       return {
         nome: nomesPorId[id],
         meses_ferias: usadas.length ? itens.length - usadas.length : 0,
+        ferias_meses: usadas.length ? itens.filter(i => feriasSet.has(id + '|' + i.mes)).map(i => i.mes) : [],   // quais meses (o Relatório da Temporada mostra a média dos outros no lugar)
         media_sem_ajuste: mediaSemAjuste.toFixed(4),
         // 4 casas decimais (pedido do Reysner, 05/09/2026) — com só 2, o
         // pódio da temporada pode empatar (ex.: Guilherme/João/Max todos
