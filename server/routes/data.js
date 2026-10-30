@@ -3048,8 +3048,11 @@ async function calcularConsolidadoGamificacao(pesoMinimo) {
     const colabsAtivos = await pool.query(`SELECT id, nome FROM gam_colaboradores WHERE ativo = true`);
 
     // Para cada mês, calcula a nota final de cada colaborador (mesma lógica do ranking mensal)
-    const notasFinalPorMes = {}; // { colaborador_id: [nota_final_mes1, nota_final_mes2, ...] }
+    const notasFinalPorMes = {}; // { colaborador_id: [{ mes, nf }, ...] }
     const nomesPorId = {};
+    // Meses de férias/afastamento por pessoa: ficam fora da média DELA no consolidado (ver gam_ferias em ensureGamTables)
+    const feriasSet = new Set();
+    try { (await pool.query(`SELECT colaborador_id, mes FROM gam_ferias`)).rows.forEach(f => feriasSet.add(f.colaborador_id + '|' + f.mes)); } catch (e) { /* tabela ainda não criada: ninguém em férias */ }
     colabsAtivos.rows.forEach(c => { nomesPorId[c.id] = c.nome; });
 
     for (const mes of todosMeses) {
@@ -3084,7 +3087,7 @@ async function calcularConsolidadoGamificacao(pesoMinimo) {
       colabsAtivos.rows.forEach(c => {
         if (!notasFinalPorMes[c.id]) notasFinalPorMes[c.id] = [];
         const encontrado = notasC.find(n => n.id === c.id);
-        notasFinalPorMes[c.id].push(encontrado ? encontrado.nf : menorC);
+        notasFinalPorMes[c.id].push({ mes, nf: encontrado ? encontrado.nf : menorC });
       });
     }
 
@@ -3092,10 +3095,18 @@ async function calcularConsolidadoGamificacao(pesoMinimo) {
     // TODOS os meses do jogo (desde o primeiro mês lançado) — sem peso
     // mínimo por tempo de casa. Pedido do Reysner: mais simples de
     // explicar pra equipe do que uma fórmula bayesiana de meses.
-    consolidado = Object.entries(notasFinalPorMes).map(([id, notas]) => {
+    consolidado = Object.entries(notasFinalPorMes).map(([id, itens]) => {
+      // Mês de férias/afastamento sai da média da própria pessoa (equivale a trocar a nota desse mês pela média dos outros meses dela).
+      // Se TODOS os meses dela estão marcados, não há outra base: segue com todos.
+      const usadas = itens.filter(i => !feriasSet.has(id + '|' + i.mes));
+      const base = usadas.length ? usadas : itens;
+      const notas = base.map(i => i.nf);
       const media = notas.reduce((s,n) => s+n, 0) / notas.length;
+      const mediaSemAjuste = itens.reduce((s,i) => s+i.nf, 0) / itens.length;
       return {
         nome: nomesPorId[id],
+        meses_ferias: usadas.length ? itens.length - usadas.length : 0,
+        media_sem_ajuste: mediaSemAjuste.toFixed(4),
         // 4 casas decimais (pedido do Reysner, 05/09/2026) — com só 2, o
         // pódio da temporada pode empatar (ex.: Guilherme/João/Max todos
         // em 4,94) sem dar pra mostrar quem realmente ganhou. A página
@@ -3307,6 +3318,15 @@ async function ensureGamTables() {
   // geral, agora quero que oculte filtrar por meses anteriores". Mesmo esquema
   // chave/valor (1 = permite filtrar, 0 = só mês corrente); default ligado.
   await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('permitir_filtro_meses', 1) ON CONFLICT (chave) DO NOTHING`).catch(()=>{});
+  // Meses em que a pessoa esteve de férias (ou afastada): a nota baixa desse mês (poucos atendimentos) não representa o desempenho dela,
+  // então o Consolidado Geral deixa o mês de fora da MÉDIA DELA — o que equivale a trocar a nota do mês pela média dos outros meses.
+  // Só afeta o Consolidado da temporada; o ranking e o pódio de cada mês continuam com a nota real do mês.
+  await pool.query(`CREATE TABLE IF NOT EXISTS gam_ferias (
+    colaborador_id UUID NOT NULL REFERENCES gam_colaboradores(id) ON DELETE CASCADE,
+    mes VARCHAR(7) NOT NULL,
+    motivo TEXT, criado_por TEXT, criado_em TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (colaborador_id, mes)
+  )`).catch(()=>{});
 
   // ── Automação da nota mensal via Zappy (Modelo Atualizado — fase 1) ────────
   // A API pública do Zappy não dá nota por ticket (ver nota em zappyClient.js),
@@ -3494,11 +3514,39 @@ router.get('/gam/consolidado', requireAdmin, async (req, res) => {
     await ensureGamTables();
     const consolidado = await calcularConsolidadoGamificacao(await getPesoMinimo());
     const { rows } = await pool.query(`SELECT MIN(mes) AS primeiro_mes, MAX(mes) AS ultimo_mes FROM gam_notas`);
-    res.json({ data: consolidado, primeiro_mes: rows[0]?.primeiro_mes || null, ultimo_mes: rows[0]?.ultimo_mes || null });
+    const ferias = (await pool.query(`SELECT f.colaborador_id, c.nome, f.mes, f.motivo, f.criado_por FROM gam_ferias f JOIN gam_colaboradores c ON c.id = f.colaborador_id ORDER BY f.mes, c.nome`).catch(() => ({ rows: [] }))).rows;
+    res.json({ data: consolidado, ferias, primeiro_mes: rows[0]?.primeiro_mes || null, ultimo_mes: rows[0]?.ultimo_mes || null });
   } catch (err) {
     console.error('[gam] consolidado falhou:', err);
     res.status(500).json({ error: 'Erro ao calcular o Consolidado Geral.' });
   }
+});
+
+// ── Férias/afastamento no Consolidado Geral (admin) ──────────────────────────
+// Marca que a pessoa esteve de férias (ou afastada) naquele mês: o mês sai da média DELA no Consolidado da temporada,
+// sem mexer na nota do mês nem no pódio mensal. Desmarcar devolve o mês à média.
+router.post('/gam/ferias', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { colaborador_id, mes, motivo } = req.body || {};
+    if (!colaborador_id || !/^\d{4}-\d{2}$/.test(String(mes || ''))) return res.status(400).json({ error: 'Informe o colaborador e o mês (AAAA-MM).' });
+    const c = (await pool.query(`SELECT id, nome FROM gam_colaboradores WHERE id::text = $1`, [String(colaborador_id)])).rows[0];
+    if (!c) return res.status(404).json({ error: 'Colaborador não encontrado.' });
+    await pool.query(
+      `INSERT INTO gam_ferias (colaborador_id, mes, motivo, criado_por) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (colaborador_id, mes) DO UPDATE SET motivo = $3, criado_por = $4, criado_em = NOW()`,
+      [c.id, mes, String(motivo || 'Férias').trim().slice(0, 120) || 'Férias', req.user.name || null]);
+    res.status(201).json({ ok: true });
+  } catch (err) { console.error('[gam] ferias POST falhou:', err); res.status(500).json({ error: 'Erro ao marcar as férias.' }); }
+});
+router.delete('/gam/ferias', requireAdmin, async (req, res) => {
+  try {
+    await ensureGamTables();
+    const { colaborador_id, mes } = req.body || {};
+    if (!colaborador_id || !/^\d{4}-\d{2}$/.test(String(mes || ''))) return res.status(400).json({ error: 'Informe o colaborador e o mês (AAAA-MM).' });
+    await pool.query(`DELETE FROM gam_ferias WHERE colaborador_id::text = $1 AND mes = $2`, [String(colaborador_id), mes]);
+    res.json({ ok: true });
+  } catch (err) { console.error('[gam] ferias DELETE falhou:', err); res.status(500).json({ error: 'Erro ao remover as férias.' }); }
 });
 
 // ── Configuração — Peso Mínimo (admin) ───────────────────────────────────────

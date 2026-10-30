@@ -6734,12 +6734,13 @@ const Gamificacao = (() => {
     if (!res || !res.ok) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#e53e3e;padding:24px">Erro ao carregar o consolidado.</td></tr>'; return; }
     const { data, primeiro_mes, ultimo_mes } = await res.json();
     const sub = document.getElementById('gam-consolidado-sub');
-    if (sub && primeiro_mes) sub.textContent = 'Média simples das notas finais mensais de cada colaborador, de ' + _mesLabel(primeiro_mes) + ' a ' + _mesLabel(ultimo_mes) + '. Mês sem nenhuma avaliação ainda não entra.';
+    const temFerias = data.some(c => c.meses_ferias > 0);
+    if (sub && primeiro_mes) sub.textContent = 'Média simples das notas finais mensais de cada colaborador, de ' + _mesLabel(primeiro_mes) + ' a ' + _mesLabel(ultimo_mes) + '. Mês sem nenhuma avaliação ainda não entra.' + (temFerias ? ' Mês de férias/afastamento marcado em "Férias" fica fora da média da pessoa.' : '');
     if (!data.length) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:24px">Sem notas lançadas ainda.</td></tr>'; return; }
     tbody.innerHTML = data.map((c, i) =>
       '<tr><td style="font-weight:700;color:var(--g700)">' + (i + 1) + 'º</td>' +
       '<td style="font-weight:600">' + c.nome + '</td>' +
-      '<td>' + c.meses_avaliados + '</td>' +
+      '<td>' + c.meses_avaliados + (c.meses_ferias > 0 ? ' <span style="color:var(--gray-400);font-size:11.5px" title="Mês(es) de férias/afastamento fora da média (média sem esse ajuste: ' + parseFloat(c.media_sem_ajuste).toFixed(2) + ')">+ ' + c.meses_ferias + ' de férias</span>' : '') + '</td>' +
       '<td><span style="background:var(--g100);color:var(--g700);padding:3px 10px;border-radius:10px;font-weight:700">' + parseFloat(c.media_geral).toFixed(2) + '</span></td></tr>'
     ).join('');
   }
@@ -6883,6 +6884,46 @@ const Gamificacao = (() => {
 
     await _populateMesFilter();
     await loadNotas();
+  }
+
+  // ── Férias/afastamento no Consolidado Geral ───────────────────────────────
+  // O mês marcado sai da média DO CONSOLIDADO daquela pessoa (equivale a trocar a nota do mês pela média dos outros meses dela).
+  // Não mexe na nota do mês nem no pódio mensal.
+  async function abrirFerias() {
+    const h = { Authorization: 'Bearer ' + _tk() };
+    const [rc, rn, rcol] = await Promise.all([
+      fetch('/api/data/gam/consolidado', { headers: h }), fetch('/api/data/gam/notas', { headers: h }), fetch('/api/data/gam/colaboradores', { headers: h })]);
+    const ferias = (rc && rc.ok ? (await rc.json()).ferias : []) || [];
+    const meses = [...new Set(((rn && rn.ok ? (await rn.json()).data : []) || []).map(n => n.mes))].sort();
+    const colabs = ((rcol && rcol.ok ? (await rcol.json()).data : []) || []).filter(c => c.ativo !== false);
+    const lista = ferias.map(f =>
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--gray-100)">' +
+        '<span><b>' + _esc(f.nome) + '</b> · ' + _mesLabel(f.mes) + (f.motivo ? ' <span style="color:var(--gray-400)">(' + _esc(f.motivo) + ')</span>' : '') + '</span>' +
+        '<button class="btn btn-ghost btn-sm" onclick="Gamificacao.removerFerias(\'' + _esc(f.colaborador_id) + '\',\'' + _esc(f.mes) + '\')">Remover</button></div>').join('')
+      || '<p style="font-size:13px;color:var(--gray-400);margin:0">Nenhum mês marcado.</p>';
+    App.Modal.open('Férias no Consolidado Geral', '<div style="display:grid;gap:14px">' +
+      '<p style="font-size:13px;color:var(--gray-500);margin:0">Quem esteve de férias ou afastado num mês tem poucos atendimentos e uma nota que não representa o desempenho. O mês marcado <b>sai da média dessa pessoa no Consolidado Geral</b> (o mesmo que trocar a nota do mês pela média dos outros meses dela). A nota do mês e o pódio mensal não mudam.</p>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">' +
+        '<div class="field" style="min-width:160px;flex:1"><label>Colaborador</label><select id="gam-ferias-colab">' + colabs.map(c => '<option value="' + _esc(c.id) + '">' + _esc(c.nome) + '</option>').join('') + '</select></div>' +
+        '<div class="field" style="min-width:140px"><label>Mês</label><select id="gam-ferias-mes">' + meses.map(m => '<option value="' + _esc(m) + '">' + _mesLabel(m) + '</option>').join('') + '</select></div>' +
+        '<div class="field" style="min-width:140px;flex:1"><label>Motivo (opcional)</label><input id="gam-ferias-motivo" type="text" maxlength="120" placeholder="Férias" /></div>' +
+        '<button class="btn btn-primary btn-sm" onclick="Gamificacao.marcarFerias()">Marcar</button>' +
+      '</div>' +
+      '<div><div style="font-size:12px;font-weight:700;color:var(--gray-500);margin-bottom:4px">Meses marcados</div>' + lista + '</div>' +
+    '</div>');
+  }
+  async function marcarFerias() {
+    const colaborador_id = document.getElementById('gam-ferias-colab')?.value, mes = document.getElementById('gam-ferias-mes')?.value;
+    if (!colaborador_id || !mes) { App.Toast.err('Escolha o colaborador e o mês.'); return; }
+    const res = await fetch('/api/data/gam/ferias', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() },
+      body: JSON.stringify({ colaborador_id, mes, motivo: document.getElementById('gam-ferias-motivo')?.value || 'Férias' }) });
+    if (res && res.ok) { App.Toast.ok('Mês marcado como férias.'); await abrirFerias(); loadConsolidado(); }
+    else { const j = res ? await res.json().catch(() => ({})) : {}; App.Toast.err(j.error || 'Erro ao marcar.'); }
+  }
+  async function removerFerias(colaborador_id, mes) {
+    const res = await fetch('/api/data/gam/ferias', { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + _tk() }, body: JSON.stringify({ colaborador_id, mes }) });
+    if (res && res.ok) { App.Toast.ok('Mês devolvido à média.'); await abrirFerias(); loadConsolidado(); }
+    else App.Toast.err('Erro ao remover.');
   }
 
   // ── Configuração Peso Mínimo ──────────────────────────────────────────────
@@ -8780,7 +8821,7 @@ const Gamificacao = (() => {
       return `<div class="perfil">
         <div class="perfil-header"><span class="perfil-medalha">${medalha(i)}</span><h3>${c.nome}</h3><span class="perfil-nota">${c.media_geral}</span></div>
         <p class="perfil-linha"><b>Trajetória (${_mesCurto(meses[0])} → ${_mesCurto(meses[meses.length - 1])}):</b> ${linha}</p>
-        <p class="perfil-linha"><b>Meses avaliados na temporada:</b> ${c.meses_avaliados} de ${meses.length}</p>
+        <p class="perfil-linha"><b>Meses avaliados na temporada:</b> ${c.meses_avaliados} de ${meses.length}${c.meses_ferias > 0 ? ' (' + c.meses_ferias + ' de férias, fora da média)' : ''}</p>
         <p class="perfil-linha"><b>Vezes campeão(ã) do mês:</b> ${titulosPorNome[c.nome] || 0}</p>
         ${ev ? '<p class="perfil-linha"><b>Evolução no período:</b> ' + ev.de.nota.toFixed(4) + ' (' + _mesCurto(ev.de.mes) + ') → ' + ev.para.nota.toFixed(4) + ' (' + _mesCurto(ev.para.mes) + ') — ' + (ev.delta >= 0 ? '+' : '') + ev.delta.toFixed(4) + '</p>' : ''}
       </div>`;
@@ -9055,7 +9096,7 @@ const Gamificacao = (() => {
   return {
     load, loadNotas, excluirNota,
     loadFormLancamento, salvarLote,
-    abrirConfig, salvarConfig, toggleConsolidado, toggleFiltroMeses,
+    abrirConfig, salvarConfig, toggleConsolidado, toggleFiltroMeses, abrirFerias, marcarFerias, removerFerias,
     abrirColaboradores, adicionarColaborador, toggleColaborador, excluirColaborador, toggleRegraAceite,
     vincularZappy, salvarVinculoZappy,
     vincularLogin, salvarVinculoLogin,

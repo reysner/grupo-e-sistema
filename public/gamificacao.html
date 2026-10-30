@@ -336,10 +336,10 @@
       list.innerHTML = cons.map((r, i) => `
         <div class="consolidado-row">
           <div class="consolidado-pos">${i + 1}º</div>
-          <div class="consolidado-nome">${r.nome}</div>
+          <div class="consolidado-nome">${r.nome}${r.meses_ferias > 0 ? ' <span title="Mês de férias/afastamento fora da média">*</span>' : ''}</div>
           <div class="consolidado-nota">${parseFloat(r.media_geral).toFixed(2)}</div>
         </div>
-      `).join('');
+      `).join('') + (cons.some(r => r.meses_ferias > 0) ? '<div class="consolidado-sub" style="margin-top:10px">* Mês de férias ou afastamento não entra na média de quem esteve ausente.</div>' : '');
     }
 
     init();
