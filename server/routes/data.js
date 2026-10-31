@@ -1701,7 +1701,8 @@ router.patch('/insatisfacoes/:id/status', async (req, res) => {
 });
 
 // ── CLIENTES SENSÍVEIS ────────────────────────────────────────────────────────
-router.get('/sensiveis', async (req, res) => {
+// Clientes Sensíveis: só administrador (31/10/2026, pedido do Reysner); antes qualquer usuário logado lia e registrava.
+router.get('/sensiveis', requireAdmin, async (req, res) => {
   try {
     const pf = periodFilter(req.query.period);
     const result = await pool.query(`SELECT * FROM clientes_sensiveis WHERE 1=1 ${pf} ORDER BY created_at DESC`);
@@ -1709,7 +1710,7 @@ router.get('/sensiveis', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro.' }); }
 });
 
-router.post('/sensiveis', async (req, res) => {
+router.post('/sensiveis', requireAdmin, async (req, res) => {
   try {
     const { analista, cliente, cnpj, empresa, demonstrou, gravidade, detalhe } = req.body;
     if (!analista || !cliente || !cnpj || !empresa || !demonstrou || !gravidade)
@@ -2744,7 +2745,8 @@ router.get('/busca-global', requireAuth, async (req, res) => {
         WHERE LOWER(empresa) LIKE $1 OR cnpj LIKE $1 LIMIT 5`, [termo]),
       pool.query(`SELECT id,'insatisfacao' as modulo, empresa, cliente, cnpj, analista, created_at FROM insatisfacoes
         WHERE LOWER(empresa) LIKE $1 OR LOWER(cliente) LIKE $1 OR cnpj LIKE $1 LIMIT 5`, [termo]),
-      pool.query(`SELECT id,'sensiveis' as modulo, empresa, cliente, cnpj, analista, created_at FROM clientes_sensiveis
+      // clientes sensíveis só aparecem na busca para o administrador
+      req.user.role !== 'administrador' ? Promise.resolve({ rows: [] }) : pool.query(`SELECT id,'sensiveis' as modulo, empresa, cliente, cnpj, analista, created_at FROM clientes_sensiveis
         WHERE LOWER(empresa) LIKE $1 OR LOWER(cliente) LIKE $1 OR cnpj LIKE $1 LIMIT 5`, [termo]),
       pool.query(`SELECT id,'recuperacao' as modulo, empresa, cliente, cnpj, analista, created_at FROM recuperacoes
         WHERE LOWER(empresa) LIKE $1 OR LOWER(cliente) LIKE $1 OR cnpj LIKE $1 LIMIT 5`, [termo]),
