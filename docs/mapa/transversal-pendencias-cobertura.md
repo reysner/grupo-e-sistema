@@ -9,11 +9,12 @@ Consolida os "pontos de atenção" de todos os módulos e fecha com o que este m
 | 1 | Qualquer pessoa criava conta `usuario` pela tela de login | `server/routes/auth.js`, `public/index.html` | Feito e no ar (cadastro desligado; reabrir só com `CADASTRO_PUBLICO=1`) |
 | 2 | Renomear motivo de churn apagava as letras "s" (regex `/s+/`) | `server/routes/motivos-churn.js` | Feito e no ar |
 | 3 | Rota de churn por conversas escondida atrás de outra no mesmo prefixo | `server/cs/routes.js`, `public/js/app.js` | Feito e no ar (`/api/cs/churn-conversas`) |
-| 4 | Analista (`colaborador`) recebia 403 em "Não vai renovar" e "Informar protocolo" | `server/auth.js` | Feito, **após deploy** |
+| 4 | Analista (`colaborador`) recebia 403 em "Não vai renovar" e "Informar protocolo" | `server/auth.js` | Feito e **conferido em produção** com um login `colaborador` (passa pelo acesso; validação do servidor responde 400) |
 | 5 | "Reabrir" meses 05–07/2026 e desligar a regra de aceite da Elma eram desfeitos a cada chamada | `server/routes/data.js` (`ensureGamTables`) | Feito, **após deploy** (semente única em `gam_config`) |
 | 6 | `usuario` lia Carteira, honorários, MRR e CAC | `server/routes/data.js` | Feito, **após deploy** (cinco leituras só para administrador; o CAC de quem não é administrador é calculado no servidor) |
 | 7 | Apagar `admin@grupoe.com.br` fazia o servidor recriá-lo a cada reinício | `server/index.js` | Feito, **após deploy** (só cria se não houver nenhum administrador) |
-| 8 | Clientes Sensíveis eram lidos e registrados por qualquer usuário logado | `server/routes/data.js`, `public/index.html` | Feito, **após deploy** (só administrador; menu oculto; busca global sem esse módulo) |
+| 8 | Clientes Sensíveis eram lidos e registrados por qualquer usuário logado | `server/routes/data.js`, `public/index.html` | Feito e **conferido em produção** em 31/10/2026 (só administrador; menu oculto; busca global sem esse módulo) |
+| 9 | `colaborador` e `contabil` não conseguiam sair (logout 403) nem ler `/auth/me`: o filtro olhava só `req.path` | `server/auth.js` | Feito, **após deploy** (teste em `server/testes_acesso_perfis.js`) |
 
 ## 2. Abertos, por prioridade
 

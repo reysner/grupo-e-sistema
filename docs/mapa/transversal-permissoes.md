@@ -55,7 +55,7 @@ A varredura do anexo A (358 rotas) classifica por rota: **155 com `requireAdmin`
 | --- | --- |
 | Senha | bcrypt 12 rounds; mínimo de 6 caracteres; sem senha padrão no código [CONFIRMADO] |
 | Login | limite de 20 tentativas por 15 minutos por IP (`loginLimiter`) [CONFIRMADO] |
-| Sessão | JWT de acesso 2 h + refresh de 30 dias, rotativo e de uso único; trocar perfil/marcas revoga os refresh [CONFIRMADO] |
+| Sessão | JWT de acesso 2 h + refresh de 30 dias, rotativo e de uso único; trocar perfil/marcas revoga os refresh [CONFIRMADO]. Logout e `/auth/me` de `colaborador`/`contábil` davam 403 até 31/10/2026 (corrigido, após deploy) |
 | Onde ficam os tokens | `localStorage` (não `httpOnly`): qualquer script injetado os lê [CONFIRMADO] |
 | Cadastro público | **desligado em 31/10/2026** (`POST /api/auth/register` → 403; reabrir só com `CADASTRO_PUBLICO=1`) |
 | Cabeçalhos | sem CSP e sem HSTS; CORS aceita requisições sem `Origin` [CONFIRMADO] |

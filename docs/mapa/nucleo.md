@@ -41,7 +41,7 @@ Um único processo Node/Express serve (a) as páginas estáticas de `public/`, (
 ### 3.1 O filtro de acesso (`requireAuth`, `server/auth.js:77–141`)
 Valida o JWT e preenche `req.user`. Depois aplica, **por prefixo de rota**, a restrição dos dois perfis limitados:
 - `contabil` só alcança rotas que contêm `/tickets`, `/auth` ou `/perfil` (**busca por trecho do caminho**), mais as exceções liberadas pelas marcas (Minha Nota, Legalização somente leitura, `/api/cs/painel…`, `/api/financeiro…`, Qualidade, push).
-- `colaborador` só alcança `/gam/minha-*`, `/gam/meus-*`, `/auth`, `/perfil` e as mesmas exceções.
+- `colaborador` só alcança `/gam/minha-*`, `/gam/meus-*`, `/auth`, `/perfil` e as mesmas exceções. **Falha corrigida em 31/10/2026 (após deploy):** dentro do roteador de `/api/auth` o caminho chega como `/logout` e `/me` (o prefixo fica em `baseUrl`), então a checagem por `req.path` barrava `contabil` e `colaborador` nessas duas rotas (403: o botão Sair não revogava o refresh e `/auth/me` falhava). Agora vale também o caminho completo (`/api/auth/…`).
 - `administrador` e `usuario` não passam por essa restrição: **o que vale para eles é cada rota** (`requireAdmin` ou nada).
 
 `requireAdmin` exige `role = 'administrador'`. Não há perfil intermediário "gestor" na API: o conceito vive nas marcas `acesso_*` e nas tabelas de acesso do /cs.
