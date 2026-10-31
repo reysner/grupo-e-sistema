@@ -1,143 +1,116 @@
 # Grupo-E — Sistema de Gestão de Clientes
 
-Sistema web completo para gestão de atendimentos, clientes e pesquisas de satisfação.
+Sistema web interno do Grupo-E: gestão de clientes e atendimentos, Sucesso do Cliente (SLA, risco de perda, churn, Qualidade), Gamificação do atendimento, Legalização (alvarás, certificados e procurações) e Financeiro (inadimplência e cobranças).
+
+> **Documentação completa:** [`docs/MAPA_SISTEMA_COMPLETO.md`](docs/MAPA_SISTEMA_COMPLETO.md) (engenharia reversa do sistema, por módulo) e [`docs/MIGRACAO_DE_MAQUINA.md`](docs/MIGRACAO_DE_MAQUINA.md) (como refazer tudo em outra máquina ou servidor).
 
 ## Stack
 
-- **Backend**: Node.js 22 + Express + SQLite (nativo do Node.js 22, zero drivers)
-- **Auth**: JWT (access token 15min) + Refresh token rotativo (30 dias) em cookies HttpOnly
-- **Frontend**: HTML/CSS/JS puro (sem framework de build)
-- **Segurança**: Helmet, CORS restrito, rate limiting, bcrypt (12 rounds), tokens rotativos
-- **Keep-alive**: Auto-ping a cada 14min para evitar que o Render free-tier adormeça
+- **Servidor:** Node.js (18 ou superior; recomendado 22) + Express.
+- **Banco:** PostgreSQL (`pg`), conexão por `DATABASE_URL`. As tabelas são criadas pelo próprio código na subida (`CREATE TABLE IF NOT EXISTS`), **exceto** `clientes`, `honorarios`, `eventos_clientes`, `analistas` e `investimentos`, que só existem no banco atual: para um ambiente novo, restaure um dump (veja o guia de migração).
+- **Front-end:** HTML, CSS e JavaScript puro, sem etapa de build (`public/`).
+- **Login:** JWT de acesso (2 horas) + refresh token rotativo (30 dias), guardados no navegador; senhas com bcrypt (12 rounds); limite de tentativas de login (20 a cada 15 minutos por IP) e de requisições (300 por minuto).
+- **Hospedagem:** Render (`render.yaml`), com auto-ping a cada 14 minutos para o plano gratuito não adormecer.
 
----
+## Páginas
+
+| Endereço | Para quê | Quem entra |
+| --- | --- | --- |
+| `/` | sistema principal: clientes, atendimentos, gestão, tickets, usuários, Gamificação (administração) | administrador e usuário |
+| `/cs` | Sucesso do Cliente: visão geral, risco, churn, categorias, Qualidade, portais do Gestor, do Analista e do Sucesso, Minha área | equipe (por módulos liberados em **Acessos**) |
+| `/legalizacao` | alvarás, certificados digitais e procurações | administrador e quem tem `acesso_legalizacao` |
+| `/financeiro` | inadimplência, suspensos, cobranças e carteira | administrador, usuário e quem tem `acesso_financeiro`, `acesso_cs` ou `acesso_financeiro_sv` |
+| `/gamificacao/ranking`, `/gamificacao/regras` | ranking mensal e regras (sem login) | público |
+| `/pesquisa` | pesquisa de satisfação (sem login) | público |
+| `/cs/sla`, `/cs/como-funciona`, `/legalizacao/regras` | guias de cada módulo (sem login) | público |
+| `/contabil` | portal do usuário contábil | login próprio |
+
+Toda checagem de acesso é feita pelo servidor; as telas só escondem o que a pessoa não pode usar.
 
 ## Rodando localmente
 
 ```bash
-# 1. Clone / extraia o projeto
+git clone https://github.com/reysner/grupo-e-sistema.git
 cd grupo-e-sistema
-
-# 2. Instale dependências
 npm install
-
-# 3. Configure variáveis de ambiente
-cp .env.example .env
-# Edite .env com seus valores
-
-# 4. Inicie
-npm start
-# Acesse: http://localhost:3000
 ```
 
-**Usuário padrão criado automaticamente na primeira execução:**
-- E-mail: `admin@grupoe.com.br`
-- Senha: `Admin@2024!`
-- ⚠️ Troque a senha imediatamente após o primeiro login.
+Crie um arquivo `.env` na raiz (ele é lido por `dotenv`) com, no mínimo:
 
----
+```
+DATABASE_URL=postgres://usuario:senha@localhost:5432/grupoe   # um banco PostgreSQL seu, de teste
+JWT_SECRET=<valor longo e aleatório>
+JWT_REFRESH_SECRET=<outro valor longo e aleatório>
+ADMIN_PASS=<senha do administrador inicial>
+```
 
-## Deploy no Render (gratuito, sem dormir)
+```bash
+npm start        # ou: npm run dev (reinicia ao salvar)
+# http://localhost:3000
+```
 
-### Passo 1 — GitHub
-1. Crie um repositório no GitHub
-2. Faça push de todos os arquivos:
-   ```bash
-   git init
-   git add .
-   git commit -m "initial commit"
-   git remote add origin https://github.com/SEU_USUARIO/grupo-e-sistema.git
-   git push -u origin main
-   ```
+- O administrador inicial é criado **somente se `ADMIN_PASS` estiver definida** (e-mail `admin@grupoe.com.br`, ou o de `ADMIN_EMAIL`). **Não existe senha padrão.** Sem `ADMIN_PASS`, o servidor sobe sem criar o administrador e avisa no log.
+- Sem `JWT_SECRET`/`JWT_REFRESH_SECRET` o servidor sobe com valores aleatórios (todos são deslogados a cada reinício).
+- Sem `ZAPPY_BASE_URL` e `ZAPPY_TOKEN` as rotinas de atendimento não rodam; sem `ACESSORIAS_API_TOKEN` não há sincronização de clientes. As demais variáveis estão no guia de migração.
+- **Não aponte o ambiente local para o banco de produção.**
 
-### Passo 2 — Render
-1. Acesse [render.com](https://render.com) → **New Web Service**
-2. Conecte o repositório GitHub
-3. Configure:
-   - **Build Command**: `npm install`
-   - **Start Command**: `node server/index.js`
-   - **Node Version**: `22` (em Environment → Node Version)
-4. Adicione as variáveis de ambiente (**Environment** tab):
-   ```
-   NODE_ENV=production
-   JWT_SECRET=<gere com: node -e "console.log(require('crypto').randomBytes(48).toString('hex'))">
-   JWT_REFRESH_SECRET=<gere outro segredo diferente>
-   APP_URL=https://SEU-APP.onrender.com
-   ALLOWED_ORIGINS=https://SEU-APP.onrender.com
-   ```
-5. Clique em **Deploy**
+Testes sem banco (exemplos): `node server/testes_gam_ferias.js`, `node server/financeiro/testes_financeiro.js`, `node server/emailSinais/testes_email_sinais.js`, `node server/cs/testes_acessos.js`. Não há `npm test` único.
 
-### Passo 3 — Após deploy
-- Acesse a URL do Render
-- Faça login com `admin@grupoe.com.br` / `Admin@2024!`
-- **Crie um novo usuário administrador com email e senha fortes**
-- **Exclua ou altere a senha do usuário padrão**
+## Deploy no Render
 
-### Persistência de dados no Render Free
-O banco `data/grupoe.db` é armazenado no disco efêmero do Render (resetado a cada deploy). Para persistência permanente:
-- Use **Render Disk** (add-on pago, $1/mês) — monte em `/data`
-- Ou migre para **PostgreSQL** (Render oferece free tier com 1GB)
+1. Crie um **Web Service** a partir deste repositório. O `render.yaml` define: build `npm install`, start `node server/index.js`, health check `/health`, porta 3000.
+2. Crie o PostgreSQL e configure `DATABASE_URL` (com `NODE_ENV=production` a conexão usa SSL).
+3. Em **Environment**, configure as variáveis (lista completa, com a função de cada uma, em [`docs/MIGRACAO_DE_MAQUINA.md`](docs/MIGRACAO_DE_MAQUINA.md), seção 4): `NODE_ENV`, `DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `ADMIN_PASS`, `APP_URL`, `ALLOWED_ORIGINS`, `ACESSORIAS_API_TOKEN`, `ZAPPY_BASE_URL`, `ZAPPY_TOKEN`, `LEGALIZACAO_SYNC_TOKEN`/`CERTISEGURO_SYNC_TOKEN`, `CERTISEGURO_URL`, `CERTISEGURO_TOKEN`, `CERTISEGURO_CNPJ`, `GMAIL_USER`, `GMAIL_APP_PASS`.
+4. Depois do deploy, entre com o administrador e confira as páginas `/cs`, `/legalizacao` e `/financeiro`.
 
----
+O `render.yaml` só declara parte das variáveis; as demais são configuradas à mão no painel e **não** estão no repositório.
 
-## Segurança implementada
+## O que roda fora do servidor
 
-| Item | Implementação |
-|------|--------------|
-| Senhas | bcrypt com 12 rounds |
-| Tokens | JWT + Refresh token rotativo (one-time-use) |
-| Cookies | HttpOnly, SameSite=Strict, Secure em produção |
-| CORS | Lista de origens explícita |
-| Headers | Helmet (CSP, HSTS, X-Frame-Options…) |
-| Rate limit | 10 tentativas de login/15min por IP; 200 req/min global |
-| SQL injection | Queries parametrizadas (prepared statements) |
-| Admin routes | Middleware de role verificando JWT em cada request |
-| Token revogação | Logout invalida refresh token no banco |
+Algumas rotinas dependem de acessos que o Render não tem (VPN do Questor, compartilhamento de arquivos do escritório, login de uma pessoa, IP liberado em terceiros) e rodam numa estação Windows do escritório ou em scripts de navegador:
 
----
+| Rotina | Pasta |
+| --- | --- |
+| Consulta às prefeituras, leitura de alvarás em PDF (com OCR), CertiSeguro de reserva | `server/legalizacao/` |
+| Sinais de e-mail (só cabeçalhos das caixas) | `server/emailSinais/` |
+| Extrações do Questor (faturamento e funcionários) | `server/questor/` |
+| Leitura do Omie (honorários, títulos em aberto, contratos suspensos) | `server/omie/` |
+| Arquivo Morto de empresas inativadas | `server/arquivoMorto/` |
+| Procurações (e-CAC e FGTS), Protocolo Online e Redesim | `public/tools/*.user.js` (Tampermonkey) |
 
-## Estrutura de arquivos
+Cada pasta tem seu `LEIA-ME`/`README` com o uso. O agendamento dessas rotinas está no Agendador de Tarefas do Windows da estação (não é versionado); como refazê-lo está em [`docs/MIGRACAO_DE_MAQUINA.md`](docs/MIGRACAO_DE_MAQUINA.md).
+
+## Segurança
+
+| Item | Como é |
+| --- | --- |
+| Senhas | bcrypt, 12 rounds |
+| Sessão | JWT de acesso (2 h) + refresh token rotativo (30 dias, uso único); o logout revoga o refresh |
+| Acesso | cada rota confere o perfil e as marcas de acesso no servidor (`requireAuth`, `requireAdmin` e as regras de cada módulo) |
+| CORS | lista de origens em `ALLOWED_ORIGINS` |
+| Cabeçalhos | `X-Content-Type-Options`, `X-Frame-Options: SAMEORIGIN`, `X-XSS-Protection` |
+| Limites | login 20 por 15 min por IP; 300 requisições por minuto |
+| SQL | consultas parametrizadas |
+| Rotinas de máquina | token de sincronização (`X-Sync-Token`) compartilhado entre o servidor e as rotinas do escritório |
+| Segredos | nunca no repositório: variáveis do Render e arquivos `.env` git-ignorados |
+
+Pontos de melhoria já mapeados (mesmo token de sincronização para várias rotinas, falhas abertas em rotas antigas, rota de limpeza de dados de teste ativa) estão descritos em `docs/MAPA_SISTEMA_COMPLETO.md`.
+
+## Estrutura
 
 ```
 grupo-e-sistema/
 ├── server/
-│   ├── index.js          ← entry point Express
-│   ├── db.js             ← SQLite (Node.js 22 nativo)
-│   ├── auth.js           ← JWT, bcrypt, cookies
-│   └── routes/
-│       ├── auth.js       ← login, register, refresh, logout, me
-│       ├── data.js       ← todos os módulos + dashboard + clear
-│       └── users.js      ← CRUD de usuários (admin only)
-├── public/
-│   ├── index.html        ← SPA shell
-│   ├── css/app.css       ← estilos completos
-│   └── js/app.js         ← lógica frontend (módulos, auth, forms, dashboard)
-├── data/                 ← banco SQLite (criado automaticamente)
-├── .env.example
-├── .gitignore
+│   ├── index.js             entrada Express: rotas, jobs e agenda diária
+│   ├── db.js, auth.js       banco e login
+│   ├── routes/              auth, data (clientes, gamificação, legalização, tickets…), users…
+│   ├── cs/                  Sucesso do Cliente: ingestão do Zappy, SLA, risco, churn, Qualidade
+│   ├── financeiro/          página /financeiro
+│   ├── legalizacao/         rotinas da estação + regras da Legalização
+│   ├── emailSinais/ questor/ omie/ arquivoMorto/   rotinas locais
+│   └── testes_*.js          testes avulsos
+├── public/                  páginas, css, js e tools/ (scripts de navegador)
+├── docs/                    documentação (mapa do sistema e guia de migração)
 ├── render.yaml
 └── package.json
 ```
-
----
-
-## Google OAuth (opcional)
-
-Para ativar o login com Google real:
-
-1. Crie credenciais OAuth 2.0 em [console.cloud.google.com](https://console.cloud.google.com)
-2. Authorized redirect URI: `https://SEU-APP.onrender.com/api/auth/google/callback`
-3. Adicione ao `.env`:
-   ```
-   GOOGLE_CLIENT_ID=...
-   GOOGLE_CLIENT_SECRET=...
-   GOOGLE_CALLBACK_URL=https://SEU-APP.onrender.com/api/auth/google/callback
-   ```
-4. Instale `passport` + `passport-google-oauth20` e adicione rota OAuth no servidor
-
----
-
-## Requisitos de Node.js
-
-Node.js **22+** obrigatório (usa `node:sqlite` nativo, disponível desde Node 22.5).
-No Render, configure em: **Settings → Environment → Node Version → 22**.
