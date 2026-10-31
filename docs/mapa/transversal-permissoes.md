@@ -19,7 +19,8 @@ Legenda: **A** = só se for administrador · **L** = leitura · **E** = leitura 
 
 | Área | administrador | usuario | contabil | colaborador |
 | --- | --- | --- | --- | --- |
-| SPA: atendimentos, gestão, insatisfações, pesquisas, sensíveis | E | E | — | — |
+| SPA: atendimentos, gestão, insatisfações, pesquisas, recuperações | E | E | — | — |
+| SPA: Clientes Sensíveis | E | **— (desde 31/10/2026, após deploy; antes: E)** | — | — |
 | SPA: Carteira e CAC (leituras) | E | **— (desde 31/10/2026, após deploy; antes: L)** | — | — |
 | SPA: Carteira, criar cliente (`POST /clientes`) | E | E (de propósito: formulário de Gestão) | — | — |
 | SPA: Tickets internos | E | E (com checagem de menção) | E (rotas `/tickets`) | — |

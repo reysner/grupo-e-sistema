@@ -13,12 +13,13 @@ Consolida os "pontos de atenção" de todos os módulos e fecha com o que este m
 | 5 | "Reabrir" meses 05–07/2026 e desligar a regra de aceite da Elma eram desfeitos a cada chamada | `server/routes/data.js` (`ensureGamTables`) | Feito, **após deploy** (semente única em `gam_config`) |
 | 6 | `usuario` lia Carteira, honorários, MRR e CAC | `server/routes/data.js` | Feito, **após deploy** (cinco leituras só para administrador; o CAC de quem não é administrador é calculado no servidor) |
 | 7 | Apagar `admin@grupoe.com.br` fazia o servidor recriá-lo a cada reinício | `server/index.js` | Feito, **após deploy** (só cria se não houver nenhum administrador) |
+| 8 | Clientes Sensíveis eram lidos e registrados por qualquer usuário logado | `server/routes/data.js`, `public/index.html` | Feito, **após deploy** (só administrador; menu oculto; busca global sem esse módulo) |
 
 ## 2. Abertos, por prioridade
 
 **Segurança**
 
-1. ~~Varrer as 148 rotas "login"~~ — **feito em 31/10/2026** (leitura das regras internas de cada arquivo): as rotas de `/cs` marcadas "login" já checam o perfil por dentro (administrador, `usuario` ou `acesso_cs`; Acessos, Logs, Backup e limites só administrador), `users.js` inteiro é só administrador, e a busca global devolve só nome, CNPJ e módulo (sem honorário). Sobram como abertas ao `usuario`, **por desenho**, as rotas operacionais do SPA (atendimentos, gestão, insatisfações, sensíveis, pesquisas, recuperações, tickets, Dashboard) e as da Legalização. Decisão de negócio, não falha: se alguma deve ser só da liderança (por exemplo "clientes sensíveis"), precisa ser dita.
+1. ~~Varrer as 148 rotas "login"~~ — **feito em 31/10/2026** (leitura das regras internas de cada arquivo): as rotas de `/cs` marcadas "login" já checam o perfil por dentro (administrador, `usuario` ou `acesso_cs`; Acessos, Logs, Backup e limites só administrador), `users.js` inteiro é só administrador, e a busca global devolve só nome, CNPJ e módulo (sem honorário). Sobram como abertas ao `usuario`, **por desenho**, as rotas operacionais do SPA (atendimentos, gestão, insatisfações, pesquisas, recuperações, tickets, Dashboard) e as da Legalização. Decisão de negócio, não falha: se alguma deve ser só da liderança, precisa ser dita (Clientes Sensíveis já foi restrito em 31/10/2026).
 2. Um só segredo (`LEGALIZACAO_SYNC_TOKEN`) para quase todas as cargas de máquina; separar por origem.
 3. Tokens em `localStorage`; sem CSP e sem HSTS.
 4. Exigir confirmação em `DELETE /api/data/clear`, `DELETE /api/data/log-atividades` e na limpeza da Qualidade (hoje basta a frase `LIMPAR` nesta última).

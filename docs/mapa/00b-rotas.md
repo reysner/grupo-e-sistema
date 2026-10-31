@@ -358,8 +358,8 @@ Barreira de sessão (`router.use(requireAuth)`): linha 809.
 | GET | `/api/data/insatisfacoes` | 1648 | login |
 | POST | `/api/data/insatisfacoes` | 1662 | login |
 | PATCH | `/api/data/insatisfacoes/:id/status` | 1688 | login |
-| GET | `/api/data/sensiveis` | 1704 | login |
-| POST | `/api/data/sensiveis` | 1712 | login |
+| GET | `/api/data/sensiveis` | 1704 | admin (desde 31/10/2026; era login) |
+| POST | `/api/data/sensiveis` | 1712 | admin (desde 31/10/2026; era login) |
 | GET | `/api/data/pesquisas` | 1729 | login |
 | POST | `/api/data/pesquisas` | 1737 | login |
 | GET | `/api/data/recuperacoes` | 1752 | login |

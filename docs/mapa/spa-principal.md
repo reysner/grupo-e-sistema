@@ -21,7 +21,8 @@ Página única (`index.html`) com `section.page` por módulo, trocadas por `Nav.
 | Dashboard | todos | indicadores gerais com filtro de período e de analista procurado; botão do Relatório Executivo |
 | Atendimento | todos | registrar e consultar atendimentos |
 | Gestão de Clientes | todos | solicitações de entrada, saída e baixa; indicadores de retenção |
-| Insatisfação · Clientes Sensíveis · Recuperação de Experiência | todos | registro de ocorrências de relacionamento |
+| Insatisfação · Recuperação de Experiência | todos | registro de ocorrências de relacionamento |
+| Clientes Sensíveis | administrador (desde 31/10/2026, após deploy; antes todos) | `GET`/`POST /sensiveis` exigem administrador, o menu fica oculto para os demais e a busca global não devolve registros desse módulo para quem não é administrador |
 | Pesquisas | todos | respostas de satisfação (NPS, CSAT, CES) |
 | Carteira · CAC | administrador | clientes, honorários, MRR, investimentos e CAC |
 | Legalização · Financeiro · Gamificação | administrador | telas de administração (a Gamificação é a principal; Legalização e Financeiro têm páginas próprias `/legalizacao` e `/financeiro`) |
