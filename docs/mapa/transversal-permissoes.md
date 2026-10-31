@@ -64,7 +64,7 @@ A varredura do anexo A (358 rotas) classifica por rota: **155 com `requireAdmin`
 
 ## 6. Pontos fracos conhecidos (todos com a fonte no módulo)
 
-1. `usuario` ainda alcança qualquer rota protegida só por `requireAuth`. Foram fechadas as leituras de Carteira/CAC; **a lista completa das demais não foi levantada**: convém varrer as 148 rotas "login" e decidir uma a uma.
+1. `usuario` alcança as rotas operacionais do SPA e da Legalização por desenho. Em 31/10/2026 foram fechadas as leituras de Carteira/CAC e conferidas as demais rotas "login": as de `/cs` checam o perfil por dentro e a busca global não expõe honorários. Ver [transversal-pendencias-cobertura](transversal-pendencias-cobertura.md), item 1.
 2. Falha aberta: se `require('../auth')` falhar, as listas canônicas e o radar de SLA trocam as proteções por funções que deixam passar ([nucleo.md](nucleo.md) seção 8).
 3. `isLegalizacaoRoute` libera `GET` em **qualquer** caminho que contenha `/legalizacao`; rota nova com esse trecho nasce liberada para analista.
 4. Um segredo só para todas as cargas de máquina.

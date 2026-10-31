@@ -3272,7 +3272,7 @@ A varredura do anexo A (358 rotas) classifica por rota: **155 com `requireAdmin`
 
 ### 6. Pontos fracos conhecidos (todos com a fonte no módulo)
 
-1. `usuario` ainda alcança qualquer rota protegida só por `requireAuth`. Foram fechadas as leituras de Carteira/CAC; **a lista completa das demais não foi levantada**: convém varrer as 148 rotas "login" e decidir uma a uma.
+1. `usuario` alcança as rotas operacionais do SPA e da Legalização por desenho. Em 31/10/2026 foram fechadas as leituras de Carteira/CAC e conferidas as demais rotas "login": as de `/cs` checam o perfil por dentro e a busca global não expõe honorários. Ver transversal-pendencias-cobertura (parte 24), item 1.
 2. Falha aberta: se `require('../auth')` falhar, as listas canônicas e o radar de SLA trocam as proteções por funções que deixam passar (nucleo.md (parte 15) seção 8).
 3. `isLegalizacaoRoute` libera `GET` em **qualquer** caminho que contenha `/legalizacao`; rota nova com esse trecho nasce liberada para analista.
 4. Um segredo só para todas as cargas de máquina.
@@ -3455,7 +3455,7 @@ Consolida os "pontos de atenção" de todos os módulos e fecha com o que este m
 
 **Segurança**
 
-1. Varrer as 148 rotas "login" e decidir quais devem ser só de administrador (a lista completa não foi levantada; só Carteira/CAC foram fechadas).
+1. ~~Varrer as 148 rotas "login"~~ — **feito em 31/10/2026** (leitura das regras internas de cada arquivo): as rotas de `/cs` marcadas "login" já checam o perfil por dentro (administrador, `usuario` ou `acesso_cs`; Acessos, Logs, Backup e limites só administrador), `users.js` inteiro é só administrador, e a busca global devolve só nome, CNPJ e módulo (sem honorário). Sobram como abertas ao `usuario`, **por desenho**, as rotas operacionais do SPA (atendimentos, gestão, insatisfações, sensíveis, pesquisas, recuperações, tickets, Dashboard) e as da Legalização. Decisão de negócio, não falha: se alguma deve ser só da liderança (por exemplo "clientes sensíveis"), precisa ser dita.
 2. Um só segredo (`LEGALIZACAO_SYNC_TOKEN`) para quase todas as cargas de máquina; separar por origem.
 3. Tokens em `localStorage`; sem CSP e sem HSTS.
 4. Exigir confirmação em `DELETE /api/data/clear`, `DELETE /api/data/log-atividades` e na limpeza da Qualidade (hoje basta a frase `LIMPAR` nesta última).
@@ -3493,7 +3493,7 @@ Consolida os "pontos de atenção" de todos os módulos e fecha com o que este m
 | Gamificação | `gamificacao` | completa | — |
 | /legalizacao | `legalizacao` | completa | horários reais das rotinas locais |
 | /financeiro | `financeiro` | completa | conversão dos arquivos do Omie sem teste |
-| Permissões | `transversal-permissoes` | consolidada | rotas "login" sem varredura individual |
+| Permissões | `transversal-permissoes` | consolidada, com a varredura das rotas "login" feita em 31/10/2026 | — |
 | Integrações e automações | `transversal-integracoes-automacoes` | consolidada | lista de tarefas do Agendador da estação não conferida |
 | Logs e auditoria | `transversal-logs-auditoria` | consolidada | — |
 | Arquitetura | `transversal-arquitetura` | visão geral | — |
@@ -3515,7 +3515,7 @@ Scripts Node com `assert`, rodados à mão (`node <arquivo>`); não há CI.
 | Questor / e-mail | `server/questor/testes_*.js`, `server/emailSinais/testes_email_sinais.js` |
 | Outros | `server/testes_avisos.js`, `server/testes_push.js`, `server/arquivoMorto/nomes.test.js` |
 
-**Sem teste:** nota mensal, ranking e pódio da Gamificação; revisões; Protocolo Online; regra de status em SQL da Legalização; rotas de entrada do Financeiro; toda a Carteira e o CAC; permissões das 148 rotas "login".
+**Sem teste:** nota mensal, ranking e pódio da Gamificação; revisões; Protocolo Online; regra de status em SQL da Legalização; rotas de entrada do Financeiro; toda a Carteira e o CAC (o teste novo cobre o filtro por perfil, não as consultas).
 
 ---
 

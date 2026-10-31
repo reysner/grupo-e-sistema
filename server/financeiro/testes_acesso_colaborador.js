@@ -77,7 +77,7 @@ servidor.listen(0, '127.0.0.1', async () => {
       assert.strictEqual((await get(porta, q, colab({ acesso_gestor: true }))).status, 200);
       assert.strictEqual((await get(porta, q, colab({ acesso_qualidade: true }))).status, 200);
       assert.strictEqual((await get(porta, q, colab({}))).status, 403);
-      assert.strictEqual((await get(porta, q, colab({ acesso_minha_nota: true }))).status, 403);
+      assert.strictEqual((await get(porta, q, colab({ acesso_minha_nota: true }))).status, 200);   // desde 21/10/2026 Minha Nota = analista no /cs (server/auth.js isCsQualidadeRoute)
       for (const c of ['/api/cs/painel/dados', '/api/cs/painel/anual']) {
         assert.strictEqual((await get(porta, c, colab({ acesso_gestor: true }))).status, 403, c);
         assert.strictEqual((await get(porta, c, colab({ acesso_qualidade: true }))).status, 403, c);
