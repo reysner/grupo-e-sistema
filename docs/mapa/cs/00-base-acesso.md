@@ -45,7 +45,7 @@ Os perfis se somam: a mesma pessoa pode ser analista e gestora.
 - **Refresh:** `POST /api/auth/refresh` valida o refresh token (existe, não vencido, usuário ativo), **apaga o usado** (rotação) e emite um novo par. Validade do refresh: 30 dias. `refresh_tokens` apagada a cada 24 h por `pruneExpiredTokens`.
 - **Armazenamento no navegador:** o front guarda token, refresh e usuário no `localStorage` (chaves `ge_token`, `ge_refresh`, `ge_user` na SPA principal; `cs_token`, `cs_refresh`, `cs_user` no `/cs` e nas páginas de Legalização). Os tokens **não** vão em cookie. [CONFIRMADO] leitura dos JS e da sessão; o README fala em cookies HttpOnly (desatualizado).
 - **Segredos:** `JWT_SECRET` e `JWT_REFRESH_SECRET`; se faltarem, o servidor gera segredo aleatório a cada subida e registra aviso no log (todas as sessões caem a cada reinício). Não há valor padrão fixo.
-- **Cadastro público** `POST /api/auth/register`: sempre cria `role = usuario`, ignorando `role` do corpo; exige nome, e-mail e senha de pelo menos 6 caracteres; e-mail único (409). [CONFIRMADO] [DÚVIDA] se a rota deveria ficar aberta em produção.
+- **Cadastro público** (desligado em 31/10/2026; só volta com `CADASTRO_PUBLICO=1`) `POST /api/auth/register`: sempre cria `role = usuario`, ignorando `role` do corpo; exige nome, e-mail e senha de pelo menos 6 caracteres; e-mail único (409). [CONFIRMADO] [DÚVIDA] se a rota deveria ficar aberta em produção.
 - **Administrador inicial:** criado na subida só se `ADMIN_PASS` existir (`ADMIN_EMAIL`, `ADMIN_NAME` opcionais); sem `ADMIN_PASS` não cria e avisa no log.
 
 ## 3. Marcas calculadas no login e no refresh

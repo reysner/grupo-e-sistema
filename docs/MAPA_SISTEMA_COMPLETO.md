@@ -1,12 +1,12 @@
 # Mapa do sistema Grupo-E — documento único
 
-Gerado em 31/10/2026 com o código no commit `4299be9`, a partir dos arquivos de `docs/mapa/`. Engenharia reversa do código (servidor Node/Express + PostgreSQL, front-end em HTML/JS puro, hospedado no Render), escrita para reconstruir ou portar o sistema sem abrir o código. Idioma: pt-BR. Níveis de certeza usados em todo o texto: **[CONFIRMADO]** (lido no código), **[INFERIDO]** (deduzido), **[DÚVIDA]** (precisa de confirmação).
+Gerado em 31/10/2026 com o código no commit `e419a5d`, a partir dos arquivos de `docs/mapa/`. Engenharia reversa do código (servidor Node/Express + PostgreSQL, front-end em HTML/JS puro, hospedado no Render), escrita para reconstruir ou portar o sistema sem abrir o código. Idioma: pt-BR. Níveis de certeza usados em todo o texto: **[CONFIRMADO]** (lido no código), **[INFERIDO]** (deduzido), **[DÚVIDA]** (precisa de confirmação).
 
 ## Situação deste documento
 
-**Prontas:** inventário da Fase 1 e anexos de rotas e tabelas; módulo /cs completo (11 partes); Gamificação; /legalizacao; /financeiro.
+**Prontas:** inventário da Fase 1 e anexos de rotas e tabelas; núcleo (servidor, login, perfis, avisos, backups e rotinas); SPA `/` (atendimento, gestão, insatisfações, pesquisas, carteira, CAC, tickets, administração); módulo /cs completo (11 partes); Gamificação; /legalizacao; /financeiro.
 
-**Ainda não escritas:** a SPA `/` (clientes, atendimentos, gestão de clientes, tickets, usuários e demais telas), o núcleo (login, usuários, backup, push), e as seções transversais (visão geral de arquitetura, matriz de permissões, integrações externas, automações e jobs, logs e auditoria, portabilidade e checklist de cobertura). Para essas áreas, valem o inventário (parte 1) e os anexos de rotas e tabelas (partes 2 e 3), que já listam tudo, sem o detalhe de regras.
+**Ainda não escritas:** as seções transversais (visão geral de arquitetura, matriz de permissões consolidada, integrações externas, automações e jobs em um só lugar, logs e auditoria, portabilidade e checklist de cobertura). Para essas áreas, valem as partes por módulo, o inventário (parte 1) e os anexos de rotas e tabelas, que já listam tudo.
 
 **Limites conhecidos:** (1) `clientes`, `honorarios`, `eventos_clientes`, `analistas` e `investimentos` não têm `CREATE TABLE` no repositório; as colunas delas aqui são inferidas pelo uso, e um `pg_dump --schema-only` fecharia a lacuna; (2) a seção de portabilidade depende do sistema de destino, que não foi informado; (3) algumas telas do /cs (portais Gestor, Analista e Sucesso do Cliente, Minha área, Acessos) estão descritas pelo que fazem, sem o texto de cada botão; (4) nada foi testado em produção, tudo vem da leitura do código.
 
@@ -30,9 +30,11 @@ Gerado em 31/10/2026 com o código no commit `4299be9`, a partir dos arquivos de
 12. [/cs — Sinais de e-mail, Logs, Backup e Limpeza](#parte-12-cs-sinais-de-e-mail-logs-backup-e-limpeza)
 13. [/cs — Rotas do radar de SLA e Análise Inteligente](#parte-13-cs-rotas-do-radar-de-sla-e-analise-inteligente)
 14. [/cs — Telas e experiência de uso](#parte-14-cs-telas-e-experiencia-de-uso)
-15. [Gamificação](#parte-15-gamificacao)
-16. [/legalizacao](#parte-16-legalizacao)
-17. [/financeiro](#parte-17-financeiro)
+15. [Núcleo — servidor, login, perfis, avisos, backups e rotinas](#parte-15-nucleo-servidor-login-perfis-avisos-backups-e-rotinas)
+16. [SPA / — clientes, atendimentos, gestão, tickets e administração](#parte-16-spa-clientes-atendimentos-gestao-tickets-e-administracao)
+17. [Gamificação](#parte-17-gamificacao)
+18. [/legalizacao](#parte-18-legalizacao)
+19. [/financeiro](#parte-19-financeiro)
 
 ---
 
@@ -1051,7 +1053,7 @@ Os perfis se somam: a mesma pessoa pode ser analista e gestora.
 - **Refresh:** `POST /api/auth/refresh` valida o refresh token (existe, não vencido, usuário ativo), **apaga o usado** (rotação) e emite um novo par. Validade do refresh: 30 dias. `refresh_tokens` apagada a cada 24 h por `pruneExpiredTokens`.
 - **Armazenamento no navegador:** o front guarda token, refresh e usuário no `localStorage` (chaves `ge_token`, `ge_refresh`, `ge_user` na SPA principal; `cs_token`, `cs_refresh`, `cs_user` no `/cs` e nas páginas de Legalização). Os tokens **não** vão em cookie. [CONFIRMADO] leitura dos JS e da sessão; o README fala em cookies HttpOnly (desatualizado).
 - **Segredos:** `JWT_SECRET` e `JWT_REFRESH_SECRET`; se faltarem, o servidor gera segredo aleatório a cada subida e registra aviso no log (todas as sessões caem a cada reinício). Não há valor padrão fixo.
-- **Cadastro público** `POST /api/auth/register`: sempre cria `role = usuario`, ignorando `role` do corpo; exige nome, e-mail e senha de pelo menos 6 caracteres; e-mail único (409). [CONFIRMADO] [DÚVIDA] se a rota deveria ficar aberta em produção.
+- **Cadastro público** (desligado em 31/10/2026; só volta com `CADASTRO_PUBLICO=1`) `POST /api/auth/register`: sempre cria `role = usuario`, ignorando `role` do corpo; exige nome, e-mail e senha de pelo menos 6 caracteres; e-mail único (409). [CONFIRMADO] [DÚVIDA] se a rota deveria ficar aberta em produção.
 - **Administrador inicial:** criado na subida só se `ADMIN_PASS` existir (`ADMIN_EMAIL`, `ADMIN_NAME` opcionais); sem `ADMIN_PASS` não cria e avisa no log.
 
 ### 3. Marcas calculadas no login e no refresh
@@ -1912,7 +1914,7 @@ Classificar cada cliente ativo em **Diamante, Ouro, Prata ou Bronze** por valor 
 
 ### Pontos de atenção
 
-1. `clientes`, `honorarios`, `eventos_clientes`, `analistas` e `investimentos` **não têm `CREATE TABLE` no repositório** (varredura em 30/10/2026): vieram do esquema original. Sem `pg_dump --schema-only` a documentação de colunas dessas tabelas é inferida pelo uso. [DÚVIDA — pedir o dump] (Correção: `gamificacao_colaboradores/notas/premios` também apareciam na varredura, mas são só do arquivo morto `routes/gamificacao.js`, que não é montado; a Gamificação real usa as tabelas `gam_*`, todas criadas no código — ver gamificacao.md (parte 15).)
+1. `clientes`, `honorarios`, `eventos_clientes`, `analistas` e `investimentos` **não têm `CREATE TABLE` no repositório** (varredura em 30/10/2026): vieram do esquema original. Sem `pg_dump --schema-only` a documentação de colunas dessas tabelas é inferida pelo uso. [DÚVIDA — pedir o dump] (Correção: `gamificacao_colaboradores/notas/premios` também apareciam na varredura, mas são só do arquivo morto `routes/gamificacao.js`, que não é montado; a Gamificação real usa as tabelas `gam_*`, todas criadas no código — ver gamificacao.md (parte 17).)
 2. `a_confirmar` é código morto na classificação atual (RN-CHU-005).
 3. A reclassificação pela Receita depende de BrasilAPI e minhareceita (serviços externos sem contrato): queda prolongada deixa a saída como `presumida`, que **conta** no churn.
 4. `DELETE FROM cliente_tags` + reinserção acontece dentro de transação, então a tela nunca vê vínculos pela metade; mas uma TAG apagada no Acessórias continua em `acessorias_tags` (não há limpeza). [CONFIRMADO]
@@ -2404,7 +2406,289 @@ Abre ao clicar no nome da empresa (`GET /painel/cliente/:id`, arquivo 06). Topo:
 
 ---
 
-# Parte 15 — Gamificação
+# Parte 15 — Núcleo — servidor, login, perfis, avisos, backups e rotinas
+
+*Origem: `docs/mapa/nucleo.md`*
+
+## Núcleo — servidor, login, perfis, usuários, avisos, backups e rotinas automáticas
+
+Cobre `server/index.js` (435 linhas), `server/db.js`, `server/auth.js`, `server/routes/auth.js`, `server/routes/users.js`, `server/reset.js`, `server/mailer.js`, `server/push.js` + `public/sw.js`, as listas canônicas (`routes/analistas.js`, `grupos-empresas.js`, `unidades.js`, `motivos-churn.js`), o log de atividades, as notificações do sino e os backups do SPA (em `server/routes/data.js`). A SPA `/` (telas) está em spa-principal.md (parte 16) (parte seguinte).
+
+Níveis de certeza: [CONFIRMADO] (lido no código) · [INFERIDO] · [DÚVIDA].
+
+### 1. Visão
+
+Um único processo Node/Express serve (a) as páginas estáticas de `public/`, (b) a API `/api/*` e (c) as rotinas agendadas, todas dentro do mesmo processo com `setInterval`. O banco é PostgreSQL (`pg`, `DATABASE_URL`; SSL ligado quando `NODE_ENV=production`). Não há fila de tarefas nem processo separado de rotinas: **se o processo reinicia, os temporizadores recomeçam do zero**, e como o Render gratuito adormece e acorda, "diário" significa "a cada 24 h contadas do último boot" nas rotinas sem horário fixo.
+
+### 2. Montagem do servidor (`index.js`)
+
+- **Cabeçalhos:** `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN` (o ranking da Gamificação é embutido no /cs), `X-XSS-Protection`. **Sem Helmet** e sem política de conteúdo (CSP). [CONFIRMADO]
+- **CORS:** só as origens de `ALLOWED_ORIGINS` (padrão `http://localhost:3000`); requisição sem `Origin` passa.
+- **Corpo:** JSON de até 100 KB, exceto `/api/cs/questor/anual` (5 MB), `/api/cs/omie/honorarios` (3 MB) e `/api/cs/email-sinais` (4 MB). `compression` (gzip), `cookie-parser` (os cookies não são usados para a sessão), `trust proxy = 1`.
+- **Limite global:** 300 requisições por minuto por IP; **login/cadastro:** 20 por 15 minutos por IP.
+- **Keep-alive:** com `APP_URL` definido, o servidor chama o próprio `/health` a cada 14 minutos (evita adormecer no plano gratuito).
+- **Ordem das rotas** (importa: as primeiras vencem): `/api/public`, `/api/auth` (recuperação de senha e depois login), `/api/data`, `/api/users`, `/api/cs/categorias`, o filtro de módulos `/api/cs/painel`, os sub-roteadores de `/api/cs/painel/*`, `/api/push`, `/api/cs/churn`, `/api/cs/risco`, as cargas (`/api/cs/questor…`, `/api/cs/omie…`), `/api/financeiro`, `/api/cs/email-sinais`, `/api/cs/painel` (painel), `/api/cs`, `/api/analistas`, `/api/grupos-empresas`, `/api/unidades`, `/api/motivos-churn`. O roteador `routes/gamificacao.js` é importado e **nunca montado** (código morto).
+- **Páginas servidas:** `/pesquisa`, `/gamificacao` (redireciona ao /cs), `/gamificacao/ranking`, `/gamificacao/regras`, `/contabil`, `/minha-nota` e `/qualidade` (redirecionam ao /cs), `/legalizacao`, `/legalizacao-antiga`, `/legalizacao/regras`, `/cs`, `/cs/como-funciona`, `/cs/sla`, `/financeiro` (e `/financiero` → 301). Arquivos de `/js` e `/css` com MIME fixo; `express.static(public, maxAge 0, sem etag)`; **qualquer outro caminho devolve `index.html`** (a SPA).
+- **Erro:** handler final devolve `500 { error: 'Erro interno do servidor.' }`.
+
+#### 2.1 Subida
+1. `initDB()` cria **só** as tabelas-base (`users`, `refresh_tokens`, `atendimentos`, `gestao_clientes`, `insatisfacoes`, `clientes_sensiveis`, `pesquisas`, `recuperacoes`), troca a restrição de papéis e acrescenta as colunas de acesso em `users`. **`clientes`, `honorarios`, `eventos_clientes`, `investimentos` e `notificacoes` não são criadas aqui** (as duas últimas, parcialmente, em `data.js`); `clientes`, `honorarios`, `eventos_clientes`, `analistas` e `investimentos` só existem no banco atual.
+2. **Administrador inicial:** se não existe usuário com `ADMIN_EMAIL` (padrão `admin@grupoe.com.br`), cria com `ADMIN_PASS` (bcrypt 12). **Sem `ADMIN_PASS` não cria nada e avisa no log.** Não há senha padrão.
+3. Agenda as rotinas da seção 6 e abre a porta (`PORT`, padrão 3000). Falha de conexão com o banco encerra o processo.
+
+### 3. Login e sessão
+
+| Item | Regra |
+| --- | --- |
+| Credencial | e-mail (sem diferenciar maiúsculas) + senha; só usuários com `active = 1`; senha com bcrypt de 12 rounds; mínimo de 6 caracteres |
+| Token de acesso | JWT HS256, **2 horas**, emissor `grupo-e`, assinado por `JWT_SECRET`; carrega `sub`, `name`, `role` e as marcas `acesso_minha_nota`, `acesso_legalizacao`, `acesso_cs`, `acesso_financeiro`, `acesso_financeiro_sv`, `acesso_qualidade`, `acesso_gestor` |
+| Refresh | UUID guardado em `refresh_tokens` (30 dias), **rotativo e de uso único**: `POST /auth/refresh` apaga o antigo e emite outro; se o usuário foi desativado, 401 |
+| Onde fica no navegador | `localStorage`: `ge_token`, `ge_refresh`, `ge_user` (SPA `/`) ou `cs_token`, `cs_refresh`, `cs_user` (/cs, /legalizacao, /financeiro) |
+| Sem `JWT_SECRET`/`JWT_REFRESH_SECRET` | gera valores aleatórios a cada boot (todos são deslogados a cada reinício) e avisa no log |
+| Troca de perfil ou de marcas | revoga todos os refresh do usuário (força novo login com as permissões novas) |
+| `acesso_gestor` | **calculado no login/refresh**: é gestor em `cs_qualidade_gestores` **ou** tem módulos de portais em `cs_acessos`; `acesso_cs` também soma os módulos de indicadores de `cs_acessos` (arquivo 00 do /cs) |
+
+`GET /api/auth/me` devolve `{ id, name, email, role }` **do banco** (não do token). `POST /api/auth/logout` revoga o refresh informado e responde `ok` mesmo com erro.
+
+#### 3.1 O filtro de acesso (`requireAuth`, `server/auth.js:77–141`)
+Valida o JWT e preenche `req.user`. Depois aplica, **por prefixo de rota**, a restrição dos dois perfis limitados:
+- `contabil` só alcança rotas que contêm `/tickets`, `/auth` ou `/perfil` (**busca por trecho do caminho**), mais as exceções liberadas pelas marcas (Minha Nota, Legalização somente leitura, `/api/cs/painel…`, `/api/financeiro…`, Qualidade, push).
+- `colaborador` só alcança `/gam/minha-*`, `/gam/meus-*`, `/auth`, `/perfil` e as mesmas exceções.
+- `administrador` e `usuario` não passam por essa restrição: **o que vale para eles é cada rota** (`requireAdmin` ou nada).
+
+`requireAdmin` exige `role = 'administrador'`. Não há perfil intermediário "gestor" na API: o conceito vive nas marcas `acesso_*` e nas tabelas de acesso do /cs.
+
+### 4. Perfis e marcas
+
+| `role` | Para quem | Entra |
+| --- | --- | --- |
+| `administrador` | liderança | tudo |
+| `usuario` | equipe interna | SPA `/` (sem as telas de administração) e, por regra de cada rota, /cs e /financeiro **sem valores em R$** |
+| `contabil` | Portal Contábil | só `/contabil` (tickets) mais as marcas que tiver |
+| `colaborador` | "Acessos marcados" / Analista | só o que as marcas liberam |
+
+Marcas independentes do perfil (colunas de `users`, definidas por um administrador): `acesso_minha_nota`, `acesso_legalizacao`, `acesso_cs`, `acesso_financeiro`, `acesso_financeiro_sv`, `acesso_qualidade`. Na tela de usuários elas aparecem como chips, e **Portal Contábil** é um chip que define o perfil `contabil`. Para `contabil`, o campo `regimes_atendidos` (JSONB com Simples Nacional, Lucro Presumido, Lucro Real) decide quem recebe o ticket de baixa/saída do regime da empresa; vazio = atende qualquer regime (reserva).
+
+### 5. Contas e senhas
+
+| Rota | Acesso | Regra |
+| --- | --- | --- |
+| `POST /api/auth/register` | público, **desligado desde 31/10/2026** | responde 403 "O cadastro está desativado…" sem tocar o banco, a menos que `CADASTRO_PUBLICO=1` esteja no ambiente (nesse caso cria sempre `role = usuario`, nome + e-mail + senha ≥ 6, e-mail único, entra já logado). A tela de login não mostra mais "Criar conta"; quem precisa de acesso é criado por um administrador |
+| `POST /api/auth/login`, `/refresh`, `/logout`, `GET /me` | veja seção 3 | |
+| `GET/POST /api/users`, `PATCH /:id/profile`, `/:id/password`, `/:id/toggle`, `DELETE /:id` | **administrador** | criar com perfil e marcas; editar nome, e-mail, perfil, marcas e regimes (revoga tokens); trocar senha de outro (revoga tokens); ativar/desativar (alternância 1/0); excluir (não a si mesmo) |
+| `PATCH /api/data/perfil` | logado | altera o **próprio** nome, e-mail e senha; exige a senha atual |
+| `POST /api/auth/forgot-password` | público | resposta sempre igual (não revela se o e-mail existe); gera token de 32 bytes com validade de **1 hora** em `reset_tokens` (apaga os anteriores do usuário) e envia o link por Gmail SMTP em segundo plano |
+| `GET /api/auth/reset-valido?token=`, `POST /api/auth/reset-password` | público | token válido, não usado e não expirado; nova senha ≥ 6; marca o token como usado e revoga as sessões |
+
+E-mail de recuperação: `mailer.js` (nodemailer, Gmail SMTP porta 587 com STARTTLS, **IPv4 forçado** porque o Render não sai por IPv6), conta `GMAIL_USER` + senha de app `GMAIL_APP_PASS`; o link vai para `{APP_URL}/reset-password.html?token=…`. Uma rota de diagnóstico de e-mail que era pública foi **removida** na auditoria.
+
+### 6. Rotinas automáticas (todas no mesmo processo)
+
+| Rotina | Quando | Condição |
+| --- | --- | --- |
+| Limpar `refresh_tokens` vencidos | a cada 24 h | sempre |
+| Alerta de prazo das ocorrências de Qualidade | confere a cada 10 min; roda às **08h de Brasília**, uma vez por dia (memória) | sempre |
+| Ingestão do Zappy (`cs/ingestao`) | **a cada 5 min** e já ao subir | `ZAPPY_BASE_URL` **e** `ZAPPY_TOKEN` |
+| Agenda diária (confere a cada 5 min): notas e ranking às **08h, 11h e 15h**; CertiSeguro às **07h e 13h**; notificações de vencimento da Legalização e retrato semanal às **08h** | por horário de Brasília | **dentro do mesmo bloco do Zappy**: sem as duas variáveis do Zappy essas rotinas **também não rodam** |
+| Consulta noturna às prefeituras (02h) | desligada por padrão | `LEGALIZACAO_CONSULTA_NO_SERVIDOR=1` (e o bloco do Zappy) |
+| Saúde das rotinas da Legalização | a cada hora | bloco do Zappy |
+| Sincronização com o Acessórias: clientes, TAGs, motivos de cancelamento, classificação pela Receita, entregas do Risco e foto diária do risco | **ao subir e a cada 24 h** | `ACESSORIAS_API_TOKEN` |
+| Completar município/CNAE dos clientes (700 por rodada) | a cada 6 h | `ACESSORIAS_API_TOKEN` |
+| **Backup automático** dos dados do SPA | confere a cada 10 min; gera **uma vez por dia entre 03h e 04h de Brasília**; guarda os **30 mais recentes** | sempre (dentro de `data.js`) |
+| Keep-alive | a cada 14 min | `APP_URL` |
+
+### 7. Notificações
+
+- **Push do navegador** (`push.js` + `public/sw.js`): `GET /api/push/chave` (chave pública), `POST /assinar` e `/cancelar` (qualquer pessoa logada, só mexe nos aparelhos dela). As chaves VAPID são geradas uma vez e ficam em `cs_painel_config` (chave `webpush_vapid`): **perder o banco invalida as inscrições**. Aparelho que responde 404/410 sai do cadastro (`push_assinaturas`). O service worker mostra o aviso, ou, se a página está visível, entrega a mensagem à própria página (balão e som) para não duplicar. Falha de envio nunca derruba a operação principal.
+- **Sino do SPA** (`/api/data/notificacoes`): tabela única e **global** (não é por pessoa): 50 mais recentes, "marcar como lida" e "marcar todas como lidas" valem para **todos**. Criação: automática (novo cliente no Acessórias, retorno, vencimentos, falhas de rotina) ou por `POST /notificacoes`, que **qualquer usuário logado** pode chamar com tipo, título e mensagem livres (a tela usa para avisar insatisfação alta).
+- **Sino da Legalização:** "lido" por usuário (`legalizacao_notif_visto`), ver legalizacao.md (parte 18).
+
+### 8. Listas canônicas
+
+`analistas`, `grupos-empresas`, `unidades` e `motivos-churn`: CRUD mínimo para alimentar listas suspensas e evitar duplicidade ("Reysner" × "Resyner"). Todas: `GET` para qualquer logado (`?ativo=true` filtra); `POST` cria ou **reativa** pelo nome, `PATCH` ativa/desativa (`analistas` e `motivos-churn` também renomeiam), `DELETE` apaga de vez; escrita **só administrador**. `analistas` grava no log de atividades do /cs; renomear um motivo de churn leva o novo nome para `clientes.motivo_churn`. Se o `require('../auth')` falhar, estes arquivos trocam as proteções por funções que **deixam passar** (falha aberta).
+
+### 9. Log de atividades e backups do SPA
+
+- **Log** (`log_atividades`): quem, ação (`criar`, `editar`, `excluir`, `importar`, `sync`…), módulo, descrição e IP; gravado por `registrarLog` nas rotas do SPA e da Legalização e pelo filtro automático da Qualidade (arquivo 08 do /cs). `GET /api/data/log-atividades` (administrador; filtros módulo e usuário, 200 por padrão) e `DELETE /log-atividades` (administrador, **apaga tudo sem confirmação**).
+- **Backup manual** `GET /api/data/backup` (administrador): JSON com os dados de **31 conjuntos** (atendimentos, gestão, insatisfações, sensíveis, pesquisas, recuperações, clientes, honorários, eventos, investimentos, notificações, últimos 1000 logs; vínculos e tickets do Zappy **sem as mensagens**; Gamificação inteira; analistas; Qualidade (registros, responsáveis, histórico, tipos, gestores) e `cs_acessos`).
+- **Backup automático** (`backups_automaticos`: `id`, `gerado_em`, `dados JSONB`, `totais JSONB`): o mesmo conteúdo, uma vez por dia, **no próprio banco** (se o banco se perde, os backups se perdem junto); listagem e download por administrador.
+- **Fora de qualquer backup do sistema:** `users`, `refresh_tokens`, `reset_tokens`, `cs_config`, `cs_painel_config` (inclui as chaves do push), `cs_mensagens`, os dados da Legalização (`legalizacao_*`), do Financeiro (`financeiro_*`), `omie_*`, `questor_*`, os resumos de e-mail e `push_assinaturas`. Para recuperação de verdade é preciso `pg_dump` ou o backup do provedor (ver guia de migração).
+
+### 10. Dados do núcleo
+
+| Tabela | Colunas e regras |
+| --- | --- |
+| `users` | `id TEXT PK`, `name`, `email UNIQUE`, `password` (hash bcrypt; o código também tolera `password_hash`), `role` CHECK (`administrador, usuario, contabil, colaborador`), `active INTEGER` (1/0), `created_at`, `updated_at`; marcas booleanas `acesso_minha_nota, acesso_legalizacao, acesso_cs, acesso_financeiro, acesso_financeiro_sv, acesso_qualidade`; `regimes_atendidos JSONB` |
+| `refresh_tokens` | `token PK`, `user_id → users ON DELETE CASCADE`, `expires_at`, `created_at` |
+| `reset_tokens` | `token PK`, `user_id`, `expires_at`, `used`, `created_at` |
+| `log_atividades` | ver seção 9 |
+| `notificacoes` | criada à parte: `id UUID`, `tipo`, `titulo`, `mensagem`, `lida`, `link_modulo`, `created_at`, `cliente_id UUID` |
+| `backups_automaticos` | seção 9 |
+| `push_assinaturas`, `cs_painel_config` | push e configurações chave/valor JSON do painel |
+
+As tabelas de negócio do SPA (`atendimentos`, `gestao_clientes`, `insatisfacoes`, `clientes_sensiveis`, `pesquisas`, `recuperacoes`, `clientes`, `honorarios`, `eventos_clientes`, `investimentos`, `tickets*`) estão em spa-principal.md (parte 16).
+
+### 11. Pontos de atenção
+
+1. ~~Qualquer pessoa na internet podia criar uma conta de `usuario` e entrar~~ — **corrigido em 31/10/2026**: o cadastro público foi desligado (rota recusa com 403 e a tela não oferece mais "Criar conta"; reabrir só com `CADASTRO_PUBLICO=1`). Contas criadas **antes** da correção continuam existindo: vale conferir a lista em Administração → Usuários e desativar as que não são de pessoas conhecidas. Lição: o perfil `usuario` ainda passa em toda rota protegida apenas por `requireAuth` (Carteira com honorários, /cs e /financeiro sem R$). [CONFIRMADO]
+2. **Rotinas ligadas a variáveis erradas:** a agenda da Legalização (CertiSeguro 2×/dia, vencimentos, retrato semanal, saúde das rotinas) só existe se `ZAPPY_BASE_URL` e `ZAPPY_TOKEN` estiverem definidos. [CONFIRMADO]
+3. **Backups no mesmo lugar do dado:** o backup automático fica no banco e deixa de fora usuários, Legalização, Financeiro e configurações. [CONFIRMADO]
+4. **Sino global:** ler ou limpar o sino de um limpa para todos; e qualquer usuário cria avisos livres. [CONFIRMADO]
+5. **Gestão de notificações de ticket:** as inserções de aviso do ticket (`criarTicketInterno`, marcar checklist, finalizar) gravam as colunas `user_id` e `referencia_id`, que **não existem** na definição de `notificacoes` do código (que exige `titulo`), e o erro é silenciado (`.catch(()=>{})`). Se o banco de produção tem outra versão da tabela, funciona; se não, os avisos de ticket nunca são gravados. Conferir com o `pg_dump --schema-only`. [DÚVIDA]
+6. **Cabeçalhos de segurança parciais** (sem CSP, sem HSTS), **CORS** libera requisições sem `Origin`, e os tokens ficam em `localStorage` (qualquer script injetado na página os lê). [CONFIRMADO]
+7. **Falha aberta nas listas** (seção 8) e nas rotas do radar de SLA (arquivo 09 do /cs) se `auth.js` não carregar. [CONFIRMADO]
+8. **Rotinas por `setInterval` no processo web:** com o plano gratuito, reinícios e dormência atrasam ou repetem rotinas; só as que têm horário fixo guardam em memória "já rodei hoje" (reiniciar na mesma hora pode repeti-las). [INFERIDO]
+9. **README e documentação antigos** falavam em SQLite e senha padrão; o código usa PostgreSQL e não tem senha padrão. [CONFIRMADO]
+
+---
+
+# Parte 16 — SPA / — clientes, atendimentos, gestão, tickets e administração
+
+*Origem: `docs/mapa/spa-principal.md`*
+
+## SPA `/` — o sistema principal (clientes, atendimentos, gestão, tickets, administração)
+
+Cobre `public/index.html` (1.500 linhas), `public/js/app.js` (11.030 linhas), `public/css/app.css`, o Portal Contábil (`public/contabil.html`), a pesquisa pública (`public/pesquisa.html`), `public/reset-password.html` e a API `/api/data/*` do arquivo `server/routes/data.js` que **não** é Gamificação, Legalização nem Financeiro (essas têm documento próprio: gamificacao.md (parte 17), legalizacao.md (parte 18), financeiro.md (parte 19)). Login, perfis, backups e rotinas: nucleo.md (parte 15).
+
+Níveis de certeza: [CONFIRMADO] (lido no código) · [INFERIDO] · [DÚVIDA].
+
+> **Profundidade desta parte.** Li por completo as rotas, as regras de servidor, os formulários e o menu. O `app.js` tem 11 mil linhas de interface montada por texto; descrevi cada módulo pelo que ele envia, calcula e mostra (campos, listas, filtros, botões), **sem reproduzir cada rótulo e cada estilo**. Qualquer tela nova ou alterada entra na próxima atualização do documento.
+
+### 1. Estrutura da aplicação
+
+Página única (`index.html`) com `section.page` por módulo, trocadas por `Nav.go(página)`; sem framework nem etapa de build. Módulos do `app.js`: `App` (sessão, `API`, `Util`, `Toast`, `Modal`, `Nav`, `Forms`), `Dashboard`, `Perfil`, `Notificacoes` (sino), `Relatorio`, `BuscaGlobal`, `Log`, `DarkMode`, `UserMenu`, `Pesquisas`/`PesquisasGrid`, `Carteira`, `Atendimento`, `Gestao`, `Recuperacao`, `Insatisfacao`, `Sensiveis`, `CAC`, `Legalizacao` (administração), `Financeiro` (tela antiga), `Gamificacao` (administração), `Tickets`. Bibliotecas externas: Chart.js (cdnjs) e SheetJS `xlsx 0.18.5` (cdnjs) para importar planilha; `pptxgenjs` só na apresentação da Gamificação.
+
+- **Sessão:** tokens em `localStorage` (`ge_token`, `ge_refresh`, `ge_user`); a camada `API.request` renova o token quando o servidor responde `token_expired` e deslogga se a renovação falha. Ao entrar, `contabil` é levado a `/contabil` e `colaborador` a `/minha-nota` (que redireciona para o /cs).
+- **Quem vê o quê:** a classe `admin-only` esconde as telas de Carteira, CAC, Legalização, Financeiro, Gamificação, Tickets, Sucesso do Cliente, Análise Inteligente e Log para quem não é administrador. **Isso é só visual**: quem decide é cada rota do servidor, e várias delas aceitam qualquer usuário logado (seção 8).
+- **Modo escuro** (`DarkMode`), menu do usuário, **busca global** (mínimo 2 caracteres; até 5 resultados por módulo em atendimentos, gestão, insatisfações, sensíveis, recuperações e carteira) e **Relatório Executivo** (administrador).
+
+### 2. Menu e módulos
+
+| Menu | Quem vê na tela | Para quê |
+| --- | --- | --- |
+| Dashboard | todos | indicadores gerais com filtro de período e de analista procurado; botão do Relatório Executivo |
+| Atendimento | todos | registrar e consultar atendimentos |
+| Gestão de Clientes | todos | solicitações de entrada, saída e baixa; indicadores de retenção |
+| Insatisfação · Clientes Sensíveis · Recuperação de Experiência | todos | registro de ocorrências de relacionamento |
+| Pesquisas | todos | respostas de satisfação (NPS, CSAT, CES) |
+| Carteira · CAC | administrador | clientes, honorários, MRR, investimentos e CAC |
+| Legalização · Financeiro · Gamificação | administrador | telas de administração (a Gamificação é a principal; Legalização e Financeiro têm páginas próprias `/legalizacao` e `/financeiro`) |
+| Tickets | administrador | tickets de baixa e saída entregues ao time contábil |
+| Sucesso do Cliente | administrador | radar de SLA, histórico de atendimentos do Zappy e fila de vínculos pendentes |
+| Análise Inteligente | administrador | churn por palavras-chave, sentimento, afastamento, motivos de abertura |
+| Log de Atividades | administrador | histórico de ações |
+| Administração | administrador (o item de menu é `admin-only`; a seção da página não tem a marca, mas todas as rotas exigem administrador) | usuários e backups |
+| Meu Perfil | todos | nome, e-mail e senha |
+
+Cada módulo de registro (Atendimento, Gestão, Insatisfação, Sensíveis, Recuperação, Pesquisas) tem **formulário no alto, filtro por ano, mês e (quando existe) status, exportação CSV/PDF e "Limpar Registros" (administrador)**.
+
+### 3. Regras de negócio por módulo
+
+#### 3.1 Atendimento (`atendimentos`)
+Campos: Analista Responsável, Nome do Cliente, CNPJ, Empresa, **Departamento Solicitado** (Comercial, Contábil, Financeiro, Fiscal, Legalização, Pessoal, Sucesso), **Analista Procurado** (lista canônica `analistas`), **Demanda do Cliente** (lista fixa de demandas com o departamento entre parênteses, ex.: "13º Salário (Folha de pagamento)", mais "Outra"), Resumo da Demanda. `POST /atendimentos` exige analista, cliente, CNPJ, empresa, departamento, procurado e demanda. `GET` devolve todos os registros, filtrados por período. O Dashboard agrupa por empresa, departamento, analista procurado e demanda.
+
+#### 3.2 Gestão de Clientes (`gestao_clientes`, `clientes`)
+Solicitações: **Baixa de empresa**, **Cliente vindo de outro contador**, **Constituição de empresa**, **Saída de empresa**, **Transformação de empresa**, **Outro**. São de **entrada** (`SOLICITACOES_ENTRADA`): Constituição de empresa, Cliente vindo de outro contador e Transformação de empresa; de **saída**: Saída de empresa e Baixa de empresa. Campos: Analista, Solicitação, CNPJ, Empresa, Código do cliente, Grupo de Empresas e Unidade (listas canônicas), Data da Solicitação e Fim da Competência (**não obrigatórios nas entradas**), Canal da Solicitação, Regime Tributário; para entrada, **Honorário Inicial**, **Origem do Cliente** e **Data de Entrada**; para saída/baixa, **Data de Encerramento** e **Motivo do Churn** (lista de motivos).
+- **RN-SPA-001 Criação manual — a regra mora no navegador, em chamadas encadeadas e sem transação:** (1) se a solicitação é de **entrada** e há honorário inicial, o formulário chama `POST /clientes` (CAC do mês calculado por `GET /cac/dashboard`, tipo de entrada = a solicitação); (2) se é **Baixa ou Saída**, busca o cliente ativo pelo CNPJ e chama `PATCH /clientes/:id/encerrar` com a data de encerramento e o **Motivo do Churn** (ou o nome da solicitação) como `motivo_saida`; (3) só então `POST /gestao` grava a linha de Gestão (analista, solicitação, CNPJ, empresa, datas, canal, regime, código); (4) para Baixa ou Saída, o **administrador** é perguntado se quer abrir um **ticket** (seção 3.7). Motivo do Churn é obrigatório só em "Saída de empresa"; Data de Entrada é obrigatória nas entradas. Para quem **não é administrador** o passo (2) responde 403 e o formulário não avisa: a linha de Gestão é gravada, mas o cliente continua ativo. O passo (1) funciona para qualquer usuário. Se uma chamada falha no meio, as anteriores ficam gravadas. [CONFIRMADO]
+- **RN-SPA-002 Importar planilha** (`POST /gestao/importar`, só administrador; arquivo `.xlsx/.xls/.csv` lido no navegador com SheetJS, modelo em `/modelos/modelo_importacao_gestao_clientes.xlsx`): exige Analista, Solicitação, CNPJ, Empresa, Data, Competência, Canal e Regime. **Entrada** sem cliente ativo com o CNPJ → cria o cliente (calcula o CAC do mês: investimento do mês ÷ clientes que entraram no mês), grava honorário inicial e evento `entrada`; exige honorário inicial e data de entrada. **Qualquer** solicitação com CNPJ de cliente ativo → atualiza grupo, unidade, marca de inadimplente crônico e, se veio valor novo, **insere novo honorário** + evento `reajuste` (nunca duplica). **Saída/Baixa** → encerra o cliente ativo com aquele CNPJ (`status = encerrado`, `data_saida`, `motivo_saida`, evento `saida`). Linha inválida vai para `erros` sem travar as outras; a resposta traz `processados`, `avisos`, `erros`.
+- **RN-SPA-003 Importar do Acessórias** (botão, `POST /clientes/importar-acessorias`) e a rotina diária chamam a mesma `sincronizarAcessorias` (seção 3.9).
+- A lista mostra **faixa de ticket** (acima, na média, abaixo, com banda fixa de R$ 50 sobre o ticket médio dos ativos), filtros por grupo, unidade, faixa, situação (ativas, inativas, todas) e solicitação, e o **ticket médio por unidade**.
+
+#### 3.3 Insatisfação (`insatisfacoes`) · Sensíveis (`clientes_sensiveis`) · Recuperação (`recuperacoes`)
+- **Insatisfação:** gravidade em 5 níveis (Muito Alta, Alta, Média, Baixa, Muito Baixa), **Área** (Comunicação, Qualidade do Serviço, Prazo, Atendimento, Financeiro, Fiscal/Tributário, Tecnologia/Acesso, Outro) e **Tipo** que depende da área (lista em cascata; "Outro" abre texto livre), analista reclamado e descrição. **Ciclo de vida:** `aberta` → `em_andamento` → `resolvida` (`PATCH /insatisfacoes/:id/status`, qualquer usuário logado). Gravidade **Alta ou Muito Alta** dispara no navegador uma notificação do sino ("Insatisfação X registrada").
+- **Sensíveis:** "O que o cliente demonstrou" (Irritabilidade, Cobranças Recorrentes, Problemas Financeiros, Reclamações Repetidas, Outro), gravidade e detalhe.
+- **Recuperação:** gravidade, o que o cliente demonstrou após a solução e vínculo opcional com a insatisfação que está sendo resolvida (`insatisfacao_id`, ligação lógica sem chave estrangeira).
+Esses três alimentam o Risco do /cs (arquivo 04 do /cs) e o churn legado (seção 3.8).
+
+#### 3.4 Pesquisas (`pesquisas`)
+Três perguntas: **NPS** (0 a 10), **CSAT** (1 a 5, "Muito insatisfeito" a "Muito satisfeito") e **CES** (1 a 5, "Muito difícil" a "Muito fácil"), mais comentário livre (`pontos`). Entrada: (a) o analista registra pela tela; (b) o **cliente responde sem login** em `/pesquisa` (`POST /api/public/pesquisa`, valida intervalos, grava com o primeiro administrador como dono e `analista = 'Pesquisa Pública'`, `cnpj` vazio). Na lista, o administrador marca **Tratada** (`PATCH /pesquisas/:id/tratado`, que o servidor aceita de qualquer usuário logado).
+
+#### 3.5 Carteira (`clientes`, `honorarios`, `eventos_clientes`)
+- **Honorário vigente** = linha de `honorarios` com a maior `data_vigencia`; o histórico nunca é sobrescrito (reajuste = nova linha + evento).
+- **Receita acumulada** = soma, para cada linha de honorário, de (meses entre a vigência e a próxima vigência, ou a saída, ou hoje) × valor; **meses sem reajuste** = meses desde a última vigência.
+- Ações do administrador: editar cadastro (`PATCH /clientes/:id`: nome, CNPJ, código, regime, origem, grupo, unidade, data de entrada), **atualizar honorário** (`POST /clientes/:id/honorario`), **encerrar** (`PATCH …/encerrar`, sem validação além de administrador), **completar entrada** de cliente vindo do Acessórias (tipo de entrada, honorário inicial, origem, data; troca a solicitação genérica pela real em Gestão e marca o aviso como lido), **Reajuste em Massa** (`POST /clientes/reajuste-em-massa`: percentual ≠ 0 e data de vigência; aplica a **todos os ativos com honorário > 0**, arredondando a centavos, uma linha de honorário e um evento `reajuste` por cliente; a tela tem prévia), excluir um cliente e **excluir a Carteira inteira** (exige digitar `EXCLUIR TODOS OS CLIENTES`).
+- Colunas da tabela: código, empresa, CNPJ, regime, honorário, receita acumulada, tempo, **categoria** (`GET /api/cs/categorias`), **risco** (`GET /api/cs/risco`) e status; botões **🏅 Categorias**, **⚠️ Risco** e **Ver saídas e regra** (churn por saídas, `GET /api/cs/churn`).
+- **Dashboard da Carteira** (`GET /carteira/dashboard`): MRR (soma dos honorários vigentes dos ativos), ARR (MRR × 12), ativos, encerrados, ticket médio, **retenção média** em meses (média de `data_saida − data_entrada` dos encerrados; 48 se não houver) e **LTV projetado** = ticket médio × retenção, mais a data da última leitura do Omie por unidade.
+
+#### 3.6 CAC e investimentos (`investimentos`)
+Administrador lança **investimento por mês e canal** (valor, descrição, recorrente; ao editar guarda o `valor_original`). `GET /cac/dashboard?mes=`: total investido, melhor canal, **clientes adquiridos = clientes ATIVOS cuja entrada foi naquele mês** (quem já saiu não conta), **CAC = investimento ÷ clientes adquiridos** e **LTV = honorário médio × 48 meses**, **LTV/CAC** com 1 casa. Atenção: este LTV (48 meses fixos) **difere** do LTV da Carteira (retenção média real).
+
+#### 3.7 Tickets contábeis (`tickets`, `ticket_interacoes`, `ticket_mencoes`)
+Ticket de **Baixa de empresa** ou **Saída de empresa** com **checklist por regime**: Baixa: Simples = Balanço, DRE, DEFIS, REINF; Presumido/Real = Balanço, DRE, ECD Baixa, ECF Baixa, DEFIS, REINF. Saída: Simples = Balanço, DRE, REINF; Presumido/Real = Balanço, DRE, ECD, REINF.
+- **Criação:** manual (`POST /tickets`, administrador, depois de gravar Baixa/Saída em Gestão) ou **automática** quando o Acessórias inativa uma empresa (arquivo da sincronização, seção 3.9). Mencionados: todos os **administradores ativos** + os `contabil` ativos que atendem o **regime** da empresa (`regimes_atendidos`); sem ninguém marcado, **todos** os contábeis ativos.
+- **Estados:** `nova` → `resolvendo` (primeira interação ou item marcado) → `encerrada`. Marcar item: administrador ou mencionado; alterna ok/pendente e grava quem e quando. **Finalizar** só com o checklist 100% completo; administrador também encerra/reabre (`PATCH …/status`) sem exigir checklist.
+- **Visibilidade:** administrador vê todos; contábil, só os em que foi mencionado (`GET /tickets`). Interação, checklist, finalizar e `GET /tickets/:id` exigem apenas estar logado — **este último não confere se a pessoa é mencionada**. `GET /tickets-usuarios` lista os contábeis ativos para mencionar.
+- **Portal Contábil** (`/contabil`, login próprio): lista os tickets da pessoa, permite abrir, comentar, marcar o checklist e finalizar.
+
+#### 3.8 Análise Inteligente (legada, `app.js` + `/api/data/churn`, `/sentimento`, `/api/cs/*`)
+Painéis do administrador: **Risco de Cancelamento (Churn)** por pontos (`GET /api/data/churn`), **Sentimento dos Comentários** (palavras-chave positivas e negativas, sem IA paga; classifica `positivo`, `negativo`, `neutro`, `sem_comentario`), **Possíveis Churns** e **Insatisfação nas Conversas** (frases nas mensagens do Zappy), **Afastamento**, **Motivos de Abertura por Cliente** e **Histórico de Tratamentos** (arquivo 09 do /cs).
+- **Churn legado por pontos** (por cliente ativo): última pesquisa com NPS ≤ 6 = +30 (7 a 8 = +10); CSAT ≤ 2 = +15; comentários recentes mais negativos que positivos = +15; insatisfações dos últimos 90 dias = +15 (+25 se alguma de gravidade alta); cliente sensível em 90 dias = +20; recuperação em 180 dias = +15; sem reajuste há 24 meses ou mais = +10. Teto 100; **vermelho ≥ 60, amarelo ≥ 30, verde abaixo**. É **independente** do Risco de perda do /cs (4 termômetros, arquivo 04): são dois modelos diferentes para a mesma pergunta.
+
+#### 3.9 Sincronização com o Acessórias (`sincronizarAcessorias`)
+Roda ao subir, a cada 24 h e pelo botão. Traz os clientes **ativos**: casa por `acessorias_id` ou CNPJ; **nunca mexe em honorário**. Cliente novo → cria em `clientes` (sem honorário), cria linha em Gestão ("Cliente vindo de outro contador", canal "Outro", motivo "Importado automaticamente do Sistema Acessórias") e **avisa no sino** para classificar a entrada. Cliente existente → atualiza nome, regime, código, `acessorias_id` e UF (se não há município confirmado) e zera o alerta de baixa. Cliente **encerrado aqui e ativo lá** = **retorno**: reativa a mesma linha (honorários e histórico continuam), troca o código, grava evento e avisa. Cliente **ativo aqui e ausente da lista de ativos lá** → **encerra sozinho** (`encerrarClientePorAcessorias`): data de saída do Acessórias, tipo pelo motivo (Transferida… = **Saída**, que conta como churn; Baixada = **Baixa**; sem motivo, pela situação do CNPJ na Receita; sem nada = Baixa), evento `saida`, linha em Gestão assinada por "Automático (Acessórias)" e **ticket contábil** automático. **Trava de segurança:** se a lista do Acessórias vier com menos de **70%** dos ativos que já temos, nenhum encerramento automático é feito (evita encerrar em massa por falha de paginação). Depois, completa município/CNAE em segundo plano.
+
+#### 3.10 Administração, Log e Perfil
+- **Usuários:** criar, editar perfil e marcas, trocar senha, ativar/desativar, excluir (ver a seção 5 do núcleo).
+- **Backups automáticos:** lista (data e totais) e download por registro; **Baixar backup** manual.
+- **Log:** filtros por módulo e usuário; exportar CSV; **Limpar Log** (apaga tudo).
+- **Perfil:** altera nome, e-mail e senha do próprio usuário (exige a senha atual).
+
+#### 3.11 Sucesso do Cliente (aba legada)
+Radar "Agora" (tickets do Zappy fora do SLA), bloco **Hoje** (e-mails sem resposta), **Histórico de Atendimentos** (filtros por departamento, analista, status e etapa do SLA, 500 linhas), **Vínculos Pendentes de Confirmação** (confirmar empresa e tipo, "Recalcular sugestões") e botões de manutenção (testar conexão com o Zappy, atualizar agora, recalcular SLA, carregar 90 dias, atualizar notas pendentes). Regras no arquivo 09 do /cs.
+
+### 4. Dados do SPA
+
+| Tabela | Colunas principais |
+| --- | --- |
+| `atendimentos` | `id TEXT PK`, `user_id → users`, `analista`, `cliente`, `cnpj`, `empresa`, `departamento`, `procurado`, `demanda`, `resumo`, `created_at` |
+| `gestao_clientes` | `id`, `user_id`, `analista`, `solicitacao`, `cnpj`, `empresa`, `data_sol` (nulável), `competencia` (nulável), `canal`, `motivo`, `codigo`, `regime_tributario`, `created_at` |
+| `insatisfacoes` | `id`, `user_id`, `analista`, `cliente`, `cnpj`, `empresa`, `reclamado`, `reclamacao`, `gravidade`, `area`, `tipo`, `status` (padrão `aberta`), `created_at` |
+| `clientes_sensiveis` | `id`, `user_id`, `analista`, `cliente`, `cnpj`, `empresa`, `demonstrou`, `gravidade`, `detalhe`, `created_at` |
+| `pesquisas` | `id`, `user_id`, `analista`, `cliente`, `cnpj`, `empresa`, `nps`, `csat`, `ces`, `pontos`, `tratado BOOLEAN`, `created_at` |
+| `recuperacoes` | `id`, `user_id`, `analista`, `cliente`, `cnpj`, `empresa`, `demonstrou`, `gravidade`, `insatisfacao_id UUID`, `created_at` |
+| `clientes` (**sem `CREATE` no repositório**) | `id`, `user_id` (nulável), `cnpj`, `nome_empresa`, `regime_tributario`, `data_entrada`, `honorario_inicial`, `origem`, `cac`, `obs`, `status` (`ativo`/`encerrado`), `data_saida`, `motivo_saida`, `codigo`, `grupo_empresas`, `unidade`, `tipo_entrada`, `inadimplente_cronico`, `acessorias_id` (índice único parcial), `uf`, `municipio`, `municipio_ibge`, `municipio_verificado_em`, `cnaes JSONB`, `inscricao_municipal`, `alerta_baixa_notificado_em`, `motivo_cancelamento_acessorias`, `situacao_receita*`, `classificacao_manual`, `motivo_churn`, `created_at` (inferido pelo uso) |
+| `honorarios` (**sem `CREATE`**) | `cliente_id`, `valor`, `data_vigencia`, `obs`, `created_at` |
+| `eventos_clientes` (**sem `CREATE`**) | `cliente_id`, `tipo` (`entrada`, `saida`, `reajuste`), `descricao`, `valor_anterior`, `valor_novo`, `data_evento`, `created_at` |
+| `investimentos` (**sem `CREATE`**) | `id`, `user_id`, `mes` (`AAAA-MM`), `canal`, `valor`, `descricao`, `recorrente`, `valor_original`, `created_at` |
+| `tickets` | `id UUID`, `gestao_id`, `empresa`, `cnpj`, `regime`, `tipo_movimentacao`, `checklist JSONB` (`[{item, ok, por, em}]`), `status` (`nova/resolvendo/encerrada`), `observacoes`, `criado_por`, `dados_gestao JSONB`, `created_at`, `updated_at` |
+| `ticket_interacoes` | `ticket_id → tickets ON DELETE CASCADE`, `autor_id`, `autor_nome`, `comentario`, `is_automatica`, `created_at` |
+| `ticket_mencoes` | `ticket_id → tickets CASCADE`, `usuario_id`, UNIQUE (ticket, usuário) |
+
+### 5. Rotas do SPA (`/api/data/…`, todas atrás de `requireAuth`, salvo `/api/public/pesquisa`)
+
+| Grupo | Rotas | Quem o servidor deixa |
+| --- | --- | --- |
+| Registros | `GET/POST /atendimentos`, `/gestao`, `/insatisfacoes`, `/sensiveis`, `/pesquisas`, `/recuperacoes`; `PATCH /insatisfacoes/:id/status`, `/pesquisas/:id/tratado` | qualquer usuário logado |
+| Exclusão | `DELETE …/:id` e `…/clear` de cada registro; `DELETE /clear?period=` (6 tabelas de uma vez) | administrador |
+| Importação | `POST /gestao/importar`, `/clientes/importar-acessorias`, `/gestao/honorarios-omie` (token) | administrador / máquina |
+| Carteira | `GET /clientes`, `GET /clientes/:id`, `GET /carteira/dashboard`, `POST /clientes` | **qualquer usuário logado** |
+| Carteira (escrita) | `PATCH /clientes/:id`, `…/encerrar`, `…/completar-entrada`, `POST …/honorario`, `POST /clientes/reajuste-em-massa`, `DELETE /clientes/:id`, `DELETE /clientes/clear` | administrador |
+| CAC | `GET /investimentos`, `GET /cac/dashboard` | qualquer logado |
+| CAC (escrita) | `POST/PATCH/DELETE /investimentos…` | administrador |
+| Painéis | `GET /dashboard`, `GET /busca-global`, `GET /notificacoes`, `PATCH /notificacoes/…/lida`, `POST /notificacoes`, `PATCH /perfil` | qualquer logado |
+| Administração | `GET /relatorio-executivo`, `GET/DELETE /log-atividades`, `GET /backup`, `GET /backups-automaticos`, `…/:id/download`, `GET /sentimento`, `GET /churn`, `GET /financeiro` (tela antiga) | administrador |
+| Tickets | `GET /tickets`, `GET /tickets/:id`, `POST …/interacoes`, `PATCH …/checklist`, `PATCH …/finalizar`, `GET /tickets-usuarios` | logado (com regra de mencionado em parte) |
+| Tickets (administração) | `POST /tickets`, `PATCH …/status`, `DELETE /tickets/:id`, `DELETE /tickets/clear` | administrador |
+| Pública | `POST /api/public/pesquisa` | sem login |
+
+O **Relatório Executivo** (`GET /relatorio-executivo?mes=AAAA-MM`, administrador) junta, para o mês: totais por módulo, insatisfações por gravidade, área e empresa, atendimentos por departamento e analista procurado, solicitações de Gestão por tipo, médias de NPS e CSAT, carteira (ativos, MRR), CAC do mês e novos clientes.
+
+### 6. Pontos de atenção
+
+1. **Qualquer conta de perfil `usuario` lê a Carteira com honorários e cria clientes** (o cadastro público que permitia criar essas contas foi desligado em 31/10/2026), porque `GET /clientes`, `POST /clientes`, `GET /carteira/dashboard`, `GET /investimentos` e `GET /cac/dashboard` só pedem estar logado. As telas "admin-only" são escondidas no navegador, não protegidas na API. Ver nucleo.md (parte 15), item 1 dos pontos de atenção. [CONFIRMADO]
+2. **`DELETE /api/data/clear` apaga seis tabelas de uma vez sem pedir confirmação:** com `period` ausente ou `todos`, o filtro vira `WHERE 1=1`. Só administrador, mas um clique ou chamada errada zera atendimentos, gestão, insatisfações, sensíveis, pesquisas e recuperações. A exclusão da Carteira, ao contrário, exige a frase de confirmação. [CONFIRMADO]
+3. **Duas definições de LTV** (seção 3.5 e 3.6) e **dois modelos de churn** (3.8 e o Risco do /cs): números diferentes para a mesma pergunta. [CONFIRMADO]
+4. **Avisos de ticket possivelmente não gravados** (colunas inexistentes no desenho de `notificacoes` no código; erro silenciado). Conferir com o esquema real. [DÚVIDA] (núcleo, item 5)
+5. **`GET /tickets/:id`, interação, checklist e finalizar:** a leitura do ticket não confere se o usuário foi mencionado; os demais conferem para quem não é administrador. [CONFIRMADO]
+6. **`PATCH /clientes/:id/encerrar` não valida datas nem registra no log**, e `DELETE /clientes/:id` apaga em cascata (honorários e eventos) sem log. [CONFIRMADO]
+7. **Pesquisa pública sem proteção contra abuso:** só o limite global (300 requisições por minuto por IP); qualquer pessoa pode inserir respostas que entram nos indicadores. [CONFIRMADO]
+8. **Colunas e tabelas criadas "na hora"** (`ALTER TABLE … IF NOT EXISTS` dentro de handlers) e cinco tabelas sem `CREATE`: o esquema real só se confirma com o `pg_dump`. [CONFIRMADO]
+9. **Arquivos grandes:** `data.js` (6,7 mil linhas, 172 rotas) e `app.js` (11 mil linhas) misturam módulos que hoje têm páginas próprias; mudanças pedem cuidado. [CONFIRMADO]
+10. **Saída registrada à mão pode não contar como churn.** O formulário grava no cliente o **Motivo do Churn da lista** (por exemplo "Preço") como `motivo_saida`; a classificação de saídas do /cs só reconhece como transferência os textos que começam por "Transferida por…" (arquivo 05 do /cs). Sem o motivo do Acessórias para prevalecer, a saída vira "outra saída" e fica fora da taxa. Mesma consequência quando a Legalização aprova uma inativação. [INFERIDO; conferir com um caso real]
+
+---
+
+# Parte 17 — Gamificação
 
 *Origem: `docs/mapa/gamificacao.md`*
 
@@ -2551,7 +2835,7 @@ Toda linha começa `pendente`; o admin marca **devida** (conta) ou **indevida** 
 
 ---
 
-# Parte 16 — /legalizacao
+# Parte 18 — /legalizacao
 
 *Origem: `docs/mapa/legalizacao.md`*
 
@@ -2727,7 +3011,7 @@ Cada alteração relevante grava no **log de atividades** do sistema (`registrar
 
 ---
 
-# Parte 17 — /financeiro
+# Parte 19 — /financeiro
 
 *Origem: `docs/mapa/financeiro.md`*
 

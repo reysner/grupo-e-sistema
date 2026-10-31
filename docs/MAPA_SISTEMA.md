@@ -24,7 +24,8 @@ Especificação para reconstruir ou portar o sistema sem abrir o código. Escopo
 | Gamificação (nota mensal, ranking, consolidado, revisões, férias, relatório) | [mapa/gamificacao.md](mapa/gamificacao.md) | Pronto |
 | /legalizacao (alvarás, certificados, procurações, rotinas, pedidos) | [mapa/legalizacao.md](mapa/legalizacao.md) | Pronto |
 | /financeiro (inadimplência, suspensos, cobranças, rotina do Omie) | [mapa/financeiro.md](mapa/financeiro.md) | Pronto |
-| Páginas `/` (SPA: clientes, atendimentos, gestão, tickets, usuários…), núcleo (auth, usuários, backup, push) | `mapa/…` | A fazer |
+| Núcleo (servidor, login, perfis, usuários, avisos, backups, rotinas automáticas) | [mapa/nucleo.md](mapa/nucleo.md) | Pronto |
+| SPA `/` (atendimento, gestão, insatisfações, pesquisas, carteira, CAC, tickets, administração) | [mapa/spa-principal.md](mapa/spa-principal.md) | Pronto (telas descritas por campos e regras, sem cada rótulo) |
 | 1. Visão geral | `mapa/01-visao-geral.md` | Fase 2 — não iniciada |
 | 2. Arquitetura | `mapa/02-arquitetura.md` | Fase 2 — não iniciada |
 | 3. Mapa de módulos e submódulos | `mapa/03-modulos.md` | Fase 2 — não iniciada |

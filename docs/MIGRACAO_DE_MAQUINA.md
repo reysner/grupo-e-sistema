@@ -58,7 +58,7 @@ pg_dump --schema-only --no-owner --no-acl "<DATABASE_URL>" -f grupoe-estrutura.s
 pg_restore --no-owner --no-acl --dbname "<NOVA_DATABASE_URL>" grupoe.dump
 ```
 
-O botão **Backup** do /cs baixa só um JSON do módulo Qualidade; não substitui o `pg_dump`.
+O sistema também tem **backups próprios em JSON**, mas nenhum substitui o `pg_dump`: (1) o botão **Baixar backup** da Administração e o backup **automático diário** (guardado no próprio banco, 30 cópias, gerado entre 03h e 04h de Brasília) cobrem atendimentos, gestão, insatisfações, sensíveis, pesquisas, recuperações, clientes, honorários, eventos, investimentos, notificações, vínculos e tickets do Zappy (sem as mensagens), toda a Gamificação, analistas e a Qualidade; (2) o botão **Backup** do /cs baixa só o módulo Qualidade. **Ficam de fora de qualquer um deles:** usuários e senhas (`users`), configurações (`cs_config`, `cs_painel_config`, inclusive as chaves do push), mensagens do Zappy (`cs_mensagens`), e todos os dados da Legalização, do Financeiro, do Omie, do Questor e dos sinais de e-mail. Como o backup automático está no mesmo banco, se o banco se perde, ele se perde junto.
 
 ## 4. Variáveis de ambiente (só os nomes)
 

@@ -10,7 +10,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 const RAIZ = path.join(__dirname, '..');
 const DOCS = __dirname;
@@ -31,14 +31,16 @@ const partes = [
   ['mapa/cs/08-email-sinais-auditoria-manutencao.md', '/cs — Sinais de e-mail, Logs, Backup e Limpeza'],
   ['mapa/cs/09-rotas-radar-sla-analise-inteligente.md', '/cs — Rotas do radar de SLA e Análise Inteligente'],
   ['mapa/cs/10-telas-cs.md', '/cs — Telas e experiência de uso'],
+  ['mapa/nucleo.md', 'Núcleo — servidor, login, perfis, avisos, backups e rotinas'],
+  ['mapa/spa-principal.md', 'SPA / — clientes, atendimentos, gestão, tickets e administração'],
   ['mapa/gamificacao.md', 'Gamificação'],
   ['mapa/legalizacao.md', '/legalizacao'],
   ['mapa/financeiro.md', '/financeiro'],
 ];
 
 // Seção "Situação deste documento": edite aqui quando um assunto novo ficar pronto.
-const PRONTAS = 'inventário da Fase 1 e anexos de rotas e tabelas; módulo /cs completo (11 partes); Gamificação; /legalizacao; /financeiro.';
-const PENDENTES = 'a SPA `/` (clientes, atendimentos, gestão de clientes, tickets, usuários e demais telas), o núcleo (login, usuários, backup, push), e as seções transversais (visão geral de arquitetura, matriz de permissões, integrações externas, automações e jobs, logs e auditoria, portabilidade e checklist de cobertura). Para essas áreas, valem o inventário (parte 1) e os anexos de rotas e tabelas (partes 2 e 3), que já listam tudo, sem o detalhe de regras.';
+const PRONTAS = 'inventário da Fase 1 e anexos de rotas e tabelas; núcleo (servidor, login, perfis, avisos, backups e rotinas); SPA `/` (atendimento, gestão, insatisfações, pesquisas, carteira, CAC, tickets, administração); módulo /cs completo (11 partes); Gamificação; /legalizacao; /financeiro.';
+const PENDENTES = 'as seções transversais (visão geral de arquitetura, matriz de permissões consolidada, integrações externas, automações e jobs em um só lugar, logs e auditoria, portabilidade e checklist de cobertura). Para essas áreas, valem as partes por módulo, o inventário (parte 1) e os anexos de rotas e tabelas, que já listam tudo.';
 
 const numero = new Map(partes.map(([f], i) => [path.basename(f), i + 1]));
 const ancora = (t) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -58,7 +60,8 @@ function rebaixar(txt) {
   }).join('\n');
 }
 function commitAtual() {
-  try { return execSync('git rev-parse --short HEAD', { cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); }
+  // o último commit que mexeu no CÓDIGO (ignora docs/ e README.md): é o ponto de partida da próxima atualização
+  try { return execFileSync('git', ['log', '-1', '--format=%h', '--', '.', ':!docs', ':!README.md'], { cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null; }
   catch (e) { return null; }
 }
 
