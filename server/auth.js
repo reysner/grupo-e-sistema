@@ -86,7 +86,9 @@ function requireAuth(req, res, next) {
     const rotaCompleta = (req.baseUrl || '') + (req.path || '');
     const isCsPainelRoute = rotaCompleta.startsWith('/api/cs/painel') && !!payload.acesso_cs;
     const isFinanceiroRoute = rotaCompleta.startsWith('/api/financeiro') && !!(payload.acesso_financeiro || payload.acesso_cs || payload.acesso_financeiro_sv);
-    const isAuthOuPerfil = req.path && (req.path.includes('/auth') || req.path.includes('/perfil'));
+    // Dentro do roteador de /api/auth o caminho chega só como '/logout' ou '/me' (o prefixo fica em baseUrl), então olhar só req.path
+    // deixava colaborador e contábil sem logout nem /me (403). Desde 31/10/2026 conta também o caminho completo.
+    const isAuthOuPerfil = (req.path && (req.path.includes('/auth') || req.path.includes('/perfil'))) || rotaCompleta.startsWith('/api/auth/');
     // Minhas tratativas (16/10/2026): o analista (login com acesso_qualidade) vê e trata só os registros de Qualidade dele; quem é "ele" a rota decide.
     const isQualidadeRoute = rotaCompleta.startsWith('/api/qualidade/') && !!payload.acesso_qualidade;
     // Módulo Qualidade dentro do /cs (17/10/2026): gestor (cadastrado em Gerenciar gestores) e analista (acesso_qualidade) só CHEGAM às rotas de Qualidade;

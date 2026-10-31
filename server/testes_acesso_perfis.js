@@ -49,6 +49,10 @@ assert.strictEqual(chama(colab, 'POST', B, '/legalizacao/alvaras/123/funcionamen
 assert.strictEqual(chama(colab, 'POST', B, '/legalizacao/alvaras/123/outro/protocolo'), 403); ok('tipo de alvará inválido não passa');
 assert.strictEqual(chama(semMarca, 'POST', B, '/legalizacao/solicitar-desativacao-certificado'), 403); ok('sem a marca de Legalização continua 403');
 assert.strictEqual(chama(colab, 'GET', B, '/clientes'), 403); ok('colaborador não lê a Carteira');
+assert.strictEqual(chama(colab, 'POST', '/api/auth', '/logout'), 200); ok('colaborador consegue sair (logout)');
+assert.strictEqual(chama(colab, 'GET', '/api/auth', '/me'), 200); ok('colaborador consegue ler o próprio perfil (/auth/me)');
+assert.strictEqual(chama(contabil, 'POST', '/api/auth', '/logout'), 200); ok('contábil consegue sair (logout)');
+assert.strictEqual(chama(colab, 'GET', '/api/users', '/'), 403); ok('colaborador segue sem acesso a /api/users');
 assert.strictEqual(chama(colab, 'GET', B, '/cac/dashboard'), 403); ok('colaborador não lê o CAC');
 
 // ── 2. Cadastro público desligado ────────────────────────────────────────────
