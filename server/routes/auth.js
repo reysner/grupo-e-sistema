@@ -13,8 +13,14 @@ const loginLimiter = rateLimit({
   standardHeaders: true, legacyHeaders: false,
 });
 
+// Cadastro público DESLIGADO (31/10/2026, pedido do Reysner): a conta nova entrava como 'usuario' e enxergava a Carteira (com honorários),
+// o /cs e o /financeiro. Quem precisa de acesso é criado por um administrador (Administração → Usuários).
+// Para reabrir de propósito, defina CADASTRO_PUBLICO=1 no ambiente.
+const CADASTRO_PUBLICO = process.env.CADASTRO_PUBLICO === '1';
+
 // POST /api/auth/register
 router.post('/register', loginLimiter, async (req, res) => {
+  if (!CADASTRO_PUBLICO) return res.status(403).json({ error: 'O cadastro está desativado. Peça a um administrador para criar o seu acesso.' });
   try {
     const { name, email, password } = req.body;
     if (!name || !email || !password)
