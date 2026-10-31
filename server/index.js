@@ -193,7 +193,9 @@ initDB().then(async () => {
   const ADMIN_PASS  = process.env.ADMIN_PASS  || null;
   const ADMIN_NAME  = process.env.ADMIN_NAME  || 'Administrador';
 
-  const existing = await pool.query(`SELECT id FROM users WHERE LOWER(email) = LOWER($1)`, [ADMIN_EMAIL]);
+  // Só cria o administrador inicial se o sistema estiver SEM nenhum administrador (31/10/2026). Antes, apagar a conta ADMIN_EMAIL
+  // fazia o servidor recriá-la a cada reinício, mesmo com outros administradores cadastrados.
+  const existing = await pool.query(`SELECT id FROM users WHERE role = 'administrador' LIMIT 1`);
   if (existing.rows.length === 0) {
     // Sem ADMIN_PASS configurada no ambiente, NÃO cria admin com senha
     // previsível — antes disso o fallback era 'Admin@2024!' fixo no código,
@@ -213,7 +215,7 @@ initDB().then(async () => {
       console.log(`✅ Admin criado: ${ADMIN_EMAIL}`);
     }
   } else {
-    console.log(`✅ Admin verificado: ${ADMIN_EMAIL}`);
+    console.log('✅ Já existe administrador cadastrado — o admin inicial não é recriado.');
   }
 
   setInterval(() => pruneExpiredTokens().catch(console.error), 24 * 60 * 60 * 1000);

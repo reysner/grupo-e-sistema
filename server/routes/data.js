@@ -1991,8 +1991,21 @@ router.delete('/recuperacoes/:id', requireAdmin, async (req, res) => {
 });
 
 // ── CARTEIRA — CLIENTES ──────────────────────────────────────────────────────
+// Leituras da Carteira e do CAC (honorários, MRR, investimentos) são só do administrador (31/10/2026); antes bastava estar logado.
+// POST /clientes continua aberto porque o formulário de Gestão (entrada de empresa) grava o cliente na Carteira para quem o preenche.
 
-router.get('/clientes', requireAuth, async (req, res) => {
+/** CAC do mês = investimento do mês ÷ clientes ativos que entraram no mês (mesma conta de GET /cac/dashboard). Falha = 0. */
+async function cacDoMes(mes) {
+  try {
+    const inv = await pool.query(`SELECT COALESCE(SUM(valor),0) AS total FROM investimentos WHERE mes = $1`, [mes]);
+    const cli = await pool.query(`SELECT COUNT(*) AS n FROM clientes WHERE status = 'ativo' AND TO_CHAR(data_entrada,'YYYY-MM') = $1`, [mes]);
+    const n = parseInt(cli.rows[0]?.n || 0);
+    return n > 0 ? parseFloat(inv.rows[0]?.total || 0) / n : 0;
+  } catch (e) { return 0; }
+}
+
+
+router.get('/clientes', requireAdmin, async (req, res) => {
   try {
     const { status } = req.query;
     let q = `SELECT c.*,
@@ -2044,12 +2057,14 @@ router.post('/clientes', requireAuth, async (req, res) => {
     await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS inadimplente_cronico BOOLEAN DEFAULT FALSE`).catch(()=>{});
     await pool.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS unidade TEXT`).catch(()=>{});
     const { codigo } = req.body;
+    // quem não é administrador não lê /cac/dashboard, então o CAC dele é calculado aqui, no servidor (e nunca vem do navegador)
+    const cacFinal = req.user.role === 'administrador' ? (cac || 0) : await cacDoMes(String(data_entrada).slice(0, 7));
     await pool.query(
       `INSERT INTO clientes (id, user_id, cnpj, nome_empresa, regime_tributario, data_entrada,
         honorario_inicial, origem, cac, obs, codigo, grupo_empresas, unidade, tipo_entrada, inadimplente_cronico)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [clienteId, req.user.id, cnpj, nome_empresa, regime_tributario || null,
-       data_entrada, honorario_inicial, origem || null, cac || 0, obs || null, codigo || null,
+       data_entrada, honorario_inicial, origem || null, cacFinal, obs || null, codigo || null,
        grupo_empresas || null, unidade || null, tipo_entrada || null, inadimplente_cronico === true || inadimplente_cronico === 'true']
     );
     // Registrar honorário inicial no histórico
@@ -2069,7 +2084,7 @@ router.post('/clientes', requireAuth, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erro ao cadastrar cliente.' }); }
 });
 
-router.get('/clientes/:id', requireAuth, async (req, res) => {
+router.get('/clientes/:id', requireAdmin, async (req, res) => {
   try {
     const { rows } = await pool.query(`SELECT * FROM clientes WHERE id = $1`, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Cliente não encontrado.' });
@@ -2275,7 +2290,7 @@ router.post('/clientes/reajuste-em-massa', requireAdmin, async (req, res) => {
   }
 });
 
-router.get('/carteira/dashboard', requireAuth, async (req, res) => {
+router.get('/carteira/dashboard', requireAdmin, async (req, res) => {
   try {
     // MRR = soma dos honorários vigentes de clientes ativos
     const mrr = await pool.query(`
@@ -2431,7 +2446,7 @@ router.patch('/perfil', requireAuth, async (req, res) => {
 
 // ── CAC / INVESTIMENTOS ──────────────────────────────────────────────────────
 
-router.get('/investimentos', requireAuth, async (req, res) => {
+router.get('/investimentos', requireAdmin, async (req, res) => {
   try {
     const { mes } = req.query;
     let q = `SELECT i.*, u.name as lancado_por FROM investimentos i
@@ -2497,7 +2512,7 @@ router.delete('/investimentos/:id', requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro ao limpar.' }); }
 });
 
-router.get('/cac/dashboard', requireAuth, async (req, res) => {
+router.get('/cac/dashboard', requireAdmin, async (req, res) => {
   try {
     const { mes } = req.query;
     let pf = '';
@@ -3348,7 +3363,7 @@ async function ensureGamTables() {
   // hardcoded por nome/UUID) pra já deixar preparado caso a função mude de
   // pessoa no futuro; hoje só a Elma tem a flag ligada.
   await pool.query(`ALTER TABLE gam_colaboradores ADD COLUMN IF NOT EXISTS aplica_regra_aceite BOOLEAN DEFAULT false`).catch(()=>{});
-  await pool.query(`UPDATE gam_colaboradores SET aplica_regra_aceite = true WHERE nome = 'Elma' AND aplica_regra_aceite = false`).catch(()=>{});
+  // (a marcação inicial da Elma está na semente única, no fim desta função)
 
   // ── Login self-service (28/08/2026) — ver server/auth.js (role
   // 'colaborador') e public/minha-nota.html. Liga um colaborador a um login
@@ -3451,11 +3466,17 @@ async function ensureGamTables() {
   // ticket — "não pode alterar as notas de maio e junho", pedido explícito
   // do Reysner) e Julho (pódio já anunciado com metodologia própria de nota
   // bruta) vêm PROTEGIDOS por padrão, sem precisar clicar em nada.
-  await pool.query(`INSERT INTO gam_meses_fechados (mes, fechado_por) VALUES
-    ('2026-05', 'Sistema (protegido por padrão)'),
-    ('2026-06', 'Sistema (protegido por padrão)'),
-    ('2026-07', 'Sistema (protegido por padrão)')
-    ON CONFLICT (mes) DO NOTHING`).catch(()=>{});
+  // SEMENTE ÚNICA (31/10/2026): as duas gravações abaixo rodavam a cada chamada e desfaziam o que o administrador decidia depois
+  // (reabrir um mês fechado; desligar a regra de aceite da Elma). Agora valem só na primeira vez; a marca fica em gam_config.
+  const semente = await pool.query(`INSERT INTO gam_config (chave, valor) VALUES ('semente_inicial_v1', 1) ON CONFLICT (chave) DO NOTHING RETURNING chave`).catch(()=>({ rows: [] }));
+  if (semente.rows.length) {
+    await pool.query(`INSERT INTO gam_meses_fechados (mes, fechado_por) VALUES
+      ('2026-05', 'Sistema (protegido por padrão)'),
+      ('2026-06', 'Sistema (protegido por padrão)'),
+      ('2026-07', 'Sistema (protegido por padrão)')
+      ON CONFLICT (mes) DO NOTHING`).catch(()=>{});
+    await pool.query(`UPDATE gam_colaboradores SET aplica_regra_aceite = true WHERE nome = 'Elma' AND aplica_regra_aceite = false`).catch(()=>{});
+  }
 }
 
 async function getMesesFechados() {

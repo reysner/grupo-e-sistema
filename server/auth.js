@@ -112,8 +112,11 @@ function requireAuth(req, res, next) {
     // só libera o colaborador a CHEGAR nas rotas /legalizacao.
     // Só LEITURA + enviar solicitação de inativação: quem tem a flag mas não é
     // admin nunca edita datas/certificados pela API (PUT/POST/PATCH/DELETE).
+    // Exceções (31/10/2026): "Não vai renovar" (pedido de desativação de certificado) e "Informar protocolo" do alvará —
+    // a tela de Legalização mostra os dois botões ao colaborador, mas a API respondia 403.
     const isLegalizacaoRoute = req.path && req.path.includes('/legalizacao')
-      && (req.method === 'GET' || req.path.includes('/solicitar-inativacao') || req.path.includes('/notificacoes/lidas')
+      && (req.method === 'GET' || req.path.includes('/solicitar-inativacao') || req.path.includes('/solicitar-desativacao-certificado') || req.path.includes('/notificacoes/lidas')
+          || (req.method === 'POST' && /\/legalizacao\/alvaras\/[^/]+\/(funcionamento|sanitario)\/protocolo$/.test(req.path))
           || (req.method === 'PATCH' && /\/clientes\/[^/]+\/(inscricao-municipal|municipio)$/.test(req.path))); // cadastrar inscrição municipal / município da empresa
 
     // Usuário contábil só pode acessar rotas de tickets (+ Minha Nota/Legalização, se as flags estiverem ligadas) — bloqueia o resto.
