@@ -1,6 +1,6 @@
 # Rotas HTTP (inventário gerado do código)
 
-Gerado por varredura de `router|app.(get|post|put|patch|delete)(…)` em `server/**` (sem os arquivos de teste). Total: **358 rotas**.
+Gerado por varredura de `router|app.(get|post|put|patch|delete)(…)` em `server/**` (sem os arquivos de teste). Total: **358 rotas**. Os números de linha são do commit `e419a5d`; as correções de 31/10/2026 deslocaram algumas linhas de `server/routes/data.js` (as regras de acesso de 5 rotas da Carteira/CAC já estão corrigidas na tabela).
 
 Legenda de autenticação: **pública/token** = a rota está antes do `router.use(requireAuth)` do arquivo (aberta ou protegida por token de sincronização no cabeçalho `X-Sync-Token`); **login** = depois dessa barreira ou com `requireAuth` na própria linha; **admin** = `requireAdmin` na própria linha ou no arquivo. [INFERIDO] por posição no arquivo — a Fase 2 confirma rota a rota.
 
@@ -376,27 +376,27 @@ Barreira de sessão (`router.use(requireAuth)`): linha 809.
 | DELETE | `/api/data/atendimentos/:id` | 1970 | admin |
 | DELETE | `/api/data/gestao/:id` | 1977 | admin |
 | DELETE | `/api/data/recuperacoes/:id` | 1986 | admin |
-| GET | `/api/data/clientes` | 1995 | login |
+| GET | `/api/data/clientes` | 1995 | admin (desde 31/10/2026; era login) |
 | POST | `/api/data/clientes` | 2032 | login |
-| GET | `/api/data/clientes/:id` | 2072 | login |
+| GET | `/api/data/clientes/:id` | 2072 | admin (desde 31/10/2026; era login) |
 | PATCH | `/api/data/clientes/:id` | 2091 | admin |
 | PATCH | `/api/data/clientes/:id/encerrar` | 2111 | admin |
 | PATCH | `/api/data/clientes/:id/completar-entrada` | 2141 | admin |
 | POST | `/api/data/clientes/:id/honorario` | 2193 | admin |
 | POST | `/api/data/clientes/reajuste-em-massa` | 2231 | admin |
-| GET | `/api/data/carteira/dashboard` | 2278 | login |
+| GET | `/api/data/carteira/dashboard` | 2278 | admin (desde 31/10/2026; era login) |
 | DELETE | `/api/data/clientes/clear` | 2330 | admin |
 | DELETE | `/api/data/clientes/:id` | 2344 | admin |
 | DELETE | `/api/data/insatisfacoes/:id` | 2352 | admin |
 | DELETE | `/api/data/sensiveis/:id` | 2360 | admin |
 | DELETE | `/api/data/clear` | 2368 | admin |
 | PATCH | `/api/data/perfil` | 2379 | login |
-| GET | `/api/data/investimentos` | 2434 | login |
+| GET | `/api/data/investimentos` | 2434 | admin (desde 31/10/2026; era login) |
 | POST | `/api/data/investimentos` | 2450 | admin |
 | PATCH | `/api/data/investimentos/:id` | 2469 | admin |
 | DELETE | `/api/data/investimentos/clear` | 2486 | admin |
 | DELETE | `/api/data/investimentos/:id` | 2493 | admin |
-| GET | `/api/data/cac/dashboard` | 2500 | login |
+| GET | `/api/data/cac/dashboard` | 2500 | admin (desde 31/10/2026; era login) |
 | GET | `/api/data/notificacoes` | 2564 | login |
 | PATCH | `/api/data/notificacoes/:id/lida` | 2580 | login |
 | PATCH | `/api/data/notificacoes/todas/lidas` | 2587 | login |

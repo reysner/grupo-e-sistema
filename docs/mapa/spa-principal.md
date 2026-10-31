@@ -113,9 +113,10 @@ Radar "Agora" (tickets do Zappy fora do SLA), bloco **Hoje** (e-mails sem respos
 | Registros | `GET/POST /atendimentos`, `/gestao`, `/insatisfacoes`, `/sensiveis`, `/pesquisas`, `/recuperacoes`; `PATCH /insatisfacoes/:id/status`, `/pesquisas/:id/tratado` | qualquer usuário logado |
 | Exclusão | `DELETE …/:id` e `…/clear` de cada registro; `DELETE /clear?period=` (6 tabelas de uma vez) | administrador |
 | Importação | `POST /gestao/importar`, `/clientes/importar-acessorias`, `/gestao/honorarios-omie` (token) | administrador / máquina |
-| Carteira | `GET /clientes`, `GET /clientes/:id`, `GET /carteira/dashboard`, `POST /clientes` | **qualquer usuário logado** |
+| Carteira (leitura) | `GET /clientes`, `GET /clientes/:id`, `GET /carteira/dashboard` | administrador (desde 31/10/2026; antes qualquer logado) |
+| Carteira (criar) | `POST /clientes` | qualquer usuário logado, de propósito: o formulário de Gestão grava a entrada na Carteira; para quem não é administrador o CAC é calculado no servidor (`cacDoMes`) |
 | Carteira (escrita) | `PATCH /clientes/:id`, `…/encerrar`, `…/completar-entrada`, `POST …/honorario`, `POST /clientes/reajuste-em-massa`, `DELETE /clientes/:id`, `DELETE /clientes/clear` | administrador |
-| CAC | `GET /investimentos`, `GET /cac/dashboard` | qualquer logado |
+| CAC | `GET /investimentos`, `GET /cac/dashboard` | administrador (desde 31/10/2026; antes qualquer logado) |
 | CAC (escrita) | `POST/PATCH/DELETE /investimentos…` | administrador |
 | Painéis | `GET /dashboard`, `GET /busca-global`, `GET /notificacoes`, `PATCH /notificacoes/…/lida`, `POST /notificacoes`, `PATCH /perfil` | qualquer logado |
 | Administração | `GET /relatorio-executivo`, `GET/DELETE /log-atividades`, `GET /backup`, `GET /backups-automaticos`, `…/:id/download`, `GET /sentimento`, `GET /churn`, `GET /financeiro` (tela antiga) | administrador |
@@ -127,7 +128,7 @@ O **Relatório Executivo** (`GET /relatorio-executivo?mes=AAAA-MM`, administrado
 
 ## 6. Pontos de atenção
 
-1. **Qualquer conta de perfil `usuario` lê a Carteira com honorários e cria clientes** (o cadastro público que permitia criar essas contas foi desligado em 31/10/2026), porque `GET /clientes`, `POST /clientes`, `GET /carteira/dashboard`, `GET /investimentos` e `GET /cac/dashboard` só pedem estar logado. As telas "admin-only" são escondidas no navegador, não protegidas na API. Ver [nucleo.md](nucleo.md), item 1 dos pontos de atenção. [CONFIRMADO]
+1. ~~Qualquer conta de perfil `usuario` lê a Carteira com honorários~~ — **leituras corrigidas em 31/10/2026** (código; vale após o deploy); a criação (`POST /clientes`) segue aberta de propósito. Efeito colateral aceito: o KPI "Clientes ativos" do Dashboard fica "—" para quem não é administrador. Texto do problema antigo: **Qualquer conta de perfil `usuario` lê a Carteira com honorários e cria clientes** (o cadastro público que permitia criar essas contas foi desligado em 31/10/2026), porque `GET /clientes`, `POST /clientes`, `GET /carteira/dashboard`, `GET /investimentos` e `GET /cac/dashboard` só pedem estar logado. As telas "admin-only" são escondidas no navegador, não protegidas na API. Ver [nucleo.md](nucleo.md), item 1 dos pontos de atenção. [CONFIRMADO]
 2. **`DELETE /api/data/clear` apaga seis tabelas de uma vez sem pedir confirmação:** com `period` ausente ou `todos`, o filtro vira `WHERE 1=1`. Só administrador, mas um clique ou chamada errada zera atendimentos, gestão, insatisfações, sensíveis, pesquisas e recuperações. A exclusão da Carteira, ao contrário, exige a frase de confirmação. [CONFIRMADO]
 3. **Duas definições de LTV** (seção 3.5 e 3.6) e **dois modelos de churn** (3.8 e o Risco do /cs): números diferentes para a mesma pergunta. [CONFIRMADO]
 4. **Avisos de ticket possivelmente não gravados** (colunas inexistentes no desenho de `notificacoes` no código; erro silenciado). Conferir com o esquema real. [DÚVIDA] (núcleo, item 5)

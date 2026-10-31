@@ -49,7 +49,7 @@ npm start        # ou: npm run dev (reinicia ao salvar)
 # http://localhost:3000
 ```
 
-- O administrador inicial é criado **somente se `ADMIN_PASS` estiver definida** (e-mail `admin@grupoe.com.br`, ou o de `ADMIN_EMAIL`). **Não existe senha padrão.** Sem `ADMIN_PASS`, o servidor sobe sem criar o administrador e avisa no log.
+- O administrador inicial é criado **somente se o banco não tiver nenhum administrador e `ADMIN_PASS` estiver definida** (e-mail `admin@grupoe.com.br`, ou o de `ADMIN_EMAIL`). **Não existe senha padrão.** Sem `ADMIN_PASS`, o servidor sobe sem criar o administrador e avisa no log.
 - Sem `JWT_SECRET`/`JWT_REFRESH_SECRET` o servidor sobe com valores aleatórios (todos são deslogados a cada reinício).
 - Sem `ZAPPY_BASE_URL` e `ZAPPY_TOKEN` as rotinas de atendimento não rodam; sem `ACESSORIAS_API_TOKEN` não há sincronização de clientes. As demais variáveis estão no guia de migração.
 - **Não aponte o ambiente local para o banco de produção.**

@@ -1,12 +1,12 @@
 # Mapa do sistema Grupo-E — documento único
 
-Gerado em 31/10/2026 com o código no commit `e419a5d`, a partir dos arquivos de `docs/mapa/`. Engenharia reversa do código (servidor Node/Express + PostgreSQL, front-end em HTML/JS puro, hospedado no Render), escrita para reconstruir ou portar o sistema sem abrir o código. Idioma: pt-BR. Níveis de certeza usados em todo o texto: **[CONFIRMADO]** (lido no código), **[INFERIDO]** (deduzido), **[DÚVIDA]** (precisa de confirmação).
+Gerado em 31/10/2026 com o código no commit `a267334`, a partir dos arquivos de `docs/mapa/`. Engenharia reversa do código (servidor Node/Express + PostgreSQL, front-end em HTML/JS puro, hospedado no Render), escrita para reconstruir ou portar o sistema sem abrir o código. Idioma: pt-BR. Níveis de certeza usados em todo o texto: **[CONFIRMADO]** (lido no código), **[INFERIDO]** (deduzido), **[DÚVIDA]** (precisa de confirmação).
 
 ## Situação deste documento
 
-**Prontas:** inventário da Fase 1 e anexos de rotas e tabelas; núcleo (servidor, login, perfis, avisos, backups e rotinas); SPA `/` (atendimento, gestão, insatisfações, pesquisas, carteira, CAC, tickets, administração); módulo /cs completo (11 partes); Gamificação; /legalizacao; /financeiro.
+**Prontas:** inventário da Fase 1 e anexos de rotas e tabelas; núcleo (servidor, login, perfis, avisos, backups e rotinas); SPA `/` (atendimento, gestão, insatisfações, pesquisas, carteira, CAC, tickets, administração); módulo /cs completo (11 partes); Gamificação; /legalizacao; /financeiro; e as cinco partes transversais (visão geral e arquitetura, permissões, integrações e automações, logs e auditoria, pendências e checklist de cobertura).
 
-**Ainda não escritas:** as seções transversais (visão geral de arquitetura, matriz de permissões consolidada, integrações externas, automações e jobs em um só lugar, logs e auditoria, portabilidade e checklist de cobertura). Para essas áreas, valem as partes por módulo, o inventário (parte 1) e os anexos de rotas e tabelas, que já listam tudo.
+**Ainda não escritas:** a seção de portabilidade para outro sistema (depende do sistema de destino, que não foi informado; para mudar de máquina ou de hospedagem com o mesmo sistema vale o guia de migração, docs/MIGRACAO_DE_MAQUINA.md) e a varredura individual das rotas protegidas só por login (ver a parte de pendências).
 
 **Limites conhecidos:** (1) `clientes`, `honorarios`, `eventos_clientes`, `analistas` e `investimentos` não têm `CREATE TABLE` no repositório; as colunas delas aqui são inferidas pelo uso, e um `pg_dump --schema-only` fecharia a lacuna; (2) a seção de portabilidade depende do sistema de destino, que não foi informado; (3) algumas telas do /cs (portais Gestor, Analista e Sucesso do Cliente, Minha área, Acessos) estão descritas pelo que fazem, sem o texto de cada botão; (4) nada foi testado em produção, tudo vem da leitura do código.
 
@@ -35,6 +35,11 @@ Gerado em 31/10/2026 com o código no commit `e419a5d`, a partir dos arquivos de
 17. [Gamificação](#parte-17-gamificacao)
 18. [/legalizacao](#parte-18-legalizacao)
 19. [/financeiro](#parte-19-financeiro)
+20. [Visão geral e arquitetura](#parte-20-visao-geral-e-arquitetura)
+21. [Permissões e segurança (consolidado)](#parte-21-permissoes-e-seguranca-consolidado)
+22. [Integrações externas e automações (consolidado)](#parte-22-integracoes-externas-e-automacoes-consolidado)
+23. [Logs, auditoria e histórico (consolidado)](#parte-23-logs-auditoria-e-historico-consolidado)
+24. [Pendências, inconsistências e checklist de cobertura](#parte-24-pendencias-inconsistencias-e-checklist-de-cobertura)
 
 ---
 
@@ -314,7 +319,7 @@ Três famílias de acesso: **pública** (`/api/public`, sem login), **token de s
 
 ## Rotas HTTP (inventário gerado do código)
 
-Gerado por varredura de `router|app.(get|post|put|patch|delete)(…)` em `server/**` (sem os arquivos de teste). Total: **358 rotas**.
+Gerado por varredura de `router|app.(get|post|put|patch|delete)(…)` em `server/**` (sem os arquivos de teste). Total: **358 rotas**. Os números de linha são do commit `e419a5d`; as correções de 31/10/2026 deslocaram algumas linhas de `server/routes/data.js` (as regras de acesso de 5 rotas da Carteira/CAC já estão corrigidas na tabela).
 
 Legenda de autenticação: **pública/token** = a rota está antes do `router.use(requireAuth)` do arquivo (aberta ou protegida por token de sincronização no cabeçalho `X-Sync-Token`); **login** = depois dessa barreira ou com `requireAuth` na própria linha; **admin** = `requireAdmin` na própria linha ou no arquivo. [INFERIDO] por posição no arquivo — a Fase 2 confirma rota a rota.
 
@@ -690,27 +695,27 @@ Barreira de sessão (`router.use(requireAuth)`): linha 809.
 | DELETE | `/api/data/atendimentos/:id` | 1970 | admin |
 | DELETE | `/api/data/gestao/:id` | 1977 | admin |
 | DELETE | `/api/data/recuperacoes/:id` | 1986 | admin |
-| GET | `/api/data/clientes` | 1995 | login |
+| GET | `/api/data/clientes` | 1995 | admin (desde 31/10/2026; era login) |
 | POST | `/api/data/clientes` | 2032 | login |
-| GET | `/api/data/clientes/:id` | 2072 | login |
+| GET | `/api/data/clientes/:id` | 2072 | admin (desde 31/10/2026; era login) |
 | PATCH | `/api/data/clientes/:id` | 2091 | admin |
 | PATCH | `/api/data/clientes/:id/encerrar` | 2111 | admin |
 | PATCH | `/api/data/clientes/:id/completar-entrada` | 2141 | admin |
 | POST | `/api/data/clientes/:id/honorario` | 2193 | admin |
 | POST | `/api/data/clientes/reajuste-em-massa` | 2231 | admin |
-| GET | `/api/data/carteira/dashboard` | 2278 | login |
+| GET | `/api/data/carteira/dashboard` | 2278 | admin (desde 31/10/2026; era login) |
 | DELETE | `/api/data/clientes/clear` | 2330 | admin |
 | DELETE | `/api/data/clientes/:id` | 2344 | admin |
 | DELETE | `/api/data/insatisfacoes/:id` | 2352 | admin |
 | DELETE | `/api/data/sensiveis/:id` | 2360 | admin |
 | DELETE | `/api/data/clear` | 2368 | admin |
 | PATCH | `/api/data/perfil` | 2379 | login |
-| GET | `/api/data/investimentos` | 2434 | login |
+| GET | `/api/data/investimentos` | 2434 | admin (desde 31/10/2026; era login) |
 | POST | `/api/data/investimentos` | 2450 | admin |
 | PATCH | `/api/data/investimentos/:id` | 2469 | admin |
 | DELETE | `/api/data/investimentos/clear` | 2486 | admin |
 | DELETE | `/api/data/investimentos/:id` | 2493 | admin |
-| GET | `/api/data/cac/dashboard` | 2500 | login |
+| GET | `/api/data/cac/dashboard` | 2500 | admin (desde 31/10/2026; era login) |
 | GET | `/api/data/notificacoes` | 2564 | login |
 | PATCH | `/api/data/notificacoes/:id/lida` | 2580 | login |
 | PATCH | `/api/data/notificacoes/todas/lidas` | 2587 | login |
@@ -1054,7 +1059,7 @@ Os perfis se somam: a mesma pessoa pode ser analista e gestora.
 - **Armazenamento no navegador:** o front guarda token, refresh e usuário no `localStorage` (chaves `ge_token`, `ge_refresh`, `ge_user` na SPA principal; `cs_token`, `cs_refresh`, `cs_user` no `/cs` e nas páginas de Legalização). Os tokens **não** vão em cookie. [CONFIRMADO] leitura dos JS e da sessão; o README fala em cookies HttpOnly (desatualizado).
 - **Segredos:** `JWT_SECRET` e `JWT_REFRESH_SECRET`; se faltarem, o servidor gera segredo aleatório a cada subida e registra aviso no log (todas as sessões caem a cada reinício). Não há valor padrão fixo.
 - **Cadastro público** (desligado em 31/10/2026; só volta com `CADASTRO_PUBLICO=1`) `POST /api/auth/register`: sempre cria `role = usuario`, ignorando `role` do corpo; exige nome, e-mail e senha de pelo menos 6 caracteres; e-mail único (409). [CONFIRMADO] [DÚVIDA] se a rota deveria ficar aberta em produção.
-- **Administrador inicial:** criado na subida só se `ADMIN_PASS` existir (`ADMIN_EMAIL`, `ADMIN_NAME` opcionais); sem `ADMIN_PASS` não cria e avisa no log.
+- **Administrador inicial:** criado na subida só se o sistema estiver sem nenhum administrador e `ADMIN_PASS` existir (`ADMIN_EMAIL`, `ADMIN_NAME` opcionais); sem `ADMIN_PASS` não cria e avisa no log.
 
 ### 3. Marcas calculadas no login e no refresh
 
@@ -2433,7 +2438,7 @@ Um único processo Node/Express serve (a) as páginas estáticas de `public/`, (
 
 #### 2.1 Subida
 1. `initDB()` cria **só** as tabelas-base (`users`, `refresh_tokens`, `atendimentos`, `gestao_clientes`, `insatisfacoes`, `clientes_sensiveis`, `pesquisas`, `recuperacoes`), troca a restrição de papéis e acrescenta as colunas de acesso em `users`. **`clientes`, `honorarios`, `eventos_clientes`, `investimentos` e `notificacoes` não são criadas aqui** (as duas últimas, parcialmente, em `data.js`); `clientes`, `honorarios`, `eventos_clientes`, `analistas` e `investimentos` só existem no banco atual.
-2. **Administrador inicial:** se não existe usuário com `ADMIN_EMAIL` (padrão `admin@grupoe.com.br`), cria com `ADMIN_PASS` (bcrypt 12). **Sem `ADMIN_PASS` não cria nada e avisa no log.** Não há senha padrão.
+2. **Administrador inicial:** se o sistema **não tem nenhum usuário administrador** (regra de 31/10/2026; antes olhava só o e-mail `ADMIN_EMAIL`, padrão `admin@grupoe.com.br`, e recriava a conta apagada a cada reinício), cria o `ADMIN_EMAIL` com `ADMIN_PASS` (bcrypt 12). **Sem `ADMIN_PASS` não cria nada e avisa no log.** Não há senha padrão.
 3. Agenda as rotinas da seção 6 e abre a porta (`PORT`, padrão 3000). Falha de conexão com o banco encerra o processo.
 
 ### 3. Login e sessão
@@ -2661,9 +2666,10 @@ Radar "Agora" (tickets do Zappy fora do SLA), bloco **Hoje** (e-mails sem respos
 | Registros | `GET/POST /atendimentos`, `/gestao`, `/insatisfacoes`, `/sensiveis`, `/pesquisas`, `/recuperacoes`; `PATCH /insatisfacoes/:id/status`, `/pesquisas/:id/tratado` | qualquer usuário logado |
 | Exclusão | `DELETE …/:id` e `…/clear` de cada registro; `DELETE /clear?period=` (6 tabelas de uma vez) | administrador |
 | Importação | `POST /gestao/importar`, `/clientes/importar-acessorias`, `/gestao/honorarios-omie` (token) | administrador / máquina |
-| Carteira | `GET /clientes`, `GET /clientes/:id`, `GET /carteira/dashboard`, `POST /clientes` | **qualquer usuário logado** |
+| Carteira (leitura) | `GET /clientes`, `GET /clientes/:id`, `GET /carteira/dashboard` | administrador (desde 31/10/2026; antes qualquer logado) |
+| Carteira (criar) | `POST /clientes` | qualquer usuário logado, de propósito: o formulário de Gestão grava a entrada na Carteira; para quem não é administrador o CAC é calculado no servidor (`cacDoMes`) |
 | Carteira (escrita) | `PATCH /clientes/:id`, `…/encerrar`, `…/completar-entrada`, `POST …/honorario`, `POST /clientes/reajuste-em-massa`, `DELETE /clientes/:id`, `DELETE /clientes/clear` | administrador |
-| CAC | `GET /investimentos`, `GET /cac/dashboard` | qualquer logado |
+| CAC | `GET /investimentos`, `GET /cac/dashboard` | administrador (desde 31/10/2026; antes qualquer logado) |
 | CAC (escrita) | `POST/PATCH/DELETE /investimentos…` | administrador |
 | Painéis | `GET /dashboard`, `GET /busca-global`, `GET /notificacoes`, `PATCH /notificacoes/…/lida`, `POST /notificacoes`, `PATCH /perfil` | qualquer logado |
 | Administração | `GET /relatorio-executivo`, `GET/DELETE /log-atividades`, `GET /backup`, `GET /backups-automaticos`, `…/:id/download`, `GET /sentimento`, `GET /churn`, `GET /financeiro` (tela antiga) | administrador |
@@ -2675,7 +2681,7 @@ O **Relatório Executivo** (`GET /relatorio-executivo?mes=AAAA-MM`, administrado
 
 ### 6. Pontos de atenção
 
-1. **Qualquer conta de perfil `usuario` lê a Carteira com honorários e cria clientes** (o cadastro público que permitia criar essas contas foi desligado em 31/10/2026), porque `GET /clientes`, `POST /clientes`, `GET /carteira/dashboard`, `GET /investimentos` e `GET /cac/dashboard` só pedem estar logado. As telas "admin-only" são escondidas no navegador, não protegidas na API. Ver nucleo.md (parte 15), item 1 dos pontos de atenção. [CONFIRMADO]
+1. ~~Qualquer conta de perfil `usuario` lê a Carteira com honorários~~ — **leituras corrigidas em 31/10/2026** (código; vale após o deploy); a criação (`POST /clientes`) segue aberta de propósito. Efeito colateral aceito: o KPI "Clientes ativos" do Dashboard fica "—" para quem não é administrador. Texto do problema antigo: **Qualquer conta de perfil `usuario` lê a Carteira com honorários e cria clientes** (o cadastro público que permitia criar essas contas foi desligado em 31/10/2026), porque `GET /clientes`, `POST /clientes`, `GET /carteira/dashboard`, `GET /investimentos` e `GET /cac/dashboard` só pedem estar logado. As telas "admin-only" são escondidas no navegador, não protegidas na API. Ver nucleo.md (parte 15), item 1 dos pontos de atenção. [CONFIRMADO]
 2. **`DELETE /api/data/clear` apaga seis tabelas de uma vez sem pedir confirmação:** com `period` ausente ou `todos`, o filtro vira `WHERE 1=1`. Só administrador, mas um clique ou chamada errada zera atendimentos, gestão, insatisfações, sensíveis, pesquisas e recuperações. A exclusão da Carteira, ao contrário, exige a frase de confirmação. [CONFIRMADO]
 3. **Duas definições de LTV** (seção 3.5 e 3.6) e **dois modelos de churn** (3.8 e o Risco do /cs): números diferentes para a mesma pergunta. [CONFIRMADO]
 4. **Avisos de ticket possivelmente não gravados** (colunas inexistentes no desenho de `notificacoes` no código; erro silenciado). Conferir com o esquema real. [DÚVIDA] (núcleo, item 5)
@@ -2751,7 +2757,7 @@ As revisões de velocidade, aceite e finalizar ficam em tabelas **separadas** de
   Tudo é **média, não soma**, para o volume não distorcer a nota. **Só quem tem nota real** (pelo menos 1 linha `recebeu/unico`) recebe nota; quem apenas transferiu acumula ajuste "em banco" mas fica **sem avaliação**.
 - **RN-GAM-002 Fonte 2 (reforço): qualificação agregada do Zappy**, só quando o colaborador **não** tem ticket pontuado no mês. `buscarTicketsPorQualificacao` devolve contagens por rótulo; cada rótulo é traduzido por `gam_qualificacao_mapa`. Rótulo novo é cadastrado com `nota = NULL` (aparece na tela "Mapa de Qualificação" e é **ignorado** do cálculo). `media = Σ(nota × total) ÷ Σ(total)` dos rótulos mapeados.
 - **RN-GAM-003 Trava anti-zero.** Se não vier nada (nem ticket, nem qualificação), grava 0/0 **apenas se não havia nada antes**; se já havia `avaliacoes > 0`, **preserva** o valor antigo e devolve um aviso. Criada em 04/09/2026 depois que rodar um mês antigo apagou Maio e Junho de 20 pessoas (a API de qualificação não devolve meses velhos).
-- **RN-GAM-004 Mês fechado.** `isMesFechado(mes)` faz a função devolver `{ fechado: true, aviso }` **antes** de qualquer consulta ou gravação — vale também para a prévia. Maio, Junho e Julho/2026 nascem fechados ("Sistema (protegido por padrão)"). Fechar não recalcula nada; só impede escritas dali em diante.
+- **RN-GAM-004 Mês fechado.** `isMesFechado(mes)` faz a função devolver `{ fechado: true, aviso }` **antes** de qualquer consulta ou gravação — vale também para a prévia. Maio, Junho e Julho/2026 nascem fechados ("Sistema (protegido por padrão)") na primeira execução; depois disso o administrador pode reabri-los. Fechar não recalcula nada; só impede escritas dali em diante.
 - **RN-GAM-005 `dryRun`** (padrão `true`) só calcula e devolve; o job e "Sincronizar Notas Agora" usam `false`. `lancado_por` distingue manual de automático.
 
 #### 4.2 Nota final e ranking do mês (rota pública)
@@ -2822,8 +2828,8 @@ Toda linha começa `pendente`; o admin marca **devida** (conta) ou **indevida** 
 
 ### 7. Pontos de atenção
 
-1. **"Reabrir" Maio, Junho e Julho/2026 não funciona.** `ensureGamTables()` reinsere os três meses em `gam_meses_fechados` (`INSERT … ON CONFLICT DO NOTHING`) a cada chamada, e quase toda rota de `/gam` a chama; o `POST /gam/mes/:mes/reabrir` apaga a linha, mas a próxima leitura (inclusive a que recarrega a tela) a recria. Para esses três meses o fechamento é permanente. [CONFIRMADO no código; não testado em produção]
-2. **A regra de aceite da Elma volta sozinha.** A mesma função executa `UPDATE gam_colaboradores SET aplica_regra_aceite = true WHERE nome = 'Elma' AND aplica_regra_aceite = false`: desligar a flag pela tela (`…/aceite`) é desfeito na chamada seguinte, e o nome "Elma" está fixo no código. [CONFIRMADO]
+1. ~~"Reabrir" Maio, Junho e Julho/2026 não funciona~~ — **corrigido em 31/10/2026** (código; vale após o deploy): a gravação inicial desses três meses agora roda uma única vez, marcada em `gam_config` (`semente_inicial_v1`), e o reabrir passa a valer. Texto do problema antigo: `ensureGamTables()` reinsere os três meses em `gam_meses_fechados` (`INSERT … ON CONFLICT DO NOTHING`) a cada chamada, e quase toda rota de `/gam` a chama; o `POST /gam/mes/:mes/reabrir` apaga a linha, mas a próxima leitura (inclusive a que recarrega a tela) a recria. Para esses três meses o fechamento é permanente. [CONFIRMADO no código; não testado em produção]
+2. ~~A regra de aceite da Elma volta sozinha~~ — **corrigido em 31/10/2026** (mesma semente única; o nome "Elma" continua fixo, mas só na primeira execução). Texto do problema antigo: A mesma função executa `UPDATE gam_colaboradores SET aplica_regra_aceite = true WHERE nome = 'Elma' AND aplica_regra_aceite = false`: desligar a flag pela tela (`…/aceite`) é desfeito na chamada seguinte, e o nome "Elma" está fixo no código. [CONFIRMADO]
 3. **Custo da tela "Minha nota".** `minha-composicao` e `composicao-nota` rodam `executarAutoPreencher(mes, { dryRun: true })` **para todos os colaboradores** e escolhem uma linha; quem não tem ticket pontuado dispara ainda uma chamada à API de qualificação do Zappy. Cada acesso de um analista custa dezenas de consultas e possivelmente chamadas externas. [CONFIRMADO]
 4. **Fuso:** o mês do ticket usa UTC (arquivo 02, RN-PON-008), enquanto o job diário usa Brasília para escolher o mês atual. [INFERIDO] pode divergir nas últimas 3 horas do mês.
 5. **XSS de nome:** `gamificacao.html` monta o pódio com `${r.nome}` direto em `innerHTML`; hoje só administradores criam colaboradores, mas o ranking é público. [CONFIRMADO no trecho lido]
@@ -2854,7 +2860,7 @@ Uma lista só de clientes ativos, com uma coluna por documento que o escritório
 | Perfil | Entra na página? | O que alcança (servidor) |
 | --- | --- | --- |
 | `administrador` | sim | tudo; exclusivos: desativar/reativar/excluir, editar certificado, procurações manuais, conferência por OCR, saúde das rotinas, aprovar/rejeitar pedidos, "Atualizar CertiSeguro agora", ver desativados |
-| `colaborador` ou `contabil` com `acesso_legalizacao` | sim | **só leitura** (`GET`), mais: `POST /solicitar-inativacao`, `POST /notificacoes/lidas`, `PATCH /clientes/:id/municipio` e `…/inscricao-municipal` |
+| `colaborador` ou `contabil` com `acesso_legalizacao` | sim | **só leitura** (`GET`), mais: `POST /solicitar-inativacao`, `POST /solicitar-desativacao-certificado` e `POST alvaras/:clienteId/(funcionamento|sanitario)/protocolo` (estes dois desde 31/10/2026, após deploy), `POST /notificacoes/lidas`, `PATCH /clientes/:id/municipio` e `…/inscricao-municipal` |
 | `usuario` (equipe interna) | **não** pela tela (`podeEntrar` exige administrador ou a flag) | pela API passa por `requireAuth` e alcança as rotas sem `requireAdmin` (editar alvará, protocolo, certificado PJ, consultar prefeitura, pedidos) |
 | qualquer pessoa sem login | não | as rotas de máquina aceitam o `X-Sync-Token` |
 
@@ -2977,9 +2983,9 @@ Os segredos da estação ficam em `server/legalizacao/.env` (**git-ignorado**); 
 | --- | --- | --- |
 | Máquina (token) | `GET alvaras-a-consultar`, `POST alvaras-consulta-local`, `POST inscricao-municipal-arquivo`, `GET clientes-ativos`, `POST alvaras-arquivo`, `POST cnaes-completar`, `POST sanitario-avaliar`, `GET redesim-a-consultar`, `GET redesim-resumo`, `POST redesim-resultado`, `POST redesim-reprocessar`, `POST certificados/importar-certiseguro`, `POST certificados/sincronizar-certiseguro`, `POST procuracoes/importar`, `POST protocolo-online`, `POST alvaras-dispensa`, `POST saude-rotina` | `X-Sync-Token` |
 | Leitura | `GET painel`, `GET historico`, `GET notificacoes`, `GET motivos-inativacao` | login com acesso à Legalização |
-| Edição (usuário/administrador) | `PUT alvaras/:clienteId/:tipo`, `POST alvaras/:clienteId/:tipo/protocolo`, `POST alvaras/:clienteId/:tipo/consultar-prefeitura`, `PUT certificados/:clienteId` | login (colaborador/contábil **não passam**, ver o item 1 dos pontos de atenção) |
+| Edição (usuário/administrador) | `PUT alvaras/:clienteId/:tipo`, `POST alvaras/:clienteId/:tipo/protocolo`, `POST alvaras/:clienteId/:tipo/consultar-prefeitura`, `PUT certificados/:clienteId` | login; o protocolo passa também para colaborador/contábil com a marca de Legalização (desde 31/10/2026); o resto da edição, não |
 | Cadastro | `PATCH clientes/:clienteId/municipio`, `PATCH clientes/:clienteId/inscricao-municipal`, `POST notificacoes/lidas`, `POST solicitar-inativacao` | login com acesso à Legalização |
-| Pedidos | `POST solicitar-desativacao-certificado` | login (ver o item 1 dos pontos de atenção) |
+| Pedidos | `POST solicitar-desativacao-certificado` | login; colaborador/contábil com a marca de Legalização passam (desde 31/10/2026) |
 | Administrador | `PUT procuracoes/:clienteId/:tipo`, `PATCH alvaras/:id/desativar|reativar`, `PATCH certificados/:id/desativar|reativar|(editar)`, `PATCH certificados-cliente/:clienteId/desativar`, `DELETE alvaras/:id`, `DELETE certificados/:id`, `POST certificados/atualizar-agora`, `POST protocolo-online-manual`, `POST procuracoes/importar-manual`, `GET conferencia`, `POST alvaras/:id/conferir`, `GET saude`, `GET/PATCH solicitacoes-inativacao`, `GET/PATCH solicitacoes-desativacao` | `requireAdmin` |
 
 Cada alteração relevante grava no **log de atividades** do sistema (`registrarLog`, módulo `legalizacao`).
@@ -2997,7 +3003,7 @@ Cada alteração relevante grava no **log de atividades** do sistema (`registrar
 
 ### 8. Pontos de atenção
 
-1. **Analista (`colaborador`) não consegue usar dois botões que a tela mostra.** "📝 Não vai renovar" (`POST /solicitar-desativacao-certificado`) e "📨 Informar protocolo" (`POST …/protocolo`) não estão na lista de exceções de `server/auth.js:115–117` (só `GET`, `/solicitar-inativacao`, `/notificacoes/lidas` e os `PATCH` de município e inscrição). Para `colaborador` e `contabil` o servidor responde 403 ("Acesso restrito à sua nota da Gamificação."). O comentário do código diz "qualquer usuário da Legalização"; os testes só cobrem a tela (`testes_legalizacao_pagina.js`). [CONFIRMADO no código; falta conferir em produção com um login de analista]
+1. ~~Analista (`colaborador`) não consegue usar dois botões que a tela mostra~~ — **corrigido em 31/10/2026** (código; vale após o deploy): `server/auth.js` passou a liberar `POST /solicitar-desativacao-certificado` e `POST alvaras/:clienteId/(funcionamento|sanitario)/protocolo` para quem tem a marca de Legalização; editar alvará e consultar prefeitura seguem bloqueados. Texto do problema antigo: "📝 Não vai renovar" (`POST /solicitar-desativacao-certificado`) e "📨 Informar protocolo" (`POST …/protocolo`) não estão na lista de exceções de `server/auth.js:115–117` (só `GET`, `/solicitar-inativacao`, `/notificacoes/lidas` e os `PATCH` de município e inscrição). Para `colaborador` e `contabil` o servidor responde 403 ("Acesso restrito à sua nota da Gamificação."). O comentário do código diz "qualquer usuário da Legalização"; os testes só cobrem a tela (`testes_legalizacao_pagina.js`). [CONFIRMADO no código; falta conferir em produção com um login de analista]
 2. **Aprovar inativação pode tirar a saída do churn.** A rota grava `clientes.motivo_saida` com o **motivo da lista de churn** (ex.: "Preço") ou "Inativação solicitada". Em `churnSaidas.classificarSaidaDetalhe` esse texto não casa com "transferida por" nem com "baixa" e vira `outra_saida` (arquivo 05, RN-CHU-003), ou seja, **não conta como churn** se o Acessórias não trouxer outro motivo. [INFERIDO; conferir com um caso real]
 3. **Horários divergentes na documentação do próprio código.** Comentários dizem 03:00/05:00, o `.bat` diz "1×/dia de madrugada" e `ROTINAS_LEGALIZACAO` diz "toda segunda às 08:30". O agendamento real está no Agendador do Windows da estação e não é versionado. [DÚVIDA]
 4. **Dependência de máquinas e logins pessoais:** consulta às prefeituras, leitura de pastas (caminho de rede com IP fixo no código), Protocolo Online (CPF da Josiane), Redesim (gov.br) e procurações (certificado) rodam fora do servidor, em horários de segunda e com sessão humana. Sem a pessoa/estação, os dados envelhecem (a saúde das rotinas avisa pelo sino, mas só após 200 h).
@@ -3136,6 +3142,380 @@ Menu: **Visão Geral** · **Oportunidades** (selo = nº de prioridades altas) ·
 8. **`financeiro_clientes`, `financeiro_aberto` e `financeiro_importacoes` não ligam RLS** (as demais tabelas do módulo ligam). [CONFIRMADO]
 9. **Mesmo token de sincronização** para Omie, Legalização, Questor e e-mail; um vazamento permite substituir os snapshots (arquivo 07, item 6.1). Os arquivos `_omie_*` em `server/legalizacao/` têm dados de clientes e estão no `.gitignore`. [CONFIRMADO]
 10. **Cobertura de teste:** boa para as regras puras e a exportação (`testes_financeiro.js`, `testes_exportacao.js`, `testes_acesso_colaborador.js`); **sem teste** das rotas de entrada (`/titulos`, `/financeiro/importar`) nem da conversão dos arquivos do Omie. [CONFIRMADO]
+
+---
+
+# Parte 20 — Visão geral e arquitetura
+
+*Origem: `docs/mapa/transversal-arquitetura.md`*
+
+## Visão geral e arquitetura
+
+Resumo de uma página para quem chega sem conhecer o sistema. Cada item aponta para o arquivo que tem o detalhe e a evidência. Estado do código em 31/10/2026.
+
+### 1. O que é
+
+O **Grupo-E** é o sistema interno do escritório contábil Escritorial para acompanhar clientes e a equipe. Quatro entradas web, todas no mesmo servidor:
+
+| Entrada | Para quê | Quem usa | Detalhe |
+| --- | --- | --- | --- |
+| `/` (SPA) | atendimentos, gestão de clientes, insatisfações, pesquisas, Carteira, CAC, tickets internos, administração | equipe e liderança | spa-principal (parte 16) |
+| `/cs` | Sucesso do Cliente: radar de SLA, risco de perda, churn, categorias, Qualidade, painéis de Gestor/Analista | liderança, gestores, analistas | arquivos `cs/00` a `cs/10` |
+| `/legalizacao` | alvarás, certificados digitais, procurações | liderança e analistas com a marca | legalizacao (parte 18) |
+| `/financeiro` | inadimplência, suspensos, cobranças | liderança e quem tem a marca | financeiro (parte 19) |
+
+Páginas sem login: ranking da **Gamificação** (`/gamificacao/ranking`, gamificacao (parte 17)) e pesquisa de satisfação pública.
+
+### 2. Como é construído
+
+| Camada | Escolha | Observação |
+| --- | --- | --- |
+| Servidor | Node.js + Express, um único processo | monta as rotas em `server/index.js` |
+| Banco | PostgreSQL (`pg`), sem ORM e sem pasta de migrations | tabelas criadas "na hora" por `CREATE TABLE IF NOT EXISTS` dentro das rotas; 5 tabelas centrais (`clientes`, `honorarios`, `eventos_clientes`, `analistas`, `investimentos`) não têm `CREATE` no repositório |
+| Front-end | HTML, CSS e JavaScript puros, sem build | `app.js` ≈ 11 mil linhas; `cs-painel.js` ≈ 4,3 mil |
+| Sessão | JWT de 2 h + refresh de 30 dias no `localStorage` | transversal-permissoes (parte 21) |
+| Hospedagem | Render (web service) com deploy a partir do GitHub (`reysner/grupo-e-sistema`, ramo `main`) | repositório **público** |
+| Rotinas | `setInterval` dentro do processo web + estação Windows + *userscripts* | transversal-integracoes-automacoes (parte 22) |
+| Testes | scripts Node com `assert`, rodados à mão; sem CI | cobertura em transversal-pendencias-cobertura (parte 24) |
+
+### 3. Como as partes conversam
+
+```
+Navegador (4 entradas)  ──HTTPS──►  Express (um processo no Render)  ──pg──►  PostgreSQL
+                                        ▲        │
+ Zappy ◄── busca a cada 5 min ──────────┘        ├── Acessórias (24 h), CertiSeguro (2×/dia), Receita, IBGE
+                                                 └── e-mail (SMTP) e avisos push
+ Estação Windows / navegador do Reysner ──X-Sync-Token──► Questor, Omie, e-mail, prefeituras, REDESIM, e-CAC, pastas de rede
+```
+
+### 4. Princípios que o código segue (e onde foge deles)
+
+1. **O servidor decide o acesso; a tela só esconde.** Vale em quase tudo; exceção conhecida: o botão "Ocultar valores".
+2. **Só metadados** nos dados sensíveis de e-mail (nunca o conteúdo).
+3. **Cada carga de máquina substitui a anterior**, sem histórico.
+4. **Falha silenciosa** é a escolha padrão em consultas opcionais: a tela sobe, mas esquema quebrado não alerta ninguém.
+5. **Regras de negócio no código**, não em configuração: nomes fixos (cobrador "Bruno Xavier", colaboradora "Elma"), horários, janelas de dias, pesos e feriados de 2026.
+
+### 5. O que este mapa ainda não cobre
+
+A seção de **portabilidade** depende do sistema de destino, que não foi informado; o que existe é o guia de migração de máquina (mudar de computador e de hospedagem mantendo o mesmo sistema).
+
+---
+
+# Parte 21 — Permissões e segurança (consolidado)
+
+*Origem: `docs/mapa/transversal-permissoes.md`*
+
+## Permissões e segurança — visão consolidada
+
+Reúne em um só lugar o que está espalhado pelos arquivos de cada módulo. Cada afirmação foi tirada deles (que leram o código); onde um módulo tem a regra completa, há o link. Estado do código em 31/10/2026, **incluindo as correções feitas nesse dia que ainda aguardam deploy** (marcadas).
+
+### 1. Os quatro perfis (`users.role`) e as marcas
+
+| `role` | Quem é | O que alcança no servidor |
+| --- | --- | --- |
+| `administrador` | liderança | tudo. É o único que passa em `requireAdmin` |
+| `usuario` | equipe interna | SPA `/` sem as telas de administração; /cs e /financeiro **sem valores em R$**; qualquer rota protegida só por `requireAuth` (ver seção 4) |
+| `contabil` | Portal Contábil | só rotas de tickets, `/auth`, `/perfil` e as liberadas por marca |
+| `colaborador` | "Analista" na tela | só `/gam/minha-*`, `/gam/meus-*`, `/auth`, `/perfil` e as liberadas por marca |
+
+Marcas independentes do perfil (colunas de `users`, definidas por um administrador): `acesso_minha_nota`, `acesso_legalizacao`, `acesso_cs`, `acesso_financeiro`, `acesso_financeiro_sv`, `acesso_qualidade`. A marca `acesso_gestor` **não é coluna**: é calculada no login (está em `cs_qualidade_gestores` ou tem módulos de portais em `cs_acessos`). Regra completa em cs/00-base-acesso.md (parte 4) e nucleo.md (parte 15).
+
+### 2. Matriz: o que cada perfil faz em cada área
+
+Legenda: **A** = só se for administrador · **L** = leitura · **E** = leitura e escrita (nos limites da própria rota) · **—** = 403 · **marca** = depende da marca citada.
+
+| Área | administrador | usuario | contabil | colaborador |
+| --- | --- | --- | --- | --- |
+| SPA: atendimentos, gestão, insatisfações, pesquisas, sensíveis | E | E | — | — |
+| SPA: Carteira e CAC (leituras) | E | **— (desde 31/10/2026, após deploy; antes: L)** | — | — |
+| SPA: Carteira, criar cliente (`POST /clientes`) | E | E (de propósito: formulário de Gestão) | — | — |
+| SPA: Tickets internos | E | E (com checagem de menção) | E (rotas `/tickets`) | — |
+| SPA: Administração (usuários, backup, log, importações) | A | — | — | — |
+| /cs (painel, ficha, churn, risco) | E, com valores | L/E **sem R$** | marca `acesso_cs` | marca `acesso_cs` |
+| /cs Qualidade | E | por rota | marca `acesso_qualidade`/`acesso_gestor`/`acesso_minha_nota` | idem |
+| Gamificação: ranking público | sem login | sem login | sem login | sem login |
+| Gamificação: administrar | A | — | — | — |
+| Gamificação: Minha Nota | E | marca | marca `acesso_minha_nota` | **sim** (resolve a pessoa pelo login) |
+| /legalizacao: ver | E | pela API sim; pela tela não | marca `acesso_legalizacao` (L) | marca `acesso_legalizacao` (L) |
+| /legalizacao: pedir inativação, "Não vai renovar", informar protocolo, município, IM | E | E | marca (**protocolo e "Não vai renovar" liberados em 31/10/2026**) | marca (idem) |
+| /legalizacao: editar alvará/certificado, aprovar/rejeitar pedidos | A (aprovar/rejeitar/certificado) | editar alvará pela API | — | — |
+| /financeiro | E, com valores | L **sem R$** | marca `acesso_financeiro`, `acesso_cs` ou `acesso_financeiro_sv` | idem |
+| Cargas de máquina (Omie, Questor, e-mail, CertiSeguro, Legalização) | `X-Sync-Token` | `X-Sync-Token` | `X-Sync-Token` | `X-Sync-Token` |
+
+### 3. As camadas, de fora para dentro
+
+1. **Token** — `requireAuth` valida o JWT (2 h) e monta `req.user`.
+2. **Perfis restritos** — dentro de `requireAuth`, por **trecho do caminho** (`includes`/regex), `contabil` e `colaborador` só passam nas rotas liberadas.
+3. **Administrador** — `requireAdmin` por rota. `GET`/`POST`/`PATCH`/`DELETE` de `/api/users` inteiro usam `router.use(requireAuth, requireAdmin)`.
+4. **Módulos do /cs** — `acessos.restringir`: quem tem lista gravada em Acessos só passa nos módulos dela.
+5. **Cada rota** — escopo por departamento, por analista, por valores em R$ (`veValores`).
+6. **Front-end** — só **esconde** menus. [CONFIRMADO] nada é decidido ali, com uma exceção conhecida: o botão "Ocultar valores" do administrador é visual.
+
+### 4. Quantas rotas em cada nível
+
+A varredura do anexo A (358 rotas) classifica por rota: **155 com `requireAdmin` na própria linha**, **148 "login"** (atrás de `requireAuth`), **34 "ver arquivo"** (regra própria no arquivo), **19 públicas/token** e **2 públicas** (sem nenhuma proteção: pesquisa e ranking). A classificação é grosseira: "login" inclui rotas que a própria função restringe (por exemplo as 53 de Qualidade, que têm lista branca interna) e `users.js` aparece como "login" mas **todas** as suas 6 rotas são só de administrador.
+
+### 5. Segurança de transporte e sessão
+
+| Item | Situação |
+| --- | --- |
+| Senha | bcrypt 12 rounds; mínimo de 6 caracteres; sem senha padrão no código [CONFIRMADO] |
+| Login | limite de 20 tentativas por 15 minutos por IP (`loginLimiter`) [CONFIRMADO] |
+| Sessão | JWT de acesso 2 h + refresh de 30 dias, rotativo e de uso único; trocar perfil/marcas revoga os refresh [CONFIRMADO] |
+| Onde ficam os tokens | `localStorage` (não `httpOnly`): qualquer script injetado os lê [CONFIRMADO] |
+| Cadastro público | **desligado em 31/10/2026** (`POST /api/auth/register` → 403; reabrir só com `CADASTRO_PUBLICO=1`) |
+| Cabeçalhos | sem CSP e sem HSTS; CORS aceita requisições sem `Origin` [CONFIRMADO] |
+| Limite global | 300 requisições por minuto por IP (vale também para a pesquisa pública) [CONFIRMADO] |
+| Máquina → servidor | cabeçalho `X-Sync-Token`; **o mesmo segredo** serve a Legalização, Questor, Omie, e-mail e suspensos (`CERTISEGURO_SYNC_TOKEN` é separado só para a CertiSeguro) |
+| Administrador inicial | criado só se o banco **não tem nenhum administrador** e `ADMIN_PASS` existe (regra de 31/10/2026, após deploy) |
+
+### 6. Pontos fracos conhecidos (todos com a fonte no módulo)
+
+1. `usuario` ainda alcança qualquer rota protegida só por `requireAuth`. Foram fechadas as leituras de Carteira/CAC; **a lista completa das demais não foi levantada**: convém varrer as 148 rotas "login" e decidir uma a uma.
+2. Falha aberta: se `require('../auth')` falhar, as listas canônicas e o radar de SLA trocam as proteções por funções que deixam passar (nucleo.md (parte 15) seção 8).
+3. `isLegalizacaoRoute` libera `GET` em **qualquer** caminho que contenha `/legalizacao`; rota nova com esse trecho nasce liberada para analista.
+4. Um segredo só para todas as cargas de máquina.
+5. Sino de notificações global e criação de aviso livre por qualquer usuário logado (`POST /notificacoes`).
+6. `DELETE /api/data/clear` (administrador) apaga seis tabelas sem confirmação quando `period` não vem; `DELETE /log-atividades` apaga todo o log sem confirmação.
+7. A pesquisa pública aceita respostas de qualquer pessoa (só o limite global por IP).
+8. `acesso_gestor` fica no token por até 2 h depois de a pessoa sair de `cs_qualidade_gestores`.
+9. Conta de administrador com e-mail pessoal ou legado deve ser conferida periodicamente (em 31/10/2026 havia duas: `admin@grupoe.com.br`, que o dono pediu para excluir, e uma com e-mail pessoal a confirmar).
+10. O repositório no GitHub é **público**: nenhum segredo pode entrar nele, e a senha padrão antiga continua no histórico do Git (já não funciona no código atual, mas serve contra qualquer conta criada com ela).
+
+---
+
+# Parte 22 — Integrações externas e automações (consolidado)
+
+*Origem: `docs/mapa/transversal-integracoes-automacoes.md`*
+
+## Integrações externas e automações — visão consolidada
+
+Junta, em um só lugar, o que o inventário (Fase 1) e os arquivos de módulo descrevem em partes. Estado do código em 31/10/2026. Onde há diferença entre o que o inventário previa e o que os módulos confirmaram, vale o módulo.
+
+### 1. Integrações externas
+
+#### 1.1 Lidas ou chamadas pelo servidor (Render)
+
+| Serviço | Para quê | Direção | Credencial (nome da variável) | Módulo com o detalhe |
+| --- | --- | --- | --- | --- |
+| **Zappy** | tickets, mensagens, avaliação do cliente, usuários | servidor busca a cada 5 min | `ZAPPY_BASE_URL`, `ZAPPY_TOKEN` | cs/01 (parte 5) |
+| **Acessórias** | carteira, TAGs, motivos de cancelamento, entregas, solicitações | servidor busca a cada 24 h; a ficha do cliente chama a cada abertura | `ACESSORIAS_API_TOKEN` | cs/05 (parte 9), cs/06 (parte 10) |
+| **CertiSeguro** | lista de certificados digitais | servidor busca às 07h e 13h | `CERTISEGURO_URL`, `CERTISEGURO_TOKEN`, `CERTISEGURO_CNPJ`; **IP do Render precisa estar liberado lá** | legalizacao (parte 18) |
+| **Receita (BrasilAPI, minhareceita.org)** | situação e município do CNPJ | sob demanda e em lote | — | cs/05 (parte 9) |
+| **IBGE** | código do município | sob demanda | — | legalizacao (parte 18) |
+| **Gmail SMTP** | recuperação de senha e relatórios | envio | `GMAIL_USER`, `GMAIL_APP_PASS` | nucleo (parte 15) |
+| **Web Push** | aviso no navegador | envio | chaves VAPID **no banco** (`cs_painel_config`, chave `webpush_vapid`) | nucleo (parte 15) seção 7 |
+| **Render / GitHub** | hospedagem; deploy por `git push` (manual, após o push) | — | `render.yaml` | README |
+
+#### 1.2 Empurradas por máquina local para o servidor (cabeçalho `X-Sync-Token`)
+
+| Origem | O que entrega | Onde roda | Módulo |
+| --- | --- | --- | --- |
+| **Questor** (nWeb, via VPN) | faturamento anual, 12 meses, funcionários | estação Windows com VPN | cs/07 (parte 11) |
+| **Omie** | honorário por cliente/ano (carga manual) e inadimplência/suspensos do /financeiro | script no navegador e tarefa agendada do Claude (11h) | cs/07 (parte 11), financeiro (parte 19) |
+| **Gmail API / Admin SDK** | metadados de e-mail (só contagens, nunca o conteúdo) | job local, segunda 08:30 | cs/08 (parte 12) |
+| **Prefeituras e Protocolo Online**, **REDESIM**, **e-CAC** | situação de alvarás, protocolos e procurações | consulta local e *userscripts* (Tampermonkey) | legalizacao (parte 18) |
+| **Pastas de rede** | leitura de PDFs de alvará | estação Windows (05h) | legalizacao (parte 18) |
+| **Arquivo Morto** | cópia de pastas de empresas inativadas | estação Windows (20h) | memória do projeto (job local, fora do Render) |
+
+Um **único segredo de sincronização** (`LEGALIZACAO_SYNC_TOKEN`) atende quase todas essas entradas; só a CertiSeguro tem o seu (`CERTISEGURO_SYNC_TOKEN`). Ver transversal-permissoes (parte 21) seção 6.
+
+#### 1.3 Variáveis de ambiente (apenas nomes)
+
+`DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `NODE_ENV`, `PORT`, `APP_URL`, `ALLOWED_ORIGINS`, `ADMIN_EMAIL`, `ADMIN_PASS`, `ADMIN_NAME`, `CADASTRO_PUBLICO` (só para reabrir o cadastro, normalmente ausente), `ZAPPY_BASE_URL`, `ZAPPY_TOKEN`, `ACESSORIAS_API_TOKEN`, `GMAIL_USER`, `GMAIL_APP_PASS`, `GMAIL_CHAVE_JSON`, `GMAIL_ADMIN`, `LEGALIZACAO_SYNC_TOKEN`, `CERTISEGURO_SYNC_TOKEN`, `CERTISEGURO_URL`, `CERTISEGURO_TOKEN`, `CERTISEGURO_CNPJ`, `LEGALIZACAO_CONSULTA_NO_SERVIDOR`, `LEGALIZACAO_PASTA`, `QUESTOR_NWEB`, `QUESTOR_TOKEN_API`, `PDFTOPPM_PATH`, `ARQUIVO_MORTO_*`, `EMAIL_MAPA_CACHE`, `EMAIL_APRENDIDOS`, `EMAIL_CACHE_DIR`, `OMIE_*` (previstas para o /financeiro, ainda sem uso), `DEBUG_CICLO7`, `DBG`. Os valores **nunca** entram nesta documentação.
+
+### 2. Automações e processos em segundo plano
+
+#### 2.1 No servidor (todas por `setInterval` no processo web)
+
+| Quando | O que faz | Só roda se |
+| --- | --- | --- |
+| a cada 5 min | ingestão de tickets do Zappy | `ZAPPY_BASE_URL` **e** `ZAPPY_TOKEN` |
+| 08h, 11h, 15h (Brasília) | atualiza notas pendentes e aplica o auto-preencher da Gamificação do mês corrente | bloco do Zappy |
+| 07h e 13h | CertiSeguro | bloco do Zappy |
+| 08h | vencimentos da Legalização e retrato semanal | bloco do Zappy |
+| 02h | consulta de alvarás às prefeituras | **desligada**, salvo `LEGALIZACAO_CONSULTA_NO_SERVIDOR=1` |
+| a cada hora | saúde das rotinas locais da Legalização | bloco do Zappy |
+| 08h (conferência a cada 10 min) | alerta de prazo das ocorrências de Qualidade | sempre |
+| a cada 10 min, grava 1×/dia entre 03h e 04h | **backup automático** em `backups_automaticos` (30 mais recentes) | sempre |
+| a cada 24 h | limpeza de `refresh_tokens` vencidos | sempre |
+| ao subir e a cada 24 h | sincroniza Acessórias e, em seguida, TAGs, motivos de cancelamento, classificação pela Receita, entregas (200 por rodada), foto diária do risco | `ACESSORIAS_API_TOKEN` |
+| a cada 6 h | completa município/CNAE dos clientes (700 por rodada) | `ACESSORIAS_API_TOKEN` |
+| a cada 14 min | auto-ping em `APP_URL/health` | `APP_URL` |
+| ao tocar em qualquer rota `/gam` | `ensureGamTables()` cria tabelas/colunas; **desde 31/10/2026** a semente inicial (meses 05–07 fechados, regra de aceite da Elma) roda uma vez só | primeira execução marcada em `gam_config` |
+
+Armadilha conhecida: a agenda da Legalização depende das variáveis do **Zappy** (mesmo bloco de código). Sem elas, CertiSeguro, vencimentos e retrato semanal **não rodam**, mesmo que a Legalização esteja configurada.
+
+#### 2.2 Fora do servidor (estação Windows, navegador, agente)
+
+| Rotina | Frequência | Como é agendada | Onde está descrita |
+| --- | --- | --- | --- |
+| Sinais de e-mail | segunda 08:30 | Agendador do Windows (`emailSinais/agendar.ps1`) | cs/08 (parte 12) |
+| Questor mensal e anual | mensal/anual | Agendador (`questor/agendar*.ps1`) | cs/07 (parte 11) |
+| Omie do /financeiro | diária às 11h (suspensos: semanal) | tarefa agendada do Claude, com login feito pelo Reysner | financeiro (parte 19) |
+| Alvarás em pastas de rede | diária (05h) | Agendador | legalizacao (parte 18) |
+| Consulta às prefeituras | semanal (segunda 08:30) | Agendador | legalizacao (parte 18) |
+| Procurações, REDESIM, Protocolo Online | semanal | *userscripts* com sessão humana | legalizacao (parte 18) |
+| Arquivo Morto | diária 20h | Agendador | memória do projeto |
+| Lembrete de atualizar esta documentação | uma vez, 15/12/2026 09:00 | tarefa agendada do Claude (só roda com o app aberto) | COMO_ATUALIZAR_A_DOCUMENTACAO |
+
+Os horários reais ficam no Agendador da estação e **não são versionados**; os de comentários do código divergem entre si em alguns casos (legalizacao (parte 18), item 3 dos pontos de atenção). [DÚVIDA] até alguém conferir a lista de tarefas da máquina.
+
+#### 2.3 Riscos comuns às automações
+
+1. Tudo no servidor roda dentro do processo web: reinício atrasa ou repete rotinas; as de horário fixo guardam "já rodei hoje" só em memória.
+2. Várias rotinas dependem de uma pessoa, de uma estação ligada e de uma sessão (VPN, IP liberado, login do gov.br, CPF da Josiane, login do Omie).
+3. Travas de concorrência são locais ao processo: uma segunda instância duplicaria o trabalho.
+4. Erros de consulta são engolidos em vários pontos (`consultar()`, `.catch(()=>{})`), o que mantém a tela de pé mas esconde esquema quebrado.
+
+---
+
+# Parte 23 — Logs, auditoria e histórico (consolidado)
+
+*Origem: `docs/mapa/transversal-logs-auditoria.md`*
+
+## Logs, auditoria e histórico — visão consolidada
+
+O sistema não tem uma trilha de auditoria única. Há **um log central** (`log_atividades`) alimentado de dois jeitos, mais históricos próprios de alguns módulos e campos de autoria espalhados. Estado do código em 31/10/2026.
+
+### 1. O log central: `log_atividades`
+
+`id UUID`, `user_id`, `user_name`, `acao`, `modulo`, `descricao`, `ip`, `created_at` (índice por data decrescente). A mesma tabela serve a duas telas:
+
+| Quem grava | Como | Módulos que aparecem |
+| --- | --- | --- |
+| `registrarLog(userId, userName, acao, modulo, descricao, req)` em `server/routes/data.js` | chamada **à mão** dentro de cada rota que o autor lembrou de registrar | carteira, legalização e outros do SPA; ações `criar`, `editar`, `excluir`, `importar`, `sync` |
+| Filtro automático de `server/cs/auditoria.js` | para toda chamada `POST/PUT/PATCH/DELETE` bem-sucedida nas rotas de **Qualidade, Acessos e Analistas** | `cs-qualidade`, `cs-acessos`, `cs-analistas`, `cs-admin` |
+
+Consulta: SPA `GET /api/data/log-atividades` (administrador, 200 por padrão) e /cs `GET /api/cs/painel/admin/logs` (administrador; filtros módulo, usuário, ação, texto e período; 300 por padrão, máximo 1000). Detalhes em cs/08 (parte 12) parte B e nucleo (parte 15) seção 9.
+
+#### Lacunas do log (todas [CONFIRMADO])
+
+1. **Nem tudo é registrado.** O registro do SPA depende de cada rota chamar `registrarLog`: por exemplo, `PATCH /clientes/:id/encerrar` e `DELETE /clientes/:id` (que apaga honorários e eventos em cascata) **não registram**.
+2. **Ações do /cs fora de Qualidade/Acessos/Analistas não entram no filtro automático**: confirmar um vínculo de telefone como cliente (muda a pontuação da Gamificação), alterar Categorias, Risco ou limites não deixam rastro.
+3. **Gamificação**: notas lançadas guardam só `lancado_por` na linha; revisões guardam `revisado_por/em`; fechar/reabrir mês guarda `fechado_por`. Não há histórico de valores anteriores.
+4. **Pode ser apagado sem confirmação**: `DELETE /api/data/log-atividades` apaga tudo (administrador). A limpeza da Qualidade apaga todos os logs `cs-%`, mas registra a própria limpeza depois.
+5. **Sem retenção definida**: a tabela cresce sem limite.
+6. **IP:** o servidor usa `trust proxy = 1`, então `req.ip` é o IP do visitante visto pelo Render; se faltar, grava o cabeçalho `x-forwarded-for` ou "—".
+
+### 2. Históricos próprios por módulo
+
+| Módulo | Onde | O que guarda |
+| --- | --- | --- |
+| Qualidade | `cs_qualidade_historico` | cada passo da ocorrência (abrir, tratar, validar, devolver, cancelar) |
+| Qualidade | `cs_limpezas` | cópia completa antes de cada limpeza |
+| Carteira | `honorarios`, `eventos_clientes` | histórico de honorários e eventos de entrada/saída/reajuste |
+| Risco | `cs_painel_config` (chaves `risco_foto_AAAA-MM-DD`, 120 dias, e `risco_foto_ultima`) | evolução dos termômetros |
+| Financeiro | `financeiro_historico` | retrato semanal dos números |
+| Legalização | retrato semanal, `legalizacao_notif_visto`, solicitações de inativação e desativação | quem pediu, quem decidiu, quando |
+| Cargas de máquina (Omie, Questor, e-mail) | **nada**: cada carga substitui a anterior | o backup do banco é a única rede |
+| Gamificação | revisões (`gam_*_revisoes`), férias, meses fechados | autor e data de cada decisão |
+
+### 3. Backups (a "auditoria de última instância")
+
+| Tipo | O que cobre | O que **não** cobre |
+| --- | --- | --- |
+| Manual `GET /api/data/backup` (administrador) | 31 conjuntos do SPA, Gamificação, Qualidade, `cs_acessos` | `users`, `refresh_tokens`, `cs_config`, `cs_painel_config` (inclui chaves do push), Legalização, Financeiro, Omie, Questor, e-mail |
+| Automático diário (`backups_automaticos`, 30 mais recentes) | o mesmo conteúdo | o mesmo; e fica **no mesmo banco** que protege |
+| Backup da Qualidade (`/admin/backup`) | tabelas de Qualidade, anexos só com metadados | tudo o mais |
+
+Para recuperação de verdade é preciso `pg_dump` ou o backup do provedor (guia de migração).
+
+### 4. Recomendações registradas (não implementadas)
+
+1. Registrar no log: encerrar/excluir cliente, confirmar vínculo de telefone, mudanças de Categorias/Risco, abrir/fechar mês da Gamificação.
+2. Exigir confirmação (frase) em `DELETE /log-atividades` e `DELETE /api/data/clear`.
+3. Definir retenção do log (por exemplo, 24 meses) e exportar periodicamente.
+4. Incluir `users` e as tabelas de Legalização/Financeiro no backup automático, ou documentar o `pg_dump` agendado no provedor.
+
+---
+
+# Parte 24 — Pendências, inconsistências e checklist de cobertura
+
+*Origem: `docs/mapa/transversal-pendencias-cobertura.md`*
+
+## Pendências, inconsistências e checklist de cobertura
+
+Consolida os "pontos de atenção" de todos os módulos e fecha com o que este mapa cobre e o que não cobre. Estado em 31/10/2026. Legenda: **Feito** = corrigido no código (as marcadas "após deploy" ainda precisam subir); **Aberto** = decisão ou trabalho pendente; **Conferir** = depende de olhar o banco ou a produção.
+
+### 1. Corrigido em 31/10/2026
+
+| # | Problema | Onde | Situação |
+| --- | --- | --- | --- |
+| 1 | Qualquer pessoa criava conta `usuario` pela tela de login | `server/routes/auth.js`, `public/index.html` | Feito e no ar (cadastro desligado; reabrir só com `CADASTRO_PUBLICO=1`) |
+| 2 | Renomear motivo de churn apagava as letras "s" (regex `/s+/`) | `server/routes/motivos-churn.js` | Feito e no ar |
+| 3 | Rota de churn por conversas escondida atrás de outra no mesmo prefixo | `server/cs/routes.js`, `public/js/app.js` | Feito e no ar (`/api/cs/churn-conversas`) |
+| 4 | Analista (`colaborador`) recebia 403 em "Não vai renovar" e "Informar protocolo" | `server/auth.js` | Feito, **após deploy** |
+| 5 | "Reabrir" meses 05–07/2026 e desligar a regra de aceite da Elma eram desfeitos a cada chamada | `server/routes/data.js` (`ensureGamTables`) | Feito, **após deploy** (semente única em `gam_config`) |
+| 6 | `usuario` lia Carteira, honorários, MRR e CAC | `server/routes/data.js` | Feito, **após deploy** (cinco leituras só para administrador; o CAC de quem não é administrador é calculado no servidor) |
+| 7 | Apagar `admin@grupoe.com.br` fazia o servidor recriá-lo a cada reinício | `server/index.js` | Feito, **após deploy** (só cria se não houver nenhum administrador) |
+
+### 2. Abertos, por prioridade
+
+**Segurança**
+
+1. Varrer as 148 rotas "login" e decidir quais devem ser só de administrador (a lista completa não foi levantada; só Carteira/CAC foram fechadas).
+2. Um só segredo (`LEGALIZACAO_SYNC_TOKEN`) para quase todas as cargas de máquina; separar por origem.
+3. Tokens em `localStorage`; sem CSP e sem HSTS.
+4. Exigir confirmação em `DELETE /api/data/clear`, `DELETE /api/data/log-atividades` e na limpeza da Qualidade (hoje basta a frase `LIMPAR` nesta última).
+5. Falha aberta se `require('../auth')` não carregar (listas canônicas, radar de SLA).
+6. Pesquisa pública sem proteção própria contra abuso.
+7. Histórico do Git (repositório público) ainda contém a senha padrão antiga do administrador; conferir se alguma conta antiga a usou.
+
+**Dados e consistência**
+
+8. Cinco tabelas centrais sem `CREATE` no repositório (`clientes`, `honorarios`, `eventos_clientes`, `analistas`, `investimentos`): obter `pg_dump --schema-only`. **Conferir.**
+9. Avisos de ticket gravam colunas (`user_id`, `referencia_id`) que a definição de `notificacoes` do código não tem; erro silenciado. **Conferir** no banco real.
+10. Duas definições de LTV (48 meses fixos × retenção média) e dois modelos de churn (formulário de Gestão × Risco do /cs).
+11. Saída registrada pelo formulário de Gestão ou aprovada na Legalização pode não contar como churn (texto do motivo não casa com "Transferida por…"). **Conferir** com um caso real.
+12. Fuso: mês do ticket em UTC; algumas rotas do /cs usam o relógio UTC e as demais `America/Sao_Paulo`.
+13. Backup automático dentro do mesmo banco e sem `users`, Legalização, Financeiro e configurações.
+14. Cobrador fixo no código ("Bruno Xavier") no Financeiro; cliente "Elma" fixo na semente da Gamificação; feriados só de 2026.
+
+**Operação**
+
+15. Agenda da Legalização presa às variáveis do Zappy.
+16. Dependência de estação Windows, VPN, IP liberado da CertiSeguro, login do gov.br e do Omie; horários reais não versionados.
+17. Rotinas por `setInterval` no processo web (plano gratuito dorme e reinicia).
+18. Arquivos gigantes: `server/routes/data.js` (≈ 6,7 mil linhas, 172 rotas) e `public/js/app.js` (≈ 11 mil linhas).
+19. Código morto: `server/routes/gamificacao.js` (não montado), `routerAnalista` da Qualidade (desligado), `legalizacao-antiga.html`, `minha-nota.html`, `qualidade.html`, rotas temporárias de diagnóstico.
+20. Texto desatualizado: tela de Oportunidades do /financeiro; `VERSAO` fixa em `cs-painel.js`; `render.yaml` com host diferente do em uso.
+
+### 3. Checklist de cobertura deste mapa
+
+| Área | Arquivo | Cobertura | Lacuna declarada |
+| --- | --- | --- | --- |
+| Inventário, rotas, tabelas | `00-inventario`, `00b-rotas`, `00c-tabelas` | completa para o que o código cria | 5 tabelas só por inferência; números de linha de `data.js` deslocados pelas correções de hoje |
+| Núcleo (servidor, login, perfis, avisos, backups) | `nucleo` | completa | — |
+| SPA `/` | `spa-principal` | regras e campos de cada tela | texto exato de cada rótulo |
+| /cs | `cs/00` a `cs/10` | completa | portais Gestor/Analista/Sucesso, Minha área, Acessos e formulários de Qualidade sem o texto de cada botão |
+| Gamificação | `gamificacao` | completa | — |
+| /legalizacao | `legalizacao` | completa | horários reais das rotinas locais |
+| /financeiro | `financeiro` | completa | conversão dos arquivos do Omie sem teste |
+| Permissões | `transversal-permissoes` | consolidada | rotas "login" sem varredura individual |
+| Integrações e automações | `transversal-integracoes-automacoes` | consolidada | lista de tarefas do Agendador da estação não conferida |
+| Logs e auditoria | `transversal-logs-auditoria` | consolidada | — |
+| Arquitetura | `transversal-arquitetura` | visão geral | — |
+| Portabilidade | `../MIGRACAO_DE_MAQUINA.md` | só mudança de máquina/hospedagem do mesmo sistema | **depende do sistema de destino (não informado)** |
+
+**Nada foi testado em produção com login de cada perfil**: tudo vem da leitura do código, mais a conferência de 31/10/2026 de que o cadastro público saiu do ar.
+
+### 4. Testes automatizados que existem
+
+Scripts Node com `assert`, rodados à mão (`node <arquivo>`); não há CI.
+
+| Área | Arquivos |
+| --- | --- |
+| Acesso por perfil e cadastro desligado | `server/testes_acesso_perfis.js` (novo em 31/10/2026) |
+| /cs | `server/cs/testes_*.js` (21 arquivos: acessos, alertas, categorias, churn, ingestão, painel, pontuação, qualidade, risco, SLA, tradutor…) |
+| Financeiro | `server/financeiro/testes_*.js` (3) |
+| Legalização | `server/testes_legalizacao_pagina.js`, `testes_legalizacao_retrato.js`, `testes_saude_rotinas.js` |
+| Gamificação | `server/testes_gam_ferias.js` (só o consolidado com férias) |
+| Questor / e-mail | `server/questor/testes_*.js`, `server/emailSinais/testes_email_sinais.js` |
+| Outros | `server/testes_avisos.js`, `server/testes_push.js`, `server/arquivoMorto/nomes.test.js` |
+
+**Sem teste:** nota mensal, ranking e pódio da Gamificação; revisões; Protocolo Online; regra de status em SQL da Legalização; rotas de entrada do Financeiro; toda a Carteira e o CAC; permissões das 148 rotas "login".
 
 ---
 

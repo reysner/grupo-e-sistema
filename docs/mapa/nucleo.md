@@ -21,7 +21,7 @@ Um único processo Node/Express serve (a) as páginas estáticas de `public/`, (
 
 ### 2.1 Subida
 1. `initDB()` cria **só** as tabelas-base (`users`, `refresh_tokens`, `atendimentos`, `gestao_clientes`, `insatisfacoes`, `clientes_sensiveis`, `pesquisas`, `recuperacoes`), troca a restrição de papéis e acrescenta as colunas de acesso em `users`. **`clientes`, `honorarios`, `eventos_clientes`, `investimentos` e `notificacoes` não são criadas aqui** (as duas últimas, parcialmente, em `data.js`); `clientes`, `honorarios`, `eventos_clientes`, `analistas` e `investimentos` só existem no banco atual.
-2. **Administrador inicial:** se não existe usuário com `ADMIN_EMAIL` (padrão `admin@grupoe.com.br`), cria com `ADMIN_PASS` (bcrypt 12). **Sem `ADMIN_PASS` não cria nada e avisa no log.** Não há senha padrão.
+2. **Administrador inicial:** se o sistema **não tem nenhum usuário administrador** (regra de 31/10/2026; antes olhava só o e-mail `ADMIN_EMAIL`, padrão `admin@grupoe.com.br`, e recriava a conta apagada a cada reinício), cria o `ADMIN_EMAIL` com `ADMIN_PASS` (bcrypt 12). **Sem `ADMIN_PASS` não cria nada e avisa no log.** Não há senha padrão.
 3. Agenda as rotinas da seção 6 e abre a porta (`PORT`, padrão 3000). Falha de conexão com o banco encerra o processo.
 
 ## 3. Login e sessão

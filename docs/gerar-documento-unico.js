@@ -36,11 +36,16 @@ const partes = [
   ['mapa/gamificacao.md', 'Gamificação'],
   ['mapa/legalizacao.md', '/legalizacao'],
   ['mapa/financeiro.md', '/financeiro'],
+  ['mapa/transversal-arquitetura.md', 'Visão geral e arquitetura'],
+  ['mapa/transversal-permissoes.md', 'Permissões e segurança (consolidado)'],
+  ['mapa/transversal-integracoes-automacoes.md', 'Integrações externas e automações (consolidado)'],
+  ['mapa/transversal-logs-auditoria.md', 'Logs, auditoria e histórico (consolidado)'],
+  ['mapa/transversal-pendencias-cobertura.md', 'Pendências, inconsistências e checklist de cobertura'],
 ];
 
 // Seção "Situação deste documento": edite aqui quando um assunto novo ficar pronto.
-const PRONTAS = 'inventário da Fase 1 e anexos de rotas e tabelas; núcleo (servidor, login, perfis, avisos, backups e rotinas); SPA `/` (atendimento, gestão, insatisfações, pesquisas, carteira, CAC, tickets, administração); módulo /cs completo (11 partes); Gamificação; /legalizacao; /financeiro.';
-const PENDENTES = 'as seções transversais (visão geral de arquitetura, matriz de permissões consolidada, integrações externas, automações e jobs em um só lugar, logs e auditoria, portabilidade e checklist de cobertura). Para essas áreas, valem as partes por módulo, o inventário (parte 1) e os anexos de rotas e tabelas, que já listam tudo.';
+const PRONTAS = 'inventário da Fase 1 e anexos de rotas e tabelas; núcleo (servidor, login, perfis, avisos, backups e rotinas); SPA `/` (atendimento, gestão, insatisfações, pesquisas, carteira, CAC, tickets, administração); módulo /cs completo (11 partes); Gamificação; /legalizacao; /financeiro; e as cinco partes transversais (visão geral e arquitetura, permissões, integrações e automações, logs e auditoria, pendências e checklist de cobertura).';
+const PENDENTES = 'a seção de portabilidade para outro sistema (depende do sistema de destino, que não foi informado; para mudar de máquina ou de hospedagem com o mesmo sistema vale o guia de migração, docs/MIGRACAO_DE_MAQUINA.md) e a varredura individual das rotas protegidas só por login (ver a parte de pendências).';
 
 const numero = new Map(partes.map(([f], i) => [path.basename(f), i + 1]));
 const ancora = (t) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
