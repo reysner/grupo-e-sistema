@@ -750,7 +750,9 @@ router.get('/diagnostico', requireAuth, requireAdmin, async (req, res) => {
 });
 
 /**
- * GET /api/cs/churn?dias=180 — varre as mensagens do CLIENTE (Zappy) dos
+ * GET /api/cs/churn-conversas?dias=180 — (era /churn, mas /api/cs/churn é do
+ * roteador de saídas, churnSaidas.js, montado antes: a rota nunca respondia)
+ * varre as mensagens do CLIENTE (Zappy) dos
  * últimos N dias procurando frases que sinalizam risco de cancelamento
  * (ver FRASES_CHURN em slaEngine.js — "vou procurar outra contabilidade",
  * "erram demais", etc.). Zero IA paga: é o mesmo tipo de casamento de
@@ -758,7 +760,7 @@ router.get('/diagnostico', requireAuth, requireAdmin, async (req, res) => {
  * vínculo confirmado se existir; senão cai no nome/telefone do contato do
  * Zappy) e devolve a ocorrência mais recente de cada uma, pior primeiro.
  */
-router.get('/churn', requireAuth, requireAdmin, async (req, res) => {
+router.get('/churn-conversas', requireAuth, requireAdmin, async (req, res) => {
   try {
     const pool = obterPool();
     const dias = Math.max(1, Math.min(365, parseInt(req.query.dias, 10) || 180));
@@ -835,7 +837,7 @@ router.get('/churn', requireAuth, requireAdmin, async (req, res) => {
     const data = [...porEmpresa.values()].sort((a, b) => new Date(b.ultima_hora) - new Date(a.ultima_hora));
     res.json({ data, dias, mensagensAnalisadas: rows.length });
   } catch (e) {
-    console.error('[cs] GET /churn falhou:', e);
+    console.error('[cs] GET /churn-conversas falhou:', e);
     res.status(500).json({ error: 'Falha ao analisar possíveis churns: ' + e.message });
   }
 });

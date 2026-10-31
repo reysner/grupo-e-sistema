@@ -10401,7 +10401,7 @@ window.Tickets = Tickets;
       if (!tbody) return;
       tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">Carregando...</td></tr>';
       try {
-        const res = await fetch('/api/cs/churn?dias=180', { headers: authHeaders() });
+        const res = await fetch('/api/cs/churn-conversas?dias=180', { headers: authHeaders() });
         if (!res.ok) throw new Error('Falha ao buscar.');
         const { data } = await res.json();
         AnaliseInteligente._churnData = data || [];
