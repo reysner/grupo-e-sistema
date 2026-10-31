@@ -1,6 +1,6 @@
 # Mapa do sistema Grupo-E — documento único
 
-Gerado em 31/10/2026 com o código no commit `a267334`, a partir dos arquivos de `docs/mapa/`. Engenharia reversa do código (servidor Node/Express + PostgreSQL, front-end em HTML/JS puro, hospedado no Render), escrita para reconstruir ou portar o sistema sem abrir o código. Idioma: pt-BR. Níveis de certeza usados em todo o texto: **[CONFIRMADO]** (lido no código), **[INFERIDO]** (deduzido), **[DÚVIDA]** (precisa de confirmação).
+Gerado em 31/10/2026 com o código no commit `d9ff142`, a partir dos arquivos de `docs/mapa/`. Engenharia reversa do código (servidor Node/Express + PostgreSQL, front-end em HTML/JS puro, hospedado no Render), escrita para reconstruir ou portar o sistema sem abrir o código. Idioma: pt-BR. Níveis de certeza usados em todo o texto: **[CONFIRMADO]** (lido no código), **[INFERIDO]** (deduzido), **[DÚVIDA]** (precisa de confirmação).
 
 ## Situação deste documento
 
@@ -3280,7 +3280,7 @@ A varredura do anexo A (358 rotas) classifica por rota: **155 com `requireAdmin`
 6. `DELETE /api/data/clear` (administrador) apaga seis tabelas sem confirmação quando `period` não vem; `DELETE /log-atividades` apaga todo o log sem confirmação.
 7. A pesquisa pública aceita respostas de qualquer pessoa (só o limite global por IP).
 8. `acesso_gestor` fica no token por até 2 h depois de a pessoa sair de `cs_qualidade_gestores`.
-9. Conta de administrador com e-mail pessoal ou legado deve ser conferida periodicamente (em 31/10/2026 havia duas: `admin@grupoe.com.br`, que o dono pediu para excluir, e uma com e-mail pessoal a confirmar).
+9. Conta de administrador com e-mail pessoal ou legado deve ser conferida periodicamente. Em 31/10/2026: `admin@grupoe.com.br` foi **desativada** (a exclusão falhou por vínculos no banco) e a conta de e-mail pessoal foi confirmada pelo dono como sendo da Larissa.
 10. O repositório no GitHub é **público**: nenhum segredo pode entrar nele, e a senha padrão antiga continua no histórico do Git (já não funciona no código atual, mas serve contra qualquer conta criada com ela).
 
 ---
