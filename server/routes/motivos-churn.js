@@ -103,7 +103,7 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
     await garantirTabela();
     // { nome } renomeia (e leva o novo nome para as saídas já classificadas); { ativo } liga/desliga. Pode vir um ou outro.
     if (req.body.nome !== undefined) {
-      const nome = String(req.body.nome || '').replace(/s+/g, ' ').trim();
+      const nome = String(req.body.nome || '').replace(/\s+/g, ' ').trim();
       if (nome.length < 3 || nome.length > 120) return res.status(400).json({ error: 'O nome do motivo precisa ter de 3 a 120 caracteres.' });
       const atual = await pool.query(`SELECT nome FROM motivos_churn WHERE id = $1`, [req.params.id]);
       if (!atual.rows.length) return res.status(404).json({ error: 'Motivo não encontrado.' });
